@@ -5,6 +5,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.workspace.HostGeometry
 import kotlin.test.Test
@@ -51,6 +52,21 @@ class TabWorkspaceTest {
         // at is the one it already has.
         assertEquals(0, workspace.insertionIndex(group, 295f, exclude = workspace.tab("a")))
         assertEquals(1, workspace.insertionIndex(group, 105f, exclude = workspace.tab("b")))
+    }
+
+    @Test
+    fun `a single-tab strip inserts by the direction it published`() {
+        val workspace = TabWorkspace()
+        workspace.register("x", "Xray", groupId = "right")
+        val group = requireNotNull(workspace.group("right"))
+        workspace.attachWindow(group, secondWindow)
+        workspace.publishStrip(group, SecondWindowFrame, tabCount = 1)
+        requireNotNull(workspace.stripGeometry(group)).layoutDirection = LayoutDirection.Rtl
+
+        // The one slot is 0..100: right of its middle is *before* it in a
+        // right-to-left strip, left of it after — an order of one cannot say so.
+        assertEquals(0, workspace.insertionIndex(group, 90f, exclude = null))
+        assertEquals(1, workspace.insertionIndex(group, 10f, exclude = null))
     }
 
     /** Three placed tabs, laid out right to left: "a" at 200..300, "b" at 100..200, "c" at 0..100. */
@@ -528,6 +544,48 @@ class TabWorkspaceTest {
         assertNotNull(workspace.takeInStrip("b"))
 
         assertEquals("b", left.selectedId, "the local strip gesture left the click lost")
+    }
+
+    @Test
+    fun `a drag says how it is carried, and the slot it opens knows the tab`() {
+        val workspace = TabWorkspace()
+        val (left, right) = workspace.twoStripWindows()
+        val beta = requireNotNull(workspace.tab("b"))
+        assertNull(workspace.dragKind)
+
+        // Grabbed in a right-to-left strip: the ghost is laid out the way the tab was drawn.
+        requireNotNull(workspace.stripGeometry(left)).layoutDirection = LayoutDirection.Rtl
+        val session =
+            assertNotNull(
+                workspace.beginDrag("b", stripOrigin(firstWindow, FirstWindowFrame), Offset(110f, 20f)),
+            )
+        assertEquals(WorkspaceDragKind.Window, workspace.dragKind)
+
+        session.update(Offset(1020f, 20f))
+        val ghost = assertNotNull(workspace.dragGhost)
+        assertEquals(LayoutDirection.Rtl, ghost.layoutDirection, "the ghost carries its strip's direction")
+        val slot = assertNotNull(TabStripScopeImpl(workspace, right).dropGhost, "the strip under the card opens a slot")
+        assertSame(beta, slot.tab, "the slot's card is drawn for the tab in flight")
+        assertNull(TabStripScopeImpl(workspace, left).dropGhost, "the strip it left shows no slot")
+
+        session.cancel()
+        assertNull(workspace.dragKind)
+    }
+
+    @Test
+    fun `a transfer drag is carried by the platform session, one held in its strip by none`() {
+        val workspace = TabWorkspace()
+        workspace.twoStripWindows()
+
+        assertNotNull(workspace.takeInStrip("b"))
+        assertNull(workspace.dragKind, "held inside its strip, the tab is in the strip's hands")
+
+        val drag = assertNotNull(workspace.beginTransferDrag("b", firstWindow))
+        assertEquals(WorkspaceDragKind.Transfer, workspace.dragKind)
+        assertNull(workspace.dragGhost, "a transfer publishes no ghost")
+
+        drag.cancel()
+        assertNull(workspace.dragKind)
     }
 
     @Test

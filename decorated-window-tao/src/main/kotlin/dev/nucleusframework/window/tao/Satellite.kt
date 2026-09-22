@@ -187,6 +187,15 @@ internal class SatelliteScopeImpl(
  *   single [dockSides], the panel is furniture and its header is not even a
  *   drag handle.
  * @param resizable whether the floating window can be resized by the user.
+ * @param minExtent the thinnest the panel may be docked — its width on a left
+ *   or right side, its height on a top or bottom one.
+ *   [SatelliteWorkspace.MinDockExtent] by default, and never below it. The
+ *   splitters stop there, a split side the panel joins is brought to it, and
+ *   the drop preview shows the width the drop will produce.
+ * @param maxExtent the thickest the panel may be docked; unbounded by
+ *   default, and enforced the same way: on the splitters, on a side the
+ *   panel joins, and in the drop preview. Neither limit constrains the
+ *   floating window.
  * @param hideWhileOwnerFullscreenOrMaximized hide the floating window while
  *   the owner fills the screen; see [SatelliteWindow].
  * @param compositionLocalContext parent locals bridged into the floating
@@ -221,6 +230,8 @@ public fun ApplicationScope.Satellite(
     floatable: Boolean = true,
     reorderable: Boolean = true,
     resizable: Boolean = true,
+    minExtent: Dp = SatelliteWorkspace.MinDockExtent,
+    maxExtent: Dp = Dp.Infinity,
     hideWhileOwnerFullscreenOrMaximized: Boolean = true,
     compositionLocalContext: CompositionLocalContext? = null,
     floatingContentWrapper:
@@ -232,7 +243,17 @@ public fun ApplicationScope.Satellite(
 ) {
     val entry =
         remember(workspace, id) {
-            workspace.register(id, title, initialPlacement, initiallyOpen, dockSides, floatable, reorderable)
+            workspace.register(
+                id,
+                title,
+                initialPlacement,
+                initiallyOpen,
+                dockSides,
+                floatable,
+                reorderable,
+                minExtent,
+                maxExtent,
+            )
         }
     // The satellite's own window, once it has one: the scope is created before
     // it and survives it, so it is read through a lambda.
@@ -257,6 +278,7 @@ public fun ApplicationScope.Satellite(
             scaleFactor = ghost.scaleFactor,
             title = ghost.satellite.title,
             compositionLocalContext = compositionLocalContext,
+            layoutDirection = ghost.layoutDirection,
         ) {
             SatelliteGhostCard(ghost.satellite.title, Modifier.fillMaxSize())
         }

@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -81,9 +80,9 @@ public interface TabHoverPreviewScope {
     public val tab: TabEntry
 
     /**
-     * The last picture taken of [tab]'s body, or `null` when there is none —
-     * captures are off, or the tab has not been on screen yet. See
-     * [TabEntry.thumbnail].
+     * The picture of [tab]'s body, or `null` when there is none: the last one
+     * the workspace took, or the one the app assigned — see
+     * [TabEntry.thumbnail] for who writes it and when.
      */
     public val thumbnail: ImageBitmap? get() = tab.thumbnail
 }
@@ -331,19 +330,39 @@ public fun TabHoverPreviewScope.TabHoverPreviewCard(
             Spacer(Modifier.height(HoverCardGap))
             subtitle()
         }
-        thumbnail?.let { picture ->
+        if (thumbnail != null) {
             Spacer(Modifier.height(HoverCardGap))
-            Image(
-                bitmap = picture,
-                contentDescription = null,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(picture.width.toFloat() / picture.height.toFloat())
-                        .clip(RoundedCornerShape(HoverCardPictureRadius)),
-                contentScale = ContentScale.Crop,
-            )
+            TabPreview(tab, Modifier.fillMaxWidth().clip(RoundedCornerShape(HoverCardPictureRadius)))
         }
+    }
+}
+
+/**
+ * The picture of [tab]'s body ([TabEntry.thumbnail]) drawn as an image, or
+ * [placeholder] while there is none: the one composable for a tab's preview
+ * wherever it goes — a hover card, an overview of every tab, a drag ghost —
+ * so an app draws it in one line and animates it like anything else, through
+ * [modifier] or by wrapping it. Sized by [modifier]; given one dimension it
+ * takes the other from the picture's aspect ratio. The stock
+ * [TabHoverPreviewCard] is built on it.
+ *
+ * @param contentScale how the picture fills the bounds [modifier] gives it.
+ * @param placeholder what stands in while the tab has no picture: nothing by
+ *   default, so the preview takes no room until it has something to show.
+ */
+@Composable
+@ExperimentalNucleusApi
+public fun TabPreview(
+    tab: TabEntry,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Fit,
+    placeholder: @Composable () -> Unit = {},
+) {
+    val picture = tab.thumbnail
+    if (picture == null) {
+        Box(modifier) { placeholder() }
+    } else {
+        Image(bitmap = picture, contentDescription = null, modifier = modifier, contentScale = contentScale)
     }
 }
 

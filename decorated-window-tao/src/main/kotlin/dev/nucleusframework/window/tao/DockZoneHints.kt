@@ -109,7 +109,11 @@ private fun SideHint(
             workspace.plannedDockExtent(dragged, side)
         }
     val order = preview.order?.takeIf { zone.slots.isNotEmpty() }
-    val rect = state.dropRectPx(side, dragged, order, with(density) { extent.toPx() })
+    // Fitted to the window as the layout will fit it once the panel is in —
+    // the preview is the thickness the release draws.
+    val rawPx = with(density) { extent.toPx() }
+    val extentPx = rawPx * state.fitAfterDrop(side, dragged, rawPx, density)
+    val rect = state.dropRectPx(side, dragged, order, extentPx)
     PreviewAt(rect) { SatelliteGhostCard(dragged.title, Modifier.fillMaxSize()) }
 }
 

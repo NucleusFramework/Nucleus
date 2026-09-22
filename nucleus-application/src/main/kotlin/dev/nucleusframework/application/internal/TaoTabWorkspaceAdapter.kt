@@ -1,10 +1,19 @@
+// #636: `TabWindows` is a window opener — `@ComposableOpenTarget(-1)` with
+// `@UiComposable` content lambdas. ktlint's `annotation` and
+// `function-type-modifier-spacing` rules contradict each other on the
+// resulting two-annotation parameter type.
+@file:Suppress("ktlint:standard:annotation")
+
 package dev.nucleusframework.application.internal
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.runtime.currentCompositionLocalContext
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.platform.LocalLayoutDirection
 import dev.nucleusframework.application.NucleusDecoratedWindowScope
 import dev.nucleusframework.application.TaoNucleusApplicationScope
+import dev.nucleusframework.window.tao.TabDragGhost
 import dev.nucleusframework.window.tao.TabScope
 import dev.nucleusframework.window.tao.TabStripScope
 import dev.nucleusframework.window.tao.TabWorkspace
@@ -21,13 +30,15 @@ import dev.nucleusframework.window.tao.TabWindows as TaoTabWindows
 internal object TaoTabWorkspaceAdapter {
     @Suppress("LongParameterList")
     @Composable
+    @ComposableOpenTarget(-1)
     fun TabWindows(
         scope: TaoNucleusApplicationScope,
         workspace: TabWorkspace,
-        strip: @Composable TabStripScope.() -> Unit,
+        strip: @Composable @UiComposable TabStripScope.() -> Unit,
+        dragGhost: @Composable @UiComposable NucleusDecoratedWindowScope.(TabDragGhost) -> Unit,
         nativeContextMenu: Boolean,
-        windowWrapper: @Composable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit,
-        windowBodyWrapper: @Composable NucleusDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit,
+        windowWrapper: @Composable @UiComposable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit,
+        windowBodyWrapper: @Composable @UiComposable NucleusDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit,
         onLastWindowClosed: () -> Unit,
     ) {
         // Each window the workspace opens gets a fresh ComposeScene — see
@@ -40,6 +51,13 @@ internal object TaoTabWorkspaceAdapter {
                 workspace = workspace,
                 compositionLocalContext = outerLocals,
                 strip = strip,
+                // The ghost is a window of its own: it gets the Nucleus locals
+                // a tab window gets, laid out in the direction of the strip the
+                // tab came from — not the app's `windowWrapper`, which dresses
+                // a window, background included.
+                dragGhost = { ghost ->
+                    bindNucleusContent(outerLocals, ghost.layoutDirection, nativeContextMenu) { dragGhost(ghost) }
+                },
                 windowContentWrapper = { inner ->
                     bindNucleusContent(outerLocals, parentLayoutDirection, nativeContextMenu) {
                         windowWrapper(inner)

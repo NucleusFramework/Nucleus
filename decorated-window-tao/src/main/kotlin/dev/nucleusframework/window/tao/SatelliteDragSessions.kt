@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.workspace.TransferDrag
 import dev.nucleusframework.window.tao.workspace.TransferGhostSource
 import dev.nucleusframework.window.tao.workspace.sanitizedOrNull
@@ -105,6 +106,10 @@ private class DockedDragSession(
     /** Its own slot on its own side: dropping there changes nothing. */
     private val own: DockTarget? = workspace.ownTarget(entry, host)
 
+    /** The dock's layout direction, as it published it: what the ghost card is laid out in. */
+    private val direction: LayoutDirection =
+        workspace.dockHostGeometry(host)?.layoutDirection ?: LayoutDirection.Ltr
+
     override fun update(pointerScreenPx: Offset) {
         if (!isLive) return
         pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
@@ -119,7 +124,7 @@ private class DockedDragSession(
         // no tear-out to read, so it stays where it is and only the zone
         // feedback moves — showing a ghost would promise a window the release
         // does not produce.
-        if (entry.isFloatable) workspace.dragGhost = DragGhost(entry, ghost, scaleFactor)
+        if (entry.isFloatable) workspace.dragGhost = DragGhost(entry, ghost, scaleFactor, direction)
     }
 
     private fun ghostRectPx(): Rect = Rect(pointer - grabOffsetPx, panelScreenRectPx.size)

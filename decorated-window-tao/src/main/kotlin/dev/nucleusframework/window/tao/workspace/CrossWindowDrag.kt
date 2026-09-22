@@ -38,8 +38,11 @@ import kotlin.math.roundToInt
 internal class DragController<S : Any>(
     private val clearFeedback: () -> Unit,
 ) {
-    /** The live session, or `null`. */
-    var active: S? = null
+    /**
+     * The live session, or `null`. Snapshot state: a composable branching on
+     * the workspace's `dragKind` has to see a drag begin and end.
+     */
+    var active: S? by mutableStateOf(null)
         private set
 
     /** Makes [session] the live one, ending whichever was. */

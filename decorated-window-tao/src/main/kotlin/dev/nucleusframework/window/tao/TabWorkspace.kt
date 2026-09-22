@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.workspace.DragController
@@ -28,9 +29,10 @@ import kotlinx.coroutines.CoroutineScope
 /**
  * One tab known to a [TabWorkspace]: its identity, title and body.
  *
- * Created by [Tab] on first composition (or by [TabWorkspace.restore] ahead of
- * it) and kept for the lifetime of the workspace, so a tab the app takes out
- * of composition and brings back resumes where it was.
+ * Created by [Tab] on first composition and kept for the lifetime of the
+ * workspace, so a tab the app takes out of composition and brings back resumes
+ * where it was. A [TabWorkspace.restore] that names a tab before then only
+ * remembers where to put it: the entry exists once [Tab] has composed.
  */
 @ExperimentalNucleusApi
 public class TabEntry internal constructor(
@@ -50,17 +52,26 @@ public class TabEntry internal constructor(
     public val isSelected: Boolean get() = group?.selectedId == id
 
     /**
-     * The last picture taken of this tab's body, for a hover card to draw
-     * ([TabHoverPreviewScope.thumbnail]).
+     * The picture of this tab's body a hover card draws
+     * ([TabHoverPreviewScope.thumbnail]), or `null`.
      *
-     * `null` unless the workspace was built with `captureThumbnails`, and
-     * `null` for a tab that has not been on screen yet: only the selected tab
-     * of a window is composed, so the picture is the one taken while this tab
-     * was that tab. [TabWorkspace.captureThumbnail] takes a fresh one of the
-     * tab currently shown.
+     * Two things write it. A workspace built with `captureThumbnails` takes
+     * one of the selected tab of every window, and again on
+     * [TabWorkspace.captureThumbnail]. And the app assigns whatever it has —
+     * the picture it saved with the layout it is restoring, a render of its
+     * own — for a tab not on screen, since only the selected tab of a window
+     * is composed. Assign it *before* the tab is shown: the workspace's
+     * capture replaces it then, and an assignment landing after that capture
+     * stands until the next one, stale or not. The entry exists once [Tab] has
+     * composed — [TabWorkspace.restore] creates none — so a restored picture
+     * goes on from an effect next to the declaration:
+     *
+     * ```kotlin
+     * Tab(workspace, id = doc.id, title = doc.name) { Editor(doc) }
+     * LaunchedEffect(doc.id) { workspace.tab(doc.id)?.thumbnail = saved[doc.id] }
+     * ```
      */
     public var thumbnail: ImageBitmap? by mutableStateOf(null)
-        internal set
 
     /**
      * Bumped to ask for a new [thumbnail]; the window showing the tab takes
@@ -675,6 +686,29 @@ public class TabWorkspace(
     public var dragGhost: TabDragGhost? by mutableStateOf(null)
         internal set
 
+    /**
+     * How the tab in flight is being carried, or `null` while none is.
+     *
+     * [WorkspaceDragKind.Window] is a drag the app drives, from its first
+     * sample: a window follows the pointer — the tab's own, when it is the
+     * only one in it — or [dragGhost] does once a tab leaves a strip of
+     * several, drawn by the `dragGhost` slot of [TabWindows]; over its own
+     * strip [dragGhost] is still `null`, the strip holding the tab itself.
+     * [WorkspaceDragKind.Transfer] carries the tab in the platform's
+     * drag-and-drop session: the picture under the pointer is the drag icon
+     * the compositor draws, [dragGhost] stays `null` and the slot never
+     * composes. On that path a tab held inside its own strip has not been
+     * handed to the platform yet, so [draggedTab] is set while this is still
+     * `null`. [draggedTab] and [dropPreview] are published on every path.
+     */
+    public val dragKind: WorkspaceDragKind?
+        get() =
+            when {
+                drags.active != null -> WorkspaceDragKind.Window
+                transferDrag != null -> WorkspaceDragKind.Transfer
+                else -> null
+            }
+
     /** The drag currently owning the feedback state, or `null`. */
     internal val activeDragSession: TabDragSession? get() = drags.active
 
@@ -792,7 +826,7 @@ public class TabWorkspace(
         val currentStart = own.left + slidePx
         val currentEnd = own.right + slidePx
         val placed = slots.filter { !it.isEmpty }
-        val rightToLeft = placed.size >= 2 && placed.first().left > placed.last().left
+        val rightToLeft = isRightToLeft(group, placed)
         val crossed: (Int) -> Boolean =
             when {
                 currentStart < own.left -> { j ->
@@ -835,16 +869,31 @@ public class TabWorkspace(
     }
 
     /**
+     * Whether [group]'s strip runs right to left: what the strip published
+     * with its geometry ([Modifier.tabStripGeometry]), else — a strip that
+     * has published none — inferred from the order of its [placed] slots,
+     * which takes two of them. A single tab cannot tell, and a right-to-left
+     * strip resolved left to right opens the drop preview on the wrong side
+     * of it: the preview moves the tab under the pointer, the answer flips,
+     * and two cards slide about under a pointer that has not moved.
+     */
+    private fun isRightToLeft(
+        group: TabWindowGroup,
+        placed: List<Rect>,
+    ): Boolean =
+        stripHosts[group.window]?.let { it.layoutDirection == LayoutDirection.Rtl }
+            ?: (placed.size >= 2 && placed.first().left > placed.last().left)
+
+    /**
      * The index [xInWindowPx] falls at in [group]'s strip: the number of tabs
      * whose midpoint the pointer has passed, counting the dragged tab's own
      * slot out so the index it would land at is the one it already has.
      *
-     * "Passed" is a question of reading direction, and the direction is read
-     * from the published slots themselves rather than from a layout direction
-     * the workspace has no business knowing: a right-to-left strip puts its
-     * first tab at the *right*, so its slots run from high x to low, and the
-     * pointer passes a midpoint by going left. Without that, every drop on a
-     * Hebrew or Arabic strip resolves mirrored.
+     * "Passed" is a question of reading direction, and the direction is the
+     * strip's own ([isRightToLeft]): a right-to-left strip puts its first tab
+     * at the *right*, so its slots run from high x to low, and the pointer
+     * passes a midpoint by going left. Without that, every drop on a Hebrew or
+     * Arabic strip resolves mirrored.
      */
     internal fun insertionIndex(
         group: TabWindowGroup,
@@ -853,7 +902,7 @@ public class TabWorkspace(
     ): Int {
         val slots = group.slotsInWindowPx.zip(group.tabIds)
         val placed = slots.filterNot { (slot, _) -> slot.isEmpty }
-        val rightToLeft = placed.size >= 2 && placed.first().first.left > placed.last().first.left
+        val rightToLeft = isRightToLeft(group, placed.map { (slot, _) -> slot })
         return slots
             .filterNot { (_, id) -> id == exclude?.id }
             .takeWhile { (slot, _) ->
@@ -1080,12 +1129,17 @@ public data class TabDropTarget(
  * The preview of a tab being dragged out of its strip: which tab, and where it
  * sits on screen right now (physical screen pixels, outer frame of the ghost
  * window), with the px-per-dp of the window it came from.
+ *
+ * @property layoutDirection the layout direction of the strip the tab was
+ *   grabbed from, as the strip published it ([Modifier.tabStripGeometry]) —
+ *   what the tab was drawn with, and what its ghost card is laid out in.
  */
 @ExperimentalNucleusApi
 public data class TabDragGhost(
     val tab: TabEntry,
     val screenRectPx: Rect,
     val scaleFactor: Float,
+    val layoutDirection: LayoutDirection = LayoutDirection.Ltr,
 )
 
 /** Where a tab drag starts; see [TabWorkspace.beginDrag]. */

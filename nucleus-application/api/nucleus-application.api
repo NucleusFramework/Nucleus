@@ -15,12 +15,14 @@ public final class dev/nucleusframework/application/ComposableSingletons$Satelli
 public final class dev/nucleusframework/application/ComposableSingletons$TabKt {
 	public static final field INSTANCE Ldev/nucleusframework/application/ComposableSingletons$TabKt;
 	public fun <init> ()V
-	public final fun getLambda$-1157930213$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$1616528785$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$1886912602$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$2066186131$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$283286354$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$773313628$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-301823852$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-532590893$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-577134883$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-921317921$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$1497978908$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$1626988507$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$2061788050$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$781480744$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
 }
 
 public final class dev/nucleusframework/application/DecoratedDialogKt {
@@ -187,8 +189,8 @@ public final class dev/nucleusframework/application/SingleInstanceRestoreBusKt {
 public final class dev/nucleusframework/application/TabKt {
 	public static final fun Tab (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 	public static final fun Tab (Ldev/nucleusframework/window/tao/TabWorkspace;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
-	public static final fun TabWindows (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Lkotlin/jvm/functions/Function3;ZLkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
-	public static final fun TabWindows (Ldev/nucleusframework/window/tao/TabWorkspace;Lkotlin/jvm/functions/Function3;ZLkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TabWindows (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function4;ZLkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TabWindows (Ldev/nucleusframework/window/tao/TabWorkspace;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function4;ZLkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
 }
 
 public abstract class dev/nucleusframework/application/contextmenu/ContextMenuEntry {
