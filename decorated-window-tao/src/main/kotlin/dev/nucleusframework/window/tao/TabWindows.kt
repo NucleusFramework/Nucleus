@@ -131,6 +131,24 @@ public fun ApplicationScope.Tab(
  *
  * @param strip the chrome of one window's tab strip; [TabStrip] by default.
  *   Composed inside the window's title bar.
+ * @param dragGhost what a tab being dragged out of its strip looks like under
+ *   the pointer: composed in a borderless window covering
+ *   [TabDragGhost.screenRectPx], the size the tab had in its strip, laid out
+ *   in the direction of the strip it was grabbed from
+ *   ([TabDragGhost.layoutDirection]). [TabDragGhostCard] by default — the
+ *   title on the stock drop-preview surface; an app draws its own,
+ *   [TabEntry.thumbnail] included if it likes, and draws the strip's
+ *   `dropGhostCard` with the same composable — [TabGhostCard] is the shape
+ *   both take, a tab and a modifier — so the tab lands as it travelled. It is
+ *   composed in the ghost's own scene, with that window's scope as receiver
+ *   and [compositionLocalContext] bridged in; neither [windowContentWrapper]
+ *   nor [windowBodyWrapper] wraps it — they dress a window, background
+ *   included, and a ghost is translucent — so a framework layer that needs
+ *   its locals in the ghost wraps this slot itself, as `nucleus-application`
+ *   does. Never composed where the app
+ *   cannot place windows (native Wayland): there the tab travels as the
+ *   compositor's drag icon, a picture of it in its strip, and
+ *   [TabWorkspace.dragKind] says which is in effect.
  * @param compositionLocalContext parent locals bridged into every window's own
  *   scene, as for [DecoratedWindow].
  * @param windowContentWrapper composed around each window's chrome and
@@ -148,13 +166,17 @@ public fun ApplicationScope.Tab(
  */
 @Suppress("LongParameterList", "FunctionNaming")
 @Composable
+@ComposableOpenTarget(-1)
 @ExperimentalNucleusApi
 public fun ApplicationScope.TabWindows(
     workspace: TabWorkspace,
     compositionLocalContext: CompositionLocalContext? = null,
-    strip: @Composable TabStripScope.() -> Unit = { TabStrip() },
-    windowContentWrapper: @Composable TaoDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit = { it() },
-    windowBodyWrapper: @Composable TaoDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit = { it() },
+    strip: @Composable @UiComposable TabStripScope.() -> Unit = { TabStrip() },
+    dragGhost: @Composable @UiComposable TaoDecoratedWindowScope.(TabDragGhost) -> Unit = { TabDragGhostCard(it) },
+    windowContentWrapper: @Composable @UiComposable TaoDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit =
+        { it() },
+    windowBodyWrapper: @Composable @UiComposable TaoDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit =
+        { it() },
     onLastWindowClosed: () -> Unit = {},
 ) {
     val ghost = workspace.dragGhost
@@ -164,8 +186,9 @@ public fun ApplicationScope.TabWindows(
             scaleFactor = ghost.scaleFactor,
             title = ghost.tab.title,
             compositionLocalContext = compositionLocalContext,
+            layoutDirection = ghost.layoutDirection,
         ) {
-            TabGhostCard(ghost.tab.title, Modifier.fillMaxSize())
+            dragGhost(ghost)
         }
     }
     val currentOnLastClosed = rememberUpdatedState(onLastWindowClosed)

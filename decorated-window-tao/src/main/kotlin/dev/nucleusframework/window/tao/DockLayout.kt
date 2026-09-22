@@ -163,7 +163,7 @@ public fun DockLayout(
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(
             modifier
-                .publishHostGeometry(geometry, containerSize)
+                .publishHostGeometry(geometry, containerSize, direction)
                 .dockTransferTarget(workspace, host, geometry)
                 .onSizeChanged { state.layoutSize = it }
                 .onGloballyPositioned { state.layoutBoundsInWindowPx = it.boundsInWindow() },
@@ -202,7 +202,8 @@ internal class DockLayoutState(
      * band — not of the whole layout, since an outer side owns the corners —
      * pushed inwards past the layers already there on a layered side, where a
      * new panel is a new innermost layer. On a split side that already has a
-     * stack the panel joins the stack, so the stack itself is the answer.
+     * stack the panel joins the stack, so the stack itself is the answer — at
+     * [thicknessPx], since the newcomer's limits may change the side's.
      *
      * A [dragged] panel that is the only one on *another* side of this same
      * layout is counted as already gone: it frees its side, and the band it
@@ -224,7 +225,9 @@ internal class DockLayoutState(
                 .takeIf { it.isNotEmpty() }
                 ?.reduce { acc, rect -> unionOf(acc, rect) }
                 ?.translate(-origin)
-        if (stack != null && joinsStack && !isLayered(side)) return stack
+        if (stack != null && joinsStack && !isLayered(side)) {
+            return if (thicknessPx > 0f) stack.withThickness(side, thicknessPx) else stack
+        }
         val inset = if (stack != null && isLayered(side)) stack else null
         return when (side) {
             DockSide.Left -> {
@@ -393,11 +396,15 @@ internal class DockLayoutState(
         val available = length - dividerPx * others.size
         val start = weights.take(rank).sum() / total * available + dividerPx * rank
         val share = weights[rank] / total * available
-        return if (alongX) {
-            Rect(stack.left + start, stack.top, stack.left + start + share, stack.bottom)
-        } else {
-            Rect(stack.left, stack.top + start, stack.right, stack.top + start + share)
-        }
+        val rect =
+            if (alongX) {
+                Rect(stack.left + start, stack.top, stack.left + start + share, stack.bottom)
+            } else {
+                Rect(stack.left, stack.top + start, stack.right, stack.top + start + share)
+            }
+        // At the thickness the side takes once the panel joins it: its limits
+        // may widen or narrow the whole stack.
+        return if (extentPx > 0f) rect.withThickness(side, extentPx) else rect
     }
 
     /** Whether rank `0` sits at the high coordinate: the outer layer of a right or bottom layered side. */
@@ -430,12 +437,13 @@ internal class DockLayoutState(
         return docked.extent ?: workspace.dockExtent(docked.side)
     }
 
-    /** Thickness taken by every panel on [side], in px. */
+    /** Thickness taken by every panel on [side] but [excluding], in px. */
     fun sideThicknessPx(
         side: DockSide,
         density: Density,
+        excluding: SatelliteEntry? = null,
     ): Float {
-        val panels = panelsOn(side)
+        val panels = panelsOn(side).filter { it !== excluding }
         if (panels.isEmpty()) return 0f
         val layered = isLayered(side)
         return with(density) {
@@ -460,6 +468,42 @@ internal class DockLayoutState(
         if (along <= 0) return 1f
         val sides = if (vertical) listOf(DockSide.Left, DockSide.Right) else listOf(DockSide.Top, DockSide.Bottom)
         val total = sides.sumOf { sideThicknessPx(it, density).toDouble() }.toFloat()
+        return fitFactor(along, total, density)
+    }
+
+    /**
+     * [fit] as it will be once [dragged] is dropped on [side] at [thicknessPx]
+     * (unfitted): the panel counted out of wherever it is now and into [side]
+     * — a new layer on a layered side, the side's new shared thickness on a
+     * split one. What a drop preview is drawn at, so a window already short of
+     * room shows the thickness the release produces rather than today's.
+     */
+    fun fitAfterDrop(
+        side: DockSide,
+        dragged: SatelliteEntry,
+        thicknessPx: Float,
+        density: Density,
+    ): Float {
+        val along = if (side.isVertical) layoutSize.width else layoutSize.height
+        if (along <= 0) return 1f
+        val total =
+            listOf(side, side.opposite)
+                .sumOf { s ->
+                    val rest = sideThicknessPx(s, density, excluding = dragged)
+                    when {
+                        s != side -> rest
+                        isLayered(side) -> rest + thicknessPx
+                        else -> thicknessPx
+                    }.toDouble()
+                }.toFloat()
+        return fitFactor(along, total, density)
+    }
+
+    private fun fitFactor(
+        along: Int,
+        total: Float,
+        density: Density,
+    ): Float {
         val available = (along - with(density) { MinContentExtent.toPx() }).coerceAtLeast(0f)
         return if (total > available && total > 0f) available / total else 1f
     }
@@ -484,15 +528,31 @@ internal class DockLayoutState(
         currentPx: Float,
         towardsContentPx: Float,
         density: Density,
+        panel: SatelliteEntry? = null,
     ): Float {
         val along = if (side.isVertical) layoutSize.width else layoutSize.height
         val others = sideThicknessPx(side, density) + sideThicknessPx(side.opposite, density) - currentPx
         val maxPx = along - with(density) { MinContentExtent.toPx() } - others
         var nextPx = currentPx + towardsContentPx
         if (along > 0 && maxPx > 0f) nextPx = nextPx.coerceAtMost(maxPx)
-        return nextPx
+        // What the panels allow: a layered [panel]'s own range, else the range
+        // the panels sharing [side] leave it.
+        val range = panel?.extentRange ?: workspace.sideExtentRange(side)
+        return with(density) { nextPx.coerceIn(range.start.toPx(), range.endInclusive.toPx()) }
     }
 }
+
+/** This rect, [px] thick from its [side] edge. */
+private fun Rect.withThickness(
+    side: DockSide,
+    px: Float,
+): Rect =
+    when (side) {
+        DockSide.Left -> Rect(left, top, left + px, bottom)
+        DockSide.Right -> Rect(right - px, top, right, bottom)
+        DockSide.Top -> Rect(left, top, right, top + px)
+        DockSide.Bottom -> Rect(left, bottom - px, right, bottom)
+    }
 
 /** One child of a band, keyed so the band keeps its subtree wherever it lands in the row. */
 private class BandItem(
@@ -587,7 +647,8 @@ private fun layeredItems(
                     remember(state, side, entry) {
                         DockSplitterScopeImpl(side, orientation, entry) { deltaPx, density ->
                             val currentPx = with(density) { state.extentOf(entry).toPx() }
-                            val nextPx = state.clampThicknessPx(side, currentPx, towardsContent(side, deltaPx), density)
+                            val nextPx =
+                                state.clampThicknessPx(side, currentPx, towardsContent(side, deltaPx), density, entry)
                             state.workspace.setDockedExtent(entry.id, with(density) { nextPx.toDp() })
                         }
                     }

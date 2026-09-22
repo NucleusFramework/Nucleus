@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -38,13 +39,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.sp
 import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
@@ -100,6 +104,17 @@ internal class TabStripScopeImpl(
  *   `null`, the default, shows none. [TabHoverPreview.Default] is a browser's
  *   behaviour, and [TabHoverPreview] takes the card whole for an app that
  *   wants to draw its own.
+ * @param tabLeading chrome placed before the title of every tab, composed
+ *   with the tab it belongs to — a favicon, a file-type icon. `null`, the
+ *   default, leaves the title at the tab's edge.
+ * @param tabTrailing chrome placed after the title of every tab, before its
+ *   close button — a modified dot, an unread badge. `null` by default.
+ * @param dropGhostCard the card drawn in the slot a tab dragged from another
+ *   window would fill, a slot already sized to that tab's width and the
+ *   strip's height; [TabDropGhostCard] by default. An app that draws its own
+ *   `dragGhost` in [TabWindows] draws this with the same composable —
+ *   [TabGhostCard]'s shape, a tab and a modifier — so the tab lands as it
+ *   travelled.
  * @param trailing chrome placed right after the last tab — a new-tab button,
  *   typically. It sits inside the strip, so the strip stays a single drop
  *   target and a tab released over it is appended.
@@ -110,6 +125,9 @@ public fun TabStripScope.TabStrip(
     modifier: Modifier = Modifier,
     reorderAnimation: AnimationSpec<Float>? = TabReorderAnimation,
     hoverPreview: TabHoverPreview? = null,
+    tabLeading: (@Composable TabStripScope.(TabEntry) -> Unit)? = null,
+    tabTrailing: (@Composable TabStripScope.(TabEntry) -> Unit)? = null,
+    dropGhostCard: @Composable TabStripScope.(TabDropGhost) -> Unit = { TabDropGhostCard(it) },
     trailing: @Composable TabStripScope.() -> Unit = {},
 ) {
     val entries = tabs
@@ -133,7 +151,7 @@ public fun TabStripScope.TabStrip(
     ) {
         entries.forEachIndexed { index, entry ->
             // The slot a tab coming from *another* window would take.
-            key(landing.generation) { TabDropGhostSlot(ghost, index) }
+            key(landing.generation) { TabDropGhostSlot(ghost, index, dropGhostCard) }
             // Keyed on the tab, not on its place in the strip: Compose
             // otherwise identifies the items by position, so a reorder would
             // hand the arriving tab the state of the one that left — its hover
@@ -146,11 +164,13 @@ public fun TabStripScope.TabStrip(
                     index = index,
                     motion = motion,
                     closing = closing,
+                    leading = tabLeading,
+                    trailing = tabTrailing,
                     slotModifier = Modifier.weight(1f, fill = false).fillMaxHeight(),
                 )
             }
         }
-        key(landing.generation) { TabDropGhostSlot(ghost, entries.size) }
+        key(landing.generation) { TabDropGhostSlot(ghost, entries.size, dropGhostCard) }
         trailing()
     }
     // Outside the Row: the card is a popup anchored to the tab's own slot, so
@@ -192,10 +212,10 @@ private class TabLandingMemo {
 
 /**
  * The slot a tab dragged from another window would fill in this strip: the
- * place it lands, the width it brings and its title — drawn with
- * [TabDropGhostCard] where [TabStrip]'s own layout puts it, or by a strip
- * written from scratch at [index] among its tabs (`tabs.size` is after the
- * last one).
+ * place it lands, the width it brings and the tab itself — drawn with the
+ * strip's `dropGhostCard` ([TabDropGhostCard] by default) where [TabStrip]'s
+ * own layout puts it, or by a strip written from scratch at [index] among its
+ * tabs (`tabs.size` is after the last one).
  *
  * `null` while nothing is dragged over this strip, and for a tab of this very
  * strip in the strip's own hands: its neighbours moving aside already show
@@ -207,7 +227,7 @@ public val TabStripScope.dropGhost: TabDropGhost?
         val preview = workspace.dropPreview?.takeIf { it.group === group } ?: return null
         val dragged = workspace.draggedTab ?: return null
         if (dragged.group === group && workspace.dragGhost == null) return null
-        return TabDropGhost(preview.index.coerceIn(0, tabs.size), workspace.draggedTabWidth(dragged), dragged.title)
+        return TabDropGhost(preview.index.coerceIn(0, tabs.size), workspace.draggedTabWidth(dragged), dragged)
     }
 
 /**
@@ -216,19 +236,19 @@ public val TabStripScope.dropGhost: TabDropGhost?
  *
  * @property index the place among the strip's tabs; `tabs.size` is after the last.
  * @property width the width the tab has in the strip it comes from.
- * @property title the tab's title.
+ * @property tab the tab being dragged, for a card that draws more than its title.
  */
 @ExperimentalNucleusApi
 public data class TabDropGhost(
     val index: Int,
     val width: Dp,
-    val title: String,
+    val tab: TabEntry,
 )
 
 /**
- * The card a [TabDropGhost] is drawn as: [TabDropGhost.width] wide, the
- * strip's height, the same card the tab travels under. A strip written from
- * scratch composes it at [TabDropGhost.index] among its tabs.
+ * The card a [TabDropGhost] is drawn as: [TabGhostCard] at [TabDropGhost.width]
+ * wide and the strip's height, the same card the tab travels under. A strip
+ * written from scratch composes it at [TabDropGhost.index] among its tabs.
  */
 @Composable
 @ExperimentalNucleusApi
@@ -236,7 +256,22 @@ public fun TabDropGhostCard(
     ghost: TabDropGhost,
     modifier: Modifier = Modifier,
 ) {
-    TabGhostCard(ghost.title, modifier.width(ghost.width).fillMaxHeight())
+    TabGhostCard(ghost.tab, modifier.width(ghost.width).fillMaxHeight())
+}
+
+/**
+ * The card a [TabDragGhost] is drawn as unless the app draws its own:
+ * [TabGhostCard] filling the ghost window. The default of the `dragGhost` slot
+ * of [TabWindows], and what an app's own ghost falls back on for a tab it has
+ * no picture of.
+ */
+@Composable
+@ExperimentalNucleusApi
+public fun TabDragGhostCard(
+    ghost: TabDragGhost,
+    modifier: Modifier = Modifier,
+) {
+    TabGhostCard(ghost.tab, modifier.fillMaxSize())
 }
 
 /**
@@ -245,9 +280,10 @@ public fun TabDropGhostCard(
  * moves on, so the tabs slide aside for it as they do for one of their own.
  */
 @Composable
-private fun TabDropGhostSlot(
+private fun TabStripScope.TabDropGhostSlot(
     ghost: TabDropGhost?,
     index: Int,
+    card: @Composable TabStripScope.(TabDropGhost) -> Unit,
 ) {
     val shown = ghost?.takeIf { it.index == index }
     // Kept through the exit, which still needs a width and a title to shut.
@@ -258,7 +294,9 @@ private fun TabDropGhostSlot(
         enter = expandHorizontally(TabEnterAnimation, clip = false),
         exit = shrinkHorizontally(TabExitAnimation, clip = false),
     ) {
-        last?.let { TabDropGhostCard(it) }
+        // Sized here, not by the card: the slot must open to the travelling
+        // tab's width whatever the app draws in it.
+        last?.let { Box(Modifier.width(it.width).fillMaxHeight()) { card(it) } }
     }
 }
 
@@ -278,8 +316,11 @@ public fun Modifier.tabStripGeometry(
     composed {
         val containerSize = LocalWindowInfo.current.containerSize
         val geometry = rememberHostGeometry(workspace.stripHosts, group.window)
+        // The strip's direction rides on its geometry: a tab torn out of it
+        // travels under a card laid out the way the strip drew it.
+        val direction = LocalLayoutDirection.current
         Modifier
-            .publishHostGeometry(geometry, containerSize)
+            .publishHostGeometry(geometry, containerSize, direction)
             .tabTransferTarget(workspace, group)
     }
 
@@ -388,6 +429,8 @@ internal fun TabItem(
     held: Boolean,
     /** `true` while a tab of this strip is in hand: the others stop reacting to the pointer. */
     hoverSuppressed: Boolean,
+    leading: (@Composable TabStripScope.(TabEntry) -> Unit)?,
+    trailing: (@Composable TabStripScope.(TabEntry) -> Unit)?,
     modifier: Modifier,
     onClose: () -> Unit,
 ) {
@@ -429,6 +472,7 @@ internal fun TabItem(
                 .padding(horizontal = TabHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        leading?.let { Box(Modifier.slotGap(before = false)) { it(scope, tab) } }
         BasicText(
             text = tab.title,
             modifier = Modifier.weight(1f),
@@ -441,6 +485,7 @@ internal fun TabItem(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        trailing?.let { Box(Modifier.slotGap(before = true)) { it(scope, tab) } }
         TabCloseButton(colors.content, onClose)
     }
 }
@@ -462,19 +507,24 @@ private fun TabCloseButton(
 
 /**
  * The card a tab is previewed as while it is dragged — following the pointer
- * out of its strip, and drawn on the slot it would take in another: its title
- * on the shared [DragPreviewSurface].
+ * out of its strip ([TabDragGhostCard]) and drawn on the slot it would take in
+ * another ([TabDropGhostCard]): [tab]'s title on the shared drop-preview
+ * surface, sized by [modifier]. Both default cards are this one, and an app's
+ * own card takes the same shape — a tab and a modifier — so one composable
+ * serves the `dragGhost` slot of [TabWindows] and the `dropGhostCard` slot of
+ * [TabStrip] alike.
  */
 @Composable
-internal fun TabGhostCard(
-    title: String,
+@ExperimentalNucleusApi
+public fun TabGhostCard(
+    tab: TabEntry,
     modifier: Modifier = Modifier,
 ) {
     val accent = LocalTitleBarStyle.current.colors.content
     Box(modifier = modifier, contentAlignment = Alignment.CenterStart) {
         DragPreviewSurface(Modifier.matchParentSize())
         BasicText(
-            text = title,
+            text = tab.title,
             modifier = Modifier.padding(horizontal = TabHorizontalPadding),
             style = TextStyle(color = accent, fontSize = TAB_TITLE_SP.sp, fontWeight = FontWeight.Medium),
             maxLines = 1,
@@ -485,6 +535,27 @@ internal fun TabGhostCard(
 
 internal val TabMaxWidth: Dp = 220.dp
 private val TabHorizontalPadding: Dp = 8.dp
+
+/** Between a tab's leading or trailing slot and its title. */
+private val TabSlotGap: Dp = 6.dp
+
+/**
+ * Room for [TabSlotGap] beside a slot, charged only when the slot drew
+ * something: a slot that composes nothing for this tab costs it nothing, and
+ * a strip without slots is the stock chip to the pixel.
+ */
+private fun Modifier.slotGap(before: Boolean): Modifier =
+    layout { measurable, constraints ->
+        // The gap is reserved out of the room the slot is given, so a squeezed
+        // tab never reports more than its constraints allow.
+        val reserved = TabSlotGap.roundToPx()
+        val placeable = measurable.measure(constraints.offset(horizontal = -reserved))
+        val gap = if (placeable.width > 0) reserved else 0
+        layout(placeable.width + gap, placeable.height) {
+            placeable.placeRelative(if (before) gap else 0, 0)
+        }
+    }
+
 private val TabCornerRadius: Dp = 8.dp
 private val TabCloseInset: Dp = 3.dp
 private const val TAB_SELECTED_ALPHA = 0.16f

@@ -9,6 +9,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.edgeStripPx
@@ -30,6 +31,13 @@ internal class HostGeometry(
 ) {
     /** The target's bounds in the host window (physical px). */
     var layoutBoundsInWindowPx: Rect = Rect.Zero
+
+    /**
+     * The layout direction the host's strip or dock is composed in — what a
+     * ghost torn out of it is laid out in, so the card reads the way the tab
+     * or panel was drawn.
+     */
+    var layoutDirection: LayoutDirection = LayoutDirection.Ltr
 
     /** The host's content size when [layoutBoundsInWindowPx] was captured. */
     var containerSizePx: IntSize = IntSize.Zero
@@ -206,10 +214,12 @@ internal fun rememberHostGeometry(
 internal fun Modifier.publishHostGeometry(
     geometry: HostGeometry?,
     containerSizePx: IntSize,
+    layoutDirection: LayoutDirection = LayoutDirection.Ltr,
 ): Modifier =
     if (geometry == null) {
         this
     } else {
+        geometry.layoutDirection = layoutDirection
         onGloballyPositioned { coordinates ->
             geometry.layoutBoundsInWindowPx = coordinates.boundsInWindow()
             geometry.containerSizePx = containerSizePx

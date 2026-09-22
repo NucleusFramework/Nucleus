@@ -7,10 +7,10 @@ import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.DockTarget
 import dev.nucleusframework.window.tao.DockTransferTarget
 import dev.nucleusframework.window.tao.SatelliteCaptionStripWidth
-import dev.nucleusframework.window.tao.SatelliteDragKind
 import dev.nucleusframework.window.tao.SatellitePlacement
 import dev.nucleusframework.window.tao.TabDropTarget
 import dev.nucleusframework.window.tao.TransferDrop
+import dev.nucleusframework.window.tao.WorkspaceDragKind
 import kotlin.math.abs
 
 /**
@@ -147,7 +147,7 @@ internal object WaylandWorkspaceHeadfulCases {
      * `true` for the floating palette, its title bar reserves
      * [SatelliteCaptionStripWidth] for the compositor's move with the app's
      * `floatingCaption` composed inside it, and a satellite drag is a
-     * [SatelliteDragKind.Transfer] that publishes no ghost window.
+     * [WorkspaceDragKind.Transfer] that publishes no ghost window.
      *
      * The docked panel reads its host, which is compositor-placed too.
      */
@@ -201,7 +201,7 @@ internal object WaylandWorkspaceHeadfulCases {
                 // The drag says how it is carried, and no ghost window follows.
                 check(workspace.dragKind == null) { "a drag is reported before one starts" }
                 val session = requireNotNull(workspace.beginTransferDrag(NOTES, floatingOrigin(floating)))
-                check(workspace.dragKind == SatelliteDragKind.Transfer) {
+                check(workspace.dragKind == WorkspaceDragKind.Transfer) {
                     "the platform session carries it, but the kind is ${workspace.dragKind}"
                 }
                 check(workspace.dragGhost == null) { "a ghost window followed a transfer drag" }

@@ -768,14 +768,23 @@ public object TaoSceneTestBattery {
         run("SatelliteWorkspaceTest: docking a floating satellite seeds the side extent and hosts it in the owner") {
             SatelliteWorkspaceTest().`docking a floating satellite seeds the side extent and hosts it in the owner`()
         }
-        run("SatelliteDragKindTest: a pointer drag is carried by the window, and the kind clears with it") {
-            SatelliteDragKindTest().`a pointer drag is carried by the window, and the kind clears with it`()
+        run("WorkspaceDragKindTest: a pointer drag is carried by the window, and the kind clears with it") {
+            WorkspaceDragKindTest().`a pointer drag is carried by the window, and the kind clears with it`()
         }
-        run("SatelliteDragKindTest: a transfer drag is carried by the platform session, and publishes no ghost") {
-            SatelliteDragKindTest().`a transfer drag is carried by the platform session, and publishes no ghost`()
+        run("WorkspaceDragKindTest: a transfer drag is carried by the platform session, and publishes no ghost") {
+            WorkspaceDragKindTest().`a transfer drag is carried by the platform session, and publishes no ghost`()
         }
-        run("SatelliteDragKindTest: a window that is not a native Wayland surface places on screen") {
-            SatelliteDragKindTest().`a window that is not a native Wayland surface places on screen`()
+        run("WorkspaceDragKindTest: a window that is not a native Wayland surface places on screen") {
+            WorkspaceDragKindTest().`a window that is not a native Wayland surface places on screen`()
+        }
+        run("SatelliteExtentRangeTest: a panel's range clamps its thickness, the side it joins, and the preview") {
+            SatelliteExtentRangeTest().`a panel's range clamps its thickness, the side it joins, and the preview`()
+        }
+        run(
+            "SatelliteExtentRangeTest: a restore bounds a side by the panels it puts there, not the ones it moves away",
+        ) {
+            SatelliteExtentRangeTest()
+                .`a restore bounds a side by the panels it puts there, not the ones it moves away`()
         }
         run("SatelliteFixedPanelTest: undock refuses a fixed panel") {
             SatelliteFixedPanelTest().`undock refuses a fixed panel`()
@@ -1046,6 +1055,9 @@ public object TaoSceneTestBattery {
         run("TabHoverPreviewTest: the selected tab has no card") {
             TabHoverPreviewTest().`the selected tab has no card`()
         }
+        run("TabHoverPreviewTest: a picture the app assigns stands until the workspace takes one") {
+            TabHoverPreviewTest().`a picture the app assigns stands until the workspace takes one`()
+        }
 
         run("TabWorkspaceTest: a drag selects the tab it lifted, so a click that drifts is never lost") {
             TabWorkspaceTest().`a drag selects the tab it lifted, so a click that drifts is never lost`()
@@ -1178,6 +1190,15 @@ public object TaoSceneTestBattery {
         }
         run("TabWorkspaceTest: restoring an empty snapshot leaves the workspace alone") {
             TabWorkspaceTest().`restoring an empty snapshot leaves the workspace alone`()
+        }
+        run("TabWorkspaceTest: a single-tab strip inserts by the direction it published") {
+            TabWorkspaceTest().`a single-tab strip inserts by the direction it published`()
+        }
+        run("TabWorkspaceTest: a drag says how it is carried, and the slot it opens knows the tab") {
+            TabWorkspaceTest().`a drag says how it is carried, and the slot it opens knows the tab`()
+        }
+        run("TabWorkspaceTest: a transfer drag is carried by the platform session, one held in its strip by none") {
+            TabWorkspaceTest().`a transfer drag is carried by the platform session, one held in its strip by none`()
         }
 
         return results

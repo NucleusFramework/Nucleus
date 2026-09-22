@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.roundToIntRect
 import dev.nucleusframework.window.ExperimentalNucleusApi
@@ -64,7 +65,22 @@ public class SatelliteEntry internal constructor(
      * Declared with [Satellite].
      */
     public val isReorderable: Boolean = true,
+    /**
+     * The thinnest this satellite may be docked — its width on a left or right
+     * side, its height on a top or bottom one. [SatelliteWorkspace.MinDockExtent]
+     * by default, and never below it. Declared with [Satellite].
+     */
+    public val minExtent: Dp = SatelliteWorkspace.MinDockExtent,
+    /** The thickest this satellite may be docked; unbounded by default. Declared with [Satellite]. */
+    public val maxExtent: Dp = Dp.Infinity,
 ) {
+    /** [minExtent]..[maxExtent], floored at [SatelliteWorkspace.MinDockExtent]. */
+    internal val extentRange: ClosedRange<Dp>
+        get() {
+            val min = maxOf(minExtent, SatelliteWorkspace.MinDockExtent)
+            return min..maxOf(min, maxExtent)
+        }
+
     /** Human-readable title, shown by the default header. */
     public var title: String by mutableStateOf(title)
         internal set
@@ -204,7 +220,7 @@ public data class SatelliteLayoutSnapshot(
  * @param followFocus when `true`, the owner follows keyboard focus between
  *   members; when `false`, it is the pinned member or the first to have joined.
  */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 @ExperimentalNucleusApi
 public class SatelliteWorkspace(
     public val followFocus: Boolean = true,
@@ -264,13 +280,39 @@ public class SatelliteWorkspace(
     /**
      * The extent [side] would have once [entry] is docked there: the side's
      * own extent when it already has one, else the satellite's floating size,
-     * which is what the first drop seeds it with. [DockLayout] previews a drop
-     * at this width rather than at the default one it has not adopted yet.
+     * which is what the first drop seeds it with — either brought within what
+     * the panels of the side, [entry] included, allow
+     * ([SatelliteEntry.minExtent] / [SatelliteEntry.maxExtent]). [DockLayout]
+     * previews a drop at this width, which is the width the drop produces.
      */
     public fun plannedDockExtent(
         entry: SatelliteEntry,
         side: DockSide,
-    ): Dp = extents[side] ?: dockSeedExtent(entry, side)
+    ): Dp = (extents[side] ?: dockSeedExtent(entry, side)).coerceIn(sideExtentRange(side, joining = entry))
+
+    /** [extent] within what [entry] allows for its own thickness. */
+    internal fun clampExtent(
+        entry: SatelliteEntry,
+        extent: Dp,
+    ): Dp = extent.coerceIn(entry.extentRange)
+
+    /**
+     * What the shared thickness of the split side [side] may be: no thinner
+     * than the thickest minimum among its panels — [joining] counted, for a
+     * panel about to dock there — and no thicker than the thinnest maximum,
+     * the minimum winning where the two cross. [MinDockExtent] at the least.
+     */
+    internal fun sideExtentRange(
+        side: DockSide,
+        joining: SatelliteEntry? = null,
+    ): ClosedRange<Dp> {
+        val panels =
+            entryMap.values.filter { (it.placement as? SatellitePlacement.Docked)?.side == side } +
+                listOfNotNull(joining)
+        val min = panels.fold(MinDockExtent) { acc, entry -> maxOf(acc, entry.extentRange.start) }
+        val max = panels.fold(Dp.Infinity) { acc, entry -> minOf(acc, entry.extentRange.endInclusive) }
+        return min..maxOf(min, max)
+    }
 
     /**
      * The thickness [entry] brings with it when docked on [side]: its own
@@ -284,12 +326,13 @@ public class SatelliteWorkspace(
         side: DockSide,
     ): Dp {
         val docked = entry.placement as? SatellitePlacement.Docked
-        if (docked != null && docked.side.isVertical == side.isVertical) {
-            return docked.extent ?: dockExtent(docked.side)
-        }
-        return entry.windowState.size
-            .let { if (side.isVertical) it.width else it.height }
-            .coerceAtLeast(MinDockExtent)
+        val seed =
+            if (docked != null && docked.side.isVertical == side.isVertical) {
+                docked.extent ?: dockExtent(docked.side)
+            } else {
+                entry.windowState.size.let { if (side.isVertical) it.width else it.height }
+            }
+        return clampExtent(entry, seed)
     }
 
     /**
@@ -306,25 +349,31 @@ public class SatelliteWorkspace(
             ?: entry.dockMemory[side]?.weight
             ?: 1f
 
-    /** Sets [dockExtent]; clamped to [MinDockExtent]. Driven by the [DockLayout] splitters. */
+    /**
+     * Sets [dockExtent]; clamped to what the panels on [side] allow
+     * ([SatelliteEntry.minExtent] / [SatelliteEntry.maxExtent]) and to
+     * [MinDockExtent]. Driven by the [DockLayout] splitters.
+     */
     public fun setDockExtent(
         side: DockSide,
         extent: Dp,
     ) {
-        extents[side] = extent.coerceAtLeast(MinDockExtent)
+        extents[side] = extent.coerceIn(sideExtentRange(side))
     }
 
     /**
      * Sets the own thickness of the docked satellite [id]
-     * ([SatellitePlacement.Docked.extent]), clamped to [MinDockExtent]. What
-     * the splitter of a panel on a *layered* side drags; a no-op for a
-     * satellite that is not docked.
+     * ([SatellitePlacement.Docked.extent]), clamped to what it allows
+     * ([SatelliteEntry.minExtent] / [SatelliteEntry.maxExtent]). What the
+     * splitter of a panel on a *layered* side drags; a no-op for a satellite
+     * that is not docked.
      */
     public fun setDockedExtent(
         id: String,
         extent: Dp,
     ) {
-        updateDocked(id) { it.copy(extent = extent.coerceAtLeast(MinDockExtent)) }
+        val entry = entryMap[id] ?: return
+        updateDocked(id) { it.copy(extent = clampExtent(entry, extent)) }
     }
 
     /**
@@ -451,6 +500,8 @@ public class SatelliteWorkspace(
         // caller asks: that rank is the whole point of pinning it.
         insertInStack(entry, order?.takeIf { entry.isReorderable } ?: remembered?.order)
         entry.preferredDockSide = side
+        // The newcomer's limits now count for the side it joined.
+        reclampSide(side)
     }
 
     /**
@@ -574,18 +625,18 @@ public class SatelliteWorkspace(
      * How the satellite in flight is being carried, or `null` while none is.
      *
      * Read it to draw a drag the way it actually behaves:
-     * [SatelliteDragKind.Window] moves a real window under the pointer, so
+     * [WorkspaceDragKind.Window] moves a real window under the pointer, so
      * [dragGhost] is published and a torn-out panel is something the user sees
-     * leaving; [SatelliteDragKind.Transfer] carries the satellite in the
+     * leaving; [WorkspaceDragKind.Transfer] carries the satellite in the
      * platform's drag-and-drop session — the picture under the pointer is the
      * drag icon the compositor draws, no window follows, and [dragGhost] stays
      * `null`. [draggedSatellite] and [dockPreview] are published either way.
      */
-    public val dragKind: SatelliteDragKind?
+    public val dragKind: WorkspaceDragKind?
         get() =
             when {
-                drags.active != null -> SatelliteDragKind.Window
-                transferDrag != null -> SatelliteDragKind.Transfer
+                drags.active != null -> WorkspaceDragKind.Window
+                transferDrag != null -> WorkspaceDragKind.Transfer
                 else -> null
             }
 
@@ -849,13 +900,32 @@ public class SatelliteWorkspace(
      */
     public fun restore(snapshot: SatelliteLayoutSnapshot) {
         extents.clear()
+        // Placements first: a side's limits are those of the panels the
+        // snapshot puts on it, not of the ones it is about to move away.
+        for ((id, saved) in snapshot.satellites) {
+            val entry = entryMap[id]
+            if (entry == null) pendingRestore[id] = saved else apply(entry, saved)
+        }
         // Through the setter: a snapshot written by an older version — or by
         // hand — must not be able to install an extent below the minimum and
         // leave a splitter no one can grab.
         for ((side, extent) in snapshot.dockExtents) setDockExtent(side, extent)
-        for ((id, saved) in snapshot.satellites) {
-            val entry = entryMap[id]
-            if (entry == null) pendingRestore[id] = saved else apply(entry, saved)
+        DockSide.entries.forEach(::reclampSide)
+    }
+
+    /**
+     * Brings [side]'s shared thickness within what its panels allow now: the
+     * stored one when it has one, else the default when that falls outside.
+     * A side without a stored extent otherwise keeps none, so the first drop
+     * on it still seeds it with the panel's own size.
+     */
+    private fun reclampSide(side: DockSide) {
+        val range = sideExtentRange(side)
+        val stored = extents[side]
+        if (stored != null) {
+            extents[side] = stored.coerceIn(range)
+        } else if (DefaultDockExtent !in range) {
+            extents[side] = DefaultDockExtent.coerceIn(range)
         }
     }
 
@@ -869,10 +939,15 @@ public class SatelliteWorkspace(
         dockSides: Set<DockSide> = DockSide.entries.toSet(),
         floatable: Boolean = true,
         reorderable: Boolean = true,
+        minExtent: Dp = MinDockExtent,
+        maxExtent: Dp = Dp.Infinity,
     ): SatelliteEntry {
         entryMap[id]?.let {
             it.title = title
             return it
+        }
+        require(minExtent <= maxExtent) {
+            "satellite '$id' declares minExtent $minExtent above maxExtent $maxExtent"
         }
         require((initialPlacement as? SatellitePlacement.Docked)?.side?.let { it in dockSides } != false) {
             "satellite '$id' is declared docked on ${(initialPlacement as SatellitePlacement.Docked).side}, " +
@@ -885,7 +960,17 @@ public class SatelliteWorkspace(
             "satellite '$id' is pinned to a rank and is not declared docked: there is no rank to pin it to"
         }
         val entry =
-            SatelliteEntry(id, title, initialPlacement, initiallyOpen, dockSides, floatable, reorderable)
+            SatelliteEntry(
+                id,
+                title,
+                initialPlacement,
+                initiallyOpen,
+                dockSides,
+                floatable,
+                reorderable,
+                minExtent,
+                maxExtent,
+            )
         if (initialPlacement is SatellitePlacement.Docked) entry.dockHost = owner
         entryMap[id] = entry
         pendingRestore.remove(id)?.let { apply(entry, it) }
@@ -922,9 +1007,12 @@ public class SatelliteWorkspace(
                 if (placement.side !in entry.dockSides) return
                 val current = entry.placement
                 if (current is SatellitePlacement.Floating) entry.lastFloating = currentFloating(entry, current)
-                entry.placement = placement
+                // A snapshot written by an older version, or by hand, must not
+                // install a thickness the panel does not allow.
+                entry.placement = placement.copy(extent = placement.extent?.let { clampExtent(entry, it) })
                 entry.preferredDockSide = placement.side
                 entry.dockHost = owner
+                reclampSide(placement.side)
             }
         }
     }
@@ -1074,27 +1162,6 @@ public class SatelliteWorkspace(
 }
 
 /**
- * How a satellite drag in flight is carried — see [SatelliteWorkspace.dragKind].
- */
-@ExperimentalNucleusApi
-public enum class SatelliteDragKind {
-    /**
-     * The satellite's own window, or a ghost window standing in for a docked
-     * panel, follows the pointer. [SatelliteWorkspace.dragGhost] is published
-     * for a panel being torn out.
-     */
-    Window,
-
-    /**
-     * The platform's drag-and-drop session carries it, because the window
-     * cannot be placed by the app ([TaoWindow.canPlaceOnScreen] `false`). The
-     * source is not told where the pointer is: the window under it resolves
-     * the drop and the source acts on that record.
-     */
-    Transfer,
-}
-
-/**
  * A dock zone: the [side] of the [DockLayout] in [host], and the rank
  * ([SatellitePlacement.Docked.order]) the dropped panel takes among the
  * panels shown on that side — `null` leaves the choice to
@@ -1124,6 +1191,11 @@ public data class DragGhost(
      * application scope the ghost is composed in has no density of its own.
      */
     val scaleFactor: Float,
+    /**
+     * The layout direction of the dock the panel is torn out of, as the dock
+     * published it — what the ghost card is laid out in.
+     */
+    val layoutDirection: LayoutDirection = LayoutDirection.Ltr,
 )
 
 /** Where a satellite drag starts; see [SatelliteWorkspace.beginDrag]. */

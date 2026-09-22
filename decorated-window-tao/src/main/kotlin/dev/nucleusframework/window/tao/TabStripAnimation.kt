@@ -6,6 +6,7 @@ import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -257,6 +258,8 @@ internal fun TabStripItem(
     index: Int,
     motion: TabStripMotion,
     closing: SnapshotStateList<String>,
+    leading: (@Composable TabStripScope.(TabEntry) -> Unit)?,
+    trailing: (@Composable TabStripScope.(TabEntry) -> Unit)?,
     slotModifier: Modifier,
 ) {
     val workspace = scope.workspace
@@ -266,22 +269,28 @@ internal fun TabStripItem(
 
     // A tab the strip has not shown yet opens; one the close button took
     // shuts, and only then leaves the workspace.
-    var visible by remember { mutableStateOf<Boolean>(!entry.isEntering) }
+    val visibleState = remember { MutableTransitionState(!entry.isEntering) }
     LaunchedEffect(entry) {
         entry.isEntering = false
-        visible = true
+        visibleState.targetState = true
     }
-    if (entry.id in closing) visible = false
+    if (entry.id in closing) visibleState.targetState = false
 
     AnimatedVisibility(
-        visible = visible,
-        // In hand or sliding home, it is drawn over its neighbours: a Row draws
-        // its children in order, so a tab carried past the ones after it would
-        // otherwise slide underneath them.
-        modifier = slotModifier.zIndex(if (motion.animating == entry.id) 1f else 0f),
-        // A tab opens and closes by width, so the strip never jumps. Unclipped:
-        // a tab in hand is drawn outside its own slot, and a clip would cut it
-        // at the slot's edges.
+        visibleState = visibleState,
+        modifier =
+            slotModifier
+                // In hand or sliding home, it is drawn over its neighbours: a
+                // Row draws its children in order, so a tab carried past the
+                // ones after it would otherwise slide underneath them.
+                .zIndex(if (motion.animating == entry.id) 1f else 0f)
+                // Clipped to the slot while it opens or shuts, and only then:
+                // the title is revealed with the width and nothing is drawn
+                // over the "+" beside it. A tab in hand is drawn outside its
+                // slot, which is why AnimatedVisibility's own clip — on for
+                // good once asked for — stays off below.
+                .graphicsLayer { clip = !visibleState.isIdle },
+        // A tab opens and closes by width, so the strip never jumps.
         enter = expandHorizontally(TabEnterAnimation, clip = false),
         exit = shrinkHorizontally(TabExitAnimation, clip = false) + fadeOut(TabFadeAnimation),
     ) {
@@ -319,6 +328,8 @@ internal fun TabStripItem(
                 leaving = entry === workspace.draggedTab && workspace.dragGhost != null,
                 held = held,
                 hoverSuppressed = motion.held != null,
+                leading = leading,
+                trailing = trailing,
                 // Drawn where the motion puts it — at draw time, so a layer
                 // translation moves no layout and recomposes nothing.
                 modifier = Modifier.fillMaxSize().graphicsLayer { translationX = offset.value },

@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao.headful
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.TabWindowGroup
 import kotlin.math.abs
 
@@ -29,6 +30,7 @@ internal object TabWorkspaceMotionHeadfulCases {
     fun all(): List<TaoWindowTestCase> =
         listOf(
             teleportsBetweenTwoStripsResolveEveryTime(),
+            sweepOverASingleTabRightToLeftStripFlipsOnce(),
             zigZagAcrossTheStripEdgeKeepsThePreviewInStep(),
             offScreenExcursionsKeepTheGestureSane(),
             singleTabWindowFollowsThePointerAndMerges(),
@@ -106,6 +108,68 @@ internal object TabWorkspaceMotionHeadfulCases {
                 }
                 check(workspace.groups.size == 2) { "the teleports changed the window count" }
                 check(workspace.dragGhost == null && workspace.dropPreview == null) { "drag feedback left behind" }
+            },
+        )
+    }
+
+    /**
+     * A tab carried slowly across another window's strip that holds a single
+     * tab, in a right-to-left app. The insertion index may change once, where
+     * the pointer passes the tab's middle, and not again: the drop preview
+     * opening on one side of the tab moves the tab, and a rule that read the
+     * strip's direction off the tab order — impossible with one tab — flipped
+     * with every sample, two cards sliding about under a still pointer.
+     */
+    private fun sweepOverASingleTabRightToLeftStripFlipsOnce(): TaoWindowTestCase {
+        val fixture =
+            TabWorkspaceFixture(
+                initialTitles = listOf("Alpha", "Beta", "Gamma"),
+                layoutDirection = LayoutDirection.Rtl,
+            )
+        return TaoWindowTestCase(
+            name = "tab motion a sweep over a single-tab right-to-left strip flips the insertion index once",
+            skip = ::workspaceSkipReason,
+            windowState = idleCaseWindowState(),
+            size = idleCaseWindowSize(),
+            paintDefaultBackground = false,
+            applicationContent = { with(fixture) { Windows() } },
+            driver = {
+                val first = awaitTabWindows(fixture, "Alpha", "Beta", "Gamma")
+                val workspace = fixture.workspace
+                val gamma = fixture.tabId("Gamma")
+                val beta = fixture.tabId("Beta")
+
+                val second = requireNotNull(workspace.tearOff(gamma, tearOffRectPx(first), first.scaleFactor))
+                awaitMappedStrip(fixture, second)
+                val strip = requireNotNull(fixture.stripRectPx(second))
+
+                val grab = requireNotNull(fixture.tabCenterPx("Beta"))
+                val session = requireNotNull(workspace.beginDrag(beta, stripOrigin(first), grab))
+                session.update(grab)
+
+                // Left to right in small steps, the layout answering each one —
+                // the preview opening is what moves the tab under the pointer.
+                val indices = ArrayList<Int>()
+                var x = strip.left + SWEEP_MARGIN_PX
+                while (x <= strip.right - SWEEP_MARGIN_PX) {
+                    session.update(Offset(x, strip.center.y))
+                    settle(SWEEP_SETTLE_MILLIS)
+                    val preview = workspace.dropPreview
+                    check(preview?.group === second) { "at x=$x the sweep was not over the strip: $preview" }
+                    indices += preview.index
+                    x += SWEEP_STEP_PX
+                }
+                val flips = indices.zipWithNext().count { (a, b) -> a != b }
+                check(flips <= 1) { "the insertion index flipped $flips times across one strip: $indices" }
+                // Right to left: the far left of the strip is after the tab, the far right before it.
+                check(indices.first() == 1 && indices.last() == 0) {
+                    "a right-to-left strip resolved left to right: $indices"
+                }
+
+                session.cancel()
+                awaitUntil("the drag feedback cleared") {
+                    workspace.dragGhost == null && workspace.dropPreview == null
+                }
             },
         )
     }
@@ -503,6 +567,9 @@ internal object TabWorkspaceMotionHeadfulCases {
     private fun robotSkipReason(): String? = HeadfulRobot.unavailableReason?.let { "no input injection: $it" }
 
     private const val EDGE_EXCURSION_PX = 60f
+    private const val SWEEP_STEP_PX = 16f
+    private const val SWEEP_MARGIN_PX = 8f
+    private const val SWEEP_SETTLE_MILLIS = 60L
     private const val ZIGZAG_ROUNDS = 40
     private const val TELEPORT_ROUNDS = 6
     private const val BACK_TO_BACK_DRAGS = 12

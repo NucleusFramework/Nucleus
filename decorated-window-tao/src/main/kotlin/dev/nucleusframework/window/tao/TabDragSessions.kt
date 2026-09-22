@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.roundToIntRect
 import dev.nucleusframework.window.tao.workspace.TransferDrag
 import dev.nucleusframework.window.tao.workspace.TransferGhostSource
@@ -50,6 +51,7 @@ internal fun TabWorkspace.createTabDragSession(
             tabSizePx = slot.size,
             pointer = pointerScreenPx,
             scaleFactor = scale,
+            layoutDirection = geometry.layoutDirection,
         )
     }
 }
@@ -143,6 +145,7 @@ private class TabWindowDragSession(
  * either inserts the tab in the strip under it or tears it into a window of
  * its own placed where the ghost was.
  */
+@Suppress("LongParameterList")
 private class TabTearOffDragSession(
     workspace: TabWorkspace,
     private val entry: TabEntry,
@@ -155,6 +158,8 @@ private class TabTearOffDragSession(
     private var pointer: Offset,
     /** The source window's px-per-dp, carried to the ghost and the new window. */
     private val scaleFactor: Float,
+    /** The source strip's layout direction, carried to the ghost. */
+    private val layoutDirection: LayoutDirection,
 ) : TabDragSessionBase(workspace) {
     private val velocity = HorizontalVelocity()
 
@@ -175,7 +180,7 @@ private class TabTearOffDragSession(
         // another window's strip, or clear of every strip, it *is* leaving —
         // and seeing it hover is what makes the move and the tear-out read.
         val inOwnStrip = target != null && target.group === entry.group
-        workspace.dragGhost = if (inOwnStrip) null else TabDragGhost(entry, card, scaleFactor)
+        workspace.dragGhost = if (inOwnStrip) null else TabDragGhost(entry, card, scaleFactor, layoutDirection)
     }
 
     /** Where the card is on screen: the grabbed tab, carried at the grab offset. */

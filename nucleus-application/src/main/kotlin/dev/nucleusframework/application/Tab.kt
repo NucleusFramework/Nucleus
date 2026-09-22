@@ -12,6 +12,8 @@ import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.ui.UiComposable
 import dev.nucleusframework.application.internal.TaoTabWorkspaceAdapter
 import dev.nucleusframework.window.ExperimentalNucleusApi
+import dev.nucleusframework.window.tao.TabDragGhost
+import dev.nucleusframework.window.tao.TabDragGhostCard
 import dev.nucleusframework.window.tao.TabScope
 import dev.nucleusframework.window.tao.TabStrip
 import dev.nucleusframework.window.tao.TabStripScope
@@ -41,6 +43,16 @@ import dev.nucleusframework.window.tao.TabWorkspace
  *
  * @param strip the chrome of one window's tab strip; [TabStrip] by default.
  *   Composed inside that window's title bar.
+ * @param dragGhost what a tab being dragged out of its strip looks like under
+ *   the pointer — a borderless window the size the tab had in its strip, laid
+ *   out in that strip's direction. [TabDragGhostCard] by default; an app
+ *   draws its own, the tab's `thumbnail` included if it likes, and draws the
+ *   strip's `dropGhostCard` with the same composable (`TabGhostCard` is the
+ *   shape both take). It is composed in the ghost's own window with the same
+ *   Nucleus locals as a tab window gets, but outside [windowWrapper] — that
+ *   one dresses a window, background included, and a ghost is translucent.
+ *   Never composed on native Wayland, where the tab travels as the
+ *   compositor's drag icon — `TabWorkspace.dragKind` says which.
  * @param nativeContextMenu whether text fields in the tab windows get the
  *   native context menu, as for [DecoratedWindow].
  * @param windowWrapper composed around each window's chrome and content, with
@@ -57,13 +69,17 @@ import dev.nucleusframework.window.tao.TabWorkspace
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 @ExperimentalNucleusApi
 public fun NucleusApplicationScope.TabWindows(
     workspace: TabWorkspace,
-    strip: @Composable TabStripScope.() -> Unit = { TabStrip() },
+    strip: @Composable @UiComposable TabStripScope.() -> Unit = { TabStrip() },
+    dragGhost: @Composable @UiComposable NucleusDecoratedWindowScope.(TabDragGhost) -> Unit = { TabDragGhostCard(it) },
     nativeContextMenu: Boolean = true,
-    windowWrapper: @Composable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit = { it() },
-    windowBodyWrapper: @Composable NucleusDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit = { it() },
+    windowWrapper: @Composable @UiComposable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit =
+        { it() },
+    windowBodyWrapper: @Composable @UiComposable NucleusDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit =
+        { it() },
     onLastWindowClosed: () -> Unit = {},
 ) {
     when (this) {
@@ -72,6 +88,7 @@ public fun NucleusApplicationScope.TabWindows(
                 scope = this,
                 workspace = workspace,
                 strip = strip,
+                dragGhost = dragGhost,
                 nativeContextMenu = nativeContextMenu,
                 windowWrapper = windowWrapper,
                 windowBodyWrapper = windowBodyWrapper,
@@ -86,18 +103,23 @@ public fun NucleusApplicationScope.TabWindows(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 @ExperimentalNucleusApi
 public fun TabWindows(
     workspace: TabWorkspace,
-    strip: @Composable TabStripScope.() -> Unit = { TabStrip() },
+    strip: @Composable @UiComposable TabStripScope.() -> Unit = { TabStrip() },
+    dragGhost: @Composable @UiComposable NucleusDecoratedWindowScope.(TabDragGhost) -> Unit = { TabDragGhostCard(it) },
     nativeContextMenu: Boolean = true,
-    windowWrapper: @Composable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit = { it() },
-    windowBodyWrapper: @Composable NucleusDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit = { it() },
+    windowWrapper: @Composable @UiComposable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit =
+        { it() },
+    windowBodyWrapper: @Composable @UiComposable NucleusDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit =
+        { it() },
     onLastWindowClosed: () -> Unit = {},
 ) {
     LocalNucleusApplicationScope.current.TabWindows(
         workspace = workspace,
         strip = strip,
+        dragGhost = dragGhost,
         nativeContextMenu = nativeContextMenu,
         windowWrapper = windowWrapper,
         windowBodyWrapper = windowBodyWrapper,

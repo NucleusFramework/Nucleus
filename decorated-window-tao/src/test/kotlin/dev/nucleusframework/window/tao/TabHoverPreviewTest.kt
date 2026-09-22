@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao
 
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -41,6 +42,21 @@ class TabHoverPreviewTest {
         // one is selected decides what every case below may hover.
         workspace.select("a")
         return TabStripScopeImpl(workspace, group)
+    }
+
+    @Test
+    fun `a picture the app assigns stands until the workspace takes one`() {
+        val workspace = TabWorkspace(captureThumbnails = true)
+        val tab = workspace.register("a", "A", groupId = null)
+        val picture = ImageBitmap(width = 4, height = 4)
+
+        tab.thumbnail = picture
+        // A capture is a request the shown body answers with a readback; the
+        // request alone drops nothing, so the picture stands until then.
+        workspace.captureThumbnail("a")
+
+        assertEquals(1, tab.thumbnailRequest, "the workspace asked for a picture of its own")
+        assertSame(picture, TabHoverPreviewScopeImpl(workspace, requireNotNull(tab.group), tab).thumbnail)
     }
 
     @Test

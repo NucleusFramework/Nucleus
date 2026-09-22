@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
  * public answers chrome needs to tell "move the window" from "move the
  * satellite".
  */
-class SatelliteDragKindTest {
+class WorkspaceDragKindTest {
     private val a = TaoWindow(handle = 1L)
 
     private val floating =
@@ -52,9 +52,9 @@ class SatelliteDragKindTest {
         assertNull(workspace.dragKind, "nothing is dragging")
 
         val session = requireNotNull(workspace.beginDrag("tools", origin, Offset(500f, 310f)))
-        assertEquals(SatelliteDragKind.Window, workspace.dragKind)
+        assertEquals(WorkspaceDragKind.Window, workspace.dragKind)
         session.update(Offset(500f, 690f))
-        assertEquals(SatelliteDragKind.Window, workspace.dragKind, "still the window's own drag")
+        assertEquals(WorkspaceDragKind.Window, workspace.dragKind, "still the window's own drag")
         session.end(Offset(500f, 690f))
         assertNull(workspace.dragKind, "the release clears it")
 
@@ -72,7 +72,7 @@ class SatelliteDragKindTest {
         entry.dockedBoundsInWindowPx = Rect(0f, 40f, 220f, 600f)
 
         val session = requireNotNull(workspace.beginTransferDrag("tools", SatelliteDragOrigin.DockedPanel(a)))
-        assertEquals(SatelliteDragKind.Transfer, workspace.dragKind)
+        assertEquals(WorkspaceDragKind.Transfer, workspace.dragKind)
         assertEquals(entry, workspace.draggedSatellite, "the satellite is published either way")
         assertNull(workspace.dragGhost, "no window follows a transfer drag")
         session.end()

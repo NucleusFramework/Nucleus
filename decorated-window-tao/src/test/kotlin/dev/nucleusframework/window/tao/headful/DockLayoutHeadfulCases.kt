@@ -10,11 +10,11 @@ import dev.nucleusframework.window.tao.DefaultDockSideOrder
 import dev.nucleusframework.window.tao.DockPanelHeaderHeight
 import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.DockTarget
-import dev.nucleusframework.window.tao.SatelliteDragKind
 import dev.nucleusframework.window.tao.SatelliteDragOrigin
 import dev.nucleusframework.window.tao.SatelliteDragSession
 import dev.nucleusframework.window.tao.SatellitePlacement
 import dev.nucleusframework.window.tao.SatelliteWorkspace
+import dev.nucleusframework.window.tao.WorkspaceDragKind
 import dev.nucleusframework.window.tao.hintedSides
 import kotlin.math.abs
 
@@ -93,7 +93,7 @@ internal object DockLayoutHeadfulCases {
      * windows: [SatelliteScope.isCompositorPlaced] is `false` for the panel and
      * for the floating palette alike, the `floatingCaption` slot is not
      * composed at all — the whole bar drags the satellite — and a pointer drag
-     * reports itself as [SatelliteDragKind.Window] with a ghost to match.
+     * reports itself as [WorkspaceDragKind.Window] with a ghost to match.
      *
      * The other half of the contract, on a compositor-placed window, is
      * `WaylandWorkspaceHeadfulCases`.
@@ -148,7 +148,7 @@ internal object DockLayoutHeadfulCases {
                 val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * floating.scaleFactor)
                 val palette =
                     requireNotNull(workspace.beginDrag(INSPECTOR, SatelliteDragOrigin.FloatingWindow(floating), grab))
-                check(workspace.dragKind == SatelliteDragKind.Window) {
+                check(workspace.dragKind == WorkspaceDragKind.Window) {
                     "the palette's own window carries the drag, but the kind is ${workspace.dragKind}"
                 }
                 palette.cancel()
@@ -165,7 +165,7 @@ internal object DockLayoutHeadfulCases {
                     )
                 val panelDrag = beginDockedDrag(workspace, TREE, panelGrab)
                 panelDrag.update(panelGrab + Offset(0f, PANEL_DRAG_STEP_PX))
-                check(workspace.dragKind == SatelliteDragKind.Window) { "the torn-out panel's ghost is a window" }
+                check(workspace.dragKind == WorkspaceDragKind.Window) { "the torn-out panel's ghost is a window" }
                 check(workspace.dragGhost?.satellite?.id == TREE) { "no ghost for a window-carried drag" }
                 panelDrag.cancel()
                 check(workspace.dragGhost == null && workspace.dragKind == null) { "feedback left behind" }
