@@ -30,7 +30,7 @@ use crate::{
       monitor::{self, MonitorHandle, VideoMode},
       util::{self, IdRef},
       view::{self, new_view, CursorState},
-      window_delegate::new_delegate,
+      window_delegate::{new_delegate, shared_state_of},
       OsError,
     },
     set_badge_label, set_progress_indicator,
@@ -421,6 +421,10 @@ static WINDOW_CLASS: Lazy<WindowClass> = Lazy::new(|| unsafe {
     is_focusable as extern "C" fn(_, _) -> _,
   );
   decl.add_method(sel!(sendEvent:), send_event as extern "C" fn(_, _, _));
+  decl.add_method(
+    sel!(setFrame:display:animate:),
+    set_frame_display_animate as extern "C" fn(_, _, _, _, _),
+  );
   // progress bar states, follows ProgressState
   decl.add_ivar::<Bool>(CStr::from_bytes_with_nul(b"focusable\0").unwrap());
   WindowClass(decl.register())
@@ -446,6 +450,39 @@ extern "C" fn send_event(this: &Object, _sel: Sel, event: &NSEvent) {
     }
     let superclass = util::superclass(this);
     let _: () = msg_send![super(this, superclass), sendEvent: event];
+  }
+}
+
+// PATCH(nucleus): every animated frame change — AppKit's own (the double-click
+// on a resize edge, `_zoomToScreenEdge:`; the Window-menu tiling; `zoom:`) and
+// tao's `set_maximized` — runs through `util::animate_frame` instead of
+// AppKit's blocking animator, whose private run-loop mode hands the embedder
+// every step's `Resized` only once the window sits at the target (Nucleus
+// #576; the why is on `animate_frame`). Not during a fullscreen transition,
+// which is AppKit's own animation (#327).
+extern "C" fn set_frame_display_animate(
+  this: &Object,
+  _: Sel,
+  frame: NSRect,
+  display: Bool,
+  animate: Bool,
+) {
+  unsafe {
+    let ns_window = &*(this as *const Object as *const NSWindow);
+    if animate.as_bool() {
+      if let Some(shared_state) = shared_state_of(ns_window) {
+        let own = {
+          let state = shared_state.lock().unwrap();
+          !state.in_fullscreen_transition && state.fullscreen.is_none()
+        };
+        if own {
+          util::animate_frame(ns_window, &shared_state, frame);
+          return;
+        }
+      }
+    }
+    let superclass = util::superclass(this);
+    let _: () = msg_send![super(this, superclass), setFrame: frame, display: display, animate: animate];
   }
 }
 

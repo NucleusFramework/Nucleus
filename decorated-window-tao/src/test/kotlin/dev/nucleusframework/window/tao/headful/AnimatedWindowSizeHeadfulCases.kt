@@ -47,7 +47,8 @@ import kotlin.math.roundToInt
  * vs Compose layout/scene each frame, and gates the tremble metric.
  */
 internal object AnimatedWindowSizeHeadfulCases {
-    fun all(): List<TaoWindowTestCase> = listOf(animatedHeightDoesNotTremble(), zoomPresentsEveryStep())
+    fun all(): List<TaoWindowTestCase> =
+        listOf(animatedHeightDoesNotTremble(), zoomPresentsEveryStep(), appKitAnimatorDispatchesEveryStepInTime())
 
     private data class LayoutPx(
         var x: Int = 0,
@@ -104,6 +105,49 @@ internal object AnimatedWindowSizeHeadfulCases {
             awaitUntil("restored") { !window.isMaximized }
             settle(ZOOM_SETTLE_MILLIS)
             probe.assertNone()
+        }
+
+    /**
+     * The edge double-click zoom (`_zoomToScreenEdge:`) is AppKit's own
+     * `setFrame:display:animate:YES`: a blocking animator whose private
+     * run-loop mode services no tao observer, so every step's `Resized` waits
+     * in tao's queue until the animation has ended and the content snaps into
+     * the final bounds — the trailing of the title-bar zoom before #678, one
+     * path over. No Robot here, so the case takes that AppKit path
+     * programmatically: `set_maximized_async` on a non-resizable window is a
+     * plain `setFrame:display:NO animate:YES`. Every `Resized` must be
+     * dispatched while the native frame is at its size — outer minus inner
+     * height is then the chrome, a constant; a step dispatched after the
+     * animation reads the final outer height against its own inner one.
+     */
+    private fun appKitAnimatorDispatchesEveryStepInTime(): TaoWindowTestCase =
+        TaoWindowTestCase(
+            name = "#576 AppKit frame animation (edge double-click zoom) dispatches every step in time",
+            timeoutMillis = CASE_TIMEOUT_MILLIS,
+            skip = { "AppKit's setFrame:display:animate: is macOS only".takeIf { Platform.Current != Platform.MacOS } },
+        ) {
+            awaitUntil("window mapped") { window.hasRealFramePx() }
+            settle()
+            window.setResizable(false)
+            val chromes = CopyOnWriteArrayList<Long>()
+            val probe = PresentLagProbe(window, AtomicBoolean(true))
+            window.onResized { w, h ->
+                probe.onResized(w, h)
+                window.outerBoundsPx()?.let { chromes += it[3] - h }
+            }
+            window.setMaximized(true)
+            awaitUntil("maximized") { window.isMaximized }
+            settle(ZOOM_SETTLE_MILLIS)
+            window.setMaximized(false)
+            awaitUntil("restored") { !window.isMaximized }
+            settle(ZOOM_SETTLE_MILLIS)
+            probe.assertNone()
+            val spread = (chromes.max() - chromes.min()).toInt()
+            System.err.println("[#576] outer-minus-inner height spread over ${chromes.size} resize events: ${spread}px")
+            check(spread <= PX_TOLERANCE) {
+                "resize events were dispatched with the native frame ${spread}px away from their size — " +
+                    "AppKit's animator ran to its end before tao delivered a step"
+            }
         }
 
     private fun animatedHeightDoesNotTremble(): TaoWindowTestCase {
