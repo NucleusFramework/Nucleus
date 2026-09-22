@@ -13,6 +13,7 @@ use crate::{
 use objc2::runtime::{
   AnyClass as Class, AnyObject as Object, Bool, ClassBuilder as ClassDecl, Sel,
 };
+use objc2_app_kit::NSApplicationTerminateReply;
 use objc2_foundation::{
   NSArray, NSError, NSString, NSUserActivity, NSUserActivityTypeBrowsingWeb, NSURL,
 };
@@ -62,6 +63,10 @@ pub static APP_DELEGATE_CLASS: Lazy<AppDelegateClass> = Lazy::new(|| unsafe {
   decl.add_method(
     sel!(applicationWillTerminate:),
     application_will_terminate as extern "C" fn(_, _, _),
+  );
+  decl.add_method(
+    sel!(applicationShouldTerminate:),
+    application_should_terminate as extern "C" fn(_, _, _) -> _,
   );
   decl.add_method(
     sel!(application:openURLs:),
@@ -132,6 +137,19 @@ extern "C" fn application_will_terminate(_: &Object, _: Sel, _: id) {
   trace!("Triggered `applicationWillTerminate`");
   AppState::exit();
   trace!("Completed `applicationWillTerminate`");
+}
+
+extern "C" {
+  fn nucleus_tao_post_quit_requested();
+}
+
+extern "C" fn application_should_terminate(
+  _: &Object,
+  _: Sel,
+  _: id,
+) -> NSApplicationTerminateReply {
+  unsafe { nucleus_tao_post_quit_requested() };
+  NSApplicationTerminateReply::TerminateCancel
 }
 
 extern "C" fn application_open_urls(_: &Object, _: Sel, _: id, urls: &NSArray<NSURL>) {

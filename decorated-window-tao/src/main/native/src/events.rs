@@ -184,6 +184,7 @@ pub(crate) const EVENT_SHOWN: jint = 24;
 // loop — see `on_tao_size_move`.
 #[cfg(target_os = "windows")]
 pub(crate) const EVENT_SIZE_MOVE: jint = 25;
+pub(crate) const EVENT_QUIT_REQUESTED: jint = 26;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;
@@ -420,6 +421,7 @@ pub(crate) enum UserEvent {
         handle: u64,
         fullscreen: bool,
     },
+    QuitRequested,
     Exit,
 }
 

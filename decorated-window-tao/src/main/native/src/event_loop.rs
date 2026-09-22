@@ -17,12 +17,13 @@ use crate::events::{
     CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED,
     EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED,
     EVENT_MAIN_EVENTS_CLEARED, EVENT_MODIFIERS_CHANGED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP,
-    EVENT_MOVED, EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED,
-    EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY, SCROLL_FIXED_SCALE,
-    SCROLL_GESTURE_BEGAN, SCROLL_GESTURE_CANCELLED, SCROLL_GESTURE_CHANGED, SCROLL_GESTURE_ENDED,
-    SCROLL_GESTURE_MAY_BEGIN, SCROLL_GESTURE_MOMENTUM_BEGAN, SCROLL_GESTURE_MOMENTUM_CHANGED,
-    SCROLL_GESTURE_MOMENTUM_ENDED, TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS,
-    TOUCH_EVENT_RELEASE, TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
+    EVENT_MOVED, EVENT_QUIT_REQUESTED, EVENT_REDRAW_REQUESTED, EVENT_RESIZED,
+    EVENT_SCALE_FACTOR_CHANGED, EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED,
+    EVENT_WINDOW_READY, SCROLL_FIXED_SCALE, SCROLL_GESTURE_BEGAN, SCROLL_GESTURE_CANCELLED,
+    SCROLL_GESTURE_CHANGED, SCROLL_GESTURE_ENDED, SCROLL_GESTURE_MAY_BEGIN,
+    SCROLL_GESTURE_MOMENTUM_BEGAN, SCROLL_GESTURE_MOMENTUM_CHANGED, SCROLL_GESTURE_MOMENTUM_ENDED,
+    TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE,
+    TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
 };
 #[cfg(target_os = "windows")]
 use crate::events::{
@@ -234,9 +235,7 @@ pub(crate) fn run_event_loop_blocking() {
     #[cfg(target_os = "linux")]
     tao::platform::linux::set_minimized_hook(on_tao_minimized);
 
-    // Install the Cmd-Q interceptor once we're on the main thread (NSEvent
-    // local monitors must be added there). The drag-event latch lives
-    // alongside it. `ApplePressAndHoldEnabled` is deliberately not touched:
+    // `ApplePressAndHoldEnabled` is deliberately not touched:
     // like Chromium, Nucleus lets the OS/user default decide whether a held
     // letter repeats or opens the accent picker (#612).
     #[cfg(target_os = "macos")]
@@ -912,6 +911,9 @@ pub(crate) fn run_event_loop_blocking() {
                             }
                         }
                     }
+                }
+                UserEvent::QuitRequested => {
+                    dispatch(0, EVENT_QUIT_REQUESTED, 0, 0);
                 }
                 UserEvent::Exit => {
                     *control_flow = ControlFlow::Exit;

@@ -8,6 +8,30 @@ import kotlin.test.assertTrue
 
 class TaoApplicationExitTest {
     @Test
+    fun `quit requests close on every open window without forcing exit`() {
+        val requested = mutableListOf<Long>()
+        val first = TaoWindow(1)
+        val second = TaoWindow(2)
+        first.onCloseRequested { requested += first.handle }
+        second.onCloseRequested { requested += second.handle }
+        var exited = false
+
+        dispatchQuitRequest(listOf(first, second)) { exited = true }
+
+        assertEquals(listOf(1L, 2L), requested)
+        assertTrue(!exited)
+    }
+
+    @Test
+    fun `quit exits when no windows are open`() {
+        var exited = false
+
+        dispatchQuitRequest(emptyList()) { exited = true }
+
+        assertTrue(exited)
+    }
+
+    @Test
     fun `default finish exits 0 after a normal quit`() {
         val exits = mutableListOf<Int>()
         finishTaoApplication(exitProcessOnExit = true, failure = null, exit = { exits += it })

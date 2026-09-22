@@ -44,7 +44,7 @@ int nucleus_tao_is_main_thread(void) {
     return [NSThread isMainThread] ? 1 : 0;
 }
 
-extern void nucleus_tao_post_exit(void);
+extern void nucleus_tao_post_quit_requested(void);
 
 static id sCmdQMonitor = nil;
 
@@ -55,7 +55,7 @@ void nucleus_tao_install_cmd_q_handler(void) {
             NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
             if ((mods & NSEventModifierFlagCommand) &&
                 [event.charactersIgnoringModifiers isEqualToString:@"q"]) {
-                nucleus_tao_post_exit();
+                nucleus_tao_post_quit_requested();
                 return nil;
             }
             return event;

@@ -261,6 +261,7 @@ public object TaoApplication {
                         onLaunched = null
                         cb?.invoke(this@TaoApplication)
                     }
+                    TaoEventCode.QUIT_REQUESTED -> dispatchQuitRequest(windows.values.toList(), ::exit)
                     TaoEventCode.MAIN_EVENTS_CLEARED -> TaoMainDispatcher.pump()
                     else -> lookup(handle)?.dispatch(code, a, b)
                 }
@@ -331,6 +332,18 @@ public object TaoApplication {
         ) {
             guarded { lookup(handle)?.dispatchImeCommit(text) }
         }
+    }
+}
+
+/** macOS app quit follows the same cancelable close path as each window's close button. */
+internal fun dispatchQuitRequest(
+    openWindows: List<TaoWindow>,
+    exit: () -> Unit,
+) {
+    if (openWindows.isEmpty()) {
+        exit()
+    } else {
+        openWindows.forEach(TaoWindow::requestUserClose)
     }
 }
 
