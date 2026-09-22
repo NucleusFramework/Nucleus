@@ -202,7 +202,7 @@ abstract class GraalvmSettings
  * [distribution] still declares intent in that case, since it also gates the Oracle-only
  * tasks (`runWithPgoInstrument`).
  *
- * "latest" versions ("25", "25i3") are sticky once downloaded; delete the corresponding
+ * "latest" versions ("25", "25i4") are sticky once downloaded; delete the corresponding
  * directory under [installDir] to pick up a newer build.
  */
 abstract class GraalvmToolchainSettings
@@ -227,7 +227,7 @@ abstract class GraalvmToolchainSettings
 
         /**
          * Explicit GraalVM version, overriding [channel]: an innovation release
-         * (`"25i3"`), a feature version tracking the latest CPU (`"25"`), or a pinned
+         * (`"25i4"`), a feature version tracking the latest CPU (`"25"`), or a pinned
          * patch release (`"25.0.1"`).
          */
         val version: Property<String> = objects.nullableProperty()
