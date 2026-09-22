@@ -1504,17 +1504,37 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             taskNameAction = "copy",
             taskNameObject = "graalvmJawtToLib",
         ) {
-            description = "Copy libjawt.dylib + fontconfig to lib/ subdir for Skiko and AWT font init"
+            description = "Copy libjawt.dylib to lib/ subdir for Skiko"
             dependsOn(nativeImageCompile, cleanAppBundle)
             doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
             from(graalvmHome.map { "$it/lib" }) {
-                // fontconfig.bfc: SunFontManager/FontConfiguration reads it from <java.home>/lib at
-                // startup; java.home is the executable dir under native image, so without it
-                // FontConfiguration.getVersion() throws "Fontconfig head is null" the first time AWT
-                // font code runs (e.g. Font.createFont / BufferedImage.createGraphics).
-                include("libjawt.dylib", "fontconfig.bfc")
+                include("libjawt.dylib")
             }
             into(appBundleDir.map { it.dir("MacOS/lib") })
+        }
+
+    // fontconfig.bfc: SunFontManager/FontConfiguration needs it at startup, otherwise
+    // FontConfiguration.getVersion() throws "Fontconfig head is null" the first time AWT font code
+    // runs (e.g. Font.createFont / BufferedImage.createGraphics).
+    //
+    // It must NOT live under Contents/MacOS/ (subdirectories included): Gatekeeper treats every
+    // file there as nested code, so a non-Mach-O file makes `spctl -a -t exec` reject the bundle
+    // even when it is Developer ID signed, notarized and stapled. Contents/Resources/ is the
+    // sanctioned place for data files; at runtime GraalVmInitializer points the JDK at it via the
+    // `sun.awt.fontconfig` system property, since FontConfiguration otherwise only scans
+    // <java.home>/lib. Windows/Linux keep the lib/ layout (no Gatekeeper, see copyFontConfig).
+    val copyGraalvmFontConfig =
+        tasks.register<Copy>(
+            taskNameAction = "copy",
+            taskNameObject = "graalvmFontConfig",
+        ) {
+            description = "Copy fontconfig.bfc into .app bundle Resources for AWT font init"
+            dependsOn(nativeImageCompile, cleanAppBundle)
+            doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
+            from(graalvmHome.map { "$it/lib" }) {
+                include("fontconfig.bfc")
+            }
+            into(appBundleDir.map { it.dir("Resources") })
         }
 
     val skikoLibName = "libskiko-${currentOS.id}-${currentArch.id}.dylib"
@@ -1870,7 +1890,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             taskNameObject = "graalvmBundle",
         ) {
             description = "Ad-hoc sign the entire .app bundle"
-            dependsOn(codesignDylibs, copyBinary, copyAppResources, fixRpath, stripBinary, copyInfoPlist, copyJawtToLib, copySkikoLib, copyIcon)
+            dependsOn(codesignDylibs, copyBinary, copyAppResources, fixRpath, stripBinary, copyInfoPlist, copyJawtToLib, copyGraalvmFontConfig, copySkikoLib, copyIcon)
             copyFileAssociationIcons?.let { dependsOn(it) }
             val bundleDir = graalvmOutputDir.map { it.dir(appBundleName.get()) }
             commandLine("codesign", "--force", "--deep", "--sign", "-", bundleDir.get().asFile.absolutePath)
@@ -1886,6 +1906,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             copyAppResources,
             copyAwtDylibs,
             copyJawtToLib,
+            copyGraalvmFontConfig,
             copySkikoLib,
             stripDylibs,
             stripBinary,

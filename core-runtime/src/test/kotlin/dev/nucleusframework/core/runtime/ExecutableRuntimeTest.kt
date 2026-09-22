@@ -2,10 +2,16 @@ package dev.nucleusframework.core.runtime
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class ExecutableRuntimeTest {
+    @get:Rule
+    val tmpDir = TemporaryFolder()
+
     @Test
     fun `parses known executable types`() {
         assertEquals(ExecutableType.EXE, ExecutableRuntime.parseType("exe"))
@@ -165,6 +171,49 @@ class ExecutableRuntimeTest {
         }
     }
 
+    @Test
+    fun `locateMarkerFile finds the marker next to the executable`() {
+        val macOsDir = tmpDir.newFolder("Contents", "MacOS")
+
+        val marker = macOsDir.resolve(MARKER_FILE_NAME)
+        marker.writeText("dmg\n")
+
+        assertEquals(marker, ExecutableRuntime.locateMarkerFile(macOsDir))
+    }
+
+    @Test
+    fun `locateMarkerFile falls back to the macOS Resources directory`() {
+        val macOsDir = tmpDir.newFolder("Contents", "MacOS")
+        val resourcesDir = macOsDir.parentFile.resolve("Resources")
+        assertTrue(resourcesDir.mkdirs())
+
+        val marker = resourcesDir.resolve(MARKER_FILE_NAME)
+        marker.writeText("dmg\n")
+
+        assertEquals(marker, ExecutableRuntime.locateMarkerFile(macOsDir))
+    }
+
+    @Test
+    fun `locateMarkerFile prefers the executable directory over Resources`() {
+        val macOsDir = tmpDir.newFolder("Contents", "MacOS")
+        val resourcesDir = macOsDir.parentFile.resolve("Resources")
+        assertTrue(resourcesDir.mkdirs())
+
+        val preferredMarker = macOsDir.resolve(MARKER_FILE_NAME)
+        preferredMarker.writeText("dmg\n")
+        resourcesDir.resolve(MARKER_FILE_NAME).writeText("pkg\n")
+
+        assertEquals(preferredMarker, ExecutableRuntime.locateMarkerFile(macOsDir))
+    }
+
+    @Test
+    fun `locateMarkerFile returns null when no marker exists`() {
+        val macOsDir = tmpDir.newFolder("Contents", "MacOS")
+        assertTrue(macOsDir.parentFile.resolve("Resources").mkdirs())
+
+        assertNull(ExecutableRuntime.locateMarkerFile(macOsDir))
+    }
+
     private fun restoreSystemProperty(
         name: String,
         value: String?,
@@ -174,5 +223,9 @@ class ExecutableRuntimeTest {
         } else {
             System.setProperty(name, value)
         }
+    }
+
+    private companion object {
+        private const val MARKER_FILE_NAME = ".nucleus-executable-type"
     }
 }
