@@ -32,6 +32,22 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     var includeAllModules: Boolean = false
 
+    /**
+     * Omits the JRE's bundled fonts (`lib/fonts` from `java.desktop`) from the runtime image.
+     *
+     * Compose ships its own fonts, so the JDK copies are unused weight in the distributable.
+     * JetBrains Runtime bundles about 9 MB of them; many other JREs bundle none, and then this
+     * changes nothing. Set to `false` to keep the fonts, for an app that renders text through
+     * AWT or Swing.
+     *
+     * ```kotlin
+     * nativeDistributions {
+     *     stripJreFonts = false
+     * }
+     * ```
+     */
+    var stripJreFonts: Boolean = true
+
     /** Strip native libraries for non-target platforms from dependency JARs to reduce package size. */
     var cleanupNativeLibs: Boolean = false
 
