@@ -286,6 +286,7 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
             modules.set(provider { app.nativeDistributions.modules })
             includeAllModules.set(provider { app.nativeDistributions.includeAllModules })
             javaRuntimePropertiesFile.set(checkRuntime.flatMap { it.javaRuntimePropertiesFile })
+            stripJreFonts.set(provider { app.nativeDistributions.stripJreFonts })
             destinationDir.set(appTmpDir.dir("runtime"))
         }
 
