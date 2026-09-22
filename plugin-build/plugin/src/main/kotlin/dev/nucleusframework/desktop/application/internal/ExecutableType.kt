@@ -52,7 +52,7 @@ internal fun updateExecutableTypeInAppImage(
             .toList()
 
     if (cfgFiles.isEmpty()) {
-        // GraalVM native image: no .cfg launcher, write a marker file next to the binary
+        // GraalVM native image: no .cfg launcher, write a marker file the runtime can find
         writeExecutableTypeMarker(appImageDir, targetFormat, appVersion, logger)
         return
     }
@@ -70,10 +70,10 @@ private fun writeExecutableTypeMarker(
     appVersion: String?,
     logger: Logger,
 ) {
-    // Find the directory that contains the native binary
-    val dir = findNativeBinaryDir(appImageDir)
+    // Find the directory the marker must be written to
+    val dir = findMarkerDir(appImageDir)
     if (dir == null) {
-        logger.warn("Could not locate native binary directory in ${appImageDir.absolutePath}")
+        logger.warn("Could not locate marker directory in ${appImageDir.absolutePath}")
         return
     }
     val marker = dir.resolve(EXECUTABLE_TYPE_MARKER)
@@ -86,17 +86,34 @@ private fun writeExecutableTypeMarker(
     logger.info("Wrote executable type '${targetFormat.executableTypeValue}' (version=$appVersion) to ${marker.absolutePath}")
 }
 
-private fun findNativeBinaryDir(appImageDir: File): File? {
-    // macOS: AppName.app/Contents/MacOS/
+/**
+ * Resolves the directory the executable type marker is written to.
+ *
+ * On macOS the marker goes to `Contents/Resources/` rather than next to the binary in
+ * `Contents/MacOS/`: codesign treats every file directly inside `Contents/MacOS/` as nested
+ * code, so a non-Mach-O file there makes Developer ID bundle signing fail with
+ * "code object is not signed at all". Files in subdirectories (`Contents/MacOS/lib/`) are fine.
+ *
+ * On Linux/Windows the binary sits directly in [appImageDir], so the marker is written there.
+ *
+ * The runtime ([dev.nucleusframework.core.runtime.ExecutableRuntime] `readMarkerFile`) looks for
+ * the marker both next to the executable and in `../Resources/`, so both layouts are understood.
+ */
+private fun findMarkerDir(appImageDir: File): File? {
+    // macOS: AppName.app/Contents/MacOS/ → write the marker to the sibling Contents/Resources/
     val macOsDir =
         appImageDir
             .walkTopDown()
             .maxDepth(3)
             .firstOrNull { it.isDirectory && it.name == "MacOS" && it.parentFile?.name == "Contents" }
-    if (macOsDir != null) return macOsDir
+    if (macOsDir != null) {
+        val resourcesDir = macOsDir.parentFile.resolve("Resources")
+        if (!resourcesDir.isDirectory) resourcesDir.mkdirs()
+        return resourcesDir
+    }
 
-    // Linux/Windows GraalVM native image: the binary sits directly in appImageDir.
-    // The runtime reads the marker from the parent of the executable
+    // Linux/Windows GraalVM native image: the binary sits directly in appImageDir, and the runtime
+    // reads the marker from the parent of the executable
     // (ProcessHandle.current().info().command() → parentFile), so the marker
     // must be written to the same directory as the binary.
     return appImageDir
