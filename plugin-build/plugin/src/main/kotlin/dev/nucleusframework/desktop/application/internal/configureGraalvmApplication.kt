@@ -893,6 +893,26 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 inputs.property("modules", graalvm.layers.modules)
                 inputs.property("resourceBundles", graalvm.layers.resourceBundles)
                 inputs.property("march", resolvedMarchFlag)
+                inputs.property(
+                    "graalvmVersion",
+                    graalvmHome.map { home ->
+                        graalvmReleaseVersion(File(home))?.joinToString(".") ?: "unknown"
+                    },
+                )
+                // 25.2 builds the base layer and then fails the application layer. Skip the
+                // whole split instead of producing that failure.
+                onlyIf {
+                    val home = File(graalvmHome.get())
+                    val supported = supportsLayeredImages(home)
+                    if (!supported) {
+                        val found = graalvmReleaseVersion(home)?.joinToString(".") ?: "unknown"
+                        logger.warn(
+                            "graalvm { layers { } } needs GraalVM 25.3 or newer (found $found). " +
+                                "Building a monolithic image instead.",
+                        )
+                    }
+                    supported
+                }
 
                 val nativeImageExe = graalvmHome.map { File(it).resolve("bin/native-image").absolutePath }
                 val modules = graalvm.layers.modules.get()
@@ -1041,7 +1061,10 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             // Gradle 9 when the path is set but missing.
             inputs.file(uberJarFile)
             // Rebuilding the base layer must recompile the application layer on top of it.
-            if (layeredImage) inputs.file(layerArchiveFile)
+            // Optional: on GraalVM < 25.3 the base layer task is skipped and this file is absent.
+            if (layeredImage) {
+                inputs.files(layerArchiveFile).withPropertyName("layerArchive").optional()
+            }
             inputs
                 .files(project.fileTree(resolvedConfigDir))
                 .withPropertyName("nativeImageConfigDir")
@@ -1324,9 +1347,14 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // Build on the base layer. Placed where buildArgs land because
                         // -H:+LayerOptionVerification compares the two layers' options
                         // positionally, and this is the position the base layer records them at.
-                        if (resolvedLayerArchive != null) {
+                        // GraalVM < 25.3 skips the base layer, so there is nothing to link.
+                        val layerArchive = resolvedLayerArchive
+                        if (
+                            layerArchive != null &&
+                            supportsLayeredImages(File(resolvedGraalvmHome))
+                        ) {
                             add("-H:+UnlockExperimentalVMOptions")
-                            add("-H:LayerUse=${resolvedLayerArchive.absolutePath}")
+                            add("-H:LayerUse=${layerArchive.absolutePath}")
                         }
 
                         addAll(resolvedBuildArgs)
@@ -1584,6 +1612,8 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
                 doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
                 from(layerLibraryFile)
                 into(appBundleDir.map { it.dir("MacOS") })
+                // Absent when the toolchain is older than 25.3 and the base layer was skipped.
+                onlyIf { layerLibraryFile.get().asFile.isFile }
 
                 // native-image records the layer library by its absolute build-directory path, so
                 // the bundle would only run on the machine that produced it. Rewrite the reference

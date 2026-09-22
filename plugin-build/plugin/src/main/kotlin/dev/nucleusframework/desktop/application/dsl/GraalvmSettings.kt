@@ -377,12 +377,11 @@ abstract class MetadataRepositorySettings
  * The trade is disk for traffic: the base layer is not pruned against what the application actually
  * uses, so the first download grows while every later one shrinks.
  *
- * **Requires GraalVM 25.3, and stays off by default.** On CE 25.2.4 the application layer fails
- * because `AtomicFieldUpdaterAccessCheck` was not seen by the initial layer. On CE 25.3.4.1 the same
- * `nucleus-demo` build compiles and the application starts. macOS only: on the other platforms the
- * flag is ignored and the image stays monolithic. The measured payoff of the split, from before this
- * fix, was 2.3x less traffic per update, breaking even after about 1.2 updates on a macOS ZIP of
- * `nucleus-demo`.
+ * **Requires GraalVM 25.3, and stays off by default.** On an older toolchain the flag is ignored
+ * and the image stays monolithic. The same happens on Windows and Linux: those platforms are not
+ * validated yet. On CE 25.3.4.1 a macOS `nucleus-demo` build compiles and the application starts.
+ * The measured payoff of the split was 2.3x less traffic per update, breaking even after about 1.2
+ * updates on a macOS ZIP of `nucleus-demo`.
  *
  * Only the JDK goes into the base layer. Putting the application's classes there as well makes
  * the application layer bail out on Kotlin's `synchronized` intrinsic. `java.desktop` has to stay

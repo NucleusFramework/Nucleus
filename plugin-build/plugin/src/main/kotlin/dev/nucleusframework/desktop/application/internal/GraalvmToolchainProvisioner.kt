@@ -24,6 +24,45 @@ import java.security.MessageDigest
 import javax.inject.Inject
 
 /**
+ * GraalVM release parsed from the JDK `release` file (`GRAALVM_VERSION="25.3.4.1"`).
+ * Null when the file or the key is missing: Liberica NIK and a plain JDK have neither,
+ * and a layered image is not attempted there.
+ */
+internal fun graalvmReleaseVersion(javaHome: File): List<Int>? {
+    val raw =
+        javaHome
+            .resolve("release")
+            .takeIf { it.isFile }
+            ?.readLines()
+            ?.firstOrNull { it.startsWith("GRAALVM_VERSION=") }
+            ?.substringAfter('=')
+            ?.trim()
+            ?.trim('"')
+            ?: return null
+    if (raw.isEmpty()) return null
+    return raw.split('.', '+', '-').map { token ->
+        token.takeWhile(Char::isDigit).toIntOrNull() ?: return null
+    }
+}
+
+/** Layered images for a Nucleus app need GraalVM 25.3 or newer. Older releases are skipped. */
+internal fun supportsLayeredImages(javaHome: File): Boolean {
+    val version = graalvmReleaseVersion(javaHome) ?: return false
+    return compareGraalvmVersions(version, MIN_LAYERED_IMAGE_GRAALVM) >= 0
+}
+
+private val MIN_LAYERED_IMAGE_GRAALVM = listOf(25, 3)
+
+private fun compareGraalvmVersions(
+    left: List<Int>,
+    right: List<Int>,
+): Int =
+    (0 until maxOf(left.size, right.size))
+        .firstNotNullOfOrNull { index ->
+            left.getOrElse(index) { 0 }.compareTo(right.getOrElse(index) { 0 }).takeIf { it != 0 }
+        } ?: 0
+
+/**
  * Whether [javaHome] is an Oracle GraalVM build rather than a community one (GraalVM CE,
  * Liberica NIK, Mandrel). Oracle GraalVM reports `IMPLEMENTOR="Oracle Corporation"` in the
  * JDK `release` file, and is the only build shipping PGO, `-O3` and advanced obfuscation.
