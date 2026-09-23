@@ -50,7 +50,7 @@ apiValidation {
 
 // The per-module `buildNative*` tasks themselves are wired by the
 // `nucleus.native-module` convention plugin (see buildSrc).
-val buildNative by tasks.registering {
+val buildNative = tasks.register("buildNative") {
     group = "build"
     description = "Builds native libraries for the current host platform."
 }
@@ -103,7 +103,7 @@ subprojects {
                         .get()
                         .pluginId,
             )
-            rootProject.dependencies.add("kover", project(path))
+            rootProject.dependencies.add("kover", dependencyFactory.create(path))
         }
         pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
             apply(
@@ -112,7 +112,7 @@ subprojects {
                         .get()
                         .pluginId,
             )
-            rootProject.dependencies.add("kover", project(path))
+            rootProject.dependencies.add("kover", dependencyFactory.create(path))
         }
     }
 
@@ -224,7 +224,7 @@ tasks.register("reformatAll") {
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:ktlintFormat"))
 }
 
-val publishAllToMavenLocal by tasks.registering {
+val publishAllToMavenLocal = tasks.register("publishAllToMavenLocal") {
     group = "publishing"
     description = "Publishes all runtime libraries and the Gradle plugin to Maven Local."
 

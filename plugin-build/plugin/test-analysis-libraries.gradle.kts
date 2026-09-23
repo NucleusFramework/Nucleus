@@ -1,4 +1,4 @@
-val testAnalysisLibraries: Configuration by configurations.creating {
+val testAnalysisLibraries: Configuration = configurations.create("testAnalysisLibraries") {
     isCanBeResolved = true
     isCanBeConsumed = false
     isTransitive = false
@@ -71,7 +71,7 @@ dependencies {
     testAnalysisLibraries("org.jctools:jctools-core:2.1.2")
 }
 
-val testZayitLibraries: Configuration by configurations.creating {
+val testZayitLibraries: Configuration = configurations.create("testZayitLibraries") {
     isCanBeResolved = true
     isCanBeConsumed = false
     isTransitive = false
@@ -107,13 +107,13 @@ dependencies {
 // artifact shapes users resolve: the Compose version the plugin ships with AND
 // the version the main repo's consumers/examples use (parsed from the root
 // version catalog; a bump there is exactly when the class layout may drift).
-val testLcdPatchLibraries: Configuration by configurations.creating {
+val testLcdPatchLibraries: Configuration = configurations.create("testLcdPatchLibraries") {
     isCanBeResolved = true
     isCanBeConsumed = false
     isTransitive = false
 }
 
-val testLcdPatchLibrariesConsumer: Configuration by configurations.creating {
+val testLcdPatchLibrariesConsumer: Configuration = configurations.create("testLcdPatchLibrariesConsumer") {
     isCanBeResolved = true
     isCanBeConsumed = false
     isTransitive = false
@@ -133,7 +133,7 @@ dependencies {
     testLcdPatchLibrariesConsumer("org.jetbrains.compose.ui:ui-text-desktop:$lcdConsumerComposeVersion")
 }
 
-val testOracleRepo: Configuration by configurations.creating {
+val testOracleRepo: Configuration = configurations.create("testOracleRepo") {
     isCanBeResolved = true
     isCanBeConsumed = false
     isTransitive = false

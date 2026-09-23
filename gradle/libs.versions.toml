@@ -54,7 +54,7 @@ kotlin = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin"}
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle"}
 pluginPublish = { id = "com.gradle.plugin-publish", version.ref = "pluginPublish"}
-versionCheck = { id = "com.github.ben-manes.versions", version.ref = "versionCheck"}
+versionCheck = { id = "io.github.ben-manes.versions", version.ref = "versionCheck"}
 vanniktechMavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish"}
 kotlinComposePlugin = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin"}
 jetbrainsCompose = { id = "org.jetbrains.compose", version.ref = "compose"}

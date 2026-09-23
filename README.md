@@ -107,7 +107,7 @@ Nucleus builds on Compose Multiplatform and requires:
 | JDK | 17+ (25+ for AOT cache) | Any vendor — no JetBrains Runtime needed |
 | Kotlin | 2.4.10+ | This repo builds with Kotlin 2.4.10 |
 | Compose Multiplatform | 1.12.0 | Required by the 2.5 line; will not run on 1.11.x |
-| Gradle | 9.0+ | Bundled wrapper is Gradle 9.4.0 |
+| Gradle | 9.0+ | Bundled wrapper is Gradle 9.8.0-rc-3 |
 
 ## Platform support
 

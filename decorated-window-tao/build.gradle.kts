@@ -105,7 +105,7 @@ tasks.named<Jar>("jar") {
     }
 }
 
-val taoTestClassesJar by tasks.registering(Jar::class) {
+val taoTestClassesJar = tasks.register<Jar>("taoTestClassesJar") {
     archiveClassifier.set("test-classes")
     from(sourceSets.test.get().output)
 }
@@ -116,7 +116,7 @@ val taoTestClassesJar by tasks.registering(Jar::class) {
 // NoClassDefFoundError the first time the suite reaches the code that uses it —
 // which is how `examples/tao-native-test` lost Material 3 and took the whole
 // GraalVM job down with the Tao main thread.
-val taoTestArtifacts: Configuration by configurations.creating {
+val taoTestArtifacts: Configuration = configurations.create("taoTestArtifacts") {
     isCanBeConsumed = true
     isCanBeResolved = false
     extendsFrom(configurations.testImplementation.get())
@@ -136,7 +136,7 @@ artifacts {
 val taoHeadfulKoverReport =
     layout.buildDirectory.file("kover/bin-reports/taoHeadful.ic")
 
-val taoHeadfulTest by tasks.registering(JavaExec::class) {
+val taoHeadfulTest = tasks.register<JavaExec>("taoHeadfulTest") {
     description = "Runs the stage-2 real-window Tao test suite (requires a display)"
     group = "verification"
     classpath = sourceSets.test.get().runtimeClasspath
@@ -224,7 +224,7 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
 // X11 / XWayland portal parenting e2e: forces GDK onto X11 so Tao windows get
 // a real XID, then parents a session xdg-desktop-portal FileChooser with
 // `x11:<hex>`. Safe to run on a Wayland host (XWayland). Not part of `check`.
-val taoX11PortalE2E by tasks.registering(JavaExec::class) {
+val taoX11PortalE2E = tasks.register<JavaExec>("taoX11PortalE2E") {
     description = "E2E: X11 XID parents a real XDG portal FileChooser (forces XWayland)"
     group = "verification"
     onlyIf { Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) }
@@ -239,7 +239,7 @@ val taoX11PortalE2E by tasks.registering(JavaExec::class) {
     environment("NUCLEUS_TAO_LINUX_RENDERER", "x11")
 }
 
-val smokeStandalonePanelMac by tasks.registering(JavaExec::class) {
+val smokeStandalonePanelMac = tasks.register<JavaExec>("smokeStandalonePanelMac") {
     description = "Smoke-checks the macOS standalone-popup native chain (ownerless NSPanel + Metal)"
     group = "verification"
     onlyIf { Os.isFamily(Os.FAMILY_MAC) }
@@ -261,7 +261,7 @@ val smokeStandalonePanelMac by tasks.registering(JavaExec::class) {
 // macOS/X11: AWT Robot. Windows: Robot omits layered windows — point
 // `-Dnucleus.tao.transparent.smoke.captureTool=` at a CAPTUREBLT helper
 // (build/tmp-smoke/capture_region.exe).
-val taoTransparentSmoke by tasks.registering(JavaExec::class) {
+val taoTransparentSmoke = tasks.register<JavaExec>("taoTransparentSmoke") {
     description = "Manual smoke: DecoratedWindow(transparent=true) over the desktop (#416)"
     group = "verification"
     classpath = sourceSets.test.get().runtimeClasspath
@@ -314,7 +314,7 @@ val taoTransparentSmoke by tasks.registering(JavaExec::class) {
 // error dialog, exit code 1. The expected outcome is Gradle failing with
 // "finished with non-zero exit value 1" after the dialog is dismissed.
 // Not part of `check`.
-val taoFatalDialogSmoke by tasks.registering(JavaExec::class) {
+val taoFatalDialogSmoke = tasks.register<JavaExec>("taoFatalDialogSmoke") {
     description = "Manual smoke: fatal-error path — native dialog then exit code 1 (#622)"
     group = "verification"
     classpath = sourceSets.test.get().runtimeClasspath

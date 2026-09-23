@@ -49,7 +49,7 @@ val nativeTasks =
         )
     }
 
-val verifyNativeResourcePresence by tasks.registering {
+val verifyNativeResourcePresence = tasks.register("verifyNativeResourcePresence") {
     description = "Verifies the current host native artifact expected from the local build script exists in resources"
     group = "verification"
     dependsOn(nativeTasks)

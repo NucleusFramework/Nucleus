@@ -19,7 +19,7 @@ val appexOutputDir = layout.buildDirectory.dir("appex")
 
 // Compile the Network Extension .appex (Nucleus does not build .appex itself).
 // Nucleus signs it via the appExtensions {} DSL below.
-val buildAppex by tasks.registering(Exec::class) {
+val buildAppex = tasks.register<Exec>("buildAppex") {
     group = "distribution"
     description = "Compile the Network Extension .appex."
     onlyIf { isMac }
