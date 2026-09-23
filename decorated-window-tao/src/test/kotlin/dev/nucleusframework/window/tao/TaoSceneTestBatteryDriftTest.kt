@@ -9,6 +9,7 @@ import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
+import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSessionTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
 import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
@@ -30,6 +31,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
+import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadScaleTest
 import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import dev.nucleusframework.window.tao.workspace.DragControllerTest
 import dev.nucleusframework.window.tao.workspace.HostGeometryTest
@@ -79,6 +81,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneScrollTest::class.java,
             TaoSceneTrackpadPanTest::class.java,
             TaoTrackpadPanRouterTest::class.java,
+            TaoSceneTrackpadScaleTest::class.java,
+            TaoTrackpadScaleSessionTest::class.java,
             TaoScenePopupTest::class.java,
             TaoSceneOuterLocalsBridgeTest::class.java,
             TaoSceneAnimationTest::class.java,
