@@ -32,6 +32,7 @@ import kotlin.coroutines.EmptyCoroutineContext
  * The lambda runs once Tao has finished launching, on the macOS main thread.
  * [run] does **not** return until [TaoApplication.exit] is called.
  */
+@Suppress("TooManyFunctions")
 public object TaoApplication {
     private val logger = Logger.getLogger(TaoApplication::class.java.name)
     private val handleSeq = AtomicLong(1L)
@@ -70,6 +71,7 @@ public object TaoApplication {
         // make a genuine new fatal take the log-only branch.
         fatalError.set(null)
         fatalDialogShown.set(false)
+        resetQuit()
         // Capture the Tao main thread eagerly, before the native event loop
         // takes over this thread. Required so `Dispatchers.Main` consumers
         // (notably AndroidX Lifecycle's synchronous `MainDispatcherChecker`)
@@ -172,6 +174,112 @@ public object TaoApplication {
         }
     }
 
+    /**
+     * `true` from the moment the OS asks the app to quit — macOS Cmd+Q, Dock →
+     * Quit, logout / restart / shutdown — while the windows are being asked to
+     * close, and for good once they all did. Reset when a window keeps itself
+     * open, which cancels the quit. Electron's `before-quit` flag: an
+     * `onCloseRequest` that normally hides to the tray checks it to let a real
+     * quit through (`if (isQuitting) exitApplication() else hide()`).
+     */
+    @Volatile
+    public var isQuitting: Boolean = false
+        private set
+
+    /** How a completed quit ends the app; the Compose loop routes it through `exitApplication`. */
+    internal var quitExit: () -> Unit = ::exit
+
+    /** Runs its argument once the close requests have taken effect; the Compose loop waits for recomposition. */
+    internal var afterQuitRequests: (() -> Unit) -> Unit = { it() }
+
+    /**
+     * System quit (#696), Electron's `Browser::Quit`: every app window gets its
+     * cancelable close request, newest first; the app exits once they all
+     * closed, and a window that stays open cancels the quit. No app window →
+     * exit at once. Repeated requests while one is in flight are ignored; a
+     * window opened meanwhile defers the exit until it closes, and a new
+     * request asks every window again.
+     */
+    internal fun requestQuit(open: Collection<TaoWindow> = windows.values) {
+        if (quitInFlight) return
+        quitScope = open
+        waitingForLastWindow = false
+        val targets = open.filter { it.closesOnQuit && !it.isClosing }.sortedByDescending { it.handle }
+        isQuitting = true
+        if (targets.isEmpty()) {
+            quitExit()
+            return
+        }
+        quitInFlight = true
+        quitConsented.clear()
+        targets.forEach { window ->
+            askingWindow = window
+            try {
+                window.requestUserClose()
+            } finally {
+                askingWindow = null
+            }
+            if (quitConsent) quitConsented += window
+            quitConsent = false
+        }
+        afterQuitRequests {
+            quitInFlight = false
+            when {
+                targets.any { !it.isClosing && it !in quitConsented } -> isQuitting = false
+                // A window opened meanwhile (a "Save?" dialog) keeps the app alive;
+                // the quit completes once it is gone — Electron's OnWindowAllClosed.
+                openAppWindows().isEmpty() -> quitExit()
+                else -> waitingForLastWindow = true
+            }
+        }
+    }
+
+    /** App windows still open that have not agreed to the quit in flight. */
+    private fun openAppWindows(): List<TaoWindow> =
+        quitScope.filter { it.closesOnQuit && !it.isClosing && it !in quitConsented }
+
+    /** Called as a window goes away: completes a quit that was waiting for the last one. */
+    private fun completeQuitIfLastWindow() {
+        if (waitingForLastWindow && openAppWindows().isEmpty()) {
+            waitingForLastWindow = false
+            quitExit()
+        }
+    }
+
+    private var quitInFlight = false
+    private var waitingForLastWindow = false
+    private var quitScope: Collection<TaoWindow> = emptyList()
+    private val quitConsented = HashSet<TaoWindow>()
+
+    /** The window whose close request [requestQuit] is running, or `null`. */
+    private var askingWindow: TaoWindow? = null
+    private var quitConsent = false
+
+    /**
+     * `exitApplication()` called from a window's close request during a quit
+     * is that window's *consent* (Electron's `app.quit()` while quitting), not
+     * an exit that would override another window's veto: `true` when the call
+     * was absorbed that way.
+     */
+    internal fun consentToQuit(): Boolean {
+        if (askingWindow == null) return false
+        quitConsent = true
+        return true
+    }
+
+    /** Fresh-run quit state; [run] starts with it, tests reset through it. */
+    internal fun resetQuit() {
+        isQuitting = false
+        quitInFlight = false
+        waitingForLastWindow = false
+        quitScope = emptyList()
+        quitConsented.clear()
+        askingWindow = null
+        quitConsent = false
+        quitExit = ::exit
+        afterQuitRequests = { it() }
+    }
+
     /** Posts an exit request and unblocks [run]. */
     public fun exit() {
         NativeTaoBridge.nativeExit()
@@ -245,6 +353,7 @@ public object TaoApplication {
 
     internal fun remove(handle: Long) {
         windows.remove(handle)
+        completeQuitIfLastWindow()
     }
 
     private object EventDispatcher : NativeTaoBridge.EventCallback {
@@ -261,6 +370,7 @@ public object TaoApplication {
                         onLaunched = null
                         cb?.invoke(this@TaoApplication)
                     }
+                    TaoEventCode.QUIT_REQUESTED -> requestQuit()
                     TaoEventCode.MAIN_EVENTS_CLEARED -> TaoMainDispatcher.pump()
                     else -> lookup(handle)?.dispatch(code, a, b)
                 }

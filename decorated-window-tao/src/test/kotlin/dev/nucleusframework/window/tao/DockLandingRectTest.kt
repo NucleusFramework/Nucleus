@@ -71,7 +71,11 @@ class DockLandingRectTest {
     @Test
     fun `a split side with a stack previews the stack the panel joins`() {
         state.docked = listOf(docked("targum", DockSide.Left, 0, Rect(20f, 40f, 220f, 440f)))
-        assertEquals(Rect(0f, 0f, 200f, 400f), state.landingRectPx(DockSide.Left, 60f, joinsStack = true))
+        // The stack at the thickness the side takes once the panel joins it (#695):
+        // its own when nothing changes, wider when the newcomer's limits widen it.
+        assertEquals(Rect(0f, 0f, 200f, 400f), state.landingRectPx(DockSide.Left, 200f, joinsStack = true))
+        assertEquals(Rect(0f, 0f, 260f, 400f), state.landingRectPx(DockSide.Left, 260f, joinsStack = true))
+        assertEquals(Rect(0f, 0f, 200f, 400f), state.landingRectPx(DockSide.Left, 0f, joinsStack = true))
         // The idle outline stays a strip at the edge of the band.
         assertEquals(Rect(0f, 0f, 60f, 400f), state.landingRectPx(DockSide.Left, 60f, joinsStack = false))
     }

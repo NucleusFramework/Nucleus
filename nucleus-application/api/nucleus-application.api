@@ -63,6 +63,7 @@ public abstract interface class dev/nucleusframework/application/NucleusApplicat
 	public fun getAotMode ()Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
 	public fun isAotRuntime ()Z
 	public fun isAotTraining ()Z
+	public fun isQuitting ()Z
 	public abstract fun onDeepLink (Lkotlin/jvm/functions/Function1;)V
 }
 
@@ -70,6 +71,7 @@ public final class dev/nucleusframework/application/NucleusApplicationScope$Defa
 	public static fun getAotMode (Ldev/nucleusframework/application/NucleusApplicationScope;)Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
 	public static fun isAotRuntime (Ldev/nucleusframework/application/NucleusApplicationScope;)Z
 	public static fun isAotTraining (Ldev/nucleusframework/application/NucleusApplicationScope;)Z
+	public static fun isQuitting (Ldev/nucleusframework/application/NucleusApplicationScope;)Z
 }
 
 public final class dev/nucleusframework/application/NucleusApplicationScopeKt {
