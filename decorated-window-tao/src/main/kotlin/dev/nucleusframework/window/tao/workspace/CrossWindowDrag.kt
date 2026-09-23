@@ -17,7 +17,7 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalWindowInfo
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoPointerIcons
@@ -137,7 +137,7 @@ internal fun Modifier.screenDragHandle(
         val currentBegin by rememberUpdatedState(begin)
         Modifier
             .pointerHoverIcon(if (isDragging()) draggingIcon else idleIcon)
-            .onGloballyPositioned { coordinates = it }
+            .onPlaced { coordinates = it }
             .pointerInput(key, window, containerSize) {
                 /** Pointer position in this element → physical screen pixels. */
                 fun screenPx(local: Offset): Offset? {

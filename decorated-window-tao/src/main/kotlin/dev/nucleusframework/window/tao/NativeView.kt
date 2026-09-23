@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -165,7 +164,7 @@ private fun EmbeddedNativeView(
         modifier =
             modifier
                 .punchNativeViewHole()
-                .onGloballyPositioned { coords ->
+                .onPositionChanged { coords ->
                     val pos = coords.positionInRoot()
                     val xPx = pos.x.roundToInt()
                     val yPx = pos.y.roundToInt()

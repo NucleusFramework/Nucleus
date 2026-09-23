@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.movableContentOf
@@ -24,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -166,7 +166,7 @@ public fun DockLayout(
                 .publishHostGeometry(geometry, containerSize, direction)
                 .dockTransferTarget(workspace, host, geometry)
                 .onSizeChanged { state.layoutSize = it }
-                .onGloballyPositioned { state.layoutBoundsInWindowPx = it.boundsInWindow() },
+                .onPositionChanged { state.layoutBoundsInWindowPx = it.boundsInWindow() },
         ) {
             DockBand(state, sideOrder, 0, movableContent)
             if (host != null) DockZoneHints(workspace, host, state)
@@ -591,7 +591,7 @@ private fun DockBand(
     val children = if (leading) outerToInner + contentItem else listOf(contentItem) + outerToInner.asReversed()
     // The band's rect is what a drop preview on this side is drawn against.
     val measured =
-        Modifier.fillMaxSize().onGloballyPositioned {
+        Modifier.fillMaxSize().onPositionChanged {
             state.bandBoundsInWindowPx[side] = it.boundsInWindow()
         }
     if (side.isVertical) {
@@ -766,14 +766,16 @@ private fun DockPanel(
     // Dimmed while its ghost is being dragged: the panel is on its way out.
     val leaving = workspace.dragGhost?.satellite === entry
     val containerSize = state.containerSize
+    // Written here, not with the bounds: a window resize that leaves the
+    // panel's rect alone moves no layout callback.
+    SideEffect { entry.dockHostContainerSizePx = containerSize }
     Box(
         Modifier
             .fillMaxSize()
             .alpha(if (leaving) LEAVING_PANEL_ALPHA else 1f)
-            .onGloballyPositioned { coordinates ->
+            .onPositionChanged { coordinates ->
                 // Read by SatelliteWorkspace.undock to lift the window off the panel.
                 entry.dockedBoundsInWindowPx = coordinates.boundsInWindow()
-                entry.dockHostContainerSizePx = containerSize
             },
     ) {
         CompositionLocalProvider(LocalLayoutDirection provides state.direction) {

@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.DecoratedWindowState
@@ -64,6 +63,7 @@ import dev.nucleusframework.window.resolveWindowControl
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.onPositionChanged
 
 // Mirrors the legacy AWT backend's `WindowsWindowControlArea` so the visual
 // output is identical between the AWT-based backend and the Tao backend.
@@ -136,7 +136,7 @@ internal fun WindowsWindowControl(
     // button leaves the composition.
     val positionModifier =
         if (window != null) {
-            Modifier.onGloballyPositioned { coordinates ->
+            Modifier.onPositionChanged { coordinates ->
                 CaptionButtonHitZones.publish(window, type, coordinates.boundsInWindow())
             }
         } else {

@@ -10,7 +10,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.workspace.ScreenDrag
 import dev.nucleusframework.window.tao.workspace.TransferDragGesture
@@ -102,7 +102,7 @@ internal fun Modifier.tabStripLocalDragHandle(
         Modifier
             .pointerHoverIcon(
                 if (workspace.draggedTab === tab) TaoPointerIcons.Grabbing else TaoPointerIcons.Grab,
-            ).onGloballyPositioned { coordinates = it }
+            ).onPlaced { coordinates = it }
             .transferDragHandle(
                 key = tab,
                 window = window,
