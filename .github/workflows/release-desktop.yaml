@@ -186,15 +186,8 @@ jobs:
           sparse-checkout: |
             .github/actions
             examples/nucleus-demo/packaging/macos
+            plugin-build/plugin/src/main/resources/nucleus/electron-builder
           fetch-depth: 1
-
-      # This job does not go through the Nucleus plugin (which provisions its own
-      # Node.js): build-universal.sh drives electron-builder with `npx` directly
-      # to repack the two per-arch builds into one universal bundle.
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
 
       - name: Setup macOS signing
         id: signing
