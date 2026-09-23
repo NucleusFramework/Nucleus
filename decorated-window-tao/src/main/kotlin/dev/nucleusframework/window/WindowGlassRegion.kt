@@ -11,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -21,6 +20,7 @@ import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.onPositionChanged
 
 /**
  * Kind of system pane rendered by [windowGlassRegion] — mapping directly to
@@ -131,7 +131,7 @@ public fun Modifier.windowGlassRegion(
         // Pushed straight from layout rather than from an effect: the material
         // has to land in the same frame as the Compose bounds, or it visibly
         // trails the panel during a live resize.
-        Modifier.onGloballyPositioned { coordinates ->
+        Modifier.onPositionChanged { coordinates ->
             val rect = coordinates.boundsInWindow()
             bounds = rect
             if (rect != pushedBounds) push(rect)

@@ -7,12 +7,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.edgeStripPx
+import dev.nucleusframework.window.tao.onPositionChanged
 
 /**
  * What a drop target inside a window publishes about itself: the window, the
@@ -207,7 +207,7 @@ internal fun rememberHostGeometry(
 }
 
 /**
- * Publishes this element's bounds into [geometry] on every placement, together
+ * Publishes this element's bounds into [geometry] whenever they move, together
  * with the window content size ([containerSizePx]) they were measured in.
  * A no-op without a geometry.
  */
@@ -220,8 +220,10 @@ internal fun Modifier.publishHostGeometry(
         this
     } else {
         geometry.layoutDirection = layoutDirection
-        onGloballyPositioned { coordinates ->
+        // Not with the bounds: a window resize that leaves this element's rect
+        // alone moves no layout callback, and the caller recomposes on it.
+        geometry.containerSizePx = containerSizePx
+        onPositionChanged { coordinates ->
             geometry.layoutBoundsInWindowPx = coordinates.boundsInWindow()
-            geometry.containerSizePx = containerSizePx
         }
     }

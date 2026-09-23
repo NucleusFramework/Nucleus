@@ -26,7 +26,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNode
 import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.node.DelegatingNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.InspectorInfo
@@ -121,7 +121,7 @@ internal fun Modifier.transferDragHandle(
     val measurer = rememberTextMeasurer()
     val grab = remember { GrabCoordinates() }
     return this
-        .onGloballyPositioned { grab.coordinates = it }
+        .onPlaced { grab.coordinates = it }
         .then(TransferDragElement(key, window, grab, begin, accent, measurer, gesture))
 }
 
@@ -155,7 +155,7 @@ internal interface TransferDragGesture {
 /**
  * Where the grip is, for turning the press into a window position.
  *
- * Read off a plain holder written by [Modifier.onGloballyPositioned] rather
+ * Read off a plain holder written by [Modifier.onPlaced] rather
  * than by making the drag node itself layout-aware: a `DelegatingNode` that
  * implements [androidx.compose.ui.node.LayoutAwareModifierNode] takes those
  * callbacks *instead of* its delegates, and Compose's own drag-and-drop source

@@ -40,7 +40,6 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
@@ -403,7 +402,7 @@ public fun Modifier.tabSlot(
     group: TabWindowGroup,
     index: Int,
 ): Modifier =
-    onGloballyPositioned { coordinates ->
+    onPositionChanged { coordinates ->
         val slots = group.slotsInWindowPx.toMutableList()
         while (slots.size <= index) slots += Rect.Zero
         slots[index] = coordinates.boundsInWindow()
