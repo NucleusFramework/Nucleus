@@ -362,7 +362,8 @@ jobs:
           # (24.04) broke them on.
           - os: ubuntu-22.04
             arch: x64
-          - os: ubuntu-24.04-arm
+          # Same reasoning as x64 above
+          - os: ubuntu-22.04-arm
             arch: aarch64
     steps:
       - name: Checkout Repo
