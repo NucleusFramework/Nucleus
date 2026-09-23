@@ -15,6 +15,52 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import java.io.File
 
+private const val LIBRARY_METADATA_DIR = "nucleus/graalvm/library-metadata"
+
+/**
+ * JDK types whose reflection registration a layered image moves from the application layer to the
+ * base layer.
+ *
+ * Registering a type makes its fields queryable, so the application layer's analysis checks every
+ * reachable subtype for a field hiding one of them. `MethodHandle`'s subtypes include the
+ * `BoundMethodHandle$Species_*_BaseLayer` classes generated while the base layer is built, which
+ * the application layer only knows as incomplete `BaseLayerType`s: when one of them turns reachable
+ * before the check runs, the build aborts with "This type is incomplete and should not be used" —
+ * about every other build on GraalVM 25.4. The base layer holds complete types, so the same
+ * registration made there is checked without the race, and the application still sees it.
+ */
+internal val BASE_LAYER_REFLECTION_TYPES = setOf("java.lang.invoke.MethodHandle")
+
+/**
+ * The `reachability-metadata.json` content that registers [BASE_LAYER_REFLECTION_TYPES] in the
+ * base layer: their entries as the library metadata declares them.
+ */
+internal fun baseLayerReflectionMetadata(): String {
+    val entries =
+        readLibraryMetadataIndex().flatMap { fileName ->
+            @Suppress("UNCHECKED_CAST")
+            (readLibraryMetadata(fileName)?.get("reflection") as? List<Map<String, Any?>>)
+                .orEmpty()
+                .filter { it["type"] in BASE_LAYER_REFLECTION_TYPES }
+        }
+    return JsonOutput.prettyPrint(JsonOutput.toJson(mapOf("reflection" to entries))) + "\n"
+}
+
+private fun readLibraryMetadataIndex(): List<String> =
+    FilterLibraryMetadataTask::class.java.classLoader
+        .getResourceAsStream("$LIBRARY_METADATA_DIR/index.txt")
+        ?.bufferedReader()
+        ?.readLines()
+        ?.filter { it.isNotBlank() }
+        ?: emptyList()
+
+@Suppress("UNCHECKED_CAST")
+private fun readLibraryMetadata(fileName: String): Map<String, Any?>? =
+    FilterLibraryMetadataTask::class.java.classLoader
+        .getResourceAsStream("$LIBRARY_METADATA_DIR/$fileName")
+        ?.bufferedReader()
+        ?.use { JsonSlurper().parseText(it.readText()) as Map<String, Any?> }
+
 /**
  * Filters per-library GraalVM metadata based on the runtime classpath and merges
  * the result into a single `reachability-metadata.json`.
@@ -29,6 +75,13 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
     @get:Input
     abstract val headless: Property<Boolean>
 
+    /**
+     * Whether a base layer registers [BASE_LAYER_REFLECTION_TYPES], in which case their entries are
+     * left out here. False for a monolithic image.
+     */
+    @get:Input
+    abstract val baseLayerOwnsReflectionTypes: Property<Boolean>
+
     /** The runtime classpath JARs/dirs to check for conditional library presence. */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.NONE)
@@ -42,16 +95,9 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
     fun filter() {
         val classpathPackages = buildClasspathPackageIndex(runtimeClasspath.files)
 
-        val metadataDir = "nucleus/graalvm/library-metadata"
-        val index =
-            javaClass.classLoader
-                .getResourceAsStream("$metadataDir/index.txt")
-                ?.bufferedReader()
-                ?.readLines()
-                ?.filter { it.isNotBlank() }
-                ?: emptyList()
+        val index = readLibraryMetadataIndex()
+        val movedToBaseLayer = baseLayerOwnsReflectionTypes.get()
 
-        val slurper = JsonSlurper()
         val mergedReflection = mutableListOf<Any?>()
         val mergedResources = mutableListOf<Any?>()
         var includedCount = 0
@@ -63,10 +109,7 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
                 skippedCount++
                 continue
             }
-            val stream = javaClass.classLoader.getResourceAsStream("$metadataDir/$fileName") ?: continue
-
-            @Suppress("UNCHECKED_CAST")
-            val root = slurper.parseText(stream.bufferedReader().use { it.readText() }) as Map<String, Any?>
+            val root = readLibraryMetadata(fileName) ?: continue
 
             @Suppress("UNCHECKED_CAST")
             val meta = root["_meta"] as? Map<String, Any?>
@@ -87,7 +130,15 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
 
             @Suppress("UNCHECKED_CAST")
             val reflection = root["reflection"] as? List<Any?>
-            if (reflection != null) mergedReflection.addAll(reflection)
+            if (reflection != null) {
+                mergedReflection.addAll(
+                    if (movedToBaseLayer) {
+                        reflection.filterNot { (it as? Map<*, *>)?.get("type") in BASE_LAYER_REFLECTION_TYPES }
+                    } else {
+                        reflection
+                    },
+                )
+            }
 
             @Suppress("UNCHECKED_CAST")
             val resources = root["resources"] as? List<Any?>

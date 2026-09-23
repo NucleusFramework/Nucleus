@@ -74,12 +74,6 @@ private fun escapeNativeImageArgFileArgument(arg: String): String =
  */
 private const val GRAALVM_LAYER_NAME = "nucleusbase"
 
-/**
- * An empty package handed to `--exact-reachability-metadata` on a layered build only to turn the
- * option on: see where -H:LayerUse is added.
- */
-private const val LAYERED_IMAGE_EXACT_REACHABILITY_PACKAGE = "dev.nucleusframework.internal.layeredimage"
-
 /** File name of the base layer library native-image emits on [os]. */
 private fun graalvmLayerLibraryName(os: OS): String =
     "lib$GRAALVM_LAYER_NAME." + if (os == OS.MacOS) "dylib" else "so"
@@ -752,6 +746,15 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     task.group = NUCLEUS_TASK_GROUP
                     task.outputDir.set(libraryMetadataDir)
                     task.headless.set(graalvm.headless)
+                    // Mirrors the layered-image gate below: on Windows, or on a toolchain older
+                    // than 25.3, there is no base layer to take the moved registrations.
+                    task.baseLayerOwnsReflectionTypes.set(
+                        graalvm.layers.isEnabled.flatMap { enabled ->
+                            graalvmHome.map { home ->
+                                enabled && currentOS != OS.Windows && supportsLayeredImages(File(home))
+                            }
+                        },
+                    )
                     if (runtimeCfg != null) {
                         task.runtimeClasspath.from(runtimeCfg)
                     }
@@ -944,9 +947,16 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 val bundles = graalvm.layers.resourceBundles.get()
                 val archive = layerArchiveFile.get().asFile
                 val requestedGc = graalvm.garbageCollector.orNull
+                // The JDK reflection registrations the application layer leaves to this layer,
+                // see BASE_LAYER_REFLECTION_TYPES.
+                val reflectionMetadata = baseLayerReflectionMetadata()
+                inputs.property("reflectionMetadata", reflectionMetadata)
+                val configDir = File(outputDir, "config")
 
                 doFirst {
                     outputDir.mkdirs()
+                    configDir.mkdirs()
+                    File(configDir, "reachability-metadata.json").writeText(reflectionMetadata)
                     // Resolved here rather than at configuration time: this is the call that
                     // provisions the toolchain, and it must only happen when a layer is built.
                     executable = nativeImageExe.get()
@@ -970,6 +980,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                             // the AWT bundles are never registered on their own. Without this, any
                             // text field dies at runtime on sun.awt.resources.awtosx.
                             "-H:IncludeResourceBundles=${bundles.joinToString(",")}",
+                            "-H:ConfigurationFileDirectories=${configDir.absolutePath}",
                             "-o",
                             "lib$GRAALVM_LAYER_NAME",
                         )
@@ -1313,7 +1324,6 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         exactResolution.warning?.let { logger.warn(it) }
                         exactResolution.lifecycleMessage?.let { logger.lifecycle(it) }
                         addAll(exactResolution.buildArgs)
-                        val exactReachabilitySet = exactResolution.buildArgs.isNotEmpty()
 
                         // macOS: force the link-time deployment target. native-image does NOT
                         // propagate MACOSX_DEPLOYMENT_TARGET to its internal linker, so the link
@@ -1390,18 +1400,6 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         ) {
                             add("-H:+UnlockExperimentalVMOptions")
                             add("-H:LayerUse=${layerArchive.absolutePath}")
-                            // Works around a GraalVM race: without exact reachability metadata,
-                            // ReflectionDataBuilder.checkHidingFields walks the fields of
-                            // base-layer types from parallel tasks, and a type the application
-                            // layer only knows as a BaseLayerType aborts the build with "This type
-                            // is incomplete and should not be used" — about every other build of
-                            // nucleus-demo. Setting the option at all skips that check. The package
-                            // holds no class, so no lookup ever throws; the image does switch to
-                            // exact-metadata semantics (no implicit registration of the inner
-                            // classes of a reflectively registered class).
-                            if (!exactReachabilitySet) {
-                                add("--exact-reachability-metadata=$LAYERED_IMAGE_EXACT_REACHABILITY_PACKAGE")
-                            }
                         }
 
                         addAll(resolvedBuildArgs)

@@ -391,11 +391,10 @@ abstract class MetadataRepositorySettings
  * (`-O*`, `--gc=`, `-g`, …) passed through `buildArgs` reaches the application layer only and fails
  * the build.
  *
- * A layered build always sets `--exact-reachability-metadata` (on an empty package when the dev
- * loop does not already scope it to the app): without it GraalVM 25.4 fails about every other
- * application-layer build with "This type is incomplete and should not be used". The image then
- * follows exact-metadata semantics — the inner classes of a class registered for reflection are no
- * longer registered implicitly.
+ * The reflection registration of `java.lang.invoke.MethodHandle` moves to the base layer. Made in
+ * the application layer, it races with the base layer's generated `BoundMethodHandle` species and
+ * fails about every other build with "This type is incomplete and should not be used". An app that
+ * registers `MethodHandle` in its own metadata brings that race back.
  *
  * Only the JDK goes into the base layer. Putting the application's classes there as well makes
  * the application layer bail out on Kotlin's `synchronized` intrinsic. `java.desktop` has to stay
