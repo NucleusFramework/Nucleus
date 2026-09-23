@@ -44,7 +44,7 @@ int nucleus_tao_is_main_thread(void) {
     return [NSThread isMainThread] ? 1 : 0;
 }
 
-extern void nucleus_tao_post_quit_requested(void);
+extern bool nucleus_tao_post_quit_requested(void);
 
 static id sCmdQMonitor = nil;
 

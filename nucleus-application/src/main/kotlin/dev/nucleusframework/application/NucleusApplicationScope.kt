@@ -6,6 +6,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import dev.nucleusframework.aot.runtime.AotRuntime
 import dev.nucleusframework.aot.runtime.AotRuntimeMode
 import dev.nucleusframework.core.runtime.DeepLinkHandler
+import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
 import java.net.URI
 import androidx.compose.ui.window.ApplicationScope as ComposeApplicationScope
@@ -38,6 +39,13 @@ public sealed interface NucleusApplicationScope : ComposeApplicationScope {
 
     /** `true` when the JVM is running with an AOT cache loaded. */
     public val isAotRuntime: Boolean get() = aotMode == AotRuntimeMode.RUNTIME
+
+    /**
+     * `true` while a system quit (macOS Cmd+Q, Dock → Quit, logout) is asking
+     * the windows to close — see [TaoApplication.isQuitting]. A hide-to-tray
+     * `onCloseRequest` checks it to let the quit through.
+     */
+    public val isQuitting: Boolean get() = TaoApplication.isQuitting
 
     /**
      * Registers [block] as the deep-link callback: the sink for the native

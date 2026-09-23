@@ -235,7 +235,9 @@ pub(crate) fn run_event_loop_blocking() {
     #[cfg(target_os = "linux")]
     tao::platform::linux::set_minimized_hook(on_tao_minimized);
 
-    // `ApplePressAndHoldEnabled` is deliberately not touched:
+    // Install the Cmd-Q interceptor once we're on the main thread (NSEvent
+    // local monitors must be added there). The drag-event latch lives
+    // alongside it. `ApplePressAndHoldEnabled` is deliberately not touched:
     // like Chromium, Nucleus lets the OS/user default decide whether a held
     // letter repeats or opens the accent picker (#612).
     #[cfg(target_os = "macos")]

@@ -91,6 +91,7 @@ internal fun ApplicationScope.DragGhostWindow(
         compositionLocalContext = compositionLocalContext,
     ) {
         val scope: TaoDecoratedWindowScope = this
+        SideEffect { scope.window.closesOnQuit = false }
         CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) { scope.content() }
     }
 }

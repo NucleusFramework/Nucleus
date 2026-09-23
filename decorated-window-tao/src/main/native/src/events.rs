@@ -421,6 +421,8 @@ pub(crate) enum UserEvent {
         handle: u64,
         fullscreen: bool,
     },
+    // Posted by the macOS quit paths only (Cmd-Q, `-[TaoApp terminate:]`).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     QuitRequested,
     Exit,
 }

@@ -36,7 +36,9 @@ pub(crate) fn dispatch_run_event_loop_on_main() {
     }
 }
 
+/// Cmd-Q (`main_thread_dispatch.m`) and `-[TaoApp terminate:]` (vendored tao).
+/// `false` once the event loop is gone, so the caller can fall back to a real quit.
 #[no_mangle]
-pub extern "C" fn nucleus_tao_post_quit_requested() {
-    send_user_event(crate::events::UserEvent::QuitRequested);
+pub extern "C" fn nucleus_tao_post_quit_requested() -> bool {
+    send_user_event(crate::events::UserEvent::QuitRequested)
 }

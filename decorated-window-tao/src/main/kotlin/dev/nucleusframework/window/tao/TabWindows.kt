@@ -270,6 +270,8 @@ private fun ApplicationScope.TabWindow(
         val windowScope: TaoDecoratedWindowScope = this
         val window = windowScope.window
         DisposableEffect(workspace, group, window) {
+            // A system quit must not close the tabs: the workspace is the session (TaoWindow.closesOnQuit).
+            window.closesOnQuit = false
             workspace.attachWindow(group, window)
             onDispose { workspace.detachWindow(group) }
         }

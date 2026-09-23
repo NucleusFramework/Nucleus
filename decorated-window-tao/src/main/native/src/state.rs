@@ -82,10 +82,11 @@ pub(crate) fn clear_event_loop_proxy() {
     }
 }
 
-pub(crate) fn send_user_event(event: UserEvent) {
+/// `false` when no event loop is running to receive [event].
+pub(crate) fn send_user_event(event: UserEvent) -> bool {
     let Ok(guard) = EVENT_LOOP_PROXY.lock() else {
-        return;
+        return false;
     };
-    let Some(proxy) = guard.as_ref() else { return };
-    let _ = proxy.send_event(event);
+    let Some(proxy) = guard.as_ref() else { return false };
+    proxy.send_event(event).is_ok()
 }
