@@ -165,7 +165,7 @@ abstract class GraalvmSettings
             fn.execute(toolchain)
         }
 
-        /** Configures the optional base layer plus application layer split. */
+        /** Configures the optional base layer plus application layer split of the dev loop. */
         fun layers(fn: Action<GraalvmLayerSettings>) {
             fn.execute(layers)
         }
@@ -366,35 +366,32 @@ abstract class MetadataRepositorySettings
     }
 
 /**
- * Splits the native image into a reusable base layer and a thin application layer.
+ * Splits the `runGraalvmNative` image into a JDK base layer, compiled once, and an application
+ * layer, so each dev-loop rebuild only compiles the application.
  *
- * A monolithic native image is one blob whose layout `native-image` reshuffles globally, so a
- * one-line source change invalidates nearly all of its blocks and an auto-update has to refetch the
- * whole executable. With layers the AOT-compiled JDK lives in a shared library the application links
- * against, and a release that only changes application code ships the same library byte for byte —
- * so a differential update reuses it in full instead of downloading it again.
+ * **Dev loop only.** `createGraalvmNativeDistributable`, `runGraalvmNativeDistributable` and every
+ * packaging task always build a monolithic image, whatever this flag says:
+ * - On GraalVM 25.4 the application layer's reflection analysis races on JDK types whose subtypes
+ *   the base layer generated. A registered `java.lang.invoke.MethodHandle` and its
+ *   `BoundMethodHandle$Species_*_BaseLayer` classes fail about every other build with "This type
+ *   is incomplete and should not be used", and any metadata (the app's, a library's, the agent's)
+ *   can register such a type. `runGraalvmNative` passes `--exact-reachability-metadata`, which skips
+ *   that analysis; a release build does not, and must not be changed to.
+ * - The base layer is not reproducible: two builds from the same inputs differ in most blocks, so
+ *   shipping it would not make differential updates smaller either.
  *
- * The trade is disk for traffic: the base layer is not pruned against what the application actually
- * uses, so the first download grows while every later one shrinks.
+ * **Requires GraalVM 25.3, and stays off by default.** On an older toolchain, and on Windows (not
+ * validated yet), the flag is ignored and the image stays monolithic. The base layer is kept under
+ * `build/` (the `.nil` archive is about 1.3 GB) and runs as `libnucleusbase.dylib` /
+ * `libnucleusbase.so` beside the executable. On Linux a one-line change recompiled in 42 s instead
+ * of 48 s for `nucleus-demo`; the macOS measurement was 1 min 39 s instead of 3 min 4 s at `-O2`.
  *
- * **Requires GraalVM 25.3, and stays off by default.** On an older toolchain the flag is ignored
- * and the image stays monolithic. The same happens on Windows, which is not validated yet. On CE
- * 25.3.4.1 a `nucleus-demo` build compiles and the application starts on macOS and Linux; the base
- * layer ships as `libnucleusbase.dylib` / `libnucleusbase.so` beside the executable.
- * The measured payoff of the split was 2.3x less traffic per update, breaking even after about 1.2
- * updates on a macOS ZIP of `nucleus-demo`.
- *
- * Both layers are built with the same optimization level (`-Ob` for `runGraalvmNative`, else
- * [GraalvmSettings.optimization]) and the same garbage collector: native-image refuses a pair that
- * differs there. Each build mode keeps its own base layer, so switching between the dev loop and a
- * distributable build does not recompile the JDK. An option native-image verifies across layers
- * (`-O*`, `--gc=`, `-g`, …) passed through `buildArgs` reaches the application layer only and fails
- * the build.
- *
- * The reflection registration of `java.lang.invoke.MethodHandle` moves to the base layer. Made in
- * the application layer, it races with the base layer's generated `BoundMethodHandle` species and
- * fails about every other build with "This type is incomplete and should not be used". An app that
- * registers `MethodHandle` in its own metadata brings that race back.
+ * Both layers are built with `-Ob` and the same garbage collector: native-image refuses a pair that
+ * differs there. An option native-image verifies across layers (`-O*`, `--gc=`, `-g`, …) passed
+ * through `buildArgs` reaches the application layer only and fails the build. The L1 reflection
+ * registration of `MethodHandle` moves to the base layer, so the race stays away even with
+ * `exactReachabilityMetadata` off as long as no other metadata registers such a type; the build
+ * warns in that configuration.
  *
  * Only the JDK goes into the base layer. Putting the application's classes there as well makes
  * the application layer bail out on Kotlin's `synchronized` intrinsic. `java.desktop` has to stay

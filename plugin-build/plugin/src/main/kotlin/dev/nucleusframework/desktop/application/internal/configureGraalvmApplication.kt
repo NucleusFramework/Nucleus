@@ -746,12 +746,16 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     task.group = NUCLEUS_TASK_GROUP
                     task.outputDir.set(libraryMetadataDir)
                     task.headless.set(graalvm.headless)
-                    // Mirrors the layered-image gate below: on Windows, or on a toolchain older
-                    // than 25.3, there is no base layer to take the moved registrations.
+                    // Mirrors the layered-image gate below: outside runGraalvmNative, on Windows, or
+                    // on a toolchain older than 25.3, there is no base layer to take the moved
+                    // registrations.
                     task.baseLayerOwnsReflectionTypes.set(
                         graalvm.layers.isEnabled.flatMap { enabled ->
                             graalvmHome.map { home ->
-                                enabled && currentOS != OS.Windows && supportsLayeredImages(File(home))
+                                enabled &&
+                                    currentOS != OS.Windows &&
+                                    quickBuildRequested &&
+                                    supportsLayeredImages(File(home))
                             }
                         },
                     )
@@ -868,8 +872,17 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
     // ── nativeImageBaseLayer ──
     //
     // Compiles the JDK into a shared library the application layer links against, plus the `.nil`
-    // archive that layer consumes. A release that only changes application code reuses this file
-    // byte for byte, which is the whole point: a differential update then skips it entirely.
+    // archive that layer consumes. Built once, it leaves each dev-loop rebuild only the application
+    // to compile.
+    //
+    // runGraalvmNative only. A distributable is always monolithic: on GraalVM 25.4 the application
+    // layer's reflection analysis races on JDK types whose subtypes the base layer generated (a
+    // registered `MethodHandle` and its `BoundMethodHandle$Species_*_BaseLayer` classes abort about
+    // every other build with "This type is incomplete"), and any metadata — the app's, a library's,
+    // the agent's — can register such a type, so no filtering here makes a release build reliable.
+    // The dev loop sets --exact-reachability-metadata, which skips that analysis. The base layer is
+    // also not reproducible (two builds of the same inputs differ in most blocks), which rules out
+    // shipping it for differential updates anyway.
     //
     // Deliberately minimal on options. `-H:+LayerOptionVerification` diffs the two layers' argument
     // lists and fails on any option GraalVM marks @LayerVerifiedOption that one side has and the
@@ -888,18 +901,14 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         "building a monolithic image instead.",
                 )
             }
-        } && currentOS != OS.Windows
+        } && currentOS != OS.Windows && quickBuildRequested
 
-    // Optimization level shared by both layers. Quick build (`-Ob`) wins over the configured
-    // optimization for the fast dev run.
+    // Optimization level. Quick build (`-Ob`) wins over the configured optimization for the fast
+    // dev run; the base layer is built with it too.
     val resolvedOptimizationFlag =
         if (quickBuildRequested) "-Ob" else graalvm.optimization.orNull?.flag
 
-    // One base layer per build mode: the quick build's `-Ob` has to be in the base layer too. Each
-    // mode also gets its own task (nativeImageBaseLayer / nativeImageQuickBaseLayer), since Gradle
-    // keeps a single execution history per task: a shared task with a per-mode output directory
-    // would recompile the JDK on every switch between runGraalvmNative and a distributable build.
-    val layerDir = appTmpDir.map { it.dir(if (quickBuildRequested) "graalvm/layer-quick" else "graalvm/layer") }
+    val layerDir = appTmpDir.map { it.dir("graalvm/layer") }
     val layerArchiveFile = layerDir.map { it.file("$GRAALVM_LAYER_NAME.nil") }
     val layerLibraryFile =
         if (layeredImage) layerDir.map { it.file(graalvmLayerLibraryName(currentOS)) } else null
@@ -910,7 +919,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         } else {
             tasks.register<Exec>(
                 taskNameAction = "nativeImage",
-                taskNameObject = if (quickBuildRequested) "quickBaseLayer" else "baseLayer",
+                taskNameObject = "baseLayer",
             ) {
                 description = "Compile the JDK into a reusable GraalVM native image base layer"
 
@@ -1324,6 +1333,16 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         exactResolution.warning?.let { logger.warn(it) }
                         exactResolution.lifecycleMessage?.let { logger.lifecycle(it) }
                         addAll(exactResolution.buildArgs)
+                        // --exact-reachability-metadata is what keeps a layered build clear of the
+                        // BaseLayerType race (see nativeImageBaseLayer): without it, a JDK type such
+                        // as MethodHandle registered by any metadata can fail the build at random.
+                        if (resolvedLayerArchive != null && exactResolution.buildArgs.isEmpty()) {
+                            logger.warn(
+                                "graalvm { layers { } } without exact reachability metadata: the build may " +
+                                    "fail at random with \"This type is incomplete\". Keep " +
+                                    "exactReachabilityMetadata on for the dev loop, or disable layers.",
+                            )
+                        }
 
                         // macOS: force the link-time deployment target. native-image does NOT
                         // propagate MACOSX_DEPLOYMENT_TARGET to its internal linker, so the link
