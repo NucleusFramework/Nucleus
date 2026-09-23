@@ -818,6 +818,25 @@ abstract class AbstractElectronBuilderPackageTask
                 }
             }
 
+            // Re-sign native libs shipped next to the launcher. GraalVM native image puts its
+            // dylibs in Contents/MacOS/ and Contents/MacOS/lib/, and without signing them here they
+            // keep the earlier ad-hoc signature and get rejected during notarization. The JVM
+            // layout only has the launcher in Contents/MacOS/, so this is effectively a no-op there.
+            val macOsDir = appDir.resolve("Contents/MacOS")
+            if (macOsDir.exists()) {
+                // The main binary is signed by the bundle signing below, so skip it here.
+                val mainBinary = executableName.orNull?.let { macOsDir.resolve(it) }
+                macOsDir.walk().forEach { file ->
+                    if (file == mainBinary) return@forEach
+                    val path = file.toPath()
+                    if (path.isRegularFile(LinkOption.NOFOLLOW_LINKS) &&
+                        (path.isExecutable() || file.name.isDylibPath)
+                    ) {
+                        signer.sign(file, appEntitlements)
+                    }
+                }
+            }
+
             // Re-sign the entire app bundle
             signer.sign(appDir, appEntitlements, forceEntitlements = true)
         }

@@ -2,9 +2,11 @@ package dev.nucleusframework.graalvm
 
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.graalvm.locale.NativeLocaleBridge
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GraalVmInitializerTest {
@@ -22,6 +24,25 @@ class GraalVmInitializerTest {
         GraalVmInitializer.initialize()
         GraalVmInitializer.initialize()
         assertFalse(GraalVmInitializer.isNativeImage)
+    }
+
+    @Test
+    fun `macos font config is resolved from the bundle Resources dir`() {
+        val bundle = Files.createTempDirectory("nucleus-bundle").toFile()
+        try {
+            val execDir = bundle.resolve("Contents/MacOS")
+            val resourcesDir = bundle.resolve("Contents/Resources")
+            assertTrue(execDir.mkdirs())
+            assertTrue(resourcesDir.mkdirs())
+
+            assertNull(GraalVmInitializer.resolveMacOsFontConfig(execDir))
+
+            val fontConfig = resourcesDir.resolve("fontconfig.bfc")
+            fontConfig.writeBytes(byteArrayOf(0))
+            assertEquals(fontConfig, GraalVmInitializer.resolveMacOsFontConfig(execDir))
+        } finally {
+            bundle.deleteRecursively()
+        }
     }
 
     @Test
