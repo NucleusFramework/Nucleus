@@ -1904,7 +1904,9 @@ internal class TaoComposeSceneHostLinux(
         if (!NativeTaoLinuxWidgetBridge.isLoaded || window.handle == 0L) return false
         val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
         if (gtkWindow == 0L) return false
-        if (toplevelDrawHookId != 0L && toplevelDrawHookWindow == gtkWindow) return true
+        // One attempt per GtkWindow: a refused connection does not heal, and retrying it from
+        // every frame floods the log with the same JNI error.
+        if (toplevelDrawHookWindow == gtkWindow) return toplevelDrawHookId != 0L
         toplevelDrawHookWindow = gtkWindow
         toplevelDrawHookId =
             NativeTaoLinuxWidgetBridge.nativeConnectToplevelDraw(

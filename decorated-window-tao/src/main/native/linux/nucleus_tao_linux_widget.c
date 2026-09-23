@@ -893,7 +893,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeConnec
     if (g.g_signal_connect_data == NULL) return 0;
     if (sJVM == NULL) (*env)->GetJavaVM(env, &sJVM);
     if (sOnToplevelDrawMethod == NULL) {
-        jclass local = (*env)->GetObjectClass(env, callback);
+        /* Resolved on the interface, not on GetObjectClass(callback): the
+         * callback is an anonymous class, and a native image only knows the
+         * JNI method the reachability metadata registers — the interface's.
+         * CallVoidMethod still dispatches to the implementation. */
+        jclass local = (*env)->FindClass(env,
+            "dev/nucleusframework/window/tao/ffi/NativeTaoLinuxWidgetBridge$ToplevelDrawCallback");
         if (local != NULL) {
             sOnToplevelDrawMethod = (*env)->GetMethodID(env, local, "onToplevelDraw", "()V");
             (*env)->DeleteLocalRef(env, local);
