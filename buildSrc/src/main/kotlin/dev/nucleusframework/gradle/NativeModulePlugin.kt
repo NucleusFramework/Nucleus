@@ -103,7 +103,12 @@ open class NativeModuleExtension(
                 // there). Other vendor trees (accesskit forks, ANGLE headers)
                 // are large and rarely change independently of `src/**`.
                 include("vendor/tao/**")
-                exclude("target/**", "vendor/accesskit_*/**", "vendor/angle-headers/**")
+                exclude("**/target/**", "vendor/accesskit_*/**", "vendor/angle-headers/**")
+                // The build scripts drop their intermediates next to the sources
+                // (cl.exe writes .obj into the working directory, cargo leaves
+                // marker files in the vendor trees). Tracking them as inputs made
+                // every native task out-of-date on the run right after it built.
+                exclude(GENERATED_ARTIFACTS)
             }
 
         val task =
@@ -239,6 +244,28 @@ enum class NativeTarget(
 }
 
 private const val NATIVE_RESOURCE_PATH = "src/main/resources/nucleus/native"
+
+/**
+ * Build by-products the native scripts leave inside `src/main/native`. They are
+ * derived from the sources, never edited, and must not take part in the
+ * up-to-date check.
+ */
+private val GENERATED_ARTIFACTS =
+    listOf(
+        "**/*.obj",
+        "**/*.o",
+        "**/*.lib",
+        "**/*.exp",
+        "**/*.pdb",
+        "**/*.ilk",
+        "**/*.d",
+        "**/*.dll",
+        "**/*.so",
+        "**/*.dylib",
+        "**/build_log.txt",
+        "**/.cargo-ok",
+        "**/.cargo_vcs_info.json",
+    )
 
 private fun evictFromLoaderCache(
     cacheDir: File,
