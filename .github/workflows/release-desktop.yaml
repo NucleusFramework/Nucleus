@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   validate-release-ref:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
@@ -41,9 +41,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             arch: amd64
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-22.04-arm
             arch: arm64
           - os: windows-latest
             arch: amd64
@@ -346,7 +346,7 @@ jobs:
     name: Publish Release
     needs: [build, universal-macos, bundle-windows]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
 
     env:
