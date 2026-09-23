@@ -42,7 +42,6 @@ jobs:
         with:
           graalvm: 'true'
           setup-gradle: 'true'
-          setup-node: 'false'
 
       # ── Stage 1: build + run the Tao native test pyramid ────────────────
       # Compiles examples/tao-native-test, then executes the packaged binary

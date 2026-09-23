@@ -49,7 +49,6 @@ jobs:
             arch: amd64
           - os: windows-11-arm
             arch: arm64
-            node-version: '22' # npm 11 (Node 24) has ECOMPROMISED bugs on Windows ARM64
           - os: macos-latest
             arch: arm64
           - os: macos-15-intel
@@ -81,8 +80,6 @@ jobs:
           flatpak: 'true'
           snap: 'true'
           setup-gradle: 'true'
-          setup-node: 'true'
-          node-version: ${{ matrix.node-version || '24' }}
 
       - name: Download native artifacts
         uses: actions/download-artifact@v4
@@ -191,6 +188,9 @@ jobs:
             examples/nucleus-demo/packaging/macos
           fetch-depth: 1
 
+      # This job does not go through the Nucleus plugin (which provisions its own
+      # Node.js): build-universal.sh drives electron-builder with `npx` directly
+      # to repack the two per-arch builds into one universal bundle.
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:

@@ -989,6 +989,7 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         packageTask.startupWMClass.set(startupWMClass)
     }
     packageTask.customNodePath.set(NucleusProperties.electronBuilderNodePath(project.providers))
+    packageTask.configureNodeJs(project, app.nativeDistributions.nodejs)
     packageTask.publishMode.set(NucleusProperties.electronBuilderPublishMode(project.providers))
     packageTask.appxStoreLogo.set(app.nativeDistributions.windows.appx.storeLogo)
     packageTask.appxSquare44x44Logo.set(app.nativeDistributions.windows.appx.square44x44Logo)

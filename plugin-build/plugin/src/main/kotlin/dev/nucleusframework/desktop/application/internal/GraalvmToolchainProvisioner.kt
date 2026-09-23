@@ -12,15 +12,11 @@ import org.gradle.api.provider.Property
 import org.gradle.api.provider.ValueSource
 import org.gradle.api.provider.ValueSourceParameters
 import org.gradle.process.ExecOperations
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
-import java.net.HttpURLConnection
-import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
 import javax.inject.Inject
 
 /**
@@ -119,12 +115,6 @@ internal abstract class GraalvmToolchainValueSource :
 @Suppress("TooManyFunctions")
 internal object GraalvmToolchainProvisioner {
     private const val MARKER_FILE = ".nucleus-provisioned"
-    private const val CONNECT_TIMEOUT_MS = 30_000
-    private const val READ_TIMEOUT_MS = 60_000
-    private const val MAX_REDIRECTS = 5
-    private const val DOWNLOAD_BUFFER_SIZE = 1 shl 16
-    private const val HTTP_FIRST_REDIRECT = 300
-    private const val HTTP_FIRST_ERROR = 400
     private const val BITNESS_64 = 64
     private const val BELLSOFT_NIK_API = "https://api.bell-sw.com/v1/nik/releases?os=macos&output=json"
     private const val GRAALVM_CE_RELEASES_API =
@@ -534,38 +524,12 @@ internal object GraalvmToolchainProvisioner {
         val (algorithm, expected) =
             when {
                 source.sha1 != null -> "SHA-1" to source.sha1
-                source.sha256Url != null -> {
-                    val text =
-                        runCatching { fetchText(source.sha256Url) }.getOrElse {
-                            // Some networks filter the checksum side-file while allowing the
-                            // archive itself; integrity failure would still surface in tar.
-                            logger.warn(
-                                "[graalvm] Could not fetch checksum ${source.sha256Url} (${it.message}) — " +
-                                    "skipping verification",
-                            )
-                            return
-                        }
-                    "SHA-256" to text.trim().substringBefore(' ')
-                }
+                source.sha256Url != null ->
+                    "SHA-256" to
+                        (ToolchainDownloads.fetchOptionalChecksum(source.sha256Url, "[graalvm]", logger) ?: return)
                 else -> return
             }
-        val actual = archive.digest(algorithm)
-        check(actual.equals(expected, ignoreCase = true)) {
-            "Checksum mismatch for ${source.url}: expected $expected, got $actual"
-        }
-    }
-
-    private fun File.digest(algorithm: String): String {
-        val digest = MessageDigest.getInstance(algorithm)
-        inputStream().use { input ->
-            val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        ToolchainDownloads.verifyChecksum(archive, source.url, algorithm, expected)
     }
 
     private fun download(
@@ -574,9 +538,7 @@ internal object GraalvmToolchainProvisioner {
         request: GraalvmToolchainRequest,
     ) {
         try {
-            openConnection(url).inputStream.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output, DOWNLOAD_BUFFER_SIZE) }
-            }
+            ToolchainDownloads.download(url, dest)
         } catch (e: IOException) {
             val macIntelHint =
                 if (request.os == OS.MacOS && request.arch == Arch.X64) {
@@ -592,37 +554,7 @@ internal object GraalvmToolchainProvisioner {
     private fun fetchText(
         url: String,
         headers: Map<String, String> = emptyMap(),
-    ): String = openConnection(url, headers).inputStream.use { it.readBytes().decodeToString() }
-
-    /** Opens a connection following redirects across hosts (HttpURLConnection won't by itself). */
-    // Redirect handling has three distinct failure modes worth reporting separately.
-    @Suppress("ThrowsCount")
-    private fun openConnection(
-        url: String,
-        headers: Map<String, String> = emptyMap(),
-    ): HttpURLConnection {
-        var current = url
-        repeat(MAX_REDIRECTS) {
-            val connection = URI(current).toURL().openConnection() as HttpURLConnection
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            connection.instanceFollowRedirects = true
-            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
-            val code = connection.responseCode
-            when {
-                code in HTTP_FIRST_REDIRECT until HTTP_FIRST_ERROR -> {
-                    val location =
-                        connection.getHeaderField("Location")
-                            ?: throw IOException("Redirect without Location header from $current")
-                    connection.disconnect()
-                    current = location
-                }
-                code >= HTTP_FIRST_ERROR -> throw IOException("HTTP $code from $current")
-                else -> return connection
-            }
-        }
-        throw IOException("Too many redirects for $url")
-    }
+    ): String = ToolchainDownloads.fetchText(url, headers)
 
     /**
      * Extracts with the system `tar`, which preserves permissions and symlinks (Gradle's
@@ -634,16 +566,5 @@ internal object GraalvmToolchainProvisioner {
         archive: File,
         destDir: File,
         execOperations: ExecOperations,
-    ) {
-        destDir.mkdirs()
-        val output = ByteArrayOutputStream()
-        val result =
-            execOperations.exec { spec ->
-                spec.commandLine("tar", "-xf", archive.absolutePath, "-C", destDir.absolutePath)
-                spec.standardOutput = output
-                spec.errorOutput = output
-                spec.isIgnoreExitValue = true
-            }
-        check(result.exitValue == 0) { "tar failed extracting ${archive.name}: $output" }
-    }
+    ) = ToolchainDownloads.extract(archive, destDir, execOperations)
 }

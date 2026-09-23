@@ -2426,6 +2426,7 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
 
                 executableName.set(imageName)
                 customNodePath.set(NucleusProperties.electronBuilderNodePath(project.providers))
+                configureNodeJs(project, app.nativeDistributions.nodejs)
                 publishMode.set(NucleusProperties.electronBuilderPublishMode(project.providers))
                 linuxAfterInstall.set(app.nativeDistributions.linux.afterInstall)
                 linuxAfterRemove.set(app.nativeDistributions.linux.afterRemove)
