@@ -384,6 +384,19 @@ abstract class MetadataRepositorySettings
  * The measured payoff of the split was 2.3x less traffic per update, breaking even after about 1.2
  * updates on a macOS ZIP of `nucleus-demo`.
  *
+ * Both layers are built with the same optimization level (`-Ob` for `runGraalvmNative`, else
+ * [GraalvmSettings.optimization]) and the same garbage collector: native-image refuses a pair that
+ * differs there. Each build mode keeps its own base layer, so switching between the dev loop and a
+ * distributable build does not recompile the JDK. An option native-image verifies across layers
+ * (`-O*`, `--gc=`, `-g`, …) passed through `buildArgs` reaches the application layer only and fails
+ * the build.
+ *
+ * A layered build always sets `--exact-reachability-metadata` (on an empty package when the dev
+ * loop does not already scope it to the app): without it GraalVM 25.4 fails about every other
+ * application-layer build with "This type is incomplete and should not be used". The image then
+ * follows exact-metadata semantics — the inner classes of a class registered for reflection are no
+ * longer registered implicitly.
+ *
  * Only the JDK goes into the base layer. Putting the application's classes there as well makes
  * the application layer bail out on Kotlin's `synchronized` intrinsic. `java.desktop` has to stay
  * in the base layer: omitting it fails with "Newly seen boot package java.awt.datatransfer".

@@ -74,6 +74,12 @@ private fun escapeNativeImageArgFileArgument(arg: String): String =
  */
 private const val GRAALVM_LAYER_NAME = "nucleusbase"
 
+/**
+ * An empty package handed to `--exact-reachability-metadata` on a layered build only to turn the
+ * option on: see where -H:LayerUse is added.
+ */
+private const val LAYERED_IMAGE_EXACT_REACHABILITY_PACKAGE = "dev.nucleusframework.internal.layeredimage"
+
 /** File name of the base layer library native-image emits on [os]. */
 private fun graalvmLayerLibraryName(os: OS): String =
     "lib$GRAALVM_LAYER_NAME." + if (os == OS.MacOS) "dylib" else "so"
@@ -862,9 +868,12 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
     // archive that layer consumes. A release that only changes application code reuses this file
     // byte for byte, which is the whole point: a differential update then skips it entirely.
     //
-    // Deliberately minimal on options. `-H:+LayerOptionVerification` requires every option the base
-    // layer records to reappear at the same position in the application layer's command line, so
-    // anything added here has to be mirrored there — see where -H:LayerUse is added.
+    // Deliberately minimal on options. `-H:+LayerOptionVerification` diffs the two layers' argument
+    // lists and fails on any option GraalVM marks @LayerVerifiedOption that one side has and the
+    // other lacks at the same relative position. Of the options the plugin sets, that is the
+    // optimization level (`-O*`, including the quick build's `-Ob`) and the collector (`--gc=`):
+    // both are passed here in the order the application layer passes them, right after -march.
+    // Anything else added here has to be mirrored there — see where -H:LayerUse is added.
     //
     // macOS and Linux for now: shipping the layer library needs per-platform handling (extension,
     // library reference, signing), and Windows is not validated yet.
@@ -878,8 +887,19 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             }
         } && currentOS != OS.Windows
 
-    val layerDir = appTmpDir.map { it.dir("graalvm/layer") }
+    // Optimization level shared by both layers. Quick build (`-Ob`) wins over the configured
+    // optimization for the fast dev run.
+    val resolvedOptimizationFlag =
+        if (quickBuildRequested) "-Ob" else graalvm.optimization.orNull?.flag
+
+    // One base layer per build mode: the quick build's `-Ob` has to be in the base layer too. Each
+    // mode also gets its own task (nativeImageBaseLayer / nativeImageQuickBaseLayer), since Gradle
+    // keeps a single execution history per task: a shared task with a per-mode output directory
+    // would recompile the JDK on every switch between runGraalvmNative and a distributable build.
+    val layerDir = appTmpDir.map { it.dir(if (quickBuildRequested) "graalvm/layer-quick" else "graalvm/layer") }
     val layerArchiveFile = layerDir.map { it.file("$GRAALVM_LAYER_NAME.nil") }
+    val layerLibraryFile =
+        if (layeredImage) layerDir.map { it.file(graalvmLayerLibraryName(currentOS)) } else null
 
     val nativeImageBaseLayer =
         if (!layeredImage) {
@@ -887,7 +907,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         } else {
             tasks.register<Exec>(
                 taskNameAction = "nativeImage",
-                taskNameObject = "baseLayer",
+                taskNameObject = if (quickBuildRequested) "quickBaseLayer" else "baseLayer",
             ) {
                 description = "Compile the JDK into a reusable GraalVM native image base layer"
 
@@ -896,6 +916,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 inputs.property("modules", graalvm.layers.modules)
                 inputs.property("resourceBundles", graalvm.layers.resourceBundles)
                 inputs.property("march", resolvedMarchFlag)
+                inputs.property("optimization", resolvedOptimizationFlag ?: "")
+                inputs.property("garbageCollector", graalvm.garbageCollector.map { it.name }.orElse(""))
                 inputs.property(
                     "graalvmVersion",
                     graalvmHome.map { home ->
@@ -921,15 +943,26 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 val modules = graalvm.layers.modules.get()
                 val bundles = graalvm.layers.resourceBundles.get()
                 val archive = layerArchiveFile.get().asFile
+                val requestedGc = graalvm.garbageCollector.orNull
 
                 doFirst {
                     outputDir.mkdirs()
                     // Resolved here rather than at configuration time: this is the call that
                     // provisions the toolchain, and it must only happen when a layer is built.
                     executable = nativeImageExe.get()
+                    // Resolved as the application layer resolves it, which logs any warning.
+                    val gc =
+                        resolveNativeImageGc(
+                            requested = requestedGc,
+                            isOracleGraalvm = isOracleGraalvm(File(graalvmHome.get())),
+                            isLinux = currentOS == OS.Linux,
+                            graalvmHome = graalvmHome.get(),
+                        ).gc
                     args =
-                        listOf(
+                        listOfNotNull(
                             "-march=$resolvedMarchFlag",
+                            resolvedOptimizationFlag,
+                            gc?.flag,
                             "-H:+UnlockExperimentalVMOptions",
                             "-H:LayerCreate=${archive.name}," + modules.joinToString(",") { "module=$it" },
                             // The layer that owns java.desktop is where its localization support is
@@ -1016,8 +1049,6 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedLayerArchive = if (layeredImage) layerArchiveFile.get().asFile else null
             // Quick build (`-Ob`) wins over the configured optimization for the fast dev run.
             val resolvedQuickBuild = quickBuildRequested
-            val resolvedOptimizationFlag =
-                if (resolvedQuickBuild) "-Ob" else graalvm.optimization.orNull?.flag
             val resolvedAllCharsets = graalvm.allCharsets.get()
             val resolvedMlProfileInference = graalvm.mlProfileInference.get()
             val resolvedPgoMode = pgoMode
@@ -1282,6 +1313,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         exactResolution.warning?.let { logger.warn(it) }
                         exactResolution.lifecycleMessage?.let { logger.lifecycle(it) }
                         addAll(exactResolution.buildArgs)
+                        val exactReachabilitySet = exactResolution.buildArgs.isNotEmpty()
 
                         // macOS: force the link-time deployment target. native-image does NOT
                         // propagate MACOSX_DEPLOYMENT_TARGET to its internal linker, so the link
@@ -1358,6 +1390,18 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         ) {
                             add("-H:+UnlockExperimentalVMOptions")
                             add("-H:LayerUse=${layerArchive.absolutePath}")
+                            // Works around a GraalVM race: without exact reachability metadata,
+                            // ReflectionDataBuilder.checkHidingFields walks the fields of
+                            // base-layer types from parallel tasks, and a type the application
+                            // layer only knows as a BaseLayerType aborts the build with "This type
+                            // is incomplete and should not be used" — about every other build of
+                            // nucleus-demo. Setting the option at all skips that check. The package
+                            // holds no class, so no lookup ever throws; the image does switch to
+                            // exact-metadata semantics (no implicit registration of the inner
+                            // classes of a reflectively registered class).
+                            if (!exactReachabilitySet) {
+                                add("--exact-reachability-metadata=$LAYERED_IMAGE_EXACT_REACHABILITY_PACKAGE")
+                            }
                         }
 
                         addAll(resolvedBuildArgs)
@@ -1397,6 +1441,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     imageName,
                     unpackDefaultResources,
                     packageUberJar,
+                    layerLibraryFile,
                 )
             OS.Windows ->
                 configureWindowsGraalvmPackaging(
@@ -1415,6 +1460,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     nativeCompileDir,
                     imageName,
                     packageUberJar,
+                    layerLibraryFile,
                 )
         }
 
@@ -1564,10 +1610,9 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     imageName: org.gradle.api.provider.Provider<String>,
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
     packageUberJar: TaskProvider<Jar>,
+    // The base layer library of this build mode, null for a monolithic image.
+    layerLibraryFile: org.gradle.api.provider.Provider<org.gradle.api.file.RegularFile>?,
 ): TaskProvider<DefaultTask> {
-    // This function only runs on macOS, so the platform gate is already satisfied here.
-    val layeredImage = graalvm.layers.isEnabled.get()
-    val layerLibraryFile = appTmpDir.map { it.file("graalvm/layer/${graalvmLayerLibraryName(OS.MacOS)}") }
 
     val appBundleName = resolvedMacBundleNameProvider().map { "$it.app" }
     val appBundleDir =
@@ -1603,7 +1648,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     // beside the executable — native-image already emits a relocatable reference, no install-name
     // patching needed. Signing runs after this, so the added file is sealed with the bundle.
     val copyLayerLibrary =
-        if (!layeredImage) {
+        if (layerLibraryFile == null) {
             null
         } else {
             tasks.register<Copy>(
@@ -2348,6 +2393,8 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
     nativeCompileDir: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
+    // The base layer library of this build mode, null for a monolithic image.
+    layerLibraryFile: org.gradle.api.provider.Provider<org.gradle.api.file.RegularFile>?,
 ): TaskProvider<DefaultTask> {
     val headless = graalvm.headless.get()
     val outputDir = graalvmOutputDir.map { it.dir(resolvedPackageNameProvider().get()) }
@@ -2376,9 +2423,8 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
     // resolves it. The *.so sweeps below skip it: it needs no rpath (libc, libm and libz only),
     // stripping gains nothing since every symbol it carries is dynamic, and a patchelf rewrite grows
     // it by several MB.
-    val layerLibraryFile = appTmpDir.map { it.file("graalvm/layer/${graalvmLayerLibraryName(OS.Linux)}") }
     val copyLayerLibrary =
-        if (!graalvm.layers.isEnabled.get()) {
+        if (layerLibraryFile == null) {
             null
         } else {
             tasks.register<Copy>(
@@ -2387,6 +2433,8 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
             ) {
                 description = "Copy the GraalVM base layer library into the output directory"
                 dependsOn(nativeImageCompile)
+                // copyBinary deletes a stale base layer from this directory first.
+                mustRunAfter(copyBinary)
                 from(layerLibraryFile)
                 into(outputDir)
                 doNotTrackState("Shared output directory is modified by strip tasks")
