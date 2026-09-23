@@ -353,7 +353,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pinned rather than ubuntu-latest because ubuntu-latest is a moving target GitHub
+          # periodically retargets to a newer LTS, which silently raises the glibc
+          # symbol floor every published .so requires. ubuntu-22.04 (glibc 2.35) is
+          # the oldest currently-supported hosted runner, keeping these binaries
+          # loadable on still-current-but-older distros (Debian 12, Devuan 5's glibc
+          # 2.36, Ubuntu 22.04 LTS's 2.35, etc) that ubuntu-latest's glibc 2.39
+          # (24.04) broke them on.
+          - os: ubuntu-22.04
             arch: x64
           - os: ubuntu-24.04-arm
             arch: aarch64
