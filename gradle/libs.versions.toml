@@ -1,5 +1,8 @@
 [versions]
 agp = "9.1.1"
+# The Chromium branch number the ANGLE DLLs were built from, so it tracks
+# ANGLE's own cadence. Built by github.com/NucleusFramework/angle.
+angleNatives = "8037.1"
 asm = "9.10.1"
 bcv = "0.18.1"
 awsSdk = "2.54.4"
@@ -63,6 +66,7 @@ androidApplication = { id = "com.android.application", version.ref = "agp" }
 kotlinxSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 
 [libraries]
+angle-natives = { module = "dev.nucleusframework:nucleus.angle-natives", version.ref = "angleNatives" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coilVersion" }
 hot-reload-agent = { module = "org.jetbrains.compose.hot-reload:hot-reload-agent", version.ref = "hotReload" }
 hot-reload-core = { module = "org.jetbrains.compose.hot-reload:hot-reload-core", version.ref = "hotReload" }

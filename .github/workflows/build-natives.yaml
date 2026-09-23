@@ -125,15 +125,6 @@ jobs:
         shell: cmd
         run: call decorated-window-tao\src\main\native\windows\build.bat
 
-      # ANGLE (libEGL + libGLESv2) backs the Tao Windows Direct3D-11 render path.
-      # Fetched from a pinned Electron release with SHA-256 verification (never
-      # committed — see .gitignore). Lands in the same win32-*/ dirs so it ships
-      # (and is cached) inside the natives-windows artifact.
-      - name: Fetch ANGLE runtime DLLs
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: bash decorated-window-tao/src/main/native/windows/fetch-angle.sh all
-
       - name: Verify Windows natives
         shell: bash
         run: |
@@ -158,8 +149,6 @@ jobs:
             "decorated-window-tao/nucleus_tao_gl.dll"
             "decorated-window-tao/nucleus_tao_dnd.dll"
             "decorated-window-tao/nucleus_tao_windows_native_view.dll"
-            "decorated-window-tao/libEGL.dll"
-            "decorated-window-tao/libGLESv2.dll"
           )
           MISSING=0
           for arch in win32-x64 win32-aarch64; do
