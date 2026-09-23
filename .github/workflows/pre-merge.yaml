@@ -22,7 +22,7 @@ jobs:
 
   gradle:
     needs: build-natives
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     # `preMerge` normally finishes in 6-10 min. Without an explicit cap a task
     # that blocks on a native call sits until Actions' 6h default and holds the
     # concurrency slot the whole time — `:launcher-linux:test` has done exactly
@@ -217,7 +217,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Repo
@@ -253,7 +253,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Repo
@@ -322,7 +322,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     # All three legs are gating. The Windows protocol has been validated
     # end-to-end on real hardware (physical GPU, Windows 11): all probe
