@@ -153,6 +153,19 @@ public class TaoWindow internal constructor(
     private var closeRequestedListener: (() -> Unit)? = null
 
     /**
+     * `false` for windows the framework owns (workspace satellites, tab
+     * windows, drag ghosts): a system quit leaves them alone instead of
+     * closing them, so a cancelled quit keeps the layout and an accepted one
+     * still snapshots it whole. See [TaoApplication.requestQuit].
+     */
+    @Volatile
+    internal var closesOnQuit: Boolean = true
+
+    /** Set once [requestClose] started destroying this window. */
+    @Volatile
+    internal var isClosing: Boolean = false
+
+    /**
      * Fires synchronously at the start of [requestClose] — before the native
      * destroy — so the host can present an opaque last frame (backdrop
      * teardown) while the window and its GL surface are still alive.
@@ -308,6 +321,7 @@ public class TaoWindow internal constructor(
     }
 
     public fun requestClose() {
+        isClosing = true
         // Actual destroy path (not the cancelable close-*request*). Present an
         // opaque themed frame first: a live backdrop's translucent clear would
         // composite towards black in the close animation. The host listener

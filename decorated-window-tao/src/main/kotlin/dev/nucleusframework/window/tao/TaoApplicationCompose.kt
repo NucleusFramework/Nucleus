@@ -19,6 +19,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -109,6 +110,9 @@ internal fun finishTaoApplication(
 
 private val composeEntryLogger: Logger = Logger.getLogger(TaoApplication::class.java.name)
 
+/** Upper bound on waiting for the close requests of a system quit to recompose. */
+private const val QUIT_SETTLE_TIMEOUT_MS = 500L
+
 @OptIn(ExperimentalFoundationApi::class)
 private fun runTaoComposeLoop(content: @Composable ApplicationScope.() -> Unit) {
     TaoApplication.run { app ->
@@ -134,6 +138,22 @@ private fun runTaoComposeLoop(content: @Composable ApplicationScope.() -> Unit) 
         val composition = Composition(NoOpApplier, recomposer)
 
         coroutineScope.launch { recomposer.runRecomposeAndApplyChanges() }
+
+        // A quit completes through exitApplication (composition disposed first),
+        // and is judged only once the close requests' state writes have been
+        // recomposed — a window that accepted has been disposed by then.
+        // ponytail: the timeout is a liveness guard only — a recomposer that never
+        // reports Idle would otherwise leave isQuitting stuck and swallow every later quit.
+        app.quitExit = scope::exitApplication
+        app.afterQuitRequests = { then ->
+            coroutineScope.launch {
+                Snapshot.sendApplyNotifications()
+                withTimeoutOrNull(QUIT_SETTLE_TIMEOUT_MS) {
+                    recomposer.currentState.first { it == Recomposer.State.Idle || it <= Recomposer.State.ShuttingDown }
+                }
+                then()
+            }
+        }
 
         coroutineScope.launch {
             try {

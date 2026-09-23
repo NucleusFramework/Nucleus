@@ -85,6 +85,9 @@ public object TaoEventCode {
      * VSync while active so border-drag frames don't block on VBlank.
      */
     public const val SIZE_MOVE: Int = 25
+
+    /** macOS requested application termination; route it through each window's close callback. */
+    internal const val QUIT_REQUESTED: Int = 26
 }
 
 /** Trackpad gesture kind reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */

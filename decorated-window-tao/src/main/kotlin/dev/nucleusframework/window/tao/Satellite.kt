@@ -309,7 +309,11 @@ public fun ApplicationScope.Satellite(
         compositionLocalContext = compositionLocalContext,
     ) {
         val windowScope: TaoDecoratedWindowScope = this
-        SideEffect { floatingWindow = window }
+        SideEffect {
+            floatingWindow = window
+            // A system quit leaves the palette to the workspace (see TaoWindow.closesOnQuit).
+            window.closesOnQuit = false
+        }
         DisposableEffect(window) {
             onDispose { if (floatingWindow === window) floatingWindow = null }
         }
