@@ -1067,6 +1067,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                 requested = resolvedGarbageCollector,
                                 isOracleGraalvm = oracleGraalvm,
                                 isLinux = currentOS == OS.Linux,
+                                graalvmVersion = graalvmVersionOf(File(resolvedGraalvmHome)),
                                 graalvmHome = resolvedGraalvmHome,
                             )
                         gcResolution.warning?.let { logger.warn(it) }

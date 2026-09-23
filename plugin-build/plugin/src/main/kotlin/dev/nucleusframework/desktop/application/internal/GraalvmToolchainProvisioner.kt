@@ -40,6 +40,24 @@ internal fun isOracleGraalvmInstallation(javaHome: File): Boolean =
         }
 
 /**
+ * The GraalVM version of [javaHome] (`GRAALVM_VERSION="25.4.4.1.1"` → `"25.4.4.1.1"`), or `null`
+ * when the `release` file is missing or carries no such entry — the case for a plain JDK.
+ *
+ * This is not `JAVA_VERSION`: the same build reports `25.0.4.1.1` there, so the GraalVM release
+ * line (25.3 vs 25.4) is only readable from this entry.
+ */
+internal fun graalvmVersionOf(javaHome: File): String? =
+    javaHome
+        .resolve("release")
+        .takeIf { it.isFile }
+        ?.readLines()
+        .orEmpty()
+        .firstOrNull { it.startsWith("GRAALVM_VERSION=") }
+        ?.substringAfter('=')
+        ?.trim('"')
+        ?.takeIf { it.isNotBlank() }
+
+/**
  * What GraalVM toolchain to provision for the current build machine.
  *
  * @param distribution GraalVM Community Edition (the default) or Oracle GraalVM.
