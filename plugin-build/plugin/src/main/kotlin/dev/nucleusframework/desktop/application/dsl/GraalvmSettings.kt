@@ -378,8 +378,9 @@ abstract class MetadataRepositorySettings
  * uses, so the first download grows while every later one shrinks.
  *
  * **Requires GraalVM 25.3, and stays off by default.** On an older toolchain the flag is ignored
- * and the image stays monolithic. The same happens on Windows and Linux: those platforms are not
- * validated yet. On CE 25.3.4.1 a macOS `nucleus-demo` build compiles and the application starts.
+ * and the image stays monolithic. The same happens on Windows, which is not validated yet. On CE
+ * 25.3.4.1 a `nucleus-demo` build compiles and the application starts on macOS and Linux; the base
+ * layer ships as `libnucleusbase.dylib` / `libnucleusbase.so` beside the executable.
  * The measured payoff of the split was 2.3x less traffic per update, breaking even after about 1.2
  * updates on a macOS ZIP of `nucleus-demo`.
  *

@@ -69,10 +69,14 @@ private fun escapeNativeImageArgFileArgument(arg: String): String =
 
 /**
  * Base name of the native image base layer: the archive `<name>.nil` that application-layer builds
- * consume, and the shared library `lib<name>.dylib` that ships beside the executable. native-image
- * requires a layer library's name to start with "lib".
+ * consume, and the shared library `lib<name>.dylib` / `lib<name>.so` that ships beside the
+ * executable. native-image requires a layer library's name to start with "lib".
  */
 private const val GRAALVM_LAYER_NAME = "nucleusbase"
+
+/** File name of the base layer library native-image emits on [os]. */
+private fun graalvmLayerLibraryName(os: OS): String =
+    "lib$GRAALVM_LAYER_NAME." + if (os == OS.MacOS) "dylib" else "so"
 
 // The GraalVM native app folder, placed under `compose/binaries/<appDirName>/graalvm-app`
 // to mirror the JVM distributable layout (`compose/binaries/<appDirName>/app`) instead of
@@ -862,21 +866,20 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
     // layer records to reappear at the same position in the application layer's command line, so
     // anything added here has to be mirrored there — see where -H:LayerUse is added.
     //
-    // macOS-only for now: it is the platform this was validated on, and shipping the layer library
-    // needs per-platform handling (extension, install name, signing).
+    // macOS and Linux for now: shipping the layer library needs per-platform handling (extension,
+    // library reference, signing), and Windows is not validated yet.
     val layeredImage =
         graalvm.layers.isEnabled.get().also { requested ->
-            if (requested && currentOS != OS.MacOS) {
+            if (requested && currentOS == OS.Windows) {
                 project.logger.warn(
-                    "graalvm { layers { isEnabled = true } } is only supported on macOS for now; " +
+                    "graalvm { layers { isEnabled = true } } is not supported on Windows yet; " +
                         "building a monolithic image instead.",
                 )
             }
-        } && currentOS == OS.MacOS
+        } && currentOS != OS.Windows
 
     val layerDir = appTmpDir.map { it.dir("graalvm/layer") }
     val layerArchiveFile = layerDir.map { it.file("$GRAALVM_LAYER_NAME.nil") }
-    val layerLibraryFile = layerDir.map { it.file("lib$GRAALVM_LAYER_NAME.dylib") }
 
     val nativeImageBaseLayer =
         if (!layeredImage) {
@@ -1564,7 +1567,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
 ): TaskProvider<DefaultTask> {
     // This function only runs on macOS, so the platform gate is already satisfied here.
     val layeredImage = graalvm.layers.isEnabled.get()
-    val layerLibraryFile = appTmpDir.map { it.file("graalvm/layer/lib$GRAALVM_LAYER_NAME.dylib") }
+    val layerLibraryFile = appTmpDir.map { it.file("graalvm/layer/${graalvmLayerLibraryName(OS.MacOS)}") }
 
     val appBundleName = resolvedMacBundleNameProvider().map { "$it.app" }
     val appBundleDir =
@@ -1623,7 +1626,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
                 doLast {
                     val macosDir = appBundleDir.get().dir("MacOS").asFile
                     val executable = File(macosDir, executableName.get())
-                    val library = "lib$GRAALVM_LAYER_NAME.dylib"
+                    val library = graalvmLayerLibraryName(OS.MacOS)
                     val recorded =
                         ProcessBuilder("otool", "-L", executable.absolutePath)
                             .redirectErrorStream(true)
@@ -2362,6 +2365,34 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
             // strip(1) creates temporary files in the same directory, causing
             // NoSuchFileException if this task runs in parallel with stripSoLibs.
             doNotTrackState("Shared output directory is modified by strip tasks")
+            // The output directory is never cleaned and electron-builder packages all of it, so a
+            // base layer left by an earlier layered build would ship in a monolithic package.
+            val staleLayerLibrary = outputDir.map { it.file(graalvmLayerLibraryName(OS.Linux)) }
+            doFirst { staleLayerLibrary.get().asFile.delete() }
+        }
+
+    // The application layer records the base layer as a bare `NEEDED libnucleusbase.so` with no
+    // rpath of its own, so the library only has to sit beside the executable: fixRpath's $ORIGIN
+    // resolves it. The *.so sweeps below skip it: it needs no rpath (libc, libm and libz only),
+    // stripping gains nothing since every symbol it carries is dynamic, and a patchelf rewrite grows
+    // it by several MB.
+    val layerLibraryFile = appTmpDir.map { it.file("graalvm/layer/${graalvmLayerLibraryName(OS.Linux)}") }
+    val copyLayerLibrary =
+        if (!graalvm.layers.isEnabled.get()) {
+            null
+        } else {
+            tasks.register<Copy>(
+                taskNameAction = "copy",
+                taskNameObject = "graalvmLayerLibrary",
+            ) {
+                description = "Copy the GraalVM base layer library into the output directory"
+                dependsOn(nativeImageCompile)
+                from(layerLibraryFile)
+                into(outputDir)
+                doNotTrackState("Shared output directory is modified by strip tasks")
+                // Absent when the toolchain is older than 25.3 and the base layer was skipped.
+                onlyIf { layerLibraryFile.get().asFile.isFile }
+            }
         }
 
     val copyAwtSoLibs =
@@ -2455,7 +2486,13 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
             description = "Set RPATH to \$ORIGIN on companion .so libs so inter-library deps resolve"
             dependsOn(copyAwtSoLibs, copyJvmSo)
             val dir = outputDir.get().asFile.absolutePath
-            commandLine("bash", "-c", "for f in '$dir'/*.so; do patchelf --set-rpath '\$ORIGIN' \"\$f\"; done")
+            val layerLibrary = graalvmLayerLibraryName(OS.Linux)
+            commandLine(
+                "bash",
+                "-c",
+                "for f in '$dir'/*.so; do [ \"\${f##*/}\" = '$layerLibrary' ] && continue; " +
+                    "patchelf --set-rpath '\$ORIGIN' \"\$f\"; done",
+            )
         }
 
     val stripSoLibs =
@@ -2465,7 +2502,13 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
         ) {
             description = "Strip debug symbols from .so libs"
             dependsOn(copyAwtSoLibs, copyJvmSo, fixSoRpath)
-            commandLine("bash", "-c", "strip --strip-debug '${outputDir.get().asFile.absolutePath}'/*.so")
+            val dir = outputDir.get().asFile.absolutePath
+            val layerLibrary = graalvmLayerLibraryName(OS.Linux)
+            commandLine(
+                "bash",
+                "-c",
+                "find '$dir' -maxdepth 1 -name '*.so' ! -name '$layerLibrary' -exec strip --strip-debug {} +",
+            )
         }
 
     // Strip the main native-image executable. Unlike the companion .so libs, the ELF binary
@@ -2491,6 +2534,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
     ) {
         description = "Build native image and package with .so libs"
         dependsOn(copyBinary, copyAppResources, fixRpath, stripBinary)
+        copyLayerLibrary?.let { dependsOn(it) }
         if (!headless) {
             dependsOn(
                 copyAwtSoLibs,
