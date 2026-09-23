@@ -25,6 +25,12 @@ dependencies {
     // scene's PlatformContext implements `isKeepScreenOnEnabled`. Tao owns
     // that context and forwards it to EnergyManager.
     implementation(project(":energy-manager"))
+    // ANGLE's libEGL / libGLESv2, backing the Windows Direct3D-11 render path.
+    // A runtime resource, never linked against: the jar lays the DLLs out under
+    // nucleus/native/win32-{x64,aarch64}/, which is where NativeLibraryLoader
+    // resolves them from the classpath. Built by NucleusFramework/angle for
+    // D3D11 only -- see THIRD_PARTY_NOTICES.md.
+    implementation(libs.angle.natives)
     implementation(libs.compose.desktop.common)
     // Compose Hot Reload interop (TaoHotReloadBridge). compileOnly: these
     // artifacts are only referenced when running under the hot-reload agent,
