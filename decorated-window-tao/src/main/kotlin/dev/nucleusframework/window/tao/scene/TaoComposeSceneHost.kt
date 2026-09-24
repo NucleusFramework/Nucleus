@@ -851,6 +851,7 @@ internal class TaoComposeSceneHost(
 
     fun onFocusChanged(focused: Boolean) {
         windowInfo.isWindowFocused = focused
+        if (!focused) interruptRotation()
         if (!focused && isPressed) {
             // Whatever stole focus mid-click (a native context-menu tracking
             // session, a compositor drag) owns the pointer now and will eat
@@ -1259,6 +1260,7 @@ internal class TaoComposeSceneHost(
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
+        interruptRotation()
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
@@ -1270,6 +1272,7 @@ internal class TaoComposeSceneHost(
     fun onPointerExited() {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        interruptRotation()
         scene?.sendPointerEvent(
             eventType = PointerEventType.Exit,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
@@ -1291,6 +1294,7 @@ internal class TaoComposeSceneHost(
         // A click ends a trackpad gesture for Compose too (a tap to stop a
         // fling must not race an open pan session).
         if (pressed) scrollRouter.finishPan()
+        interruptRotation()
         val composeButton = mapButton(buttonCode)
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
@@ -1341,6 +1345,8 @@ internal class TaoComposeSceneHost(
     fun onPointerScroll(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        // A rotation owns the fingers: a mouse-only Pan / Scroll would release its contacts.
+        if (rotateActive) return
         scrollRouter.onScroll(pointerDeadband.x, pointerDeadband.y, event, currentKeyboardModifiers)
     }
 
@@ -1364,6 +1370,12 @@ internal class TaoComposeSceneHost(
     // the trackpad until it ends: during a pinch, rotate steps are dropped
     // (foundation abandons a touch gesture on any Scale event anyway); during
     // a rotation, magnify steps widen the contacts, as before #660.
+    //
+    // The same holds for every other mouse-only event: the contacts never
+    // coexist with one. A rotation does not start while a pan is open, drops
+    // trackpad scroll and smart-magnify while it owns the fingers, and a real
+    // cursor move / click / exit interrupts it (cancelled, so it is no tap);
+    // the rest of an interrupted rotation is ignored until it ends.
 
     // Centre of the gesture in physical pixels (top-left origin).
     private var gestureCenterX = 0f
@@ -1381,6 +1393,7 @@ internal class TaoComposeSceneHost(
         }
 
     private var rotateActive = false
+    private var rotateInterrupted = false
     private var gestureAngle = 0f
 
     // Spacing of the rotation contacts relative to their start: magnify steps
@@ -1409,7 +1422,7 @@ internal class TaoComposeSceneHost(
         gestureCenterY = yPx
 
         when (kind) {
-            TaoTrackpadGesture.SMART_MAGNIFY -> scaleSession.smartMagnify()
+            TaoTrackpadGesture.SMART_MAGNIFY -> if (!rotateActive && !scaleSession.active) scaleSession.smartMagnify()
             TaoTrackpadGesture.MAGNIFY -> onMagnify(phase, value)
             TaoTrackpadGesture.ROTATE -> onRotate(phase, value)
         }
@@ -1422,7 +1435,11 @@ internal class TaoComposeSceneHost(
         if (rotateActive) {
             // The rotation owns this gesture: fold the step into the contacts.
             if (phase == TaoTrackpadPhase.BEGAN || phase == TaoTrackpadPhase.CHANGED) {
-                rotateScale *= (1f + value).coerceAtLeast(TaoTrackpadScaleSession.MIN_GESTURE_SCALE)
+                // Bounded: past Float range the contacts become Infinity / NaN
+                // points and detectZoom hands the app an infinite zoom.
+                rotateScale =
+                    (rotateScale * (1f + value).coerceAtLeast(TaoTrackpadScaleSession.MIN_GESTURE_SCALE))
+                        .coerceIn(MIN_ROTATE_SCALE, MAX_ROTATE_SCALE)
                 sendRotatePointers(PointerEventType.Move)
             }
             return
@@ -1442,22 +1459,38 @@ internal class TaoComposeSceneHost(
         phase: Int,
         value: Float,
     ) {
-        // The pinch owns this gesture; Compose has no rotation event to carry the step.
-        if (scaleSession.active) return
+        if (phase == TaoTrackpadPhase.ENDED || phase == TaoTrackpadPhase.CANCELLED) {
+            rotateInterrupted = false
+            endRotate(cancelled = phase == TaoTrackpadPhase.CANCELLED)
+            return
+        }
+        // A pinch or a pan owns this gesture; Compose has no rotation event to carry the step.
+        if (scaleSession.active || scrollRouter.panOpen) return
         when (phase) {
             TaoTrackpadPhase.BEGAN -> {
+                rotateInterrupted = false
                 startRotate()
                 applyRotateDelta(value)
                 sendRotatePointers(PointerEventType.Press)
             }
             TaoTrackpadPhase.CHANGED -> {
+                if (rotateInterrupted) return
                 if (!rotateActive) startRotate()
                 applyRotateDelta(value)
                 sendRotatePointers(PointerEventType.Move)
             }
-            TaoTrackpadPhase.ENDED -> endRotate(cancelled = false)
-            TaoTrackpadPhase.CANCELLED -> endRotate(cancelled = true)
         }
+    }
+
+    /**
+     * A mouse-only event is about to reach the scene while the rotation
+     * contacts are down: it would read as their release, so end the rotation
+     * first — cancelled, so the contacts do not land as a tap.
+     */
+    private fun interruptRotation() {
+        if (!rotateActive) return
+        rotateInterrupted = true
+        endRotate(cancelled = true)
     }
 
     private fun startRotate() {
@@ -1602,6 +1635,12 @@ internal class TaoComposeSceneHost(
         // unless a rotation already owns the gesture). 120 px keeps `detectTransformGestures` rotation slop
         // reachable: rotationMotion ≈ |Δθ| × π × radius / 180.
         private const val TRACKPAD_BASE_RADIUS_PX: Float = 120f
+
+        // Spacing range of the rotation contacts relative to their start
+        // (6 px … 2 400 px apart from centre): a rotation that owns a pinch
+        // zooms through it, and stops there instead of reaching 0 or Infinity.
+        private const val MIN_ROTATE_SCALE: Float = 0.05f
+        private const val MAX_ROTATE_SCALE: Float = 20f
 
         private const val TRACKPAD_POINTER_ID_A: Long = 0xA001L
         private const val TRACKPAD_POINTER_ID_B: Long = 0xA002L
