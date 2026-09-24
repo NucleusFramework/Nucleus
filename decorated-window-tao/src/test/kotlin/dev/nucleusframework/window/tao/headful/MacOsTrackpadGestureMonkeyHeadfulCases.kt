@@ -122,16 +122,32 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
                 RobotPointerDriver(window) {
                     IntSize((WINDOW_W * scale).toInt(), (WINDOW_H * scale).toInt())
                 }
-            repeat(TITLE_BAR_ROUNDS) { round ->
+            var round = 0
+            var attempts = 0
+            while (round < TITLE_BAR_ROUNDS) {
+                check(++attempts <= TITLE_BAR_ROUNDS * TITLE_BAR_ATTEMPTS_PER_ROUND) {
+                    "the machine never stayed idle long enough for a round (someone is using the mouse)"
+                }
                 // A real click on the bar, no drag: AppKit keeps that mouseDown.
                 driver.click(Offset(TITLE_BAR_X * scale, TITLE_BAR_Y * scale))
                 settle()
+                // Only the rotation is measured: the click itself may drag if a
+                // real mouse moved between its press and release.
+                drags.set(0)
+                val cursorBefore = cursorOnScreen()
                 val before = checkNotNull(bounds()).copyOf()
                 val maximizedBefore = window.isMaximized
                 gesture(Kind.ROTATE, 1, TITLE_BAR_X, TITLE_BAR_Y, 0.0)
                 repeat(TITLE_BAR_ROTATE_STEPS) { gesture(Kind.ROTATE, 2, TITLE_BAR_X, TITLE_BAR_Y, 4.0) }
                 gesture(Kind.ROTATE, 4, TITLE_BAR_X, TITLE_BAR_Y, 0.0)
                 settle(TITLE_BAR_SETTLE_MILLIS)
+                if (cursorOnScreen() != cursorBefore) {
+                    System.err.println("[gesture-monkey] title bar round $round disturbed by the real cursor; again")
+                    continue
+                }
+                check(
+                    drags.get() == 0L,
+                ) { "round $round: the rotation's contacts started ${drags.get()} window drag(s)" }
                 val after = bounds()
                 check(after != null && after.contentEquals(before)) {
                     "round $round: a rotation on the title bar moved the window: " +
@@ -140,11 +156,9 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
                 check(
                     window.isMaximized == maximizedBefore,
                 ) { "round $round: a rotation on the title bar toggled maximize" }
-                check(
-                    drags.get() == 0L,
-                ) { "round $round: the rotation's contacts started ${drags.get()} window drag(s)" }
                 val touches = trace.snapshot().flatMap { e -> e.changes.filter { it.type == PointerType.Touch } }
                 check(touches.isNotEmpty()) { "round $round: the rotation never reached the scene" }
+                round++
             }
         }
     }
@@ -583,6 +597,7 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
     private const val TITLE_BAR_X = 600f
     private const val TITLE_BAR_Y = 20f
     private const val TITLE_BAR_ROUNDS = 3
+    private const val TITLE_BAR_ATTEMPTS_PER_ROUND = 5
     private const val TITLE_BAR_ROTATE_STEPS = 6
     private const val TITLE_BAR_SETTLE_MILLIS = 700L
 
