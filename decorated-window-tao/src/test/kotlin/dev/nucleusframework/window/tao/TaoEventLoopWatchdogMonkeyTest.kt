@@ -170,7 +170,23 @@ class TaoEventLoopWatchdogMonkeyTest {
                     appendLine(reason)
                     appendLine("  profile: $profile, seed: $seed")
                     appendLine("  replay: -D$PROFILE_PROPERTY=$profile -D$SEED_PROPERTY=$seed")
-                    appendLine("  unresponsive=${ctx.unresponsive.get()} responsive=${ctx.responsive.get()}")
+                    appendLine("  app saw: unresponsive=${ctx.unresponsive.get()} responsive=${ctx.responsive.get()}")
+                    appendLine(
+                        "  watchdog produced: stalls=${WatchdogTestHooks.stallsProduced.get()} " +
+                            "recoveries=${WatchdogTestHooks.recoveriesProduced.get()}",
+                    )
+                    val live =
+                        Thread
+                            .getAllStackTraces()
+                            .entries
+                            .filter { (t, _) -> t.isAlive && t.name.startsWith("nucleus-tao-watchdog") }
+                    appendLine("  ${live.size} watchdog thread(s) alive, where they sit:")
+                    live.take(LEAK_STACKS_SHOWN).forEach { (t, stack) ->
+                        appendLine("    \"${t.name}\" ${t.state}")
+                        stack.take(LEAK_FRAMES).forEach { appendLine("      at $it") }
+                    }
+                    appendLine("  watchdog trace:")
+                    WatchdogTestHooks.trace.forEach { appendLine("    $it") }
                     appendLine("  last ${events.size} callbacks:")
                     events.forEach { appendLine("    $it") }
                     appendLine("  last ${journal.size} actions:")

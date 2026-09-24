@@ -5,6 +5,7 @@ import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import java.lang.management.ManagementFactory
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -53,10 +54,37 @@ internal object WatchdogTestHooks {
     @Volatile
     var pollIntervalMs: Long? = null
 
+    /**
+     * Transitions the watchdog *produced*, as opposed to callbacks the app
+     * *received*. A monkey that only counts callbacks cannot say whether a
+     * missing `responsive` was never produced (a detector or lifecycle bug) or
+     * produced and never delivered (the callback path); these two say which.
+     */
+    val stallsProduced: AtomicInteger = AtomicInteger()
+    val recoveriesProduced: AtomicInteger = AtomicInteger()
+
+    /**
+     * Last lifecycle steps of each watchdog run, recorded only while a test
+     * probe is installed. A count that ends one short says a recovery was never
+     * produced; this says which run opened the episode and how it left.
+     */
+    val trace: ConcurrentLinkedDeque<String> = ConcurrentLinkedDeque()
+
+    /** Records [step] when under test; a no-op in production. */
+    fun trace(step: () -> String) {
+        if (probe == null) return
+        trace.addLast(step())
+        while (trace.size > TRACE_DEPTH) trace.pollFirst()
+    }
+
+    private const val TRACE_DEPTH = 60
+
     /** Back to production behaviour; a test must always land here. */
     fun reset() {
         probe = null
         pollIntervalMs = null
+        stallsProduced.set(0)
+        recoveriesProduced.set(0)
     }
 }
 
@@ -197,7 +225,7 @@ internal object TaoEventLoopWatchdog {
         if (hwnd == 0L) {
             // Silence here would be the very failure mode this watchdog
             // exists to remove: with no HWND it has nothing to probe.
-            logger.warning("Event-loop watchdog: no HWND for window $handle, it will not be watched")
+            guarded { logger.warning("Event-loop watchdog: no HWND for window $handle, it will not be watched") }
             return
         }
         hwnds[handle] = hwnd
@@ -282,7 +310,7 @@ internal object TaoEventLoopWatchdog {
         // on the main thread with the event loop not yet running. Off the
         // startup path it costs the app nothing.
         if (isDebuggerAttached && !isForced) {
-            logger.fine("Event-loop watchdog disabled: a debug agent is attached")
+            guarded { logger.fine("Event-loop watchdog disabled: a debug agent is attached") }
             if (owns(generation)) running.set(false)
             return
         }
@@ -308,16 +336,33 @@ internal object TaoEventLoopWatchdog {
             val gcBefore = gcMillis
             val wait = awaitNextSample(generation, detector)
             if (wait == WatchWait.Interrupted && running.get()) {
-                if (!owns(generation)) return drain(detector)
+                if (!owns(generation)) {
+                    if (detector.hasOpenEpisode) {
+                        WatchdogTestHooks.trace { "gen$generation exit=interrupted-stale WITH OPEN EPISODE" }
+                    }
+                    return drain(detector)
+                }
                 // Interrupted by something other than `stop()` — a shutdown
                 // hook or a test harness sweeping threads. Leave, but leave
                 // the door open: `running` stays consistent so a later
                 // `start()` can bring the watchdog back, and say so once.
-                logger.warning("Event-loop watchdog stopped: its thread was interrupted")
+                // Guarded like every other log here: an app's JUL handler that
+                // throws would otherwise kill this thread between the stall it
+                // reported and the drain that closes it, stranding the app's
+                // `unresponsive` for good. Found by the concurrency monkey after
+                // ~1.4M events, and only visible once the trace bracketed the
+                // report: "report end" and then nothing at all.
+                guarded { logger.warning("Event-loop watchdog stopped: its thread was interrupted") }
                 running.set(false)
+                if (detector.hasOpenEpisode) {
+                    WatchdogTestHooks.trace { "gen$generation exit=interrupted WITH OPEN EPISODE" }
+                }
                 return drain(detector)
             }
             if (wait == WatchWait.Stopped || wait == WatchWait.Interrupted || !running.get()) {
+                if (detector.hasOpenEpisode) {
+                    WatchdogTestHooks.trace { "gen$generation exit=$wait WITH OPEN EPISODE" }
+                }
                 return drain(detector)
             }
             val now = System.nanoTime()
@@ -334,6 +379,11 @@ internal object TaoEventLoopWatchdog {
             // one hang delay, exactly as Electron does after a resume.
             resumeDeadlineNanos = step(detector, now, overslept, gcMillis - gcBefore, resumeDeadlineNanos)
         }
+        if (detector.hasOpenEpisode) {
+            WatchdogTestHooks.trace {
+                "gen$generation exit=loop running=${running.get()} owns=${owns(generation)} WITH OPEN EPISODE"
+            }
+        }
         drain(detector)
     }
 
@@ -343,7 +393,9 @@ internal object TaoEventLoopWatchdog {
      * `unresponsive` must always hear the end.
      */
     private fun drain(detector: EventLoopHangDetector) {
+        val open = detector.hasOpenEpisode
         guarded { handle(detector.reset(System.nanoTime())) }
+        if (open) WatchdogTestHooks.trace { "drained open episode, closed=${!detector.hasOpenEpisode}" }
     }
 
     /**
@@ -493,8 +545,14 @@ internal object TaoEventLoopWatchdog {
 
     private fun handle(transition: HangTransition?) {
         when (transition) {
-            is HangTransition.Stalled -> report(transition.durationMs)
+            is HangTransition.Stalled -> {
+                WatchdogTestHooks.stallsProduced.incrementAndGet()
+                WatchdogTestHooks.trace { "stalled #${WatchdogTestHooks.stallsProduced.get()}" }
+                report(transition.durationMs)
+            }
             is HangTransition.Recovered -> {
+                WatchdogTestHooks.recoveriesProduced.incrementAndGet()
+                WatchdogTestHooks.trace { "recovered #${WatchdogTestHooks.recoveriesProduced.get()}" }
                 // Same order as [report], for the same reason.
                 postEvent(TaoApplication::notifyResponsive)
                 guarded {
@@ -517,6 +575,7 @@ internal object TaoEventLoopWatchdog {
     }
 
     private fun report(durationMs: Long) {
+        WatchdogTestHooks.trace { "report begin" }
         // The app hears first, and unconditionally. Logging came first here
         // until the concurrency monkey (seed 4242) caught what that costs: JUL
         // propagates a throwing `Handler.publish`, so a hostile log handler
@@ -538,6 +597,7 @@ internal object TaoEventLoopWatchdog {
             )
         }
         if (showsDialog) showNotRespondingDialog(detail)
+        WatchdogTestHooks.trace { "report end" }
     }
 
     /**
