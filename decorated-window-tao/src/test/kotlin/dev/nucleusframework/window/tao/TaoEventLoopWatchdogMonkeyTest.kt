@@ -30,6 +30,9 @@ private const val REARM_TIMEOUT_MS = 8_000L
 private const val JOURNAL_DEPTH = 48
 private const val WORKER_JOIN_TIMEOUT_MS = 60_000L
 
+/** Longer than the watchdog's bounded park: past this, a missing recovery is lost, not late. */
+private const val PAIRING_TIMEOUT_MS = 35_000L
+
 /**
  * Concurrency monkey for the hang watchdog (#643) — the deliberately vicious
  * one.
@@ -190,6 +193,17 @@ class TaoEventLoopWatchdogMonkeyTest {
 
         // 3 — pairing. An app holding a prompt or a telemetry span on
         // `unresponsive` must always hear the end of the episode.
+        //
+        // Waited out past the longest latency the design allows — a straggler
+        // parked on the bounded park still closes its episode when it wakes —
+        // so that a failure here means the recovery was *lost*, not late. A
+        // 1800-storm sweep ended one short exactly once (Torture/902766, which
+        // does not reproduce alone); without this wait there is no way to tell
+        // that apart from a real leak, and a monkey that cannot tell is noise.
+        val pairingDeadline = System.currentTimeMillis() + PAIRING_TIMEOUT_MS
+        while (ctx.unresponsive.get() != ctx.responsive.get() && System.currentTimeMillis() < pairingDeadline) {
+            Thread.sleep(profile.pollMs)
+        }
         if (ctx.unresponsive.get() != ctx.responsive.get()) bail("unresponsive/responsive left unpaired")
 
         // 4 — nothing left behind. Polled, not sampled once: `stop()` does not
