@@ -7,7 +7,6 @@ import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -290,18 +289,28 @@ public object TaoApplication {
     }
 
     /**
-     * Listeners for [onUnresponsive] / [onResponsive]. Copy-on-write: they are
-     * invoked from the watchdog thread while the event loop is stuck, so
-     * registration (always on the loop thread) must never contend with it.
+     * Handlers for [onUnresponsive] / [onResponsive]. One each, replaced on
+     * registration rather than appended — `nucleusApplication`'s block is
+     * `@Composable`, so an appending registry would grow by one copy per
+     * recomposition and fire the app's crash reporter N times for one stall.
+     * `onDeepLink` has the same replace semantics for the same reason.
+     * Volatile: written on the loop thread, read from the watchdog thread.
      */
-    private val unresponsiveListeners = CopyOnWriteArrayList<() -> Unit>()
-    private val responsiveListeners = CopyOnWriteArrayList<() -> Unit>()
+    @Volatile
+    private var unresponsiveHandler: (() -> Unit)? = null
+
+    @Volatile
+    private var responsiveHandler: (() -> Unit)? = null
 
     /**
      * Registers [listener] for "the UI stopped responding", Electron's
      * `webContents` `unresponsive` event (#643). Fires once per stall, after
      * the OS has flagged the window and the watchdog's grace period on top of
      * it; [onResponsive] closes the episode.
+     *
+     * One handler at a time: a second call replaces the first, like
+     * [onDeepLink]'s sink. That is what makes it safe to call straight from
+     * the `@Composable` application block, which recomposes.
      *
      * Nucleus itself only logs `SEVERE` with a thread dump — like Chromium's
      * HangWatcher or IntelliJ's PerformanceWatcher, and like Electron it ships
@@ -317,16 +326,16 @@ public object TaoApplication {
      * must survive it.
      */
     public fun onUnresponsive(listener: () -> Unit) {
-        unresponsiveListeners += listener
+        unresponsiveHandler = listener
     }
 
     /**
      * Registers [listener] for "the UI is responding again", Electron's
      * `responsive` event — the counterpart of [onUnresponsive], fired only
-     * after a stall that was reported. Same threading rules.
+     * after a stall that was reported. Same threading and replace semantics.
      */
     public fun onResponsive(listener: () -> Unit) {
-        responsiveListeners += listener
+        responsiveHandler = listener
     }
 
     /**
@@ -360,23 +369,21 @@ public object TaoApplication {
         }
     }
 
-    /** Fires the [onUnresponsive] listeners; called by the watchdog thread. */
-    internal fun notifyUnresponsive(): Unit = notify(unresponsiveListeners, "unresponsive")
+    /** Fires the [onUnresponsive] handler; called by the watchdog thread. */
+    internal fun notifyUnresponsive(): Unit = notify(unresponsiveHandler, "unresponsive")
 
-    /** Fires the [onResponsive] listeners; called by the watchdog thread. */
-    internal fun notifyResponsive(): Unit = notify(responsiveListeners, "responsive")
+    /** Fires the [onResponsive] handler; called by the watchdog thread. */
+    internal fun notifyResponsive(): Unit = notify(responsiveHandler, "responsive")
 
     @Suppress("TooGenericExceptionCaught")
     private fun notify(
-        listeners: List<() -> Unit>,
+        handler: (() -> Unit)?,
         event: String,
     ) {
-        listeners.forEach { listener ->
-            try {
-                listener()
-            } catch (t: Throwable) {
-                logger.log(Level.SEVERE, "Unhandled exception in an '$event' listener", t)
-            }
+        try {
+            handler?.invoke()
+        } catch (t: Throwable) {
+            logger.log(Level.SEVERE, "Unhandled exception in the '$event' handler", t)
         }
     }
 

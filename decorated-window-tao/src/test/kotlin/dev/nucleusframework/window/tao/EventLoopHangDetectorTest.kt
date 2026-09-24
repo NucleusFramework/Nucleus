@@ -74,15 +74,18 @@ class EventLoopHangDetectorTest {
     }
 
     @Test
-    fun `a reset drops the episode in flight without claiming a recovery`() {
+    fun `a reset closes a reported stall so every unresponsive keeps its responsive`() {
         val detector = EventLoopHangDetector(GRACE_MS)
 
         detector.sample(hung = true, nowNanos = ms(0))
         detector.sample(hung = true, nowNanos = ms(6_000))
 
-        // What the watchdog does when a sample straddles a system suspend:
-        // nothing was observed in between, so nothing is claimed about it.
-        detector.reset()
+        // What the watchdog does when a sample straddles a system suspend: the
+        // episode is abandoned, but a stall the app was told about is closed.
+        assertEquals(
+            HangTransition.Recovered(durationMs = 7_000),
+            detector.reset(nowNanos = ms(7_000)),
+        )
 
         assertNull(detector.sample(hung = false, nowNanos = ms(7_000)))
         // And the next stall is timed from scratch.
@@ -91,6 +94,14 @@ class EventLoopHangDetectorTest {
             HangTransition.Stalled(durationMs = 6_000),
             detector.sample(hung = true, nowNanos = ms(14_000)),
         )
+    }
+
+    @Test
+    fun `a reset with nothing reported claims nothing`() {
+        val detector = EventLoopHangDetector(GRACE_MS)
+
+        detector.sample(hung = true, nowNanos = ms(0))
+        assertNull(detector.reset(nowNanos = ms(2_000)))
     }
 
     @Test

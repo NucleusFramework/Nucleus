@@ -18,12 +18,20 @@ use jni::sys::{jboolean, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{IsHungAppWindow, IsWindow};
+use windows::Win32::System::Threading::GetCurrentProcessId;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowThreadProcessId, IsHungAppWindow, IsWindow,
+};
 
 /// `true` when Windows considers [hwnd]'s thread to have stopped pumping
 /// messages (~5 s without a `GetMessage` / `PeekMessage`, the OS's own
 /// threshold). `false` for a healthy window and for a handle that is no longer
-/// a window.
+/// one of ours.
+///
+/// Ownership is re-checked on every call, not just window-ness: Windows
+/// recycles HWNDs, so a cached handle whose window went away without the
+/// JVM hearing about it can come back as *another process's* window — and
+/// that one being hung says nothing about us.
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeIsWindowHung(
     _env: JNIEnv,
@@ -36,6 +44,11 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     let hwnd = HWND(hwnd as *mut c_void);
     unsafe {
         if !IsWindow(Some(hwnd)).as_bool() {
+            return JNI_FALSE;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid != GetCurrentProcessId() {
             return JNI_FALSE;
         }
         if IsHungAppWindow(hwnd).as_bool() {

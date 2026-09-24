@@ -83,6 +83,9 @@ internal object TaoEventLoopWatchdog {
 
     private val running = AtomicBoolean(false)
 
+    /** Guards against stacking one not-responding dialog per stall episode. */
+    private val dialogShowing = AtomicBoolean(false)
+
     /** Wait target of the watchdog thread; signalled when a window appears or on stop. */
     private val lock = ReentrantLock()
     private val wakeUp = lock.newCondition()
@@ -135,7 +138,12 @@ internal object TaoEventLoopWatchdog {
     fun registerWindow(handle: Long) {
         if (!isSupported) return
         val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
-        if (hwnd == 0L) return
+        if (hwnd == 0L) {
+            // Silence here would be the very failure mode this watchdog
+            // exists to remove: with no HWND it has nothing to probe.
+            logger.warning("Event-loop watchdog: no HWND for window $handle, it will not be watched")
+            return
+        }
         hwnds[handle] = hwnd
         wakeWatchdog()
     }
@@ -202,21 +210,31 @@ internal object TaoEventLoopWatchdog {
             return
         }
         val detector = EventLoopHangDetector(graceMs)
-        var lastSampleNanos = System.nanoTime()
-        var resumeDeadlineNanos = 0L
+        // Not 0: `nanoTime`'s origin is arbitrary and may be negative, and a
+        // deadline of 0 would then gate every sample until the clock crossed it.
+        var resumeDeadlineNanos = Long.MIN_VALUE
         while (running.get()) {
+            // Stamped around the wait only: a `report()` that takes seconds
+            // (a listener uploading, a thread dump on a large app) must not
+            // make the next iteration look like a system suspend.
+            val waitStartNanos = System.nanoTime()
             val wait = awaitNextSample()
-            if (wait == WatchWait.Stopped || !running.get()) return
+            if (wait == WatchWait.Interrupted && running.get()) {
+                // Interrupted by something other than `stop()` — a shutdown
+                // hook or a test harness sweeping threads. Leave, but leave
+                // the door open: `running` stays consistent so a later
+                // `start()` can bring the watchdog back, and say so once.
+                logger.warning("Event-loop watchdog stopped: its thread was interrupted")
+                running.set(false)
+                return
+            }
+            if (wait == WatchWait.Stopped || wait == WatchWait.Interrupted || !running.get()) return
             val now = System.nanoTime()
             // An untimed park tells nothing about elapsed time, so the suspend
             // heuristic below would read it as one. Re-baseline and sample on
             // the next tick instead.
-            if (wait == WatchWait.Parked) {
-                lastSampleNanos = now
-                continue
-            }
-            val overslept = now - lastSampleNanos - POLL_INTERVAL_MS * NANOS_PER_MILLI
-            lastSampleNanos = now
+            if (wait == WatchWait.Parked) continue
+            val overslept = now - waitStartNanos - POLL_INTERVAL_MS * NANOS_PER_MILLI
             // The machine was suspended (Electron #53529): every process
             // stopped, and on wake the window is briefly flagged while the
             // system pages back in. A sleep that overshot by far is the only
@@ -224,7 +242,10 @@ internal object TaoEventLoopWatchdog {
             // platform hookup. Drop the episode and ignore what follows for
             // one hang delay, exactly as Electron does after a resume.
             if (overslept > SUSPEND_OVERSHOOT_MS * NANOS_PER_MILLI) {
-                detector.reset()
+                // A stall reported before the suspend still gets its recovery:
+                // an app that opened a telemetry span or a prompt on
+                // `unresponsive` must never be left waiting for the close.
+                handle(detector.reset(now))
                 resumeDeadlineNanos = now + RESUME_GRACE_MS * NANOS_PER_MILLI
             } else if (now >= resumeDeadlineNanos) {
                 // An expected stall counts as healthy rather than skipping the
@@ -254,7 +275,7 @@ internal object TaoEventLoopWatchdog {
                 }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
-                WatchWait.Stopped
+                WatchWait.Interrupted
             }
         }
 
@@ -273,6 +294,9 @@ internal object TaoEventLoopWatchdog {
 
         /** The watchdog was stopped. */
         Stopped,
+
+        /** The wait was interrupted; only [stop] is a legitimate source. */
+        Interrupted,
     }
 
     private fun handle(transition: HangTransition?) {
@@ -316,6 +340,9 @@ internal object TaoEventLoopWatchdog {
      * [TaoApplication.onResponsive] only fire) once the user clicked OK.
      */
     private fun showNotRespondingDialog(detail: String) {
+        // One at a time, like `fatalDialogShown`: an app stalling repeatedly
+        // would otherwise leave a pile of modals for the user to dismiss.
+        if (!dialogShowing.compareAndSet(false, true)) return
         Thread(
             {
                 showNativeErrorDialog(
@@ -323,6 +350,7 @@ internal object TaoEventLoopWatchdog {
                     message = "The user interface has stopped responding.",
                     detail = detail,
                 )
+                dialogShowing.set(false)
             },
             "nucleus-tao-watchdog-dialog",
         ).apply { isDaemon = true }.start()
@@ -400,15 +428,19 @@ internal class EventLoopHangDetector(
     }
 
     /**
-     * Forgets the episode in flight without emitting anything — for samples
-     * that cannot be trusted at all, such as the ones straddling a system
-     * suspend. A stall already reported is dropped silently rather than closed
-     * with a recovery: nothing was observed between the two samples, so there
-     * is nothing to claim about it.
+     * Forgets the episode in flight — for samples that cannot be trusted at
+     * all, such as the ones straddling a system suspend.
+     *
+     * Returns a [HangTransition.Recovered] when a stall had already been
+     * reported: the duration is a lower bound (the suspend swallowed the rest),
+     * but an app that opened a prompt or a telemetry span on the report must
+     * get its close, so every `unresponsive` keeps its `responsive`.
      */
-    fun reset() {
+    fun reset(nowNanos: Long): HangTransition? {
+        val since = hangStartNanos.takeIf { reported }
         hangStartNanos = null
         reported = false
+        return since?.let { HangTransition.Recovered(millisSince(it, nowNanos)) }
     }
 
     private fun millisSince(
