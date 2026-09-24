@@ -174,12 +174,22 @@ internal object EventLoopWatchdogMonkeyHeadfulCases {
                 // alive. The loop pumps, the window paints, and the OS agrees.
                 window.requestRedraw()
                 awaitUntil("the window still reports a real frame") { window.hasRealFramePx() }
-                val live =
+                // Polled, not sampled once: `stop()` does not join, so a thread
+                // already inside a sample outlives it by up to one poll interval
+                // (2 s in a real app). What must not happen is threads piling up.
+
+                fun liveWatchdogs() =
                     Thread
                         .getAllStackTraces()
                         .keys
                         .count { it.isAlive && it.name == "nucleus-tao-watchdog" }
-                check(live <= 1) { "the storm left $live watchdog threads alive" }
+                awaitUntil(
+                    "the storm left at most one watchdog thread",
+                    timeoutMillis = THREAD_SETTLE_MS,
+                    detail = { "${liveWatchdogs()} alive" },
+                ) {
+                    liveWatchdogs() <= 1
+                }
             },
         )
 
@@ -218,5 +228,6 @@ internal object EventLoopWatchdogMonkeyHeadfulCases {
     private const val SETTLE_MS = 3_000L
     private const val PAIRING_TIMEOUT_MS = 20_000L
     private const val REPORT_TIMEOUT_MS = 20_000L
+    private const val THREAD_SETTLE_MS = 10_000L
     private const val CASE_TIMEOUT_MS = 300_000L
 }

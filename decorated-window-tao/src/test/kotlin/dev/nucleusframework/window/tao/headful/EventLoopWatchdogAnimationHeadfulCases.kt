@@ -155,12 +155,21 @@ internal object EventLoopWatchdogAnimationHeadfulCases {
                 settle(SETTLE_MS)
 
                 // The app must be animating again, whatever just happened to it.
-                awaitUntil(
-                    "frames resumed after $action",
-                    timeoutMillis = FRAME_RESUME_TIMEOUT_MS,
-                    detail = { "frames stuck at ${frames.get()} (was $framesBefore), journal=$journal" },
-                ) {
-                    frames.get() > framesBefore + FRAMES_AFTER_MOVE
+                val target = framesBefore + FRAMES_AFTER_MOVE
+                if (!awaitUntilOrTimeout(FRAME_RESUME_TIMEOUT_MS) { frames.get() > target }) {
+                    // Stuck. Ask the window for one frame: if that unsticks it,
+                    // the animation's own invalidation was lost rather than the
+                    // clock being dead — a host bug, not a watchdog one, and the
+                    // distinction is the whole value of this failure.
+                    window.requestRedraw()
+                    val nudged = awaitUntilOrTimeout(FRAME_RESUME_TIMEOUT_MS) { frames.get() > target }
+                    val verdict =
+                        if (nudged) {
+                            "frames only resumed after an explicit requestRedraw"
+                        } else {
+                            "frames never resumed"
+                        }
+                    error("$verdict after $action; stuck at ${frames.get()} (was $framesBefore), journal=$journal")
                 }
 
                 val reports = records.count { it.level == Level.SEVERE }

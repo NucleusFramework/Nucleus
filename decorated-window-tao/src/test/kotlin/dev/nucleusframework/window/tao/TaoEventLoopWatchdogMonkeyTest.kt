@@ -192,9 +192,15 @@ class TaoEventLoopWatchdogMonkeyTest {
         // `unresponsive` must always hear the end of the episode.
         if (ctx.unresponsive.get() != ctx.responsive.get()) bail("unresponsive/responsive left unpaired")
 
-        // 4 — nothing left behind: neither the sampler nor the callback thread
-        // the run created for itself. A leaked executor per run would pile up
-        // one parked thread per `nucleusApplication` in the same process.
+        // 4 — nothing left behind. Polled, not sampled once: `stop()` does not
+        // join, so a thread it has just signalled still needs its moment to
+        // reacquire the lock and leave. What must never happen is runs
+        // *accumulating* threads — which is exactly what a sweep caught before
+        // the park was bounded (150 alive at once).
+        val threadDeadline = System.currentTimeMillis() + THREAD_EXIT_MS
+        while (liveWatchdogThreads().isNotEmpty() && System.currentTimeMillis() < threadDeadline) {
+            Thread.sleep(profile.pollMs)
+        }
         val leaked = liveWatchdogThreads()
         if (leaked.isNotEmpty()) {
             val where =
@@ -529,6 +535,7 @@ class TaoEventLoopWatchdogMonkeyTest {
         const val REENTRANT_MOVES = 4
         const val PRIME = 31L
         const val SWEEP_STRIDE = 7_919L
+        const val THREAD_EXIT_MS = 5_000L
         const val LEAK_STACKS_SHOWN = 2
         const val LEAK_FRAMES = 8
     }
