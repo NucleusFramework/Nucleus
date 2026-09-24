@@ -49,27 +49,29 @@ val nativeTasks =
         )
     }
 
-val verifyNativeResourcePresence = tasks.register("verifyNativeResourcePresence") {
-    description = "Verifies the current host native artifact expected from the local build script exists in resources"
-    group = "verification"
-    dependsOn(nativeTasks)
-    val expectedArtifactPath =
-        when {
-            Os.isFamily(Os.FAMILY_MAC) ->
-                File(nativeOutputDir, "${hostArchDir("darwin")}/libnucleus_fs_watcher.dylib").absolutePath
-            Os.isFamily(Os.FAMILY_WINDOWS) ->
-                File(nativeOutputDir, "${hostArchDir("win32")}/nucleus_fs_watcher.dll").absolutePath
-            else ->
-                File(nativeOutputDir, "${hostArchDir("linux")}/libnucleus_fs_watcher.so").absolutePath
-        }
+val verifyNativeResourcePresence =
+    tasks.register("verifyNativeResourcePresence") {
+        description =
+            "Verifies the current host native artifact expected from the local build script exists in resources"
+        group = "verification"
+        dependsOn(nativeTasks)
+        val expectedArtifactPath =
+            when {
+                Os.isFamily(Os.FAMILY_MAC) ->
+                    File(nativeOutputDir, "${hostArchDir("darwin")}/libnucleus_fs_watcher.dylib").absolutePath
+                Os.isFamily(Os.FAMILY_WINDOWS) ->
+                    File(nativeOutputDir, "${hostArchDir("win32")}/nucleus_fs_watcher.dll").absolutePath
+                else ->
+                    File(nativeOutputDir, "${hostArchDir("linux")}/libnucleus_fs_watcher.so").absolutePath
+            }
 
-    doLast {
-        val expectedArtifact = File(expectedArtifactPath)
-        if (!expectedArtifact.exists()) {
-            throw GradleException("Expected native artifact is missing: $expectedArtifact")
+        doLast {
+            val expectedArtifact = File(expectedArtifactPath)
+            if (!expectedArtifact.exists()) {
+                throw GradleException("Expected native artifact is missing: $expectedArtifact")
+            }
         }
     }
-}
 
 tasks.processResources {
     dependsOn(verifyNativeResourcePresence)
