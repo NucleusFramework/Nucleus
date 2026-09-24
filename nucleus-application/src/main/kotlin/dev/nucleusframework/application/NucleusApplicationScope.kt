@@ -54,6 +54,37 @@ public sealed interface NucleusApplicationScope : ComposeApplicationScope {
      * before this call is buffered and replayed.
      */
     public fun onDeepLink(block: (URI) -> Unit)
+
+    /**
+     * Registers [block] for "the UI stopped responding" — Electron's
+     * `unresponsive` event on a `webContents`, and the counterpart of
+     * [onResponsive].
+     *
+     * Nucleus detects the stall by asking the OS (Windows `IsHungAppWindow`;
+     * other platforms have no non-perturbing probe yet) and logs `SEVERE` with
+     * a thread dump, but shows nothing: what the user sees is the app's
+     * decision, exactly as in Electron. A crash-reporting hook, or the
+     * browsers' "wait or quit" prompt, both belong here.
+     *
+     * ```kotlin
+     * nucleusApplication(args) {
+     *     onUnresponsive { crashReporter.reportHang() }
+     *     onResponsive { crashReporter.hangEnded() }
+     * }
+     * ```
+     *
+     * **[block] runs on the watchdog thread, not the UI thread** — the UI
+     * thread is the stuck one, so anything it posts there (Compose state,
+     * `Dispatchers.Main`) would only run once the stall ends, if ever.
+     */
+    public fun onUnresponsive(block: () -> Unit): Unit = TaoApplication.onUnresponsive(block)
+
+    /**
+     * Registers [block] for "the UI is responding again" — Electron's
+     * `responsive` event. Fired only after a stall that was reported through
+     * [onUnresponsive]; same threading rules.
+     */
+    public fun onResponsive(block: () -> Unit): Unit = TaoApplication.onResponsive(block)
 }
 
 /**

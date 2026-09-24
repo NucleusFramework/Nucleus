@@ -134,6 +134,10 @@ class TaoSceneTestBatteryDriftTest {
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
+            EventLoopHangDetectorTest::class.java to
+                "pure-function hang state machine (#643); no ComposeScene",
+            TaoEventLoopWatchdogSmokeTest::class.java to
+                "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); freezes the real event loop",
             dev.nucleusframework.window.tao.scene.WaylandBufferScaleTest::class.java to
                 "pure-function buffer alignment; already covered via TaoScenePopupTest in the battery",
             XdgPortalParentTest::class.java to

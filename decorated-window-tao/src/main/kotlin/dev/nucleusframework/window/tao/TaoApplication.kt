@@ -7,6 +7,7 @@ import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -104,7 +105,15 @@ public object TaoApplication {
         // first `NavController.setGraph` call.
         LifecycleMainDispatcherPriming.primeWithCurrentThread()
         onLaunched = block
-        NativeTaoBridge.nativeRunBlocking(EventDispatcher)
+        // Watch the loop from the outside (#643): a stall deadlocks this
+        // thread, so nothing downstream of `nativeRunBlocking` — including
+        // `rethrowPendingFatal` below — can ever report it.
+        TaoEventLoopWatchdog.start()
+        try {
+            NativeTaoBridge.nativeRunBlocking(EventDispatcher)
+        } finally {
+            TaoEventLoopWatchdog.stop()
+        }
         // The loop has exited (reportFatal posted the exit) and every tao
         // callback frame is unwound — only now is it safe to block in the
         // app-modal native dialog (a modal pump inside a tao callback
@@ -278,6 +287,66 @@ public object TaoApplication {
         quitConsent = false
         quitExit = ::exit
         afterQuitRequests = { it() }
+    }
+
+    /**
+     * Listeners for [onUnresponsive] / [onResponsive]. Copy-on-write: they are
+     * invoked from the watchdog thread while the event loop is stuck, so
+     * registration (always on the loop thread) must never contend with it.
+     */
+    private val unresponsiveListeners = CopyOnWriteArrayList<() -> Unit>()
+    private val responsiveListeners = CopyOnWriteArrayList<() -> Unit>()
+
+    /**
+     * Registers [listener] for "the UI stopped responding", Electron's
+     * `webContents` `unresponsive` event (#643). Fires once per stall, after
+     * the OS has flagged the window and the watchdog's grace period on top of
+     * it; [onResponsive] closes the episode.
+     *
+     * Nucleus itself only logs `SEVERE` with a thread dump — like Chromium's
+     * HangWatcher or IntelliJ's PerformanceWatcher, and like Electron it ships
+     * no built-in UI. What to do with the event is the app's call: report it
+     * to a crash backend, or offer the user the browsers' "wait or quit"
+     * choice.
+     *
+     * **[listener] runs on the watchdog thread, not the UI thread** — the UI
+     * thread is the one that is stuck, so anything posted to it (Compose
+     * state, `Dispatchers.Main`) would only run once the stall is over, if
+     * ever. Keep it to logging, telemetry, or a dialog of your own opened off
+     * the UI thread. A throwing listener is logged and ignored: the watchdog
+     * must survive it.
+     */
+    public fun onUnresponsive(listener: () -> Unit) {
+        unresponsiveListeners += listener
+    }
+
+    /**
+     * Registers [listener] for "the UI is responding again", Electron's
+     * `responsive` event — the counterpart of [onUnresponsive], fired only
+     * after a stall that was reported. Same threading rules.
+     */
+    public fun onResponsive(listener: () -> Unit) {
+        responsiveListeners += listener
+    }
+
+    /** Fires the [onUnresponsive] listeners; called by the watchdog thread. */
+    internal fun notifyUnresponsive(): Unit = notify(unresponsiveListeners, "unresponsive")
+
+    /** Fires the [onResponsive] listeners; called by the watchdog thread. */
+    internal fun notifyResponsive(): Unit = notify(responsiveListeners, "responsive")
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun notify(
+        listeners: List<() -> Unit>,
+        event: String,
+    ) {
+        listeners.forEach { listener ->
+            try {
+                listener()
+            } catch (t: Throwable) {
+                logger.log(Level.SEVERE, "Unhandled exception in an '$event' listener", t)
+            }
+        }
     }
 
     /** Posts an exit request and unblocks [run]. */

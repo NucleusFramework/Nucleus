@@ -1473,7 +1473,13 @@ public class TaoWindow internal constructor(
         b: Int,
     ) {
         when (code) {
-            TaoEventCode.WINDOW_READY -> readyListener?.invoke(a, b)
+            TaoEventCode.WINDOW_READY -> {
+                // Cache the HWND for the hang watchdog while we are on the
+                // event-loop thread: resolving it later goes through the
+                // native window map, whose lock a stalled loop may hold (#643).
+                TaoEventLoopWatchdog.registerWindow(handle)
+                readyListener?.invoke(a, b)
+            }
             TaoEventCode.RESIZED -> {
                 // Win32 emits WM_SIZE/SIZE_MINIMIZED as 0x0. Keep resize
                 // listeners on the last real content size while minimized.
@@ -1488,6 +1494,7 @@ public class TaoWindow internal constructor(
             TaoEventCode.SCALE_FACTOR_CHANGED -> scaleFactorListener?.invoke(a / 1000f)
             TaoEventCode.CLOSE_REQUESTED -> closeRequestedListener?.invoke()
             TaoEventCode.DESTROYED -> {
+                TaoEventLoopWatchdog.unregisterWindow(handle)
                 destroyedListeners.forEach { it.invoke() }
                 TaoApplication.remove(handle)
             }

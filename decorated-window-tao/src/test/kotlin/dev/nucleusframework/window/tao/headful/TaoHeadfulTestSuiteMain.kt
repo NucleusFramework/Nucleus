@@ -412,6 +412,7 @@ public object TaoHeadfulTestSuiteMain {
             WorkspaceRaceHeadfulCases.all() +
             ImeHeadfulCases.all() +
             WindowApiV2HeadfulCases.all() +
+            EventLoopWatchdogHeadfulCases.all() +
             // Last: the monkeys are the longest cases, and the robot ones leave the
             // real pointer wherever their last gesture ended.
             NativeViewMonkeyHeadfulCases.all() +

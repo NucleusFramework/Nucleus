@@ -331,6 +331,34 @@ val taoFatalDialogSmoke = tasks.register<JavaExec>("taoFatalDialogSmoke") {
     }
 }
 
+// Smoke for #643: freezes the event loop for real and prints a one-line
+// verdict ("severe=1 unresponsive=1 responsive=1"), so every watchdog switch
+// can be checked from outside the process — and so the native
+// "Application Not Responding" dialog can be looked at. Not part of `check`.
+val taoWatchdogSmoke = tasks.register<JavaExec>("taoWatchdogSmoke") {
+    description = "Smoke: event-loop watchdog — thread dump, app events, not-responding dialog (#643)"
+    group = "verification"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("dev.nucleusframework.window.tao.headful.WatchdogDialogSmokeMain")
+    // Timings and watchdog switches, e.g.
+    // -Dnucleus.tao.watchdog.smoke.freezeMs=40000 -Dnucleus.tao.watchdogDialog=true
+    listOf(
+        "nucleus.tao.watchdog.smoke.freezeMs",
+        "nucleus.tao.watchdog.smoke.freezeAfterMs",
+        "nucleus.tao.watchdog.smoke.drainMs",
+        "nucleus.tao.watchdog.smoke.holdMs",
+        "nucleus.tao.watchdog",
+        "nucleus.tao.watchdogGraceMs",
+        "nucleus.tao.watchdogDialog",
+        "nucleus.tao.fatalErrorDialog",
+    ).forEach { key -> System.getProperty(key)?.let { systemProperty(key, it) } }
+    // Verifies the debug-session exemption end to end: a real JDWP agent on
+    // the command line, which is what the watchdog looks for.
+    if (System.getProperty("nucleus.tao.watchdog.smoke.debugAgent").toBoolean()) {
+        jvmArgs("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:0")
+    }
+}
+
 // ── Maven publication ──────────────────────────────────────────────────────
 
 mavenPublishing {
