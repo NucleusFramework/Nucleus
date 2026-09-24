@@ -46,6 +46,7 @@ import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.deco.LocalFullscreenTitleBarHolder
 import dev.nucleusframework.window.tao.deco.WindowControlsLinux
 import dev.nucleusframework.window.tao.deco.WindowControlsWindows
+import dev.nucleusframework.window.tao.event.TaoTrackpadRotationContacts
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
@@ -529,7 +530,11 @@ private suspend fun PointerInputScope.titleBarDragPointerLoop(window: TaoWindow)
         while (ctx.isActive) {
             val event = awaitPointerEvent(PointerEventPass.Final)
             event.changes.forEach {
-                val isTouch = it.type == PointerType.Touch
+                // The trackpad rotation's synthetic contacts (#660) are Touch
+                // pointers but no finger on the window: they must never start
+                // a window move (on macOS the drag would replay the last real
+                // mouseDown AppKit saw).
+                val isTouch = it.type == PointerType.Touch && !TaoTrackpadRotationContacts.isContact(it.id)
                 if (!it.isConsumed && !inUserControl) {
                     when (event.type) {
                         PointerEventType.Press -> {

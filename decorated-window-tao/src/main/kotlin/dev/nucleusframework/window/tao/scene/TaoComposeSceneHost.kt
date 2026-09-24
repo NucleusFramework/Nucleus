@@ -10,7 +10,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
@@ -38,6 +37,9 @@ import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.clearContentMeasurer
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
+import dev.nucleusframework.window.tao.event.TaoTrackpadRotationContacts
+import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSession
+import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
@@ -849,6 +851,7 @@ internal class TaoComposeSceneHost(
 
     fun onFocusChanged(focused: Boolean) {
         windowInfo.isWindowFocused = focused
+        if (!focused) interruptRotation()
         if (!focused && isPressed) {
             // Whatever stole focus mid-click (a native context-menu tracking
             // session, a compositor drag) owns the pointer now and will eat
@@ -1257,6 +1260,7 @@ internal class TaoComposeSceneHost(
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
+        interruptRotation()
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
@@ -1268,6 +1272,7 @@ internal class TaoComposeSceneHost(
     fun onPointerExited() {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        interruptRotation()
         scene?.sendPointerEvent(
             eventType = PointerEventType.Exit,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
@@ -1289,6 +1294,7 @@ internal class TaoComposeSceneHost(
         // A click ends a trackpad gesture for Compose too (a tap to stop a
         // fling must not race an open pan session).
         if (pressed) scrollRouter.finishPan()
+        interruptRotation()
         val composeButton = mapButton(buttonCode)
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
@@ -1339,6 +1345,8 @@ internal class TaoComposeSceneHost(
     fun onPointerScroll(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        // A rotation owns the fingers: a mouse-only Pan / Scroll would release its contacts.
+        if (rotateActive) return
         scrollRouter.onScroll(pointerDeadband.x, pointerDeadband.y, event, currentKeyboardModifiers)
     }
 
@@ -1346,28 +1354,57 @@ internal class TaoComposeSceneHost(
     //
     // Tao 0.35 doesn't expose these events; an NSEvent local monitor in
     // `macos/touchpad_gestures.m` intercepts them and forwards through
-    // `EventCallback.onTrackpadGesture`. We synthesize two ComposeScenePointer
-    // Touch points around the gesture centre — distance varies with the
-    // accumulated magnification factor, angle with the accumulated rotation.
-    // detectTransformGestures reacts to the changes between consecutive Move
-    // events, so pinch-zoom / rotate / pan all work with no app-side change.
-
-    private var gestureActive = false
+    // `EventCallback.onTrackpadGesture`. Magnify is a platform-recognized
+    // pinch, so it is forwarded as Compose `ScaleStart` / `ScaleChange` /
+    // `ScaleEnd` (#660) — MapLibre and `Modifier.transformable` consume that
+    // path without a second pass through touch slop. Rotation has no Compose
+    // equivalent, so it still synthesises two Touch pointers around the
+    // gesture centre and lets `detectTransformGestures` see the angle change.
+    //
+    // A real trackpad interleaves magnify and rotate, and the two models
+    // cannot overlap: an event lists every active pointer, so a Scale event
+    // without the contacts reads as their release (each rotate step then
+    // re-presses them — a spurious tap — and never rotates), while a Scale
+    // event carrying them stamps the factor on every pointer and foundation
+    // multiplies it once per pointer. So whichever gesture begins first owns
+    // the trackpad until it ends: during a pinch, rotate steps are dropped
+    // (foundation abandons a touch gesture on any Scale event anyway); during
+    // a rotation, magnify steps widen the contacts, as before #660.
+    //
+    // The same holds for every other mouse-only event: the contacts never
+    // coexist with one. A rotation does not start while a pan is open, drops
+    // trackpad scroll and smart-magnify while it owns the fingers, and a real
+    // cursor move / click / exit interrupts it (cancelled, so it is no tap);
+    // the rest of an interrupted rotation is ignored until it ends.
 
     // Centre of the gesture in physical pixels (top-left origin).
     private var gestureCenterX = 0f
     private var gestureCenterY = 0f
 
-    // Cumulative scale (1.0 at gesture start; multiplied by (1 + magnification)
-    // on each Magnify event) and angle in radians.
-    private var gestureScale = 1f
+    private val scaleSession =
+        TaoTrackpadScaleSession { type, factor ->
+            scene?.dispatchTrackpadScale(
+                x = gestureCenterX,
+                y = gestureCenterY,
+                type = type,
+                scaleFactor = factor,
+                keyboardModifiers = currentKeyboardModifiers,
+            )
+        }
+
+    private var rotateActive = false
+    private var rotateInterrupted = false
     private var gestureAngle = 0f
 
+    // Spacing of the rotation contacts relative to their start: magnify steps
+    // that arrive while the rotation owns the trackpad (1 otherwise).
+    private var rotateScale = 1f
+
     /**
-     * Synthesises a two-finger Touch gesture for `detectTransformGestures`.
-     * Wire format mirrors `TaoTrackpadGesture` / `TaoTrackpadPhase` constants.
-     * [valueFixed] is the per-event delta × 10 000 (ratio for magnify, degrees
-     * for rotate, ignored for smart-magnify).
+     * Forwards a macOS trackpad gesture. Wire format mirrors
+     * `TaoTrackpadGesture` / `TaoTrackpadPhase`. [valueFixed] is the
+     * per-event delta × 10 000 (ratio for magnify, degrees for rotate,
+     * ignored for smart-magnify).
      */
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     fun onTrackpadGesture(
@@ -1381,119 +1418,139 @@ internal class TaoComposeSceneHost(
         val xPx = xFixed / TRACKPAD_POSITION_SCALE
         val yPx = yFixed / TRACKPAD_POSITION_SCALE
         val value = valueFixed / TRACKPAD_VALUE_SCALE
+        gestureCenterX = xPx
+        gestureCenterY = yPx
 
-        // Smart-magnify is one-shot: synthesise a Press → Move → Release burst
-        // around a fixed scale step so detectTransformGestures sees a discrete
-        // zoom change.
-        if (kind == TaoTrackpadGesture.SMART_MAGNIFY) {
-            startGesture(xPx, yPx)
-            sendGesturePointers(PointerEventType.Press)
-            gestureScale *= SMART_MAGNIFY_FACTOR
-            sendGesturePointers(PointerEventType.Move)
-            endGesture(cancelled = false)
-            return
-        }
-
-        when (phase) {
-            TaoTrackpadPhase.BEGAN -> {
-                startGesture(xPx, yPx)
-                applyDelta(kind, value)
-                sendGesturePointers(PointerEventType.Press)
-            }
-            TaoTrackpadPhase.CHANGED -> {
-                if (!gestureActive) {
-                    startGesture(xPx, yPx)
-                } else {
-                    // Track the real cursor on every tick so the synthesised
-                    // centroid moves with `Δcursor` between events. Without
-                    // this, `calculatePan` would always report 0 from the
-                    // synthetic pair (centroid pinned at gesture start), and
-                    // a pinch-while-dragging would silently lose the pan
-                    // component. Stable PointerIds + symmetric offsets around
-                    // the live cursor = honest pan.
-                    gestureCenterX = xPx
-                    gestureCenterY = yPx
-                }
-                applyDelta(kind, value)
-                sendGesturePointers(PointerEventType.Move)
-            }
-            TaoTrackpadPhase.ENDED -> endGesture(cancelled = false)
-            TaoTrackpadPhase.CANCELLED -> endGesture(cancelled = true)
+        when (kind) {
+            TaoTrackpadGesture.SMART_MAGNIFY -> if (!rotateActive && !scaleSession.active) scaleSession.smartMagnify()
+            TaoTrackpadGesture.MAGNIFY -> onMagnify(phase, value)
+            TaoTrackpadGesture.ROTATE -> onRotate(phase, value)
         }
     }
 
-    private fun startGesture(
-        centerX: Float,
-        centerY: Float,
-    ) {
-        gestureActive = true
-        gestureCenterX = centerX
-        gestureCenterY = centerY
-        gestureScale = 1f
-        gestureAngle = 0f
-    }
-
-    private fun applyDelta(
-        kind: Int,
+    private fun onMagnify(
+        phase: Int,
         value: Float,
     ) {
-        when (kind) {
-            TaoTrackpadGesture.MAGNIFY -> {
-                // Compose's pinch detection responds to relative distance change,
-                // so multiplying preserves the (1 + delta) semantics of
-                // NSEvent.magnification across the gesture.
-                gestureScale *= (1f + value).coerceAtLeast(MIN_GESTURE_SCALE)
+        if (rotateActive) {
+            // The rotation owns this gesture: fold the step into the contacts.
+            if (phase == TaoTrackpadPhase.BEGAN || phase == TaoTrackpadPhase.CHANGED) {
+                // Bounded: past Float range the contacts become Infinity / NaN
+                // points and detectZoom hands the app an infinite zoom.
+                rotateScale =
+                    (rotateScale * (1f + value).coerceAtLeast(TaoTrackpadScaleSession.MIN_GESTURE_SCALE))
+                        .coerceIn(MIN_ROTATE_SCALE, MAX_ROTATE_SCALE)
+                sendRotatePointers(PointerEventType.Move)
             }
-            TaoTrackpadGesture.ROTATE -> {
-                // NSEvent.rotation is positive counter-clockwise in NSView's
-                // bottom-left (y-up) frame. Compose lives in screen y-down,
-                // where positive rotation is clockwise — flip the sign so the
-                // synthesised pointer rotation matches the user's gesture
-                // direction once detectTransformGestures applies it back to
-                // graphicsLayer.rotationZ.
-                gestureAngle -= value * (Math.PI.toFloat() / DEGREES_PER_RADIAN)
+            return
+        }
+        when (phase) {
+            TaoTrackpadPhase.BEGAN -> {
+                scaleSession.start()
+                scaleSession.magnifyBy(value)
+            }
+            TaoTrackpadPhase.CHANGED -> scaleSession.magnifyBy(value)
+            TaoTrackpadPhase.ENDED -> scaleSession.end()
+            TaoTrackpadPhase.CANCELLED -> scaleSession.end()
+        }
+    }
+
+    private fun onRotate(
+        phase: Int,
+        value: Float,
+    ) {
+        if (phase == TaoTrackpadPhase.ENDED || phase == TaoTrackpadPhase.CANCELLED) {
+            rotateInterrupted = false
+            endRotate(cancelled = phase == TaoTrackpadPhase.CANCELLED)
+            return
+        }
+        // A pinch or a pan owns this gesture; Compose has no rotation event to carry the step.
+        if (scaleSession.active || scrollRouter.panOpen) return
+        when (phase) {
+            TaoTrackpadPhase.BEGAN -> {
+                rotateInterrupted = false
+                startRotate()
+                applyRotateDelta(value)
+                sendRotatePointers(PointerEventType.Press)
+            }
+            TaoTrackpadPhase.CHANGED -> {
+                if (rotateInterrupted) return
+                if (!rotateActive) startRotate()
+                applyRotateDelta(value)
+                sendRotatePointers(PointerEventType.Move)
             }
         }
+    }
+
+    /**
+     * A mouse-only event is about to reach the scene while the rotation
+     * contacts are down: it would read as their release, so end the rotation
+     * first — cancelled, so the contacts do not land as a tap.
+     */
+    private fun interruptRotation() {
+        if (!rotateActive) return
+        rotateInterrupted = true
+        endRotate(cancelled = true)
+    }
+
+    private fun startRotate() {
+        rotateActive = true
+        gestureAngle = 0f
+        rotateScale = 1f
+    }
+
+    private fun applyRotateDelta(value: Float) {
+        // NSEvent.rotation is positive counter-clockwise in NSView's
+        // bottom-left (y-up) frame. Compose lives in screen y-down,
+        // where positive rotation is clockwise — flip the sign so the
+        // synthesised pointer rotation matches the user's gesture
+        // direction once detectTransformGestures applies it back to
+        // graphicsLayer.rotationZ.
+        gestureAngle -= value * (Math.PI.toFloat() / DEGREES_PER_RADIAN)
     }
 
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-    private fun sendGesturePointers(eventType: PointerEventType) {
+    private fun sendRotatePointers(eventType: PointerEventType) {
         val sc = scene ?: return
-        val radius = TRACKPAD_BASE_RADIUS_PX * gestureScale
-        val cosA = cos(gestureAngle)
-        val sinA = sin(gestureAngle)
-        val dx = radius * cosA
-        val dy = radius * sinA
-        val pressed = eventType != PointerEventType.Release
-        val pointers =
-            listOf(
-                ComposeScenePointer(
-                    id = PointerId(TRACKPAD_POINTER_ID_A),
-                    position = Offset(gestureCenterX - dx, gestureCenterY - dy),
-                    pressed = pressed,
-                    type = PointerType.Touch,
-                ),
-                ComposeScenePointer(
-                    id = PointerId(TRACKPAD_POINTER_ID_B),
-                    position = Offset(gestureCenterX + dx, gestureCenterY + dy),
-                    pressed = pressed,
-                    type = PointerType.Touch,
-                ),
-            )
         sc.sendPointerEvent(
             eventType = eventType,
-            pointers = pointers,
+            pointers = rotatePointers(pressed = eventType != PointerEventType.Release),
             keyboardModifiers = currentKeyboardModifiers,
         )
     }
 
-    private fun endGesture(cancelled: Boolean) {
-        if (!gestureActive) return
-        sendGesturePointers(PointerEventType.Release)
-        gestureActive = false
-        gestureScale = 1f
-        gestureAngle = 0f
+    /** The two synthetic rotation contacts at the current angle around the gesture centre. */
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    private fun rotatePointers(pressed: Boolean): List<ComposeScenePointer> {
+        val radius = TRACKPAD_BASE_RADIUS_PX * rotateScale
+        val dx = radius * cos(gestureAngle)
+        val dy = radius * sin(gestureAngle)
+        return listOf(
+            ComposeScenePointer(
+                id = TaoTrackpadRotationContacts.A,
+                position = Offset(gestureCenterX - dx, gestureCenterY - dy),
+                pressed = pressed,
+                type = PointerType.Touch,
+            ),
+            ComposeScenePointer(
+                id = TaoTrackpadRotationContacts.B,
+                position = Offset(gestureCenterX + dx, gestureCenterY + dy),
+                pressed = pressed,
+                type = PointerType.Touch,
+            ),
+        )
+    }
+
+    private fun endRotate(cancelled: Boolean) {
+        if (!rotateActive) return
+        // Cancel first: a Release delivered before the cancel is an ordinary
+        // unconsumed touch-up, which a tap detector takes as a tap. After it,
+        // the Release only clears the scene's record of the contacts.
         if (cancelled) scene?.cancelPointerInput()
+        sendRotatePointers(PointerEventType.Release)
+        rotateActive = false
+        gestureAngle = 0f
+        rotateScale = 1f
     }
 
     /**
@@ -1577,31 +1634,18 @@ internal class TaoComposeSceneHost(
         private const val TRACKPAD_POSITION_SCALE: Float = 1024f
         private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
 
-        // Two synthesised touch pointers separated by 2 × this radius at scale 1.
-        //
-        // Sized to defeat Compose's `detectTransformGestures` touch-slop check
-        // for zoom-OUT: that check computes
-        //     zoomMotion = abs(1 - cumulativeZoom) × previousCentroidSize
-        // and only fires the callback once it exceeds `viewConfiguration.touchSlop`.
-        // For zoom-out, `previousCentroidSize` shrinks together with the zoom,
-        // so `zoomMotion` has a hard ceiling ≈ radius × 0.25. With a 50 px
-        // radius the ceiling sat at ~13 px — below the default 18 px slop, so
-        // zoom-out gestures were silently dropped. 120 px gives a ceiling of
-        // ~31 px, comfortably above any reasonable slop value, while the
-        // initial 240 px pointer separation still fits inside common
-        // interactive targets (≥ 120 dp at 2× retina).
+        // Two synthesised touch pointers for rotation (pinch is a Scale event
+        // unless a rotation already owns the gesture). 120 px keeps `detectTransformGestures` rotation slop
+        // reachable: rotationMotion ≈ |Δθ| × π × radius / 180.
         private const val TRACKPAD_BASE_RADIUS_PX: Float = 120f
 
-        private const val TRACKPAD_POINTER_ID_A: Long = 0xA001L
-        private const val TRACKPAD_POINTER_ID_B: Long = 0xA002L
-
-        // Smart-magnify maps to a single discrete zoom step. macOS's smart-zoom
-        // toggles between a "fitted" view and a 2× zoom; 1.5× is a reasonable
-        // default that still triggers detectTransformGestures' zoom callback.
-        private const val SMART_MAGNIFY_FACTOR: Float = 1.5f
+        // Spacing range of the rotation contacts relative to their start
+        // (6 px … 2 400 px apart from centre): a rotation that owns a pinch
+        // zooms through it, and stops there instead of reaching 0 or Infinity.
+        private const val MIN_ROTATE_SCALE: Float = 0.05f
+        private const val MAX_ROTATE_SCALE: Float = 20f
 
         private const val DEGREES_PER_RADIAN: Float = 180f
-        private const val MIN_GESTURE_SCALE: Float = 0.05f
     }
 
     // ── Background render thread (AWT/skiko `dispatcherToBlockOn` pattern) ──

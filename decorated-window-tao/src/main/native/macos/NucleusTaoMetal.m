@@ -19,6 +19,7 @@
 #import <Carbon/Carbon.h>
 #import <mach/mach_time.h>
 #import <objc/runtime.h>
+#import <dlfcn.h>
 #import <stdatomic.h>
 #import <stdio.h>
 #include <stdint.h>
@@ -2869,6 +2870,19 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewTopLeft
     return packed;
 }
 
+/* Gate of the nativeDiagInject* entries: they DRIVE the app, so they are
+ * inert unless the process was started with NUCLEUS_TAO_INPUT_INJECTION=1
+ * (the taoHeadfulTest Gradle task sets it). Main thread only, so the lazy
+ * flag needs no atomics. */
+static BOOL taoInputInjectionEnabled(void) {
+    static int sEnabled = -1;
+    if (sEnabled < 0) {
+        const char *flag = getenv("NUCLEUS_TAO_INPUT_INJECTION");
+        sEnabled = (flag != NULL && strcmp(flag, "1") == 0) ? 1 : 0;
+    }
+    return sEnabled == 1;
+}
+
 /* macOS only, headful e2e (#652 / #653 / #654): hands a synthetic
  * `scrollWheel:` NSEvent to the tao NSView passed in — the entry point a real
  * trackpad or wheel event takes once the WindowServer has routed it. Skipping
@@ -2907,13 +2921,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectScrol
         jint phase, jint momentumPhase) {
     (void)env; (void)clazz;
     if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
-    // Main thread only from here on, so the lazy flag needs no atomics.
-    static int sEnabled = -1;
-    if (sEnabled < 0) {
-        const char *flag = getenv("NUCLEUS_TAO_INPUT_INJECTION");
-        sEnabled = (flag != NULL && strcmp(flag, "1") == 0) ? 1 : 0;
-    }
-    if (!sEnabled) return JNI_FALSE;
+    if (!taoInputInjectionEnabled()) return JNI_FALSE;
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     NSWindow *window = view.window;
     NSScreen *primary = NSScreen.screens.firstObject;
@@ -2936,6 +2944,79 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectScrol
     CFRelease(cg);
     if (event == nil) return JNI_FALSE;
     [view scrollWheel:event];
+    return JNI_TRUE;
+}
+
+/* macOS only, headful e2e (#660): queues a synthetic magnify / rotate /
+ * smart-magnify NSEvent with `-[NSApplication postEvent:atStart:]`, so the
+ * local monitor in touchpad_gestures.m sees it exactly as it sees a real
+ * trackpad gesture — no WindowServer, Accessibility grant or cursor position
+ * needed. Posted, never sent: the caller runs inside tao's event callback,
+ * and a synchronous `sendEvent:` re-enters that callback from the monitor
+ * (the loop's callback lock is held — deadlock).
+ *
+ * The event is a CGEvent of the WindowServer's gesture type (29) that
+ * `+[NSEvent eventWithCGEvent:]` decodes (verified on macOS 26):
+ *   field 110  gesture HID type: 8 zoom → NSEventTypeMagnify,
+ *              5 rotation → NSEventTypeRotate, 22 → NSEventTypeSmartMagnify
+ *   field 113  zoom value → `magnification`
+ *   field 114  rotation value (degrees) → `rotation`
+ *   field 132  phase, IOHID encoding: 1 began, 2 changed, 4 ended, 8 cancelled
+ *   field 51   window number → `window`
+ * A CGEvent-built NSEvent has no window unless field 51 is set, and with a
+ * window its `locationInWindow` comes from the event's window location (top-
+ * left origin, window frame), which only the private
+ * `CGEventSetWindowLocation` writes — resolved with dlsym so a missing symbol
+ * fails the injection instead of the load.
+ *
+ * kind: 0 magnify, 1 rotate, 2 smart-magnify (the touchpad_gestures.m wire).
+ * (x, y) are view-local points with a top-left origin. `value` is the
+ * magnification delta or the rotation in degrees (ignored for smart-magnify).
+ *
+ * Same gate as nativeDiagInjectScrollWheel. Returns JNI true once the event
+ * is queued; events posted in order are delivered in order. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectTrackpadGesture(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr,
+        jint kind, jint phase, jfloat x, jfloat y, jdouble value) {
+    (void)env; (void)clazz;
+    if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
+    if (!taoInputInjectionEnabled()) return JNI_FALSE;
+    typedef void (*SetWindowLocationFn)(CGEventRef, CGPoint);
+    static SetWindowLocationFn sSetWindowLocation = NULL;
+    static BOOL sResolved = NO;
+    if (!sResolved) {
+        sResolved = YES;
+        sSetWindowLocation = (SetWindowLocationFn) dlsym(RTLD_DEFAULT, "CGEventSetWindowLocation");
+    }
+    if (sSetWindowLocation == NULL) return JNI_FALSE;
+    int64_t hidType;
+    CGEventField valueField = 0;
+    switch (kind) {
+        case 0: hidType = 8;  valueField = (CGEventField) 113; break;
+        case 1: hidType = 5;  valueField = (CGEventField) 114; break;
+        case 2: hidType = 22; break;
+        default: return JNI_FALSE;
+    }
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    NSWindow *window = view.window;
+    if (window == nil) return JNI_FALSE;
+    // View-local top-left → window base (bottom-left) → window top-left.
+    NSPoint local = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height - y);
+    NSPoint inWindow = [view convertPoint:local toView:nil];
+    CGPoint windowTopLeft = CGPointMake(inWindow.x, window.frame.size.height - inWindow.y);
+    CGEventRef cg = CGEventCreate(NULL);
+    if (cg == NULL) return JNI_FALSE;
+    CGEventSetType(cg, (CGEventType) 29);
+    CGEventSetIntegerValueField(cg, (CGEventField) 110, hidType);
+    if (valueField != 0) CGEventSetDoubleValueField(cg, valueField, value);
+    if (phase != 0) CGEventSetIntegerValueField(cg, (CGEventField) 132, phase);
+    CGEventSetIntegerValueField(cg, (CGEventField) 51, window.windowNumber);
+    sSetWindowLocation(cg, windowTopLeft);
+    NSEvent *event = [NSEvent eventWithCGEvent:cg];
+    CFRelease(cg);
+    if (event == nil || event.window != window) return JNI_FALSE;
+    [NSApp postEvent:event atStart:NO];
     return JNI_TRUE;
 }
 

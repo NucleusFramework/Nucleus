@@ -9,6 +9,7 @@ import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
+import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSessionTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
 import dev.nucleusframework.window.tao.popup.MacPopupPictureCullTest
@@ -29,6 +30,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
+import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadScaleTest
 import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import dev.nucleusframework.window.tao.workspace.DragControllerTest
 import dev.nucleusframework.window.tao.workspace.HostGeometryTest
@@ -429,6 +431,65 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneTrackpadPanTest: an orphaned momentum tail scrolls as wheel events instead of stalling") {
             TaoSceneTrackpadPanTest().`an orphaned momentum tail scrolls as wheel events instead of stalling`()
+        }
+        run("TaoSceneTrackpadScaleTest: legacy two-touch pinch plants contacts 120 px off the cursor") {
+            TaoSceneTrackpadScaleTest().`legacy two-touch pinch plants contacts 120 px off the cursor`()
+        }
+        run("TaoSceneTrackpadScaleTest: legacy two-touch pinch at a map edge hits the neighbouring chrome") {
+            TaoSceneTrackpadScaleTest().`legacy two-touch pinch at a map edge hits the neighbouring chrome`()
+        }
+        run("TaoSceneTrackpadScaleTest: legacy two-touch pinch delays a 1 percent zoom behind touch slop") {
+            TaoSceneTrackpadScaleTest().`legacy two-touch pinch delays a 1 percent zoom behind touch slop`()
+        }
+        run(
+            "TaoSceneTrackpadScaleTest: legacy two-touch pinch needs about 15 percent before " +
+                "detectTransformGestures zooms",
+        ) {
+            TaoSceneTrackpadScaleTest()
+                .`legacy two-touch pinch needs about 15 percent before detectTransformGestures zooms`()
+        }
+        run("TaoSceneTrackpadScaleTest: magnify is dispatched as ScaleStart ScaleChange ScaleEnd at the cursor") {
+            TaoSceneTrackpadScaleTest().`magnify is dispatched as ScaleStart ScaleChange ScaleEnd at the cursor`()
+        }
+        run("TaoSceneTrackpadScaleTest: scale events at a map edge hit only the map under the cursor") {
+            TaoSceneTrackpadScaleTest().`scale events at a map edge hit only the map under the cursor`()
+        }
+        run("TaoSceneTrackpadScaleTest: a 1 percent scale change zooms transformable immediately") {
+            TaoSceneTrackpadScaleTest().`a 1 percent scale change zooms transformable immediately`()
+        }
+        run(
+            "TaoSceneTrackpadScaleTest: detectTransformGestures is not the Scale path and stays quiet " +
+                "on a 1 percent pinch",
+        ) {
+            TaoSceneTrackpadScaleTest()
+                .`detectTransformGestures is not the Scale path and stays quiet on a 1 percent pinch`()
+        }
+        run("TaoSceneTrackpadScaleTest: host-shaped magnify stream zooms transformable without slop") {
+            TaoSceneTrackpadScaleTest().`host-shaped magnify stream zooms transformable without slop`()
+        }
+        run("TaoTrackpadScaleSessionTest: startChangeEndEmitsScaleSequence") {
+            TaoTrackpadScaleSessionTest().startChangeEndEmitsScaleSequence()
+        }
+        run("TaoTrackpadScaleSessionTest: changeOpensTheGestureIfNeeded") {
+            TaoTrackpadScaleSessionTest().changeOpensTheGestureIfNeeded()
+        }
+        run("TaoTrackpadScaleSessionTest: identityFactorIsNotAMove") {
+            TaoTrackpadScaleSessionTest().identityFactorIsNotAMove()
+        }
+        run("TaoTrackpadScaleSessionTest: magnifyByUsesOnePlusDelta") {
+            TaoTrackpadScaleSessionTest().magnifyByUsesOnePlusDelta()
+        }
+        run("TaoTrackpadScaleSessionTest: magnifyByFloorsACollapse") {
+            TaoTrackpadScaleSessionTest().magnifyByFloorsACollapse()
+        }
+        run("TaoTrackpadScaleSessionTest: smartMagnifyIsAClosedBurst") {
+            TaoTrackpadScaleSessionTest().smartMagnifyIsAClosedBurst()
+        }
+        run("TaoTrackpadScaleSessionTest: endWithoutStartIsANoOp") {
+            TaoTrackpadScaleSessionTest().endWithoutStartIsANoOp()
+        }
+        run("TaoTrackpadScaleSessionTest: aSecondStartIsIgnoredWhileActive") {
+            TaoTrackpadScaleSessionTest().aSecondStartIsIgnoredWhileActive()
         }
         run("TaoSceneScrollTest: one wheel unit scrolls ten dp on macOS") {
             TaoSceneScrollTest().`one wheel unit scrolls ten dp on macOS`()

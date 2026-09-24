@@ -541,6 +541,30 @@ internal object NativeTaoBridge {
     ): Boolean
 
     /**
+     * Linux only, headful e2e: delivers a synthetic `GdkEventTouchpadPinch`
+     * through the GtkWindow's `event` signal — the handler a real touchpad
+     * pinch reaches (`touch.rs`), so GDK's absolute scale and radian angle
+     * are converted exactly as for a real gesture.
+     *
+     * [phase] is a `GdkTouchpadGesturePhase` (`0=BEGIN`, `1=UPDATE`, `2=END`,
+     * `3=CANCEL`), [scaleMicro] GDK's absolute scale × 1 000 000 (1 000 000 at
+     * BEGIN), [angleDeltaMicro] the per-event angle in micro-radians.
+     * Coordinates are widget-local logical px.
+     *
+     * Must run on the Tao / GTK main thread. Returns `false` when the handle
+     * is unknown, the window is not realized, or [phase] is out of range.
+     */
+    @JvmStatic
+    external fun nativeLinuxInjectGdkTouchpadPinch(
+        handle: Long,
+        phase: Int,
+        x: Int,
+        y: Int,
+        scaleMicro: Int,
+        angleDeltaMicro: Int,
+    ): Boolean
+
+    /**
      * Linux only: origin of the content area (the child GTK allocated inside
      * any client-side decorations) in logical toplevel coordinates, packed as
      * `(x shl 32) or (y and 0xffffffff)`. `(0, 0)` for plain undecorated

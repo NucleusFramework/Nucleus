@@ -46,8 +46,11 @@ import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl
 import dev.nucleusframework.window.tao.dispatch.DelayScheduler
+import dev.nucleusframework.window.tao.event.TaoTrackpadRotationContacts
+import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSession
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
+import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
@@ -1153,12 +1156,11 @@ internal class TaoComposeSceneHostLinux(
     // GdkEventTouchpadPinch into the wire format below; we marshal them
     // into Compose pointer events here.
     //
-    // Trackpad gesture path: same trick as the macOS host — synthesise two
-    // ComposeScenePointer Touch points around the gesture focal point with
-    // distance varying by accumulated scale and angle by accumulated
-    // rotation, so `detectTransformGestures` reacts to pinch/rotate with
-    // strictly cross-platform application code. Smart-magnify is macOS-only
-    // and is never reported on Linux (no GDK equivalent).
+    // Trackpad gesture path: magnify is forwarded as Compose `ScaleStart` /
+    // `ScaleChange` / `ScaleEnd` (#660), matching the macOS host. Rotation
+    // has no Compose equivalent, so it still synthesises two Touch pointers
+    // around the focal point. Smart-magnify is macOS-only and is never
+    // reported on Linux (no GDK equivalent).
 
     private fun registerTouch() {
         if (!NativeTaoLinuxTouchBridge.isLoaded) return
@@ -1275,21 +1277,61 @@ internal class TaoComposeSceneHostLinux(
     // rather than abstracted into a shared helper because the two hosts have
     // diverged in other dimensions (rendering, scale handling, lifecycle)
     // and a thin shared trait would obscure more than it factors.
-    private var gestureActive = false
+    //
+    // The same rule holds as on macOS: the rotation's Touch contacts never
+    // coexist with a mouse-only event (a Scale, a scroll, a cursor move, a
+    // click), since an event lists every active pointer and one without the
+    // contacts reads as their release — a touch tap per step.
+    //
+    // What differs is the source. AppKit reports magnify and rotate as two
+    // gestures, and the first to begin owns the trackpad. GDK reports ONE
+    // pinch gesture whose every event carries a scale and an angle, so
+    // `touch.rs` forwards a magnify and a rotate step for each, magnify
+    // first: first-come would hand every pinch to Scale and make rotation
+    // unreachable. So a pinch opens as Scale — no delay for the common case —
+    // and its angle is only accumulated; once the rotation clearly dominates
+    // (ROTATE_TAKEOVER_DEGREES turned while the scale stayed within
+    // ROTATE_TAKEOVER_MAX_ZOOM) the Scale gesture closes and the contacts
+    // take over, already turned by that angle so the takeover counts towards
+    // `detectTransformGestures`' rotation slop. From there magnify steps
+    // widen the contacts, as on macOS.
     private var gestureCenterX = 0f
     private var gestureCenterY = 0f
-    private var gestureScale = 1f
+    private val scaleSession =
+        TaoTrackpadScaleSession { type, factor ->
+            scene?.dispatchTrackpadScale(
+                x = gestureCenterX,
+                y = gestureCenterY,
+                type = type,
+                scaleFactor = factor,
+                keyboardModifiers = currentKeyboardModifiers,
+            )
+        }
+
+    // A GDK pinch is in progress (BEGIN..END), whoever owns it.
+    private var pinchActive = false
+
+    // Zoom and rotation (degrees) of the pinch while Scale owns it — what the
+    // takeover rule reads.
+    private var pinchZoom = 1f
+    private var pinchAngleDegrees = 0f
+
+    private var rotateActive = false
+    private var rotateInterrupted = false
     private var gestureAngle = 0f
 
+    // Spacing of the rotation contacts relative to their start: magnify steps
+    // that arrive while the rotation owns the pinch (1 otherwise).
+    private var rotateScale = 1f
+
     // Ctrl+wheel is a discrete stream with no ENDED phase (unlike a native trackpad
-    // gesture), so the synthetic magnify is released by an idle timer on this scope.
+    // gesture), so the scale gesture is released by an idle timer on this scope.
     // Deliberately NOT on the #622 fatal path: gesture helpers are isolated
     // (SupervisorJob) — a crash there costs one gesture, logged at SEVERE.
     private val gestureScope =
         CoroutineScope(coroutineContext + flushingDispatcher + SupervisorJob() + TaoNonFatalCoroutineExceptionHandler)
     private var wheelZoomEndJob: Job? = null
 
-    @OptIn(ExperimentalComposeUiApi::class)
     private fun dispatchTrackpadGesture(
         kind: Int,
         phase: Int,
@@ -1298,79 +1340,120 @@ internal class TaoComposeSceneHostLinux(
         valueFixed: Long,
     ) {
         if (scene == null) return
-        val xPx = xFixed / TOUCH_POSITION_SCALE
-        val yPx = yFixed / TOUCH_POSITION_SCALE
+        gestureCenterX = xFixed / TOUCH_POSITION_SCALE
+        gestureCenterY = yFixed / TOUCH_POSITION_SCALE
         val value = valueFixed / TRACKPAD_VALUE_SCALE
-        when (phase) {
-            TaoTrackpadPhase.BEGAN -> {
-                startGesture(xPx, yPx)
-                applyGestureDelta(kind, value)
-                sendGesturePointers(PointerEventType.Press)
-            }
-            TaoTrackpadPhase.CHANGED -> {
-                if (!gestureActive) {
-                    startGesture(xPx, yPx)
-                } else {
-                    // Track the focal point on every tick so a pinch-while-
-                    // dragging keeps its pan component (the synthetic centroid
-                    // moves with the focal point between events).
-                    gestureCenterX = xPx
-                    gestureCenterY = yPx
-                }
-                applyGestureDelta(kind, value)
-                sendGesturePointers(PointerEventType.Move)
-            }
-            TaoTrackpadPhase.ENDED -> endGesture(cancelled = false)
-            TaoTrackpadPhase.CANCELLED -> endGesture(cancelled = true)
+        when (kind) {
+            TaoTrackpadGesture.MAGNIFY -> onMagnify(phase, value)
+            TaoTrackpadGesture.ROTATE -> onRotate(phase, value)
         }
     }
 
-    private fun startGesture(
-        centerX: Float,
-        centerY: Float,
-    ) {
-        gestureActive = true
-        gestureCenterX = centerX
-        gestureCenterY = centerY
-        gestureScale = 1f
-        gestureAngle = 0f
-    }
-
-    private fun applyGestureDelta(
-        kind: Int,
+    private fun onMagnify(
+        phase: Int,
         value: Float,
     ) {
-        when (kind) {
-            TaoTrackpadGesture.MAGNIFY ->
-                gestureScale *= (1f + value).coerceAtLeast(MIN_GESTURE_SCALE)
-            TaoTrackpadGesture.ROTATE -> {
-                // Rust converts GDK's per-event radians into degrees so this
-                // matches the macOS NSEvent.rotation contract exactly. Sign
-                // flip for Compose's y-down screen frame.
-                gestureAngle -= value * (Math.PI.toFloat() / DEGREES_PER_RADIAN)
+        val factor = (1f + value).coerceAtLeast(TaoTrackpadScaleSession.MIN_GESTURE_SCALE)
+        if (rotateActive) {
+            // The rotation owns this pinch: fold the step into the contacts.
+            if (phase == TaoTrackpadPhase.BEGAN || phase == TaoTrackpadPhase.CHANGED) {
+                // Bounded: past Float range the contacts become Infinity / NaN
+                // points and detectZoom hands the app an infinite zoom.
+                rotateScale = (rotateScale * factor).coerceIn(MIN_ROTATE_SCALE, MAX_ROTATE_SCALE)
+                sendRotatePointers(PointerEventType.Move)
+            }
+            if (phase == TaoTrackpadPhase.ENDED || phase == TaoTrackpadPhase.CANCELLED) pinchActive = false
+            return
+        }
+        when (phase) {
+            TaoTrackpadPhase.BEGAN -> {
+                // A Ctrl+wheel burst still closing must not end the pinch's gesture.
+                wheelZoomEndJob?.cancel()
+                wheelZoomEndJob = null
+                pinchActive = true
+                rotateInterrupted = false
+                pinchZoom = factor
+                pinchAngleDegrees = 0f
+                scaleSession.start()
+                scaleSession.magnifyBy(value)
+            }
+            TaoTrackpadPhase.CHANGED -> {
+                if (rotateInterrupted) return
+                pinchZoom *= factor
+                scaleSession.magnifyBy(value)
+            }
+            TaoTrackpadPhase.ENDED, TaoTrackpadPhase.CANCELLED -> {
+                pinchActive = false
+                scaleSession.end()
             }
         }
+    }
+
+    private fun onRotate(
+        phase: Int,
+        value: Float,
+    ) {
+        if (phase == TaoTrackpadPhase.ENDED || phase == TaoTrackpadPhase.CANCELLED) {
+            rotateInterrupted = false
+            endRotate(cancelled = phase == TaoTrackpadPhase.CANCELLED)
+            return
+        }
+        if (rotateInterrupted) return
+        if (rotateActive) {
+            applyRotateDelta(value)
+            sendRotatePointers(PointerEventType.Move)
+            return
+        }
+        // Compose has no rotation event: while Scale owns the pinch the angle
+        // only counts towards the takeover.
+        pinchAngleDegrees += value
+        val zoomed = pinchZoom !in (1f / ROTATE_TAKEOVER_MAX_ZOOM)..ROTATE_TAKEOVER_MAX_ZOOM
+        if (!pinchActive || zoomed || abs(pinchAngleDegrees) < ROTATE_TAKEOVER_DEGREES) return
+        scaleSession.end()
+        rotateActive = true
+        rotateScale = 1f
+        gestureAngle = 0f
+        sendRotatePointers(PointerEventType.Press)
+        applyRotateDelta(pinchAngleDegrees)
+        sendRotatePointers(PointerEventType.Move)
+    }
+
+    /**
+     * A mouse-only event is about to reach the scene while the rotation
+     * contacts are down: it would read as their release, so end the rotation
+     * first — cancelled, so the contacts do not land as a tap. The rest of
+     * that pinch is ignored.
+     */
+    private fun interruptRotation() {
+        if (!rotateActive) return
+        rotateInterrupted = true
+        endRotate(cancelled = true)
+    }
+
+    private fun applyRotateDelta(degrees: Float) {
+        // `touch.rs` converts GDK's per-event radians into degrees. GDK's
+        // angle_delta is positive clockwise on screen, which is Compose's
+        // y-down rotation sense too — no flip, unlike AppKit's y-up rotation.
+        gestureAngle += degrees * (Math.PI.toFloat() / DEGREES_PER_RADIAN)
     }
 
     @OptIn(ExperimentalComposeUiApi::class)
-    private fun sendGesturePointers(eventType: PointerEventType) {
+    private fun sendRotatePointers(eventType: PointerEventType) {
         val sc = scene ?: return
-        val radius = TRACKPAD_BASE_RADIUS_PX * gestureScale
-        val cosA = cos(gestureAngle)
-        val sinA = sin(gestureAngle)
-        val dx = radius * cosA
-        val dy = radius * sinA
+        val radius = TRACKPAD_BASE_RADIUS_PX * rotateScale
+        val dx = radius * cos(gestureAngle)
+        val dy = radius * sin(gestureAngle)
         val pressed = eventType != PointerEventType.Release
         val pointers =
             listOf(
                 ComposeScenePointer(
-                    id = PointerId(TRACKPAD_POINTER_ID_A),
+                    id = TaoTrackpadRotationContacts.A,
                     position = Offset(gestureCenterX - dx, gestureCenterY - dy),
                     pressed = pressed,
                     type = PointerType.Touch,
                 ),
                 ComposeScenePointer(
-                    id = PointerId(TRACKPAD_POINTER_ID_B),
+                    id = TaoTrackpadRotationContacts.B,
                     position = Offset(gestureCenterX + dx, gestureCenterY + dy),
                     pressed = pressed,
                     type = PointerType.Touch,
@@ -1383,13 +1466,16 @@ internal class TaoComposeSceneHostLinux(
         )
     }
 
-    private fun endGesture(cancelled: Boolean) {
-        if (!gestureActive) return
-        sendGesturePointers(PointerEventType.Release)
-        gestureActive = false
-        gestureScale = 1f
-        gestureAngle = 0f
+    private fun endRotate(cancelled: Boolean) {
+        if (!rotateActive) return
+        // Cancel first: a Release delivered before the cancel is an ordinary
+        // unconsumed touch-up, which a tap detector takes as a tap. After it,
+        // the Release only clears the scene's record of the contacts.
         if (cancelled) scene?.cancelPointerInput()
+        sendRotatePointers(PointerEventType.Release)
+        rotateActive = false
+        gestureAngle = 0f
+        rotateScale = 1f
     }
 
     /** Current scale factor (logical→physical multiplier). */
@@ -1767,6 +1853,7 @@ internal class TaoComposeSceneHostLinux(
         // is real pointer input resuming (see [onPointerMove] / [onPointerButton]),
         // which the compositor withholds for the whole grab.
         windowInfo.isWindowFocused = focused
+        if (!focused) interruptRotation()
     }
 
     private fun updateWindowInfoSize() {
@@ -2383,6 +2470,7 @@ internal class TaoComposeSceneHostLinux(
         if (resizeDecoration.onMove(direction)) return
 
         if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
+        interruptRotation()
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
@@ -2471,6 +2559,7 @@ internal class TaoComposeSceneHostLinux(
             forwardedNativeButtons.remove(buttonCode)
         }
         if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
+        interruptRotation()
 
         // A press reaching the parent scene is outside every popup layer — the
         // Linux stand-in for macOS's NSEvent monitor / Windows' WH_MOUSE_LL hook.
@@ -2591,8 +2680,10 @@ internal class TaoComposeSceneHostLinux(
     fun onPointerScroll(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        // A rotation owns the fingers: a mouse-only Scroll would release its contacts.
+        if (rotateActive) return
 
-        // Ctrl+wheel → synthetic magnify gesture, never a scroll. On Windows the native
+        // Ctrl+wheel → Scale gesture, never a scroll. On Windows the native
         // layer routes WM_MOUSEWHEEL+Ctrl to the magnify hook; GTK delivers it here as a
         // plain scroll, so we do the same routing in Kotlin. Keeps Ctrl+wheel = zoom (not
         // zoom-and-scroll) and matches the Windows backend — the AWT backend has no
@@ -2612,36 +2703,30 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * Feeds one Ctrl+wheel tick into the shared magnify-gesture machinery (Touch pinch),
-     * so the app's pinch-zoom handler receives it exactly like a trackpad pinch. The
-     * gesture is opened on the first tick, moved on each tick, and released by an idle
-     * timer once ticks stop ([scheduleWheelZoomEnd]).
+     * Feeds one Ctrl+wheel tick into the shared scale-gesture session, so the
+     * app's pinch-zoom handler receives it exactly like a trackpad pinch. The
+     * gesture is opened on the first tick, moved on each tick, and released by
+     * an idle timer once ticks stop ([scheduleWheelZoomEnd]).
      */
     private fun onCtrlWheelZoom(deltaAwt: Float) {
         if (scene == null) return
         // AWT sign: wheel-up (zoom in) is a negative rotation, so negate to get a
-        // positive magnify value that grows the gesture scale.
+        // positive magnify value that grows the scale factor.
         val step = TaoWheelPinchZoom.stepFromWheelDelta(-deltaAwt)
-        if (!gestureActive) {
-            startGesture(lastPointerX, lastPointerY)
-            sendGesturePointers(PointerEventType.Press)
-        } else {
-            gestureCenterX = lastPointerX
-            gestureCenterY = lastPointerY
-        }
-        gestureScale *= step
-        sendGesturePointers(PointerEventType.Move)
+        gestureCenterX = lastPointerX
+        gestureCenterY = lastPointerY
+        scaleSession.change(step)
         scheduleWheelZoomEnd()
     }
 
-    /** Re-arms the idle timer that releases the synthetic wheel-driven magnify. */
+    /** Re-arms the idle timer that releases the wheel-driven scale gesture. */
     private fun scheduleWheelZoomEnd() {
         wheelZoomEndJob?.cancel()
         wheelZoomEndJob =
             gestureScope.launch {
                 delay(WHEEL_ZOOM_IDLE_END_MS)
                 wheelZoomEndJob = null
-                endGesture(cancelled = false)
+                scaleSession.end()
             }
     }
 
@@ -3240,13 +3325,23 @@ internal class TaoComposeSceneHostLinux(
         private const val TOUCH_POSITION_SCALE: Float = 1024f
         private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
 
-        // Synth pinch radius / pointer ids — same values as the macOS host
-        // (see `TaoComposeSceneHost`'s companion); kept in sync manually.
+        // Synth rotate radius — same value as the macOS host (see
+        // `TaoComposeSceneHost`'s companion); kept in sync manually.
         private const val TRACKPAD_BASE_RADIUS_PX: Float = 120f
-        private const val TRACKPAD_POINTER_ID_A: Long = 0xA001L
-        private const val TRACKPAD_POINTER_ID_B: Long = 0xA002L
         private const val DEGREES_PER_RADIAN: Float = 180f
-        private const val MIN_GESTURE_SCALE: Float = 0.05f
+
+        // Spacing range of the rotation contacts relative to their start, as
+        // on macOS: a rotation that owns a pinch zooms through it and stops
+        // there instead of reaching 0 or Infinity.
+        private const val MIN_ROTATE_SCALE: Float = 0.05f
+        private const val MAX_ROTATE_SCALE: Float = 20f
+
+        // A GDK pinch is handed to the rotation once it has turned this far
+        // while its zoom stays within this ratio either way. A real pinch
+        // carries a few degrees of noise and zooms past 10 % long before it
+        // turns 10°; a deliberate twist does the opposite.
+        private const val ROTATE_TAKEOVER_DEGREES: Float = 10f
+        private const val ROTATE_TAKEOVER_MAX_ZOOM: Float = 1.1f
         private const val WHEEL_ZOOM_IDLE_END_MS: Long = 120L
 
         /**
