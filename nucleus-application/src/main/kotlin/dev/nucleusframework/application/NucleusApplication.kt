@@ -1,6 +1,9 @@
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.ComposeUiFlags
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.pollSystemTheme
 import dev.nucleusframework.application.internal.TaoLauncher
 import dev.nucleusframework.core.runtime.WindowBackend
 import dev.nucleusframework.graalvm.GraalVmInitializer
@@ -38,6 +41,7 @@ import java.util.Locale
  * `exitProcessOnExit = false` to return normally instead, matching Compose
  * Desktop's `application(exitProcessOnExit)`.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 public fun nucleusApplication(
     args: Array<String> = emptyArray(),
     enableSingleInstance: Boolean = true,
@@ -78,6 +82,12 @@ public fun nucleusApplication(
             System.setProperty("user.script", defaultLocale.script)
         }
     }
+
+    // Compose 1.12 polls the OS theme once a second on Dispatchers.IO for
+    // isSystemInDarkTheme(). Nucleus provides LocalSystemTheme from its reactive
+    // detector (ProvideNucleusSystemTheme), so that poll is pure overhead. The
+    // flag is read when a scene is created, so it must be cleared before any UI.
+    ComposeUiFlags.pollSystemTheme = false
 
     if (enableSingleInstance) {
         acquireSingleInstanceLock(args)
