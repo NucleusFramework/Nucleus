@@ -47,7 +47,7 @@ abstract class JvmApplication {
      * (`-Xms32m`, `-XX:MaxRAMPercentage=25`), a single JAR in the jpackage
      * image, idle GC (3s after last unfocus, immediately on minimize), and
      * the current OpenJDK as the jpackage / jlink / `run` JDK (auto-downloaded,
-     * like the GraalVM toolchain).
+     * like the GraalVM toolchain). Idle GC also applies to GraalVM native images.
      *
      * `true` turns on every knob still unset in the [nucleusOptimization]
      * configure block. An explicit [garbageCollector], [javaHome], or `-Xms` /
