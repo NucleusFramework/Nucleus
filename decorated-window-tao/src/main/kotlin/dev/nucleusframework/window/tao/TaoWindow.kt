@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntRect
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
@@ -238,6 +239,13 @@ public class TaoWindow internal constructor(
 
     @Volatile
     private var touchInputListener: TouchInputListener? = null
+
+    /**
+     * Windows precision-touchpad manipulation stream (#706) — see
+     * [NativeTaoBridge.EventCallback.onDirectManipulation].
+     */
+    @Volatile
+    internal var directManipulationListener: ((TaoDirectManipulationEvent) -> Unit)? = null
 
     @Volatile
     private var keyListener: KeyEventListener? = null
@@ -1323,8 +1331,11 @@ public class TaoWindow internal constructor(
 
     /**
      * Trackpad gesture stream — see [TrackpadGestureListener]. macOS/Linux emit
-     * magnify/rotate/smart-magnify; Windows emits magnify only (Ctrl+wheel /
-     * precision-touchpad pinch). No native source on other configurations.
+     * magnify/rotate/smart-magnify; Windows emits magnify only, as Ctrl+wheel
+     * ticks (a mouse, or a precision touchpad on the OS's legacy emulation) —
+     * a touchpad the window's DirectManipulation viewport owns reaches the
+     * Compose host through its own stream (#706). No native source on other
+     * configurations.
      */
     public fun onTrackpadGesture(listener: TrackpadGestureListener) {
         trackpadGestureListener = listener
@@ -1343,6 +1354,22 @@ public class TaoWindow internal constructor(
         forceFixed: Int,
     ) {
         touchInputListener?.onTouch(phase, id, xFixed, yFixed, forceFixed)
+    }
+
+    @Suppress("LongParameterList")
+    internal fun dispatchDirectManipulation(
+        kind: Int,
+        status: Int,
+        previousStatus: Int,
+        scale: Float,
+        offsetX: Float,
+        offsetY: Float,
+        focalX: Float,
+        focalY: Float,
+    ) {
+        directManipulationListener?.invoke(
+            TaoDirectManipulationEvent(kind, status, previousStatus, scale, offsetX, offsetY, focalX, focalY),
+        )
     }
 
     internal fun dispatchTrackpadGesture(

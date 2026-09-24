@@ -1,9 +1,11 @@
 package dev.nucleusframework.window.tao
 
 import dev.nucleusframework.core.runtime.NucleusUiThread
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.core.runtime.WindowBackend
 import dev.nucleusframework.window.tao.dispatch.LifecycleMainDispatcherPriming
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationGesture
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.util.concurrent.ConcurrentHashMap
@@ -104,6 +106,9 @@ public object TaoApplication {
         // first `NavController.setGraph` call.
         LifecycleMainDispatcherPriming.primeWithCurrentThread()
         onLaunched = block
+        if (Platform.Current == Platform.Windows) {
+            NativeTaoBridge.nativeSetDirectManipulationEnabled(TaoDirectManipulationGesture.enabled)
+        }
         NativeTaoBridge.nativeRunBlocking(EventDispatcher)
         // The loop has exited (reportFatal posted the exit) and every tao
         // callback frame is unwound — only now is it safe to block in the
@@ -406,6 +411,31 @@ public object TaoApplication {
             dyFixed: Int,
         ) {
             guarded { lookup(handle)?.dispatchScrollGesture(phase, dxFixed, dyFixed) }
+        }
+
+        override fun onDirectManipulation(
+            handle: Long,
+            kind: Int,
+            status: Int,
+            previousStatus: Int,
+            scale: Float,
+            offsetX: Float,
+            offsetY: Float,
+            focalX: Float,
+            focalY: Float,
+        ) {
+            guarded {
+                lookup(handle)?.dispatchDirectManipulation(
+                    kind,
+                    status,
+                    previousStatus,
+                    scale,
+                    offsetX,
+                    offsetY,
+                    focalX,
+                    focalY,
+                )
+            }
         }
 
         override fun onTouchInput(

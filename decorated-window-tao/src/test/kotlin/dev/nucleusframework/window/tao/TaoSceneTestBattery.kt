@@ -6,6 +6,7 @@ import dev.nucleusframework.window.tao.TaoWindowScrollTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
 import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationGestureTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
@@ -31,6 +32,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadScaleTest
+import dev.nucleusframework.window.tao.scene.TaoSceneWindowsTouchpadTest
 import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import dev.nucleusframework.window.tao.workspace.DragControllerTest
 import dev.nucleusframework.window.tao.workspace.HostGeometryTest
@@ -1262,6 +1264,81 @@ public object TaoSceneTestBattery {
             TabWorkspaceTest().`a transfer drag is carried by the platform session, one held in its strip by none`()
         }
 
+        run("TaoDirectManipulationGestureTest: pinchOpensOnTheFirstScaleAndClosesOnReady") {
+            TaoDirectManipulationGestureTest().pinchOpensOnTheFirstScaleAndClosesOnReady()
+        }
+        run("TaoDirectManipulationGestureTest: pinchFactorsMultiplyToTheViewportsScale") {
+            TaoDirectManipulationGestureTest().pinchFactorsMultiplyToTheViewportsScale()
+        }
+        run("TaoDirectManipulationGestureTest: pinchAtItsFocalPoint") {
+            TaoDirectManipulationGestureTest().pinchAtItsFocalPoint()
+        }
+        run("TaoDirectManipulationGestureTest: panCarriesContentMotionAndEndsOnReadyWithoutInertia") {
+            TaoDirectManipulationGestureTest().panCarriesContentMotionAndEndsOnReadyWithoutInertia()
+        }
+        run("TaoDirectManipulationGestureTest: inertiaContinuesThePanAsItsMomentumTail") {
+            TaoDirectManipulationGestureTest().inertiaContinuesThePanAsItsMomentumTail()
+        }
+        run("TaoDirectManipulationGestureTest: aFlickTooQuickForAnUpdateIsStillAPanWithItsTail") {
+            TaoDirectManipulationGestureTest().aFlickTooQuickForAnUpdateIsStillAPanWithItsTail()
+        }
+        run("TaoDirectManipulationGestureTest: aPanThatStartsScalingBecomesAPinchForGood") {
+            TaoDirectManipulationGestureTest().aPanThatStartsScalingBecomesAPinchForGood()
+        }
+        run("TaoDirectManipulationGestureTest: scaleJitterUnderTheEpsilonKeepsAPanAPan") {
+            TaoDirectManipulationGestureTest().scaleJitterUnderTheEpsilonKeepsAPanAPan()
+        }
+        run("TaoDirectManipulationGestureTest: aPinchLiftingIntoInertiaEndsAndTheTailIsIgnored") {
+            TaoDirectManipulationGestureTest().aPinchLiftingIntoInertiaEndsAndTheTailIsIgnored()
+        }
+        run("TaoDirectManipulationGestureTest: fingersBackOnThePadStopTheGlide") {
+            TaoDirectManipulationGestureTest().fingersBackOnThePadStopTheGlide()
+        }
+        run("TaoDirectManipulationGestureTest: aSuspendedManipulationCancelsItsGesture") {
+            TaoDirectManipulationGestureTest().aSuspendedManipulationCancelsItsGesture()
+        }
+        run("TaoDirectManipulationGestureTest: anInertiaNobodyStartedIsNoGesture") {
+            TaoDirectManipulationGestureTest().anInertiaNobodyStartedIsNoGesture()
+        }
+        run("TaoDirectManipulationGestureTest: everySequenceIsRebasedOnTheTransformItStartsFrom") {
+            TaoDirectManipulationGestureTest().everySequenceIsRebasedOnTheTransformItStartsFrom()
+        }
+        run("TaoDirectManipulationGestureTest: aContentUpdateWhoseRunningWasMissedAdoptsTheSequence") {
+            TaoDirectManipulationGestureTest().aContentUpdateWhoseRunningWasMissedAdoptsTheSequence()
+        }
+        run("TaoDirectManipulationGestureTest: aTransformThatJumpsIsRebasedNotZoomed") {
+            TaoDirectManipulationGestureTest().aTransformThatJumpsIsRebasedNotZoomed()
+        }
+        run("TaoDirectManipulationGestureTest: cancelClosesWhateverIsOpen") {
+            TaoDirectManipulationGestureTest().cancelClosesWhateverIsOpen()
+        }
+        run("TaoDirectManipulationGestureTest: randomStreamsStayWellFormed") {
+            TaoDirectManipulationGestureTest().randomStreamsStayWellFormed()
+        }
+        run("TaoDirectManipulationGestureTest: randomWellFormedGesturesMatchTheModel") {
+            TaoDirectManipulationGestureTest().randomWellFormedGesturesMatchTheModel()
+        }
+        run("TaoSceneWindowsTouchpadTest: a pinch zooms transformable by the viewport's ratio at its focal point") {
+            TaoSceneWindowsTouchpadTest().`a pinch zooms transformable by the viewport's ratio at its focal point`()
+        }
+        run(
+            "TaoSceneWindowsTouchpadTest: a pan scrolls a column by the content motion and its tail is part of the pan",
+        ) {
+            TaoSceneWindowsTouchpadTest()
+                .`a pan scrolls a column by the content motion and its tail is part of the pan`()
+        }
+        run("TaoSceneWindowsTouchpadTest: a pan without inertia closes after the grace") {
+            TaoSceneWindowsTouchpadTest().`a pan without inertia closes after the grace`()
+        }
+        run("TaoSceneWindowsTouchpadTest: a Ctrl+wheel tick folds into an open touchpad pinch") {
+            TaoSceneWindowsTouchpadTest().`a Ctrl+wheel tick folds into an open touchpad pinch`()
+        }
+        run("TaoSceneWindowsTouchpadTest: a Ctrl+wheel burst closes on its debounce and a touchpad pinch replaces it") {
+            TaoSceneWindowsTouchpadTest().`a Ctrl+wheel burst closes on its debounce and a touchpad pinch replaces it`()
+        }
+        run("TaoSceneWindowsTouchpadTest: a disabled window drops the steps but still closes the gesture") {
+            TaoSceneWindowsTouchpadTest().`a disabled window drops the steps but still closes the gesture`()
+        }
         return results
     }
 }

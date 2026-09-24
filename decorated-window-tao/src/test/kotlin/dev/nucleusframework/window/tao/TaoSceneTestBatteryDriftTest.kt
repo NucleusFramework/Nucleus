@@ -6,6 +6,7 @@ import dev.nucleusframework.window.tao.dnd.TaoSyntheticDndTest
 import dev.nucleusframework.window.tao.dnd.TaoTransferableAccessGuardTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
 import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationGestureTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
@@ -32,6 +33,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadScaleTest
+import dev.nucleusframework.window.tao.scene.TaoSceneWindowsTouchpadTest
 import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import dev.nucleusframework.window.tao.workspace.DragControllerTest
 import dev.nucleusframework.window.tao.workspace.HostGeometryTest
@@ -83,6 +85,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoTrackpadPanRouterTest::class.java,
             TaoSceneTrackpadScaleTest::class.java,
             TaoTrackpadScaleSessionTest::class.java,
+            TaoDirectManipulationGestureTest::class.java,
+            TaoSceneWindowsTouchpadTest::class.java,
             TaoScenePopupTest::class.java,
             TaoSceneOuterLocalsBridgeTest::class.java,
             TaoSceneAnimationTest::class.java,
@@ -135,6 +139,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
             TaoScrollWireDriftTest::class.java to
                 "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
+            TaoDirectManipulationWireDriftTest::class.java to
+                "reads direct_manipulation.rs / events.rs / the GraalVM metadata from the repo; wire guard",
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",

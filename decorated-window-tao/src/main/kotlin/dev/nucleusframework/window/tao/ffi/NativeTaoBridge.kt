@@ -161,6 +161,35 @@ internal object NativeTaoBridge {
         }
 
         /**
+         * Windows precision-touchpad manipulation (#706): the raw stream of
+         * the window's DirectManipulation viewport, turned into pan and pinch
+         * phases by [dev.nucleusframework.window.tao.event.TaoDirectManipulationGesture].
+         *
+         * [kind] is [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.STATUS]
+         * (the viewport moved from [previousStatus] to [status]) or
+         * [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.CONTENT]
+         * (a new content transform while in [status]). Statuses are
+         * `DIRECTMANIPULATION_STATUS` values. [scale] / [offsetX] / [offsetY]
+         * are the content transform at that moment, [focalX] / [focalY] where
+         * the gesture is — both in client-area physical pixels.
+         *
+         * Default no-op so non-Windows callers can ignore it.
+         */
+        @Suppress("LongParameterList")
+        fun onDirectManipulation(
+            handle: Long,
+            kind: Int,
+            status: Int,
+            previousStatus: Int,
+            scale: Float,
+            offsetX: Float,
+            offsetY: Float,
+            focalX: Float,
+            focalY: Float,
+        ) {
+        }
+
+        /**
          * macOS replacement commit: `insertText:` with a valid
          * `replacementRange` outside a composition — how the press-and-hold
          * accent picker replaces the base letter on a document-backed client
@@ -200,6 +229,50 @@ internal object NativeTaoBridge {
         ) {
         }
     }
+
+    // ── Windows DirectManipulation (#706) ─────────────────────────────────
+
+    /**
+     * Whether new windows bind a DirectManipulation viewport. Read by the
+     * native side at window creation; set before the loop starts.
+     */
+    @JvmStatic
+    external fun nativeSetDirectManipulationEnabled(enabled: Boolean)
+
+    /** Whether [handle]'s window has a live viewport. Event-loop thread only. */
+    @JvmStatic
+    external fun nativeDirectManipulationAttached(handle: Long): Boolean
+
+    /**
+     * Diagnostics for the e2e: `[attached, hitTests, claimedContacts, status,
+     * deliveredEvents, resetting, processHitTests]`, or null. Event-loop
+     * thread only.
+     */
+    @JvmStatic
+    external fun nativeDiagDirectManipulationStats(handle: Long): IntArray?
+
+    /**
+     * Test hook: mouse wheel notches are also handed to the viewports (the
+     * mouse-focus contact + `ProcessInput`), so DirectManipulation animates a
+     * manipulation of its own a test can start. `false` (and no effect)
+     * unless the process runs with `NUCLEUS_TAO_INPUT_INJECTION=1`.
+     */
+    @JvmStatic
+    external fun nativeDiagDirectManipulationWheelFocus(enabled: Boolean): Boolean
+
+    /**
+     * Test hook: queues [events] on [handle]'s viewport as if its event
+     * handler had reported them — `[kind, status, previousStatus, scale, x, y,
+     * focalX, focalY]` each — for the loop to deliver through the real pump
+     * and wire. A precision-touchpad contact cannot be injected, so this is
+     * how an e2e plays a touchpad's stream. `false` unless injection is armed
+     * and the window has a viewport. Event-loop thread only.
+     */
+    @JvmStatic
+    external fun nativeDiagDirectManipulationReplay(
+        handle: Long,
+        events: FloatArray,
+    ): Boolean
 
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */
     @JvmStatic

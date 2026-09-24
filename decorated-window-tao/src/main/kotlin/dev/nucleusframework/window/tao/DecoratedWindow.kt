@@ -1103,14 +1103,20 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     host.exceptionHandler = exceptionHandler
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
-    // Trackpad pinch-to-zoom. Windows delivers a precision-touchpad pinch (and
-    // a real Ctrl+wheel) as a Ctrl-flagged WM_MOUSEWHEEL; the Tao patch routes
-    // those to the magnify hook instead of a scroll, and the host forwards
-    // Compose Scale events (#660) — same model as macOS.
+    // Trackpad pinch-to-zoom from the legacy emulation and a mouse's
+    // Ctrl+wheel: a Ctrl-flagged WM_MOUSEWHEEL the Tao patch routes to the
+    // magnify hook instead of a scroll; the host forwards Compose Scale
+    // events (#660) — same model as macOS.
     window.onTrackpadGesture { kind, phase, x, y, value ->
         exceptionHandler.catchExceptions {
             if (enabled) host.onTrackpadGesture(kind, phase, x, y, value)
         }
+    }
+    // Precision-touchpad pan and pinch through the window's DirectManipulation
+    // viewport (#706). Delivered while disabled too, so a gesture a modal
+    // child interrupts still closes.
+    window.directManipulationListener = { event ->
+        exceptionHandler.catchExceptions { host.onDirectManipulation(event, inputEnabled = enabled) }
     }
 
     // ── Windows accessibility (AccessKit → UIA) ────────────────────────────

@@ -373,6 +373,7 @@ public object TaoHeadfulTestSuiteMain {
             LinuxDiscreteScrollHeadfulCases.all() +
             MacOsTrackpadScrollHeadfulCases.all() +
             TrackpadScaleHeadfulCases.all() +
+            WindowsDirectManipulationHeadfulCases.all() +
             MacOsTrackpadScaleHeadfulCases.all() +
             MacOsTrackpadGestureMonkeyHeadfulCases.all() +
             ChromeReviewHeadfulCases.all() +
