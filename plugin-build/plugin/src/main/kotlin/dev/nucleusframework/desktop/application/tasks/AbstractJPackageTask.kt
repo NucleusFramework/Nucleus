@@ -28,15 +28,21 @@ import dev.nucleusframework.desktop.application.internal.SKIKO_LIBRARY_PATH
 import dev.nucleusframework.desktop.application.internal.cliArg
 import dev.nucleusframework.desktop.application.internal.files.FileCopyingProcessor
 import dev.nucleusframework.desktop.application.internal.files.MacJarSignFileCopyingProcessor
+import dev.nucleusframework.desktop.application.internal.files.NUCLEUS_BUNDLED_NATIVES_MARKER
+import dev.nucleusframework.desktop.application.internal.files.NUCLEUS_NATIVE_LIBRARY_PATH
 import dev.nucleusframework.desktop.application.internal.files.SimpleFileCopyingProcessor
+import dev.nucleusframework.desktop.application.internal.files.containsNucleusNativeLibs
 import dev.nucleusframework.desktop.application.internal.files.copyTo
 import dev.nucleusframework.desktop.application.internal.files.copyZipEntry
 import dev.nucleusframework.desktop.application.internal.files.findOutputFileOrDir
+import dev.nucleusframework.desktop.application.internal.files.hasZipEntry
 import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import dev.nucleusframework.desktop.application.internal.files.isJarFile
 import dev.nucleusframework.desktop.application.internal.files.mangledName
 import dev.nucleusframework.desktop.application.internal.files.normalizedPath
+import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
 import dev.nucleusframework.desktop.application.internal.files.transformJar
+import dev.nucleusframework.desktop.application.internal.files.unpackNucleusNativeLibs
 import dev.nucleusframework.desktop.application.internal.javaOption
 import dev.nucleusframework.desktop.application.internal.renameMacAppBundle
 import dev.nucleusframework.desktop.application.internal.validation.validate
@@ -299,6 +305,11 @@ abstract class AbstractJPackageTask
         @get:Input
         val sandboxingEnabled: Property<Boolean> = objects.notNullProperty(false)
 
+        /** The `nucleus/native/<dir>/` matching the packaged runtime's platform, e.g. `win32-x64`. */
+        @get:Input
+        internal val nucleusNativeDir: Property<String> =
+            objects.notNullProperty(nucleusNativeDir(currentOS, currentArch))
+
         @get:Nested
         internal val additionalLaunchers: ListProperty<AdditionalLauncher> = objects.listProperty(AdditionalLauncher::class.java)
 
@@ -367,6 +378,13 @@ abstract class AbstractJPackageTask
         @get:LocalState
         protected val skikoDir: Provider<Directory> = project.layout.buildDirectory.dir("compose/tmp/skiko")
 
+        @get:LocalState
+        protected val nucleusNativesDir: Provider<Directory> =
+            project.layout.buildDirectory.dir("compose/tmp/nucleus-natives/$name")
+
+        /** Whether the Nucleus libraries were moved out of the JARs; decided in [prepareWorkingDir]. */
+        private var bundleNucleusNatives = false
+
         @get:Internal
         private val libsDir: Provider<Directory> =
             workingDir.map {
@@ -386,6 +404,13 @@ abstract class AbstractJPackageTask
         private val libsMappingFile: Provider<RegularFile> =
             workingDir.map {
                 it.file("libs-mapping.txt")
+            }
+
+        /** The [bundleNucleusNatives] decision the libs in [libsDir] were laid out with. */
+        @get:Internal
+        private val nucleusNativesLayoutFile: Provider<RegularFile> =
+            workingDir.map {
+                it.file("nucleus-natives-bundled.txt")
             }
 
         @get:Internal
@@ -432,6 +457,9 @@ abstract class AbstractJPackageTask
                         else -> appDir()
                     }
                 javaOption("-D$SKIKO_LIBRARY_PATH=$skikoPath")
+                if (bundleNucleusNatives) {
+                    javaOption("-D$NUCLEUS_NATIVE_LIBRARY_PATH=${appDir()}")
+                }
                 if (currentOS == OS.MacOS) {
                     macDockName.orNull?.let { dockName ->
                         javaOption("-Xdock:name=$dockName")
@@ -474,7 +502,10 @@ abstract class AbstractJPackageTask
                 }
             }
 
-        private fun invalidateMappedLibs(inputChanges: InputChanges): Set<File> {
+        private fun invalidateMappedLibs(
+            inputChanges: InputChanges,
+            layoutChanged: Boolean,
+        ): Set<File> {
             val outdatedLibs = HashSet<File>()
             val libsDirFile = libsDir.ioFile
 
@@ -485,7 +516,7 @@ abstract class AbstractJPackageTask
                 fileOperations.clearDirs(libsDirFile)
             }
 
-            if (inputChanges.isIncremental) {
+            if (inputChanges.isIncremental && !layoutChanged) {
                 val allChanges = inputChanges.getFileChanges(files).asSequence()
 
                 try {
@@ -538,18 +569,39 @@ abstract class AbstractJPackageTask
             // skiko can be bundled to the main uber jar by proguard
             fun File.isMainUberJar() = packageFromUberJar.get() && name == launcherMainJar.ioFile.name
 
-            val outdatedLibs = invalidateMappedLibs(inputChanges)
+            // Moving the libraries out of the JARs is only safe when the runtime on the classpath
+            // knows to look for them next to the JARs. The sandboxed pipeline has its own layout.
+            bundleNucleusNatives =
+                !sandboxingEnabled.get() &&
+                files.files.any { it.isJarFile && it.hasZipEntry { name -> name == NUCLEUS_BUNDLED_NATIVES_MARKER } }
+            val layoutFile = nucleusNativesLayoutFile.ioFile
+            val layoutChanged = !layoutFile.exists() || layoutFile.readText() != bundleNucleusNatives.toString()
+
+            fun File.withNucleusNativesUnpacked(): List<File> =
+                if (bundleNucleusNatives && isJarFile && containsNucleusNativeLibs()) {
+                    val unpackDir = nucleusNativesDir.ioFile.resolve(mangledName())
+                    fileOperations.clearDirs(unpackDir)
+                    unpackNucleusNativeLibs(this, unpackDir.resolve(name), unpackDir, nucleusNativeDir.get())
+                } else {
+                    listOf(this)
+                }
+
+            val outdatedLibs = invalidateMappedLibs(inputChanges, layoutChanged)
             for (sourceFile in outdatedLibs) {
                 assert(sourceFile.exists()) { "Lib file does not exist: $sourceFile" }
 
-                libsMapping[sourceFile] =
+                val unpackedFiles =
                     if (isSkikoForCurrentOS(sourceFile) || sourceFile.isMainUberJar()) {
-                        val unpackedFiles = unpackSkikoForCurrentOS(sourceFile, skikoDir.ioFile, fileOperations)
-                        unpackedFiles.map { copyFileToLibsDir(it) }
+                        unpackSkikoForCurrentOS(sourceFile, skikoDir.ioFile, fileOperations)
                     } else {
-                        listOf(copyFileToLibsDir(sourceFile))
+                        listOf(sourceFile)
                     }
+                libsMapping[sourceFile] =
+                    unpackedFiles
+                        .flatMap { it.withNucleusNativesUnpacked() }
+                        .map { copyFileToLibsDir(it) }
             }
+            layoutFile.writeText(bundleNucleusNatives.toString())
 
             // todo: incremental copy
             fileOperations.clearDirs(packagedResourcesDir)

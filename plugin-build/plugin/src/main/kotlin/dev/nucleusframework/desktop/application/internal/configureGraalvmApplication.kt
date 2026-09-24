@@ -12,8 +12,10 @@ import dev.nucleusframework.desktop.application.dsl.UrlProtocol
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
+import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
 import dev.nucleusframework.desktop.application.tasks.AbstractElectronBuilderPackageTask
 import dev.nucleusframework.desktop.application.tasks.AbstractNotarizationTask
+import dev.nucleusframework.desktop.application.tasks.AbstractUnpackNucleusNativesTask
 import dev.nucleusframework.desktop.tasks.AbstractUnpackDefaultApplicationResourcesTask
 import dev.nucleusframework.internal.kotlinJvmExtOrNull
 import dev.nucleusframework.internal.mppExtOrNull
@@ -104,6 +106,29 @@ private fun JvmApplicationContext.copyGraalvmAppResources(
         into(into)
     }
 }
+
+/**
+ * Copies the Nucleus JNI libraries the image was compiled without next to the executable, where
+ * `GraalVmInitializer` points `java.library.path`.
+ */
+private fun JvmApplicationContext.copyGraalvmNucleusNatives(
+    unpackNucleusNatives: TaskProvider<AbstractUnpackNucleusNativesTask>,
+    into: Provider<Directory>,
+    extraDepends: List<TaskProvider<*>> = emptyList(),
+    doNotTrack: Boolean = false,
+): TaskProvider<Copy> =
+    tasks.register<Copy>(
+        taskNameAction = "copy",
+        taskNameObject = "graalvmNucleusNatives",
+    ) {
+        description = "Copy the Nucleus JNI libraries next to the native executable"
+        extraDepends.forEach { dependsOn(it) }
+        if (doNotTrack) {
+            doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
+        }
+        from(unpackNucleusNatives.flatMap { it.libsDir })
+        into(into)
+    }
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 internal fun JvmApplicationContext.configureGraalvmApplication() {
@@ -242,6 +267,19 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
     // We need the uber JAR from the existing pipeline (respects build type classifier)
     val uberJarTaskName = "package${buildType.classifier.uppercaseFirstChar()}UberJarForCurrentOS"
     val packageUberJar = project.tasks.named(uberJarTaskName, Jar::class.java)
+
+    // The image is compiled from a copy without the Nucleus JNI libraries, which ship next to
+    // the executable instead (see AbstractUnpackNucleusNativesTask).
+    val unpackNucleusNatives =
+        tasks.register<AbstractUnpackNucleusNativesTask>(
+            taskNameAction = "unpack",
+            taskNameObject = "graalvmNucleusNatives",
+        ) {
+            uberJar.set(packageUberJar.flatMap { it.archiveFile })
+            platformDir.set(nucleusNativeDir(currentOS, currentArch))
+            strippedJar.set(appTmpDir.map { it.file("graalvm/nucleus-natives/app.jar") })
+            libsDir.set(appTmpDir.map { it.dir("graalvm/nucleus-natives/libs") })
+        }
 
     // ── runWithNativeAgent ──
     // Agent writes to a temp dir, then automatically merges into the real config
@@ -841,7 +879,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         ) {
             description = "Compile the application into a GraalVM native image"
 
-            dependsOn(packageUberJar)
+            dependsOn(unpackNucleusNatives)
             dependsOn(generatePlatformMetadata)
             dependsOn(resolveReachabilityMetadata)
             dependsOn(analyzeStaticMetadata)
@@ -850,7 +888,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             compileStubs?.let { dependsOn(it) }
             generateWindowsResources?.let { dependsOn(it) }
 
-            val uberJarFile = packageUberJar.flatMap { it.archiveFile }
+            val uberJarFile = unpackNucleusNatives.flatMap { it.strippedJar }
             val outputDir = nativeCompileDir.get().asFile
             outputs.dir(outputDir)
 
@@ -1274,6 +1312,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     imageName,
                     unpackDefaultResources,
                     packageUberJar,
+                    unpackNucleusNatives,
                 )
             OS.Windows ->
                 configureWindowsGraalvmPackaging(
@@ -1283,6 +1322,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     nativeCompileDir,
                     imageName,
                     packageUberJar,
+                    unpackNucleusNatives,
                 )
             OS.Linux ->
                 configureLinuxGraalvmPackaging(
@@ -1292,6 +1332,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     nativeCompileDir,
                     imageName,
                     packageUberJar,
+                    unpackNucleusNatives,
                 )
         }
 
@@ -1441,6 +1482,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     imageName: org.gradle.api.provider.Provider<String>,
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
     packageUberJar: TaskProvider<Jar>,
+    unpackNucleusNatives: TaskProvider<AbstractUnpackNucleusNativesTask>,
 ): TaskProvider<DefaultTask> {
     val appBundleName = resolvedMacBundleNameProvider().map { "$it.app" }
     val appBundleDir =
@@ -1555,13 +1597,22 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             into(appBundleDir.map { it.dir("MacOS/lib") })
         }
 
+    // Stripped, patched and signed with the other dylibs of MacOS/, which is java.library.path.
+    val copyNucleusNatives =
+        copyGraalvmNucleusNatives(
+            unpackNucleusNatives,
+            into = appBundleDir.map { it.dir("MacOS") },
+            extraDepends = listOf(cleanAppBundle),
+            doNotTrack = true,
+        )
+
     val stripDylibs =
         tasks.register<DefaultTask>(
             taskNameAction = "strip",
             taskNameObject = "graalvmDylibs",
         ) {
             description = "Strip debug symbols from dylibs"
-            dependsOn(copyAwtDylibs)
+            dependsOn(copyAwtDylibs, copyNucleusNatives)
 
             doLast {
                 val macosDir = appBundleDir.get().dir("MacOS").asFile
@@ -2001,6 +2052,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
     nativeCompileDir: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
+    unpackNucleusNatives: TaskProvider<AbstractUnpackNucleusNativesTask>,
 ): TaskProvider<DefaultTask> {
     val outputDir = graalvmOutputDir.map { it.dir(resolvedPackageNameProvider().get()) }
 
@@ -2137,13 +2189,14 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
         }
 
     val copyAppResources = copyGraalvmAppResources(into = outputDir)
+    val copyNucleusNatives = copyGraalvmNucleusNatives(unpackNucleusNatives, into = outputDir)
 
     return tasks.register<DefaultTask>(
         taskNameAction = "package",
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with DLLs"
-        dependsOn(copyBinary, copyAppResources)
+        dependsOn(copyBinary, copyAppResources, copyNucleusNatives)
         if (!graalvm.headless.get()) {
             dependsOn(copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib, copyFontConfig)
         }
@@ -2163,6 +2216,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
     nativeCompileDir: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
+    unpackNucleusNatives: TaskProvider<AbstractUnpackNucleusNativesTask>,
 ): TaskProvider<DefaultTask> {
     val headless = graalvm.headless.get()
     val outputDir = graalvmOutputDir.map { it.dir(resolvedPackageNameProvider().get()) }
@@ -2265,13 +2319,15 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
             commandLine("patchelf", "--set-rpath", "\$ORIGIN", binary.get().asFile.absolutePath)
         }
 
+    val copyNucleusNatives = copyGraalvmNucleusNatives(unpackNucleusNatives, into = outputDir, doNotTrack = true)
+
     val fixSoRpath =
         tasks.register<Exec>(
             taskNameAction = "fix",
             taskNameObject = "graalvmSoRpath",
         ) {
             description = "Set RPATH to \$ORIGIN on companion .so libs so inter-library deps resolve"
-            dependsOn(copyAwtSoLibs, copyJvmSo)
+            dependsOn(copyAwtSoLibs, copyJvmSo, copyNucleusNatives)
             val dir = outputDir.get().asFile.absolutePath
             commandLine("bash", "-c", "for f in '$dir'/*.so; do patchelf --set-rpath '\$ORIGIN' \"\$f\"; done")
         }
@@ -2282,7 +2338,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
             taskNameObject = "graalvmSoLibs",
         ) {
             description = "Strip debug symbols from .so libs"
-            dependsOn(copyAwtSoLibs, copyJvmSo, fixSoRpath)
+            dependsOn(copyAwtSoLibs, copyJvmSo, copyNucleusNatives, fixSoRpath)
             commandLine("bash", "-c", "strip --strip-debug '${outputDir.get().asFile.absolutePath}'/*.so")
         }
 
@@ -2308,7 +2364,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with .so libs"
-        dependsOn(copyBinary, copyAppResources, fixRpath, stripBinary)
+        dependsOn(copyBinary, copyAppResources, copyNucleusNatives, fixRpath, stripBinary)
         if (!headless) {
             dependsOn(
                 copyAwtSoLibs,

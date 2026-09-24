@@ -3,6 +3,7 @@ package dev.nucleusframework.core.runtime
 import java.net.JarURLConnection
 import java.net.URL
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.logging.Level
@@ -35,9 +36,11 @@ import java.util.logging.Logger
  * directory that cannot be created or written to is logged and replaced by
  * the platform default rather than failing the load.
  *
- * Packaged applications built by the Nucleus Gradle plugin ship their native
- * libraries on `java.library.path` and never extract anything; this setting
- * only matters for fat JARs, IDE runs and distributions that bypass the plugin.
+ * Packaged applications built by the Nucleus Gradle plugin never extract
+ * anything: the plugin moves the libraries out of the JARs into the directory
+ * named by the `nucleus.native.libraryPath` system property (sandboxed store
+ * builds put them on `java.library.path` instead). This setting only matters
+ * for fat JARs, IDE runs and distributions that bypass the plugin.
  *
  * The cache is content-addressed: a fingerprint derived from the JAR entry
  * CRC-32 and size (read from ZIP headers — zero I/O cost) is part of the
@@ -46,6 +49,7 @@ import java.util.logging.Logger
  * application using another version can never swap the library between
  * validation and load (issue #304).
  */
+@Suppress("TooManyFunctions")
 public object NativeLibraryLoader {
     /**
      * System property naming the directory native libraries are extracted to.
@@ -94,6 +98,14 @@ public object NativeLibraryLoader {
         }
 
     /**
+     * Directory the Nucleus Gradle plugin moved the packaged application's
+     * libraries to. The plugin only moves them when it finds
+     * `META-INF/nucleus/bundled-native-libraries` (shipped by this module) on
+     * the classpath, since an older loader would not look here.
+     */
+    private const val LIBRARY_PATH_PROPERTY = "nucleus.native.libraryPath"
+
+    /**
      * Loads a native library by name.
      *
      * @param libraryName the base library name (e.g. "nucleus_systemcolor")
@@ -115,11 +127,38 @@ public object NativeLibraryLoader {
         synchronized(lock) {
             if (libraryName in loadedLibraries) return true
 
-            // Try system library path first (packaged app with native libs on java.library.path)
+            // Packaged app: the plugin moved the library out of its JAR
+            if (tryBundledLoad(libraryName)) return true
+
+            // Sandboxed packaged app: native libs on java.library.path
             if (trySystemLoad(libraryName)) return true
 
             // Fallback: extract from JAR with persistent cache
             return tryJarExtraction(libraryName, callerClass, resourcePrefix, sidecarFiles)
+        }
+    }
+
+    /**
+     * Loads [libraryName] from [LIBRARY_PATH_PROPERTY]. Sidecars need no
+     * handling: the plugin moved them to the same directory.
+     */
+    @Suppress("SwallowedException")
+    private fun tryBundledLoad(libraryName: String): Boolean {
+        val dir = System.getProperty(LIBRARY_PATH_PROPERTY)?.takeIf { it.isNotBlank() } ?: return false
+        val file =
+            try {
+                Path.of(dir, mapLibraryFileName(libraryName, resolvePlatform()))
+            } catch (_: InvalidPathException) {
+                return false
+            }
+        if (!Files.isRegularFile(file)) return false
+        return try {
+            System.load(file.toAbsolutePath().toString())
+            loadedLibraries += libraryName
+            true
+        } catch (e: UnsatisfiedLinkError) {
+            logger.log(Level.WARNING, "Failed to load bundled $file, falling back to the JAR", e)
+            false
         }
     }
 
