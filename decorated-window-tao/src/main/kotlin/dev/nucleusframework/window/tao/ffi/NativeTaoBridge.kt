@@ -453,6 +453,21 @@ internal object NativeTaoBridge {
     external fun nativeHwndHandle(handle: Long): Long
 
     /**
+     * Windows only (#643): `true` when the OS considers [hwnd]'s owning thread
+     * to have stopped pumping messages — the very state the shell reads to
+     * ghost a window as "(Not Responding)". `IsHungAppWindow` is a pure query:
+     * it sends nothing to the event loop, so the watchdog that calls it every
+     * few seconds costs the loop nothing and cannot inject the inline sent
+     * message that deadlocked #640.
+     *
+     * Takes the HWND by value and touches no crate state, so it is safe to
+     * call from a thread other than the event loop — which is the whole point,
+     * the event loop being the thread under suspicion.
+     */
+    @JvmStatic
+    external fun nativeIsWindowHung(hwnd: Long): Boolean
+
+    /**
      * Linux counterpart: returns `[kind, display, nativeWindow]` so the JVM can
      * attach an EGL context. `kind` is 0 = unavailable, 1 = Xlib, 2 = Wayland.
      * For Xlib, `display` is `Display*` and `nativeWindow` is the X11 `Window`

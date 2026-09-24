@@ -104,7 +104,15 @@ public object TaoApplication {
         // first `NavController.setGraph` call.
         LifecycleMainDispatcherPriming.primeWithCurrentThread()
         onLaunched = block
-        NativeTaoBridge.nativeRunBlocking(EventDispatcher)
+        // Watch the loop from the outside (#643): a stall deadlocks this
+        // thread, so nothing downstream of `nativeRunBlocking` — including
+        // `rethrowPendingFatal` below — can ever report it.
+        TaoEventLoopWatchdog.start()
+        try {
+            NativeTaoBridge.nativeRunBlocking(EventDispatcher)
+        } finally {
+            TaoEventLoopWatchdog.stop()
+        }
         // The loop has exited (reportFatal posted the exit) and every tao
         // callback frame is unwound — only now is it safe to block in the
         // app-modal native dialog (a modal pump inside a tao callback
@@ -278,6 +286,107 @@ public object TaoApplication {
         quitConsent = false
         quitExit = ::exit
         afterQuitRequests = { it() }
+    }
+
+    /**
+     * Handlers for [onUnresponsive] / [onResponsive]. One each, replaced on
+     * registration rather than appended — `nucleusApplication`'s block is
+     * `@Composable`, so an appending registry would grow by one copy per
+     * recomposition and fire the app's crash reporter N times for one stall.
+     * `onDeepLink` has the same replace semantics for the same reason.
+     * Volatile: written on the loop thread, read from the watchdog thread.
+     */
+    @Volatile
+    private var unresponsiveHandler: (() -> Unit)? = null
+
+    @Volatile
+    private var responsiveHandler: (() -> Unit)? = null
+
+    /**
+     * Registers [listener] for "the UI stopped responding", Electron's
+     * `webContents` `unresponsive` event (#643). Fires once per stall, after
+     * the OS has flagged the window and the watchdog's grace period on top of
+     * it; [onResponsive] closes the episode.
+     *
+     * One handler at a time: a second call replaces the first, like
+     * [onDeepLink]'s sink. That is what makes it safe to call straight from
+     * the `@Composable` application block, which recomposes.
+     *
+     * Nucleus itself only logs `SEVERE` with a thread dump — like Chromium's
+     * HangWatcher or IntelliJ's PerformanceWatcher, and like Electron it ships
+     * no built-in UI. What to do with the event is the app's call: report it
+     * to a crash backend, or offer the user the browsers' "wait or quit"
+     * choice.
+     *
+     * **[listener] runs on `nucleus-tao-watchdog-events`, not the UI thread**
+     * — the UI thread is the one that is stuck, so anything posted to it
+     * (Compose state, `Dispatchers.Main`) would only run once the stall is
+     * over, if ever. That thread is the callbacks' own: it is neither the
+     * sampling thread nor the UI thread, so a listener that blocks — a "wait
+     * or quit" prompt is the expected use — delays only the next callback,
+     * never the detection. Callbacks are serialized in order. A throwing
+     * listener is logged and ignored: the watchdog must survive it.
+     */
+    public fun onUnresponsive(listener: () -> Unit) {
+        unresponsiveHandler = listener
+    }
+
+    /**
+     * Registers [listener] for "the UI is responding again", Electron's
+     * `responsive` event — the counterpart of [onUnresponsive], fired only
+     * after a stall that was reported. Same threading and replace semantics.
+     */
+    public fun onResponsive(listener: () -> Unit) {
+        responsiveHandler = listener
+    }
+
+    /**
+     * Runs [block] with the hang watchdog told that a stall is *expected*
+     * (#643) — Chromium's `HangWatcher::InvalidateActiveExpectations()`.
+     *
+     * The watchdog reports any UI thread that stops pumping, which includes an
+     * operation the app knows is long and synchronous. Wrap that operation and
+     * neither the `SEVERE` report nor [onUnresponsive] fires for it; everything
+     * else stays watched, unlike the `nucleus.tao.watchdog=false` switch, which
+     * gives up on the whole process.
+     *
+     * ```kotlin
+     * expectUnresponsive { importHugeProjectSynchronously() }
+     * ```
+     *
+     * Reentrant, and thread-safe: the scope is the app's, not one thread's. A
+     * stall already reported when the scope opens still gets its
+     * [onResponsive], so the two events stay paired.
+     *
+     * Prefer moving the work off the UI thread. This is for the cases where
+     * that is not an option — a native call that must run on the loop, a
+     * shutdown flush — not a way to make a slow UI quiet.
+     */
+    public fun <T> expectUnresponsive(block: () -> T): T {
+        TaoEventLoopWatchdog.beginExpectedStall()
+        try {
+            return block()
+        } finally {
+            TaoEventLoopWatchdog.endExpectedStall()
+        }
+    }
+
+    /** Fires the [onUnresponsive] handler; called by the watchdog thread. */
+    internal fun notifyUnresponsive(): Unit = notify(unresponsiveHandler, "unresponsive")
+
+    /** Fires the [onResponsive] handler; called by the watchdog thread. */
+    internal fun notifyResponsive(): Unit = notify(responsiveHandler, "responsive")
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun notify(
+        handler: (() -> Unit)?,
+        event: String,
+    ) {
+        try {
+            handler?.invoke()
+        } catch (t: Throwable) {
+            logger.log(Level.SEVERE, "Unhandled exception in the '$event' handler", t)
+        }
     }
 
     /** Posts an exit request and unblocks [run]. */

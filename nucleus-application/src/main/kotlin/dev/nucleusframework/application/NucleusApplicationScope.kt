@@ -54,6 +54,58 @@ public sealed interface NucleusApplicationScope : ComposeApplicationScope {
      * before this call is buffered and replayed.
      */
     public fun onDeepLink(block: (URI) -> Unit)
+
+    /**
+     * Registers [block] for "the UI stopped responding" — Electron's
+     * `unresponsive` event on a `webContents`, and the counterpart of
+     * [onResponsive].
+     *
+     * Nucleus detects the stall by asking the OS (Windows `IsHungAppWindow`;
+     * other platforms have no non-perturbing probe yet) and logs `SEVERE` with
+     * a thread dump, but shows nothing: what the user sees is the app's
+     * decision, exactly as in Electron. A crash-reporting hook, or the
+     * browsers' "wait or quit" prompt, both belong here.
+     *
+     * ```kotlin
+     * nucleusApplication(args) {
+     *     onUnresponsive { crashReporter.reportHang() }
+     *     onResponsive { crashReporter.hangEnded() }
+     * }
+     * ```
+     *
+     * **[block] runs on `nucleus-tao-watchdog-events`, not the UI thread** —
+     * the UI thread is the stuck one, so anything it posts there (Compose
+     * state, `Dispatchers.Main`) would only run once the stall ends, if ever.
+     * That thread is the callbacks' own, so blocking in it (a "wait or quit"
+     * prompt) delays only the next callback, never the detection.
+     */
+    public fun onUnresponsive(block: () -> Unit): Unit = TaoApplication.onUnresponsive(block)
+
+    /**
+     * Registers [block] for "the UI is responding again" — Electron's
+     * `responsive` event. Fired only after a stall that was reported through
+     * [onUnresponsive]; same threading rules.
+     */
+    public fun onResponsive(block: () -> Unit): Unit = TaoApplication.onResponsive(block)
+
+    /**
+     * Runs [block] with the hang watchdog told that a stall is *expected* —
+     * Chromium's `HangWatcher::InvalidateActiveExpectations()`.
+     *
+     * An operation the app knows is long and synchronous on the UI thread
+     * looks exactly like a freeze from the outside, so wrap it and neither the
+     * `SEVERE` report nor [onUnresponsive] fires for it. Everything else stays
+     * watched, unlike `-Dnucleus.tao.watchdog=false`, which gives up on the
+     * whole process.
+     *
+     * ```kotlin
+     * expectUnresponsive { importHugeProjectSynchronously() }
+     * ```
+     *
+     * Reentrant and thread-safe. Prefer moving the work off the UI thread;
+     * this is for when that is not an option, not a way to silence a slow UI.
+     */
+    public fun <T> expectUnresponsive(block: () -> T): T = TaoApplication.expectUnresponsive(block)
 }
 
 /**
