@@ -20,6 +20,9 @@ import dev.nucleusframework.desktop.application.internal.MacPkgScripts
 import dev.nucleusframework.desktop.application.internal.MacDmgLzma
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
+import dev.nucleusframework.desktop.application.internal.NodeToolchainProvisioner
+import dev.nucleusframework.desktop.application.internal.NodeToolchainRequest
+import dev.nucleusframework.desktop.application.internal.NucleusProperties
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
 import dev.nucleusframework.desktop.application.internal.WindowsKitsLocator
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderConfigGenerator
@@ -125,6 +128,18 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Input
         @get:Optional
         val customNodePath: Property<String> = objects.nullableProperty()
+
+        /** Download and cache Node.js instead of requiring one on `PATH`. See `nodejs { }`. */
+        @get:Internal
+        val nodeAutoDownload: Property<Boolean> = objects.notNullProperty(true)
+
+        /** Node.js version to provision: `"22"`, `"lts"` or a pinned `"22.11.0"`. */
+        @get:Internal
+        val nodeVersion: Property<String> = objects.notNullProperty("22")
+
+        /** Where provisioned Node.js installations are cached. */
+        @get:Internal
+        val nodeInstallDir: Property<String> = objects.nullableProperty()
 
         @get:Input
         @get:Optional
@@ -302,8 +317,7 @@ abstract class AbstractElectronBuilderPackageTask
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
-            val node = detectNode()
-            val npm = detectNpm()
+            val (node, npm) = resolveNodeJs()
             validateNodeVersion(node)
 
             val linuxIconOverride = prepareLinuxIconSet(outputDir)
@@ -426,24 +440,55 @@ abstract class AbstractElectronBuilderPackageTask
             return flag
         }
 
-        private fun detectNode(): File =
-            NodeJsDetector.detectNode(
-                customNodePath = customNodePath.orNull,
-                logger = logger,
-            ) ?: throw GradleException(
-                "node not found. Node.js 18+ is required for electron-builder packaging. " +
-                    "Install Node.js or set the 'compose.electronBuilder.nodePath' Gradle property.",
-            )
+        /**
+         * Resolves the `node` and `npm` electron-builder runs with: the explicitly configured
+         * installation, else the one the plugin provisions itself, else whatever is on `PATH`.
+         */
+        private fun resolveNodeJs(): Pair<File, File> {
+            customNodePath.orNull?.let { return detectOnPath(it) }
+            if (!nodeAutoDownload.get()) return detectOnPath(customNodePath = null)
 
-        private fun detectNpm(): File =
-            NodeJsDetector.detectNpm(
-                customNodePath = customNodePath.orNull,
-                logger = logger,
-            ) ?: throw GradleException(
-                "npm not found. It provisions the pinned electron-builder toolchain from the " +
-                    "plugin's package-lock.json. Install Node.js 18+ (npm ships with it) or set " +
-                    "the 'compose.electronBuilder.nodePath' Gradle property.",
-            )
+            val installation =
+                runCatching {
+                    NodeToolchainProvisioner.provision(
+                        request =
+                            NodeToolchainRequest(
+                                version = nodeVersion.get(),
+                                os = currentOS,
+                                arch = currentArch,
+                                installBaseDir = File(nodeInstallDir.get()),
+                            ),
+                        execOperations = execOperations,
+                        logger = logger,
+                    )
+                }.getOrElse { failure ->
+                    // An offline machine with a usable Node.js installed should still package.
+                    logger.warn(
+                        "Could not provision Node.js (${failure.message}) — falling back to the one on PATH. " +
+                            "Set nativeDistributions { nodejs { autoDownload = false } } to silence this.",
+                    )
+                    return detectOnPath(customNodePath = null)
+                }
+            return installation.node to installation.npm
+        }
+
+        private fun detectOnPath(customNodePath: String?): Pair<File, File> {
+            val node =
+                NodeJsDetector.detectNode(customNodePath, logger) ?: throw GradleException(
+                    "node not found. Node.js 18+ is required for electron-builder packaging. " +
+                        "Enable nativeDistributions { nodejs { autoDownload } } to let the plugin " +
+                        "download one, install Node.js, or set the " +
+                        "'${NucleusProperties.ELECTRON_BUILDER_NODE_PATH}' Gradle property.",
+                )
+            val npm =
+                NodeJsDetector.detectNpm(customNodePath, logger) ?: throw GradleException(
+                    "npm not found next to ${node.absolutePath}. It provisions the pinned " +
+                        "electron-builder toolchain from the plugin's package-lock.json. Install " +
+                        "Node.js 18+ (npm ships with it) or set the " +
+                        "'${NucleusProperties.ELECTRON_BUILDER_NODE_PATH}' Gradle property.",
+                )
+            return node to npm
+        }
 
         private fun validateNodeVersion(node: File) {
             val version = NodeJsDetector.getNodeVersion(node) ?: return

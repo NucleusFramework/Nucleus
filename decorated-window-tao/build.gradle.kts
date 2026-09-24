@@ -105,10 +105,11 @@ tasks.named<Jar>("jar") {
     }
 }
 
-val taoTestClassesJar = tasks.register<Jar>("taoTestClassesJar") {
-    archiveClassifier.set("test-classes")
-    from(sourceSets.test.get().output)
-}
+val taoTestClassesJar =
+    tasks.register<Jar>("taoTestClassesJar") {
+        archiveClassifier.set("test-classes")
+        from(sourceSets.test.get().output)
+    }
 
 // Consumers get the compiled test classes *and* what those classes need at run
 // time. Without the `extendsFrom`, every dependency of the test source set has
@@ -116,11 +117,12 @@ val taoTestClassesJar = tasks.register<Jar>("taoTestClassesJar") {
 // NoClassDefFoundError the first time the suite reaches the code that uses it —
 // which is how `examples/tao-native-test` lost Material 3 and took the whole
 // GraalVM job down with the Tao main thread.
-val taoTestArtifacts: Configuration = configurations.create("taoTestArtifacts") {
-    isCanBeConsumed = true
-    isCanBeResolved = false
-    extendsFrom(configurations.testImplementation.get())
-}
+val taoTestArtifacts: Configuration =
+    configurations.create("taoTestArtifacts") {
+        isCanBeConsumed = true
+        isCanBeResolved = false
+        extendsFrom(configurations.testImplementation.get())
+    }
 
 artifacts {
     add(taoTestArtifacts.name, taoTestClassesJar)
@@ -136,123 +138,126 @@ artifacts {
 val taoHeadfulKoverReport =
     layout.buildDirectory.file("kover/bin-reports/taoHeadful.ic")
 
-val taoHeadfulTest = tasks.register<JavaExec>("taoHeadfulTest") {
-    description = "Runs the stage-2 real-window Tao test suite (requires a display)"
-    group = "verification"
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
-    // Unattended: a fatal must fail the suite loudly, not block in the #622
-    // native dialog until the global watchdog halts and eats the real result.
-    systemProperty("nucleus.tao.fatalErrorDialog", "false")
-    // Arms the macOS scrollWheel: injector (nativeDiagInjectScrollWheel) the
-    // trackpad cases drive; it is inert in any process without this variable.
-    environment("NUCLEUS_TAO_INPUT_INJECTION", "1")
-    // Same Kover JVM agent the `test` task uses, so headful window coverage
-    // is counted. JavaExec is otherwise invisible to Kover.
-    dependsOn(tasks.named("koverFindJar"))
-    // Resolve these as RegularFileProperty at configuration time so the
-    // doFirst action does not capture the Gradle script `layout` object
-    // (configuration-cache incompatible).
-    val koverAgentJar =
-        layout.buildDirectory
-            .file(libs.versions.kover.map { "kover/kover-jvm-agent-$it.jar" })
-    val koverArgsFile =
-        layout.buildDirectory
-            .file("tmp/taoHeadful/kover-agent.args")
-    val koverReportFile = taoHeadfulKoverReport
-    doFirst {
-        val agent = koverAgentJar.get().asFile
-        val report = koverReportFile.get().asFile
-        report.parentFile.mkdirs()
-        val argsFile = koverArgsFile.get().asFile
-        argsFile.parentFile.mkdirs()
-        argsFile.writeText(
-            buildString {
-                appendLine("report.file=${report.absolutePath}")
-                appendLine("exclude=android.*")
-                appendLine("exclude=com.android.*")
-                appendLine("exclude=jdk.internal.*")
-            },
-        )
-        jvmArgs("-javaagent:${agent.absolutePath}=file:${argsFile.absolutePath}")
+val taoHeadfulTest =
+    tasks.register<JavaExec>("taoHeadfulTest") {
+        description = "Runs the stage-2 real-window Tao test suite (requires a display)"
+        group = "verification"
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
+        // Unattended: a fatal must fail the suite loudly, not block in the #622
+        // native dialog until the global watchdog halts and eats the real result.
+        systemProperty("nucleus.tao.fatalErrorDialog", "false")
+        // Arms the macOS scrollWheel: injector (nativeDiagInjectScrollWheel) the
+        // trackpad cases drive; it is inert in any process without this variable.
+        environment("NUCLEUS_TAO_INPUT_INJECTION", "1")
+        // Same Kover JVM agent the `test` task uses, so headful window coverage
+        // is counted. JavaExec is otherwise invisible to Kover.
+        dependsOn(tasks.named("koverFindJar"))
+        // Resolve these as RegularFileProperty at configuration time so the
+        // doFirst action does not capture the Gradle script `layout` object
+        // (configuration-cache incompatible).
+        val koverAgentJar =
+            layout.buildDirectory
+                .file(libs.versions.kover.map { "kover/kover-jvm-agent-$it.jar" })
+        val koverArgsFile =
+            layout.buildDirectory
+                .file("tmp/taoHeadful/kover-agent.args")
+        val koverReportFile = taoHeadfulKoverReport
+        doFirst {
+            val agent = koverAgentJar.get().asFile
+            val report = koverReportFile.get().asFile
+            report.parentFile.mkdirs()
+            val argsFile = koverArgsFile.get().asFile
+            argsFile.parentFile.mkdirs()
+            argsFile.writeText(
+                buildString {
+                    appendLine("report.file=${report.absolutePath}")
+                    appendLine("exclude=android.*")
+                    appendLine("exclude=com.android.*")
+                    appendLine("exclude=jdk.internal.*")
+                },
+            )
+            jvmArgs("-javaagent:${agent.absolutePath}=file:${argsFile.absolutePath}")
+        }
+        // Forward the watchdog / case-name filter overrides into the forked JVM.
+        System.getProperty("nucleus.tao.headful.watchdogMillis")?.let {
+            systemProperty("nucleus.tao.headful.watchdogMillis", it)
+        }
+        System.getProperty("nucleus.tao.headful.filter")?.let {
+            systemProperty("nucleus.tao.headful.filter", it)
+        }
+        // Replays a red monkey run: the case prints the seed it used.
+        System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
+            systemProperty("nucleus.tao.headful.monkeySeed", it)
+        }
+        // Replays a journal instead of a random walk (comma-separated action names).
+        System.getProperty("nucleus.tao.headful.monkeyScript")?.let {
+            systemProperty("nucleus.tao.headful.monkeyScript", it)
+        }
+        System.getProperties().stringPropertyNames().filter { it.startsWith("nucleus.dialog.appearance.") }.forEach {
+            systemProperty(it, System.getProperty(it))
+        }
+        System.getProperty("nucleus.issue576.samples")?.let {
+            systemProperty("nucleus.issue576.samples", it)
+        }
+        // Honor a caller-forced Linux renderer (x11 / wayland) so portal parenting
+        // e2es can be launched against XWayland from a native Wayland session.
+        providers.environmentVariable("NUCLEUS_TAO_LINUX_RENDERER").orNull?.let {
+            environment("NUCLEUS_TAO_LINUX_RENDERER", it)
+        }
+        // Lets the suite run against a nested compositor
+        // (`mutter --headless --virtual-monitor …`, `kwin_wayland`) instead of the
+        // session that happens to own the screen. A Wayland window the compositor
+        // considers occluded gets no frame callbacks, so its swap never completes
+        // and every render pass is skipped — cases then measure nothing while
+        // still looking like they ran.
+        providers.environmentVariable("WAYLAND_DISPLAY").orNull?.let {
+            environment("WAYLAND_DISPLAY", it)
+        }
+        providers.environmentVariable("GDK_BACKEND").orNull?.let {
+            environment("GDK_BACKEND", it)
+        }
+        // NO -XstartOnFirstThread here: taoApplication marshals to the AppKit main
+        // thread itself (main_thread_dispatch.m), exactly like a normal `java`
+        // launch — and the flag would deadlock the AWT classes the Compose host
+        // touches. smokeStandalonePanelMac needs it only because it creates an
+        // NSPanel directly, without the Tao loop machinery.
     }
-    // Forward the watchdog / case-name filter overrides into the forked JVM.
-    System.getProperty("nucleus.tao.headful.watchdogMillis")?.let {
-        systemProperty("nucleus.tao.headful.watchdogMillis", it)
-    }
-    System.getProperty("nucleus.tao.headful.filter")?.let {
-        systemProperty("nucleus.tao.headful.filter", it)
-    }
-    // Replays a red monkey run: the case prints the seed it used.
-    System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
-        systemProperty("nucleus.tao.headful.monkeySeed", it)
-    }
-    // Replays a journal instead of a random walk (comma-separated action names).
-    System.getProperty("nucleus.tao.headful.monkeyScript")?.let {
-        systemProperty("nucleus.tao.headful.monkeyScript", it)
-    }
-    System.getProperties().stringPropertyNames().filter { it.startsWith("nucleus.dialog.appearance.") }.forEach {
-        systemProperty(it, System.getProperty(it))
-    }
-    System.getProperty("nucleus.issue576.samples")?.let {
-        systemProperty("nucleus.issue576.samples", it)
-    }
-    // Honor a caller-forced Linux renderer (x11 / wayland) so portal parenting
-    // e2es can be launched against XWayland from a native Wayland session.
-    providers.environmentVariable("NUCLEUS_TAO_LINUX_RENDERER").orNull?.let {
-        environment("NUCLEUS_TAO_LINUX_RENDERER", it)
-    }
-    // Lets the suite run against a nested compositor
-    // (`mutter --headless --virtual-monitor …`, `kwin_wayland`) instead of the
-    // session that happens to own the screen. A Wayland window the compositor
-    // considers occluded gets no frame callbacks, so its swap never completes
-    // and every render pass is skipped — cases then measure nothing while
-    // still looking like they ran.
-    providers.environmentVariable("WAYLAND_DISPLAY").orNull?.let {
-        environment("WAYLAND_DISPLAY", it)
-    }
-    providers.environmentVariable("GDK_BACKEND").orNull?.let {
-        environment("GDK_BACKEND", it)
-    }
-    // NO -XstartOnFirstThread here: taoApplication marshals to the AppKit main
-    // thread itself (main_thread_dispatch.m), exactly like a normal `java`
-    // launch — and the flag would deadlock the AWT classes the Compose host
-    // touches. smokeStandalonePanelMac needs it only because it creates an
-    // NSPanel directly, without the Tao loop machinery.
-}
 
 // X11 / XWayland portal parenting e2e: forces GDK onto X11 so Tao windows get
 // a real XID, then parents a session xdg-desktop-portal FileChooser with
 // `x11:<hex>`. Safe to run on a Wayland host (XWayland). Not part of `check`.
-val taoX11PortalE2E = tasks.register<JavaExec>("taoX11PortalE2E") {
-    description = "E2E: X11 XID parents a real XDG portal FileChooser (forces XWayland)"
-    group = "verification"
-    onlyIf { Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) }
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
-    systemProperty("nucleus.tao.headful.filter", "x11 XID")
-    // Unattended — see taoHeadfulTest.
-    systemProperty("nucleus.tao.fatalErrorDialog", "false")
-    System.getProperty("nucleus.tao.headful.watchdogMillis")?.let {
-        systemProperty("nucleus.tao.headful.watchdogMillis", it)
+val taoX11PortalE2E =
+    tasks.register<JavaExec>("taoX11PortalE2E") {
+        description = "E2E: X11 XID parents a real XDG portal FileChooser (forces XWayland)"
+        group = "verification"
+        onlyIf { Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) }
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
+        systemProperty("nucleus.tao.headful.filter", "x11 XID")
+        // Unattended — see taoHeadfulTest.
+        systemProperty("nucleus.tao.fatalErrorDialog", "false")
+        System.getProperty("nucleus.tao.headful.watchdogMillis")?.let {
+            systemProperty("nucleus.tao.headful.watchdogMillis", it)
+        }
+        environment("NUCLEUS_TAO_LINUX_RENDERER", "x11")
     }
-    environment("NUCLEUS_TAO_LINUX_RENDERER", "x11")
-}
 
-val smokeStandalonePanelMac = tasks.register<JavaExec>("smokeStandalonePanelMac") {
-    description = "Smoke-checks the macOS standalone-popup native chain (ownerless NSPanel + Metal)"
-    group = "verification"
-    onlyIf { Os.isFamily(Os.FAMILY_MAC) }
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("dev.nucleusframework.window.tao.StandalonePanelMacSmokeMain")
-    // Unattended — see taoHeadfulTest.
-    systemProperty("nucleus.tao.fatalErrorDialog", "false")
-    // Run main() on thread 0 (the macOS main thread). The JVM normally runs
-    // main() on a spawned pthread, but AppKit only permits NSWindow/NSPanel
-    // creation on the true main thread. -XstartOnFirstThread is the same flag
-    // LWJGL/GLFW use on macOS.
-    jvmArgs("-XstartOnFirstThread")
-}
+val smokeStandalonePanelMac =
+    tasks.register<JavaExec>("smokeStandalonePanelMac") {
+        description = "Smoke-checks the macOS standalone-popup native chain (ownerless NSPanel + Metal)"
+        group = "verification"
+        onlyIf { Os.isFamily(Os.FAMILY_MAC) }
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass.set("dev.nucleusframework.window.tao.StandalonePanelMacSmokeMain")
+        // Unattended — see taoHeadfulTest.
+        systemProperty("nucleus.tao.fatalErrorDialog", "false")
+        // Run main() on thread 0 (the macOS main thread). The JVM normally runs
+        // main() on a spawned pthread, but AppKit only permits NSWindow/NSPanel
+        // creation on the true main thread. -XstartOnFirstThread is the same flag
+        // LWJGL/GLFW use on macOS.
+        jvmArgs("-XstartOnFirstThread")
+    }
 
 // Manual smoke for #416: transparent DecoratedWindow + opaque marker over desktop.
 // Captures under build/reports/tao-transparent-smoke and pixel-checks that the
@@ -261,75 +266,77 @@ val smokeStandalonePanelMac = tasks.register<JavaExec>("smokeStandalonePanelMac"
 // macOS/X11: AWT Robot. Windows: Robot omits layered windows — point
 // `-Dnucleus.tao.transparent.smoke.captureTool=` at a CAPTUREBLT helper
 // (build/tmp-smoke/capture_region.exe).
-val taoTransparentSmoke = tasks.register<JavaExec>("taoTransparentSmoke") {
-    description = "Manual smoke: DecoratedWindow(transparent=true) over the desktop (#416)"
-    group = "verification"
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("dev.nucleusframework.window.tao.headful.TransparentWindowSmokeMain")
-    // Unattended — see taoHeadfulTest.
-    systemProperty("nucleus.tao.fatalErrorDialog", "false")
-    // Linux: pin the window to XWayland. Robot goes through the X server, so on
-    // a native Wayland session it cannot see the Tao surface (both captures come
-    // back byte-identical) and xdg-shell drops setOuterPosition, leaving the
-    // capture rect pointing at wherever the compositor did *not* put the window.
-    // Under XWayland both work. Overridable — the smoke then refuses to emit a
-    // pixel verdict on Wayland (see TransparentWindowSmokeMain).
-    if (Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC)) {
-        environment(
-            "NUCLEUS_TAO_LINUX_RENDERER",
-            providers.environmentVariable("NUCLEUS_TAO_LINUX_RENDERER").getOrElse("x11"),
-        )
-    }
-    val outDir =
-        layout.buildDirectory
-            .dir("reports/tao-transparent-smoke")
-            .get()
-            .asFile
-    systemProperty("nucleus.tao.transparent.smoke.outdir", outDir.absolutePath)
-    if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-        val captureTool =
+val taoTransparentSmoke =
+    tasks.register<JavaExec>("taoTransparentSmoke") {
+        description = "Manual smoke: DecoratedWindow(transparent=true) over the desktop (#416)"
+        group = "verification"
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass.set("dev.nucleusframework.window.tao.headful.TransparentWindowSmokeMain")
+        // Unattended — see taoHeadfulTest.
+        systemProperty("nucleus.tao.fatalErrorDialog", "false")
+        // Linux: pin the window to XWayland. Robot goes through the X server, so on
+        // a native Wayland session it cannot see the Tao surface (both captures come
+        // back byte-identical) and xdg-shell drops setOuterPosition, leaving the
+        // capture rect pointing at wherever the compositor did *not* put the window.
+        // Under XWayland both work. Overridable — the smoke then refuses to emit a
+        // pixel verdict on Wayland (see TransparentWindowSmokeMain).
+        if (Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC)) {
+            environment(
+                "NUCLEUS_TAO_LINUX_RENDERER",
+                providers.environmentVariable("NUCLEUS_TAO_LINUX_RENDERER").getOrElse("x11"),
+            )
+        }
+        val outDir =
             layout.buildDirectory
-                .file("tmp-smoke/capture_region.exe")
+                .dir("reports/tao-transparent-smoke")
                 .get()
                 .asFile
-        systemProperty("nucleus.tao.transparent.smoke.captureTool", captureTool.absolutePath)
-        doFirst {
-            if (!captureTool.isFile) {
-                error(
-                    "CAPTUREBLT helper missing at ${captureTool.absolutePath}. " +
-                        "Build it once with cl against capture_region.c " +
-                        "(see TransparentWindowSmokeMain).",
-                )
+        systemProperty("nucleus.tao.transparent.smoke.outdir", outDir.absolutePath)
+        if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+            val captureTool =
+                layout.buildDirectory
+                    .file("tmp-smoke/capture_region.exe")
+                    .get()
+                    .asFile
+            systemProperty("nucleus.tao.transparent.smoke.captureTool", captureTool.absolutePath)
+            doFirst {
+                if (!captureTool.isFile) {
+                    error(
+                        "CAPTUREBLT helper missing at ${captureTool.absolutePath}. " +
+                            "Build it once with cl against capture_region.c " +
+                            "(see TransparentWindowSmokeMain).",
+                    )
+                }
             }
         }
+        // Forward hold duration so a manual look is possible, e.g.
+        // -Dnucleus.tao.transparent.smoke.holdMs=10000
+        System.getProperty("nucleus.tao.transparent.smoke.holdMs")?.let {
+            systemProperty("nucleus.tao.transparent.smoke.holdMs", it)
+        }
     }
-    // Forward hold duration so a manual look is possible, e.g.
-    // -Dnucleus.tao.transparent.smoke.holdMs=10000
-    System.getProperty("nucleus.tao.transparent.smoke.holdMs")?.let {
-        systemProperty("nucleus.tao.transparent.smoke.holdMs", it)
-    }
-}
 
 // Manual smoke for #622: fatal-exception path end to end — SEVERE log, native
 // error dialog, exit code 1. The expected outcome is Gradle failing with
 // "finished with non-zero exit value 1" after the dialog is dismissed.
 // Not part of `check`.
-val taoFatalDialogSmoke = tasks.register<JavaExec>("taoFatalDialogSmoke") {
-    description = "Manual smoke: fatal-error path — native dialog then exit code 1 (#622)"
-    group = "verification"
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("dev.nucleusframework.window.tao.headful.FatalErrorDialogSmokeMain")
-    // Forward the crash delay so the window can be looked at first, e.g.
-    // -Dnucleus.tao.fatal.smoke.crashAfterMs=10000
-    System.getProperty("nucleus.tao.fatal.smoke.crashAfterMs")?.let {
-        systemProperty("nucleus.tao.fatal.smoke.crashAfterMs", it)
+val taoFatalDialogSmoke =
+    tasks.register<JavaExec>("taoFatalDialogSmoke") {
+        description = "Manual smoke: fatal-error path — native dialog then exit code 1 (#622)"
+        group = "verification"
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass.set("dev.nucleusframework.window.tao.headful.FatalErrorDialogSmokeMain")
+        // Forward the crash delay so the window can be looked at first, e.g.
+        // -Dnucleus.tao.fatal.smoke.crashAfterMs=10000
+        System.getProperty("nucleus.tao.fatal.smoke.crashAfterMs")?.let {
+            systemProperty("nucleus.tao.fatal.smoke.crashAfterMs", it)
+        }
+        // Forward the #622 escape hatch so the smoke can also exercise the
+        // dialog-less unattended path: -Dnucleus.tao.fatalErrorDialog=false
+        System.getProperty("nucleus.tao.fatalErrorDialog")?.let {
+            systemProperty("nucleus.tao.fatalErrorDialog", it)
+        }
     }
-    // Forward the #622 escape hatch so the smoke can also exercise the
-    // dialog-less unattended path: -Dnucleus.tao.fatalErrorDialog=false
-    System.getProperty("nucleus.tao.fatalErrorDialog")?.let {
-        systemProperty("nucleus.tao.fatalErrorDialog", it)
-    }
-}
 
 // ── Maven publication ──────────────────────────────────────────────────────
 

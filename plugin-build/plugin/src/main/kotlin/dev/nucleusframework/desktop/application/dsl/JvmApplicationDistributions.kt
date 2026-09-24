@@ -148,6 +148,16 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         fn.execute(publish)
     }
 
+    // --- Node.js used to run electron-builder ---
+
+    /** Node.js acquisition for the electron-builder pipeline. See [NodeJsSettings]. */
+    val nodejs: NodeJsSettings = objects.newInstance(NodeJsSettings::class.java)
+
+    /** Configures [nodejs]. */
+    fun nodejs(fn: Action<NodeJsSettings>) {
+        fn.execute(nodejs)
+    }
+
     // --- Compression level for archive formats ---
 
     /**

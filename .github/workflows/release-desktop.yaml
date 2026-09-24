@@ -49,7 +49,6 @@ jobs:
             arch: amd64
           - os: windows-11-arm
             arch: arm64
-            node-version: '22' # npm 11 (Node 24) has ECOMPROMISED bugs on Windows ARM64
           - os: macos-latest
             arch: arm64
           - os: macos-15-intel
@@ -81,8 +80,6 @@ jobs:
           flatpak: 'true'
           snap: 'true'
           setup-gradle: 'true'
-          setup-node: 'true'
-          node-version: ${{ matrix.node-version || '24' }}
 
       - name: Download native artifacts
         uses: actions/download-artifact@v4
@@ -189,12 +186,8 @@ jobs:
           sparse-checkout: |
             .github/actions
             examples/nucleus-demo/packaging/macos
+            plugin-build/plugin/src/main/resources/nucleus/electron-builder
           fetch-depth: 1
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
 
       - name: Setup macOS signing
         id: signing

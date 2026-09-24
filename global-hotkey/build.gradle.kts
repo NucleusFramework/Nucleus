@@ -14,9 +14,10 @@ val publishVersion =
         ?: "1.0.0"
 
 // Controlled repro for issue #264 residual portal bugs (see src/repro/...).
-val repro = sourceSets.create("repro") {
-    kotlin.srcDir("src/repro/kotlin")
-}
+val repro =
+    sourceSets.create("repro") {
+        kotlin.srcDir("src/repro/kotlin")
+    }
 
 configurations {
     named("reproImplementation") { extendsFrom(configurations["implementation"]) }

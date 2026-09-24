@@ -10,15 +10,11 @@ import org.gradle.api.provider.Property
 import org.gradle.api.provider.ValueSource
 import org.gradle.api.provider.ValueSourceParameters
 import org.gradle.process.ExecOperations
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
-import java.net.HttpURLConnection
-import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
 import javax.inject.Inject
 
 /**
@@ -93,12 +89,6 @@ internal abstract class NucleusJdkToolchainValueSource :
 @Suppress("TooManyFunctions")
 internal object NucleusJdkToolchainProvisioner {
     private const val MARKER_FILE = ".nucleus-provisioned"
-    private const val CONNECT_TIMEOUT_MS = 30_000
-    private const val READ_TIMEOUT_MS = 60_000
-    private const val MAX_REDIRECTS = 5
-    private const val DOWNLOAD_BUFFER_SIZE = 1 shl 16
-    private const val HTTP_FIRST_REDIRECT = 300
-    private const val HTTP_FIRST_ERROR = 400
     private const val ENV_JDK_HOME = "NUCLEUS_JDK_HOME"
 
     fun provision(
@@ -282,40 +272,13 @@ internal object NucleusJdkToolchainProvisioner {
         logger: Logger,
     ) {
         if (usesLibericaFallback(request.os, request.arch)) {
-            val expected = libericaSha1(request.os, request.arch)
-            val actual = archive.digest("SHA-1")
-            check(actual.equals(expected, ignoreCase = true)) {
-                "Checksum mismatch for $url: expected $expected, got $actual"
-            }
+            ToolchainDownloads.verifyChecksum(archive, url, "SHA-1", libericaSha1(request.os, request.arch))
             return
         }
         val sha256Url = "$url.sha256"
-        val text =
-            runCatching { fetchText(sha256Url) }.getOrElse {
-                logger.warn(
-                    "[nucleusOptimization] Could not fetch checksum $sha256Url (${it.message}) — " +
-                        "skipping verification",
-                )
-                return
-            }
-        val expected = text.trim().substringBefore(' ')
-        val actual = archive.digest("SHA-256")
-        check(actual.equals(expected, ignoreCase = true)) {
-            "Checksum mismatch for $sha256Url: expected $expected, got $actual"
-        }
-    }
-
-    private fun File.digest(algorithm: String): String {
-        val digest = MessageDigest.getInstance(algorithm)
-        inputStream().use { input ->
-            val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        val expected =
+            ToolchainDownloads.fetchOptionalChecksum(sha256Url, "[nucleusOptimization]", logger) ?: return
+        ToolchainDownloads.verifyChecksum(archive, sha256Url, "SHA-256", expected)
     }
 
     private fun download(
@@ -323,58 +286,15 @@ internal object NucleusJdkToolchainProvisioner {
         dest: File,
     ) {
         try {
-            openConnection(url).inputStream.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output, DOWNLOAD_BUFFER_SIZE) }
-            }
+            ToolchainDownloads.download(url, dest)
         } catch (e: IOException) {
-            throw IOException(
-                "Failed to download JDK $OPENJDK_27_FEATURE from $url: ${e.message}",
-                e,
-            )
+            throw IOException("Failed to download JDK $OPENJDK_27_FEATURE from $url: ${e.message}", e)
         }
-    }
-
-    private fun fetchText(url: String): String =
-        openConnection(url).inputStream.use { it.readBytes().decodeToString() }
-
-    @Suppress("ThrowsCount")
-    private fun openConnection(url: String): HttpURLConnection {
-        var current = url
-        repeat(MAX_REDIRECTS) {
-            val connection = URI(current).toURL().openConnection() as HttpURLConnection
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            connection.instanceFollowRedirects = true
-            val code = connection.responseCode
-            when {
-                code in HTTP_FIRST_REDIRECT until HTTP_FIRST_ERROR -> {
-                    val location =
-                        connection.getHeaderField("Location")
-                            ?: throw IOException("Redirect without Location header from $current")
-                    connection.disconnect()
-                    current = location
-                }
-                code >= HTTP_FIRST_ERROR -> throw IOException("HTTP $code from $current")
-                else -> return connection
-            }
-        }
-        throw IOException("Too many redirects for $url")
     }
 
     private fun extract(
         archive: File,
         destDir: File,
         execOperations: ExecOperations,
-    ) {
-        destDir.mkdirs()
-        val output = ByteArrayOutputStream()
-        val result =
-            execOperations.exec { spec ->
-                spec.commandLine("tar", "-xf", archive.absolutePath, "-C", destDir.absolutePath)
-                spec.standardOutput = output
-                spec.errorOutput = output
-                spec.isIgnoreExitValue = true
-            }
-        check(result.exitValue == 0) { "tar failed extracting ${archive.name}: $output" }
-    }
+    ) = ToolchainDownloads.extract(archive, destDir, execOperations)
 }
