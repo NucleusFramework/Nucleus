@@ -1242,6 +1242,25 @@ pub(crate) fn run_event_loop_blocking() {
             _ => {}
         }
     });
+    #[cfg(target_os = "linux")]
+    flush_displays_after_loop();
+}
+
+/// Sends what the last loop turn left in the display connections' output
+/// buffers. Dropping a window (`UserEvent::RequestClose`) only *queues* its
+/// `XDestroyWindow` / `wl_surface.destroy`, and GDK flushes from its main loop,
+/// which never runs again once `run_return` has returned: with
+/// `exitProcessOnExit = false` the closed window stayed mapped and frozen on
+/// screen for as long as the process lived. A flush, not a GTK iteration, so
+/// no callback can reach the JVM after the loop has ended.
+#[cfg(target_os = "linux")]
+fn flush_displays_after_loop() {
+    if let Some(display) = gtk::gdk::Display::default() {
+        display.flush();
+    }
+    if let Some(display) = x11_display() {
+        display.flush();
+    }
 }
 
 /// Ensure the WINDOWS map exists. Called from the JNI entry point before the
