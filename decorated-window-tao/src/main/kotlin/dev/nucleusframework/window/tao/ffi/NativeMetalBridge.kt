@@ -547,6 +547,28 @@ internal object NativeMetalBridge {
     ): Boolean
 
     /**
+     * Headful e2e only (#660): feeds a synthetic magnify / rotate /
+     * smart-magnify NSEvent on `NSApp`'s queue (`postEvent`, delivered after
+     * the current callback returns), so the trackpad gesture monitor handles
+     * it as a real trackpad pinch. [kind] is the
+     * `touchpad_gestures.m` wire (0 magnify, 1 rotate, 2 smart-magnify);
+     * [phase] the IOHID encoding (1 began, 2 changed, 4 ended, 8 cancelled,
+     * `0` = unset); [x] / [y] content-local points, top-left origin; [value]
+     * the magnification delta or the rotation in degrees. `false` when
+     * injection is disabled or the view or its window is gone.
+     */
+    @JvmStatic
+    @Suppress("LongParameterList")
+    external fun nativeDiagInjectTrackpadGesture(
+        nsViewPtr: Long,
+        kind: Int,
+        phase: Int,
+        x: Float,
+        y: Float,
+        value: Double,
+    ): Boolean
+
+    /**
      * Disables native → JVM callbacks and removes any active menu bar
      * monitors. Called from a JVM shutdown hook so AppKit can't fire a
      * callback into a half-destroyed JVM.

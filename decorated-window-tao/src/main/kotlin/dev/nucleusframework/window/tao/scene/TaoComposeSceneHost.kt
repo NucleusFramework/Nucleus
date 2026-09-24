@@ -1354,6 +1354,16 @@ internal class TaoComposeSceneHost(
     // path without a second pass through touch slop. Rotation has no Compose
     // equivalent, so it still synthesises two Touch pointers around the
     // gesture centre and lets `detectTransformGestures` see the angle change.
+    //
+    // A real trackpad interleaves magnify and rotate, and the two models
+    // cannot overlap: an event lists every active pointer, so a Scale event
+    // without the contacts reads as their release (each rotate step then
+    // re-presses them — a spurious tap — and never rotates), while a Scale
+    // event carrying them stamps the factor on every pointer and foundation
+    // multiplies it once per pointer. So whichever gesture begins first owns
+    // the trackpad until it ends: during a pinch, rotate steps are dropped
+    // (foundation abandons a touch gesture on any Scale event anyway); during
+    // a rotation, magnify steps widen the contacts, as before #660.
 
     // Centre of the gesture in physical pixels (top-left origin).
     private var gestureCenterX = 0f
@@ -1372,6 +1382,10 @@ internal class TaoComposeSceneHost(
 
     private var rotateActive = false
     private var gestureAngle = 0f
+
+    // Spacing of the rotation contacts relative to their start: magnify steps
+    // that arrive while the rotation owns the trackpad (1 otherwise).
+    private var rotateScale = 1f
 
     /**
      * Forwards a macOS trackpad gesture. Wire format mirrors
@@ -1394,23 +1408,42 @@ internal class TaoComposeSceneHost(
         gestureCenterX = xPx
         gestureCenterY = yPx
 
-        if (kind == TaoTrackpadGesture.SMART_MAGNIFY) {
-            scaleSession.smartMagnify()
-            return
+        when (kind) {
+            TaoTrackpadGesture.SMART_MAGNIFY -> scaleSession.smartMagnify()
+            TaoTrackpadGesture.MAGNIFY -> onMagnify(phase, value)
+            TaoTrackpadGesture.ROTATE -> onRotate(phase, value)
         }
-        if (kind == TaoTrackpadGesture.MAGNIFY) {
-            when (phase) {
-                TaoTrackpadPhase.BEGAN -> {
-                    scaleSession.start()
-                    scaleSession.magnifyBy(value)
-                }
-                TaoTrackpadPhase.CHANGED -> scaleSession.magnifyBy(value)
-                TaoTrackpadPhase.ENDED -> scaleSession.end()
-                TaoTrackpadPhase.CANCELLED -> scaleSession.end()
+    }
+
+    private fun onMagnify(
+        phase: Int,
+        value: Float,
+    ) {
+        if (rotateActive) {
+            // The rotation owns this gesture: fold the step into the contacts.
+            if (phase == TaoTrackpadPhase.BEGAN || phase == TaoTrackpadPhase.CHANGED) {
+                rotateScale *= (1f + value).coerceAtLeast(TaoTrackpadScaleSession.MIN_GESTURE_SCALE)
+                sendRotatePointers(PointerEventType.Move)
             }
             return
         }
+        when (phase) {
+            TaoTrackpadPhase.BEGAN -> {
+                scaleSession.start()
+                scaleSession.magnifyBy(value)
+            }
+            TaoTrackpadPhase.CHANGED -> scaleSession.magnifyBy(value)
+            TaoTrackpadPhase.ENDED -> scaleSession.end()
+            TaoTrackpadPhase.CANCELLED -> scaleSession.end()
+        }
+    }
 
+    private fun onRotate(
+        phase: Int,
+        value: Float,
+    ) {
+        // The pinch owns this gesture; Compose has no rotation event to carry the step.
+        if (scaleSession.active) return
         when (phase) {
             TaoTrackpadPhase.BEGAN -> {
                 startRotate()
@@ -1430,6 +1463,7 @@ internal class TaoComposeSceneHost(
     private fun startRotate() {
         rotateActive = true
         gestureAngle = 0f
+        rotateScale = 1f
     }
 
     private fun applyRotateDelta(value: Float) {
@@ -1445,30 +1479,32 @@ internal class TaoComposeSceneHost(
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     private fun sendRotatePointers(eventType: PointerEventType) {
         val sc = scene ?: return
-        val cosA = cos(gestureAngle)
-        val sinA = sin(gestureAngle)
-        val dx = TRACKPAD_BASE_RADIUS_PX * cosA
-        val dy = TRACKPAD_BASE_RADIUS_PX * sinA
-        val pressed = eventType != PointerEventType.Release
-        val pointers =
-            listOf(
-                ComposeScenePointer(
-                    id = PointerId(TRACKPAD_POINTER_ID_A),
-                    position = Offset(gestureCenterX - dx, gestureCenterY - dy),
-                    pressed = pressed,
-                    type = PointerType.Touch,
-                ),
-                ComposeScenePointer(
-                    id = PointerId(TRACKPAD_POINTER_ID_B),
-                    position = Offset(gestureCenterX + dx, gestureCenterY + dy),
-                    pressed = pressed,
-                    type = PointerType.Touch,
-                ),
-            )
         sc.sendPointerEvent(
             eventType = eventType,
-            pointers = pointers,
+            pointers = rotatePointers(pressed = eventType != PointerEventType.Release),
             keyboardModifiers = currentKeyboardModifiers,
+        )
+    }
+
+    /** The two synthetic rotation contacts at the current angle around the gesture centre. */
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    private fun rotatePointers(pressed: Boolean): List<ComposeScenePointer> {
+        val radius = TRACKPAD_BASE_RADIUS_PX * rotateScale
+        val dx = radius * cos(gestureAngle)
+        val dy = radius * sin(gestureAngle)
+        return listOf(
+            ComposeScenePointer(
+                id = PointerId(TRACKPAD_POINTER_ID_A),
+                position = Offset(gestureCenterX - dx, gestureCenterY - dy),
+                pressed = pressed,
+                type = PointerType.Touch,
+            ),
+            ComposeScenePointer(
+                id = PointerId(TRACKPAD_POINTER_ID_B),
+                position = Offset(gestureCenterX + dx, gestureCenterY + dy),
+                pressed = pressed,
+                type = PointerType.Touch,
+            ),
         )
     }
 
@@ -1477,6 +1513,7 @@ internal class TaoComposeSceneHost(
         sendRotatePointers(PointerEventType.Release)
         rotateActive = false
         gestureAngle = 0f
+        rotateScale = 1f
         if (cancelled) scene?.cancelPointerInput()
     }
 
@@ -1561,8 +1598,8 @@ internal class TaoComposeSceneHost(
         private const val TRACKPAD_POSITION_SCALE: Float = 1024f
         private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
 
-        // Two synthesised touch pointers for rotation only (pinch is a Scale
-        // event now). 120 px keeps `detectTransformGestures` rotation slop
+        // Two synthesised touch pointers for rotation (pinch is a Scale event
+        // unless a rotation already owns the gesture). 120 px keeps `detectTransformGestures` rotation slop
         // reachable: rotationMotion ≈ |Δθ| × π × radius / 180.
         private const val TRACKPAD_BASE_RADIUS_PX: Float = 120f
 

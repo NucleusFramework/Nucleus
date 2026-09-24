@@ -30,9 +30,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * → foundation's `transformable`.
  *
  * Windows and Linux only: those are the two hosts that turn Ctrl+wheel into a
- * scale gesture. macOS gets its pinch from an AppKit `magnifyWithEvent:`, for
- * which there is no injector — [MacOsTrackpadScrollHeadfulCases] covers the
- * scroll half of the same wire.
+ * scale gesture. macOS gets its pinch from AppKit's magnify recognizer;
+ * [MacOsTrackpadScaleHeadfulCases] injects those gesture NSEvents.
  */
 internal object TrackpadScaleHeadfulCases {
     fun all(): List<TaoWindowTestCase> =
@@ -324,7 +323,7 @@ internal object TrackpadScaleHeadfulCases {
 
     /**
      * Ctrl+wheel is a scale gesture on Windows and Linux only; macOS takes its
-     * pinch from AppKit's own recognizer, which has no injector.
+     * pinch from AppKit's own recognizer ([MacOsTrackpadScaleHeadfulCases]).
      */
     private fun ctrlWheelZoomOnly(): String? =
         when (Platform.Current) {
