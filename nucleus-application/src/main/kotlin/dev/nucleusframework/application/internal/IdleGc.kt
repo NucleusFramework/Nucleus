@@ -10,17 +10,37 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.IdentityHashMap
+import java.util.Properties
 import java.util.logging.Logger
 
 /**
  * Runtime side of the `nucleusOptimization { idleGc }` knob.
- * Keep the property name in sync with the plugin's `NUCLEUS_IDLE_GC_PROPERTY`.
+ * Keep the property name in sync with the plugin's `NUCLEUS_IDLE_GC_PROPERTY`, and the
+ * resource key with `NUCLEUS_IDLE_GC_RESOURCE_KEY`.
+ *
+ * The system property (set in the jpackage `.cfg`) wins; the plugin also bakes the knob into
+ * `nucleus/nucleus-app.properties`, which is the only carrier in a GraalVM native image.
  */
 internal object NucleusOptimization {
     const val PROPERTY: String = "nucleus.optimization.idleGc"
+    private const val RESOURCE_PATH = "nucleus/nucleus-app.properties"
+    private const val RESOURCE_KEY = "optimization.idleGc"
 
-    val isEnabled: Boolean
-        get() = System.getProperty(PROPERTY) == "true"
+    val isEnabled: Boolean by lazy {
+        val property = System.getProperty(PROPERTY)
+        if (property != null) property == "true" else readResourceFlag()
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun readResourceFlag(): Boolean =
+        try {
+            NucleusOptimization::class.java.classLoader
+                ?.getResourceAsStream(RESOURCE_PATH)
+                ?.use { Properties().apply { load(it) } }
+                ?.getProperty(RESOURCE_KEY) == "true"
+        } catch (_: Exception) {
+            false
+        }
 }
 
 /**

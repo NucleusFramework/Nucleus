@@ -6,9 +6,14 @@ import org.gradle.api.Project
 internal const val OPTIMIZED_XMS = "-Xms32m"
 internal const val OPTIMIZED_MAX_RAM_PERCENTAGE = "-XX:MaxRAMPercentage=25"
 
-/** Runtime flag read by `nucleus-application` to arm idle GC. Keep in sync with `NucleusOptimization`. */
+/**
+ * Runtime flag read by `nucleus-application` to arm idle GC. Keep in sync with `NucleusOptimization`.
+ * Also baked into `nucleus-app.properties` as [NUCLEUS_IDLE_GC_RESOURCE_KEY], since a native image
+ * has no launcher `.cfg` to carry the `-D`.
+ */
 internal const val NUCLEUS_IDLE_GC_PROPERTY = "nucleus.optimization.idleGc"
 internal const val OPTIMIZED_IDLE_GC_FLAG = "-D$NUCLEUS_IDLE_GC_PROPERTY=true"
+internal const val NUCLEUS_IDLE_GC_RESOURCE_KEY = "optimization.idleGc"
 
 internal val JvmApplicationData.optSerialGc: Boolean
     get() = nucleusOptimizationSettings.serialGc ?: nucleusOptimization

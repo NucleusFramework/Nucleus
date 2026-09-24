@@ -156,6 +156,8 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
                 val taskId = appxSettings.startupTaskId ?: "SlackStartup"
                 startupTaskId.set(taskId)
             }
+            // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
+            idleGc.set(project.provider { app.optIdleGc })
             outputDir.set(appTmpDir.dir("app-properties"))
         }
 
