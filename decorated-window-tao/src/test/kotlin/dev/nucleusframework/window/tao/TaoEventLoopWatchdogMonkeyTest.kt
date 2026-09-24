@@ -192,9 +192,28 @@ class TaoEventLoopWatchdogMonkeyTest {
         // `unresponsive` must always hear the end of the episode.
         if (ctx.unresponsive.get() != ctx.responsive.get()) bail("unresponsive/responsive left unpaired")
 
-        // 4 — nothing left behind.
+        // 4 — nothing left behind: neither the sampler nor the callback thread
+        // the run created for itself. A leaked executor per run would pile up
+        // one parked thread per `nucleusApplication` in the same process.
         val leaked = liveWatchdogThreads()
-        if (leaked.isNotEmpty()) bail("watchdog threads still alive after stop: $leaked")
+        if (leaked.isNotEmpty()) {
+            val where =
+                Thread
+                    .getAllStackTraces()
+                    .entries
+                    .filter { (t, _) -> t.name == "nucleus-tao-watchdog" }
+                    .take(LEAK_STACKS_SHOWN)
+                    .joinToString(separator = "\n\n") { (t, stack) ->
+                        val frames = stack.take(LEAK_FRAMES).joinToString(separator = "") { "\n\tat $it" }
+                        "\"${t.name}\" ${t.state}$frames"
+                    }
+            bail("${leaked.size} watchdog threads still alive after stop, e.g.\n$where")
+        }
+        // The callback thread is deliberately process-wide — tearing it down per
+        // run meant racing its teardown and dropping the callback that closes an
+        // episode — so the invariant is that runs never *accumulate* one.
+        val leakedEvents = liveEventThreads()
+        if (leakedEvents.size > 1) bail("callback threads accumulated across runs: $leakedEvents")
 
         // 5 — still armed. The storm's start/stop interleavings are exactly what
         // let a straggler disarm the next run before the generation token.
@@ -234,6 +253,13 @@ class TaoEventLoopWatchdogMonkeyTest {
             Thread.sleep(profile.pollMs)
         }
     }
+
+    private fun liveEventThreads(): List<String> =
+        Thread
+            .getAllStackTraces()
+            .keys
+            .filter { it.isAlive && it.name == "nucleus-tao-watchdog-events" }
+            .map { it.name }
 
     private fun liveWatchdogThreads(): List<String> =
         Thread
@@ -361,6 +387,16 @@ class TaoEventLoopWatchdogMonkeyTest {
                     MonkeyAction.RegisterWindow,
                     MonkeyAction.CleanListener,
                 ),
+        ),
+
+        /** Everything at once, sixteen threads deep, nothing sleeps. */
+        Torture(
+            workers = 16,
+            ops = 300,
+            pollMs = 1,
+            graceMs = 0,
+            hostileLogEvery = 3,
+            actions = MonkeyAction.entries - MonkeyAction.Breathe,
         ),
 
         /** Someone else's shutdown hook interrupts threads by name. */
@@ -493,5 +529,7 @@ class TaoEventLoopWatchdogMonkeyTest {
         const val REENTRANT_MOVES = 4
         const val PRIME = 31L
         const val SWEEP_STRIDE = 7_919L
+        const val LEAK_STACKS_SHOWN = 2
+        const val LEAK_FRAMES = 8
     }
 }

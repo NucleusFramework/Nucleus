@@ -81,6 +81,23 @@ nucleusNative {
     linux("nucleus_tao", "Compiles the Rust JNI bridge + EGL helper into Linux .so libraries")
 }
 
+// The watchdog concurrency monkey's knobs, forwarded into the test JVM — a
+// Gradle `-D` does not reach it otherwise, so a seed sweep would silently run
+// the defaults. Registered as task inputs too: a new seed must re-run the
+// task instead of being served the previous verdict as UP-TO-DATE.
+tasks.withType<Test>().configureEach {
+    listOf(
+        "nucleus.tao.watchdogMonkeySeed",
+        "nucleus.tao.watchdogMonkeySeeds",
+        "nucleus.tao.watchdogMonkeyProfile",
+    ).forEach { key ->
+        System.getProperty(key)?.let { value ->
+            systemProperty(key, value)
+            inputs.property(key, value)
+        }
+    }
+}
+
 // ── macOS standalone-popup smoke check ──────────────────────────────────────
 // AppKit requires the NSPanel to be created on the macOS main thread. Gradle's
 // test worker runs tests off the main thread, so the macOS smoke check runs as
