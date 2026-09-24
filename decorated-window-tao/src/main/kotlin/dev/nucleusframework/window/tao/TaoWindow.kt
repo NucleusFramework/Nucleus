@@ -22,6 +22,15 @@ import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION as SHARED_AWT
 import dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT as SHARED_MACOS_AWT_SCROLL_AMOUNT
 
 /**
+ * How long an unanswered redraw request may stay latched before
+ * [TaoWindow.requestRedraw] assumes the OS dropped it and asks again. Far above
+ * a frame, far below anything a user would call a freeze. File-level and
+ * private: a `const val` in the private companion would still land on the
+ * validated ABI.
+ */
+private const val STALE_REDRAW_NANOS: Long = 1_000_000_000L
+
+/**
  * Phase 2 handle to a window owned by the Tao event loop.
  *
  * Native commands are thread-safe: they post commands as user events to the
@@ -202,6 +211,10 @@ public class TaoWindow internal constructor(
     // the listener runs, so a redraw posted *during* render still gets through.
     private val redrawPending = AtomicBoolean(false)
 
+    /** When the in-flight redraw was asked for; see [requestRedraw]'s staleness re-issue. */
+    @Volatile
+    private var redrawRequestedAtNanos = 0L
+
     // Startup white-flash workaround: the themed WM_ERASEBKGND fill is armed on
     // show() and disabled once — on the first native redraw after show. Gating
     // on this flag keeps the disable off the per-frame redraw path.
@@ -296,7 +309,29 @@ public class TaoWindow internal constructor(
     }
 
     public fun requestRedraw() {
-        if (!redrawPending.compareAndSet(false, true)) return
+        val now = System.nanoTime()
+        if (redrawPending.compareAndSet(false, true)) {
+            redrawRequestedAtNanos = now
+            NativeTaoBridge.nativeRequestRedraw(handle)
+            return
+        }
+        // A request is already in flight. The latch is a *coalescing* device, so
+        // it only ever holds until the matching REDRAW_REQUESTED comes back — and
+        // when the OS swallows that event instead, the latch suppresses every
+        // later request and the window silently stops painting for good. Two such
+        // cases are patched by hand already ([resetRedrawLatch] for nested modal
+        // pumps, the FOCUSED branch of [dispatch] for an occluding modal child),
+        // and the #643 monkeys found a third: an app frozen long enough for
+        // Windows to ghost its window can come back with a live event loop and a
+        // dead picture.
+        //
+        // Rather than enumerate the ways an invalidation can be lost, treat a
+        // request the OS has not answered within [STALE_REDRAW_NANOS] as lost and
+        // ask again. No frame is lost either way: a genuinely in-flight redraw
+        // just yields one extra, idempotent request, at most once per second.
+        if (now - redrawRequestedAtNanos < STALE_REDRAW_NANOS) return
+        redrawRequestedAtNanos = now
+        logger.fine { "redraw for window $handle unanswered, re-issuing" }
         NativeTaoBridge.nativeRequestRedraw(handle)
     }
 
@@ -1601,6 +1636,8 @@ public class TaoWindow internal constructor(
         const val WAYLAND_HANDLE_KIND: Long = 2L
 
         val waylandLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.wayland")
+
+        val logger: Logger = Logger.getLogger(TaoWindow::class.java.name)
     }
 }
 
