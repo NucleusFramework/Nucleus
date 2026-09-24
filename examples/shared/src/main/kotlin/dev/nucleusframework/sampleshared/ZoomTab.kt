@@ -37,7 +37,9 @@ import androidx.compose.ui.unit.sp
  *
  * Pinch arrives as Compose `ScaleStart` / `ScaleChange` / `ScaleEnd` (#660);
  * two-finger rotate still goes through `detectTransformGestures` (Compose
- * has no rotation event).
+ * has no rotation event). On a gesture that does both, the one that starts
+ * first owns it: a pinch drops the rotation, a rotation zooms through its
+ * contacts.
  *
  * Modifier topology — important: the gesture detector lives on the **outer**
  * (viewport) Box, the visual transform lives on the **inner** Box. Compose
