@@ -62,6 +62,8 @@ internal class MonkeyJournal(
     private val tag: String,
     val seed: Long,
     private val depth: Int = JOURNAL_DEPTH,
+    /** Echo each action to stderr; hours-long runs keep only the in-memory tail. */
+    private val echo: Boolean = true,
 ) {
     private val entries = ConcurrentLinkedDeque<String>()
     private val reached = mutableMapOf<String, Int>()
@@ -78,7 +80,7 @@ internal class MonkeyJournal(
     fun record(action: Any) {
         if (entries.size >= depth) entries.pollFirst()
         entries.addLast("$step $action")
-        System.err.println("[$tag] $step $action")
+        if (echo) System.err.println("[$tag] $step $action")
     }
 
     fun reach(what: String) {
