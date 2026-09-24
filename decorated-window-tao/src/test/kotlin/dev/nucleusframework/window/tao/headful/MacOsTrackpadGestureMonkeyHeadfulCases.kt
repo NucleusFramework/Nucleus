@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -37,7 +38,10 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.TitleBar
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.headful.MacTrackpadGestureProbe.Kind
+import java.awt.MouseInfo
+import java.time.LocalTime
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.random.Random
@@ -173,6 +177,8 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
         val trace = GestureTrace()
         val zoom = ZoomProbe()
         val frames = AtomicLong()
+        val active = AtomicBoolean(true)
+        val minimized = AtomicBoolean(false)
         return TaoWindowTestCase(
             name =
                 "#660 macOS gesture monkey night window ${index + 1}/$count: ${durationMillis / 1000}s " +
@@ -180,25 +186,33 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
             timeoutMillis = durationMillis + NIGHT_SLACK_MILLIS,
             skip = { macOnly() },
             paintDefaultBackground = false,
-            content = { NightContent(this, trace, zoom, frames) },
+            content = { NightContent(this, trace, zoom, frames, active, minimized) },
         ) {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("the animation renders") { frames.get() > NIGHT_WARMUP_FRAMES }
             settle()
-            val initialBounds = checkNotNull(bounds()).copyOf()
+            var baseline = checkNotNull(bounds()).copyOf()
             var lastFrames = frames.get()
+            var lastCursor = cursorOnScreen()
             val drags = AtomicLong()
             window.onDragWindow { drags.incrementAndGet() }
             val chrome: () -> String? = {
+                val cursor = cursorOnScreen()
                 val b = bounds()
                 val f = frames.get()
                 when {
+                    // Ours whatever else happened: the synthetic contacts started a move.
+                    drags.get() != 0L -> "synthetic contacts started ${drags.get()} window drag(s)"
+                    // Someone else is at the machine: nothing below is ours to judge.
+                    cursor != lastCursor -> interference("the real cursor moved: $lastCursor → $cursor")
+                    minimized.get() -> interference("the window was minimized")
                     b == null -> "the window is gone"
-                    !b.contentEquals(initialBounds) ->
-                        "the window moved or resized: ${initialBounds.toList()} → ${b.toList()}"
+                    !b.contentEquals(baseline) -> "the window moved or resized: ${baseline.toList()} → ${b.toList()}"
                     window.isMaximized -> "the window maximized"
                     window.isFullscreen -> "the window went fullscreen"
-                    drags.get() != 0L -> "synthetic contacts started ${drags.get()} window drag(s)"
+                    // A background window may be covered: macOS stops its frames.
+                    f <= lastFrames && !active.get() ->
+                        interference("no frame while the window is in the background (covered?)")
                     f <= lastFrames -> "no frame rendered since the last checkpoint ($f)"
                     else -> {
                         lastFrames = f
@@ -209,31 +223,51 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
             val deadline = System.currentTimeMillis() + durationMillis
             val base = monkeySeedOr(NIGHT_SEED) + index * NIGHT_SEEDS_PER_WINDOW
             var session = 0
+            var disturbed = 0
             val runtime = Runtime.getRuntime()
             while (System.currentTimeMillis() < deadline) {
                 val profile = GestureMonkeyProfile.entries[session % GestureMonkeyProfile.entries.size]
-                GestureMonkey(
-                    scope = this,
-                    trace = trace,
-                    zoom = zoom,
-                    profile = profile,
-                    seed = base + session,
-                    steps = profile.steps,
-                    titleBarBand = NIGHT_TITLE_BAR_BAND_DP,
-                    extraCheck = chrome,
-                    echo = false,
-                    canonicalAt = NIGHT_BODY_POINT,
-                ).run()
+                try {
+                    GestureMonkey(
+                        scope = this,
+                        trace = trace,
+                        zoom = zoom,
+                        profile = profile,
+                        seed = base + session,
+                        steps = profile.steps,
+                        titleBarBand = NIGHT_TITLE_BAR_BAND_DP,
+                        extraCheck = chrome,
+                        echo = false,
+                        canonicalAt = NIGHT_BODY_POINT,
+                    ).run()
+                } catch (interference: MonkeyInterference) {
+                    disturbed++
+                    System.err.println(
+                        "[gesture-monkey-night] ${now()} window ${index + 1}/$count session $session disturbed: " +
+                            "${interference.message} — waiting for the machine to be idle",
+                    )
+                    // Re-baseline wherever the window was left. The focus is not
+                    // taken back: whoever is at the machine may be typing elsewhere.
+                    awaitIdleMachine(deadline)
+                    baseline = checkNotNull(bounds()).copyOf()
+                    lastFrames = frames.get()
+                    drags.set(0)
+                }
+                lastCursor = cursorOnScreen()
                 session++
                 if (session % NIGHT_REPORT_EVERY == 0) {
                     System.gc()
                     System.err.println(
-                        "[gesture-monkey-night] window ${index + 1}/$count: $session sessions, " +
-                            "frames=${frames.get()}, heap=${(runtime.totalMemory() - runtime.freeMemory()) shr 20} MB",
+                        "[gesture-monkey-night] ${now()} window ${index + 1}/$count: $session sessions " +
+                            "($disturbed disturbed), frames=${frames.get()}, " +
+                            "heap=${(runtime.totalMemory() - runtime.freeMemory()) shr 20} MB",
                     )
                 }
             }
-            System.err.println("[gesture-monkey-night] window ${index + 1}/$count survived $session sessions")
+            System.err.println(
+                "[gesture-monkey-night] ${now()} window ${index + 1}/$count survived $session sessions " +
+                    "($disturbed disturbed)",
+            )
         }
     }
 
@@ -243,7 +277,14 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
         trace: GestureTrace,
         zoom: ZoomProbe,
         frames: AtomicLong,
+        active: AtomicBoolean? = null,
+        minimized: AtomicBoolean? = null,
     ) {
+        val windowState = scope.state
+        SideEffect {
+            active?.set(windowState.isActive)
+            minimized?.set(windowState.isMinimized)
+        }
         val transition = rememberInfiniteTransition(label = "night")
         val angle by transition.animateFloat(
             initialValue = 0f,
@@ -446,6 +487,30 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
         }
     }
 
+    /** Someone at the machine: abort the session without judging it. */
+    private fun interference(reason: String): Nothing = throw MonkeyInterference(reason)
+
+    /** Returns once the system cursor has stayed still for [NIGHT_IDLE_MILLIS] (or at [deadline]). */
+    private suspend fun TaoWindowTestScope.awaitIdleMachine(deadline: Long) {
+        var idleSince = System.currentTimeMillis()
+        var cursor = cursorOnScreen()
+        while (System.currentTimeMillis() - idleSince < NIGHT_IDLE_MILLIS && System.currentTimeMillis() < deadline) {
+            settle(NIGHT_IDLE_POLL_MILLIS)
+            val now = cursorOnScreen()
+            if (now != cursor) {
+                cursor = now
+                idleSince = System.currentTimeMillis()
+            }
+        }
+        settle()
+    }
+
+    /** The system cursor, screen points — moves only when someone at the machine moves it. */
+    private fun cursorOnScreen(): Pair<Int, Int>? =
+        runCatching { MouseInfo.getPointerInfo()?.location }.getOrNull()?.let { it.x to it.y }
+
+    private fun now(): String = LocalTime.now().withNano(0).toString()
+
     private fun TaoWindowTestScope.gesture(
         kind: Int,
         phase: Int,
@@ -531,6 +596,10 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
     private const val NIGHT_WARMUP_FRAMES = 10L
     private const val NIGHT_REPORT_EVERY = 10
 
+    /** How long the cursor must stay still before a disturbed night resumes. */
+    private const val NIGHT_IDLE_MILLIS = 30_000L
+    private const val NIGHT_IDLE_POLL_MILLIS = 500L
+
     /** Inside the macOS title bar (the bar is ~40 dp): contacts land on the window-drag area. */
     private val NIGHT_TITLE_BAR_BAND_DP = 14f..30f
     private val NIGHT_BODY_POINT = 400f to 360f
@@ -557,6 +626,11 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
     private const val LONG_RUN_SEED = 1_000_003L
     private const val LONG_RUN_STEPS = 2_000
 }
+
+/** Someone at the machine touched the window or the cursor: the session proves nothing either way. */
+private class MonkeyInterference(
+    message: String,
+) : RuntimeException(message)
 
 private enum class GestureMonkeyProfile(
     val label: String,
@@ -1146,8 +1220,10 @@ private class GestureMonkey(
 
     private suspend fun checkpoint() {
         scope.settle(FLUSH_MILLIS)
-        verify("checkpoint")
+        // First: an interference aborts the session before the model judges
+        // what a real mouse did to it.
         extraCheck?.invoke()?.let { fail("checkpoint", it) }
+        verify("checkpoint")
     }
 
     /** Closes whatever the walk left open, lets every timer run out, then checks the rest state. */
@@ -1168,6 +1244,7 @@ private class GestureMonkey(
         }
         scope.settle(QUIESCE_MILLIS)
         oracle.panSettled()
+        extraCheck?.invoke()?.let { fail("quiescence", it) }
         verify("quiescence")
         val events = trace.snapshot()
         check(!oracle.scaleOpen && !oracle.rotateActive) { journal.failure("the model left a gesture open", state()) }
@@ -1180,8 +1257,6 @@ private class GestureMonkey(
             journal.failure("unbalanced pan: $panStarts PanStart vs $panEnds PanEnd", state())
         }
 
-        extraCheck?.invoke()?.let { fail("quiescence", it) }
-
         // The pipeline still works: a canonical pinch zooms by exactly its factor.
         val (cx, cy) = canonicalAt ?: (x to y)
         val before = zoom.logZoom
@@ -1193,6 +1268,7 @@ private class GestureMonkey(
             ),
         )
         scope.settle(FLUSH_MILLIS)
+        extraCheck?.invoke()?.let { fail("canonical pinch", it) }
         verify("canonical pinch")
         val ratio = kotlin.math.exp(zoom.logZoom - before).toFloat()
         check(abs(ratio - (1f + CANONICAL_PINCH.toFloat())) <= FACTOR_TOLERANCE) {
@@ -1271,7 +1347,9 @@ private class GestureMonkey(
     ): Nothing = throw IllegalStateException(journal.failure("$where: $reason", state()))
 
     private fun state(): String =
-        "scaleOpen=${oracle.scaleOpen} rotateActive=${oracle.rotateActive} expectedDowns=${oracle.downs} " +
+        "at ${java.time.LocalTime.now().withNano(
+            0,
+        )} scaleOpen=${oracle.scaleOpen} rotateActive=${oracle.rotateActive} expectedDowns=${oracle.downs} " +
             "expectedScale=${oracle.scale.size} logZoom=${zoom.logZoom} scale=${scope.window.scaleFactor}"
 
     private fun <T> List<T>.window(at: Int): List<T> = subList(maxOf(0, at - 3), minOf(size, at + 4))
