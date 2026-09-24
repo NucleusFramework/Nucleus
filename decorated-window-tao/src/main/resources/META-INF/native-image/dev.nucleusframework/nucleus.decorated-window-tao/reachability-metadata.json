@@ -76,6 +76,20 @@
                     ]
                 },
                 {
+                    "name": "onDirectManipulation",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int",
+                        "float",
+                        "float",
+                        "float",
+                        "float",
+                        "float"
+                    ]
+                },
+                {
                     "name": "onTouchInput",
                     "parameterTypes": [
                         "long",
@@ -155,6 +169,20 @@
                         "int",
                         "int",
                         "int"
+                    ]
+                },
+                {
+                    "name": "onDirectManipulation",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int",
+                        "float",
+                        "float",
+                        "float",
+                        "float",
+                        "float"
                     ]
                 },
                 {
