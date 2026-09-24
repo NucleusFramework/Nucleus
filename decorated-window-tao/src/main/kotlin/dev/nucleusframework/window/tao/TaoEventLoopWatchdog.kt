@@ -191,6 +191,10 @@ internal object TaoEventLoopWatchdog {
     fun start() {
         if (!isSupported || !isEnabled) return
         if (!running.compareAndSet(false, true)) return
+        // A scope whose `finally` never ran (a fatal thrown inside
+        // `expectUnresponsive`, a forced exit) would otherwise leave the next
+        // run permanently disarmed.
+        expectedStalls.set(0)
         thread =
             Thread(::watch, "nucleus-tao-watchdog").apply {
                 isDaemon = true
@@ -211,6 +215,10 @@ internal object TaoEventLoopWatchdog {
         if (wasRunning) thread?.interrupt()
         thread = null
         hwnds.clear()
+        // Let queued callbacks finish, then drop the executor: a later run
+        // creates its own rather than inheriting a shut-down one.
+        eventExecutor?.shutdown()
+        eventExecutor = null
         wakeWatchdog()
     }
 
@@ -233,6 +241,10 @@ internal object TaoEventLoopWatchdog {
             // Stamped around the wait only: a `report()` that takes seconds
             // (a listener uploading, a thread dump on a large app) must not
             // make the next iteration look like a system suspend.
+            // The watch list can drain while a stall is still open (the user
+            // closed the frozen window). Close the episode before parking, or
+            // the app's prompt and telemetry span stay open forever.
+            if (hwnds.isEmpty()) handle(detector.reset(System.nanoTime()))
             val waitStartNanos = System.nanoTime()
             val gcBefore = gcMillis
             val wait = awaitNextSample()
@@ -258,18 +270,55 @@ internal object TaoEventLoopWatchdog {
             // signal a plain JVM gets — `base::PowerMonitor` without the
             // platform hookup. Drop the episode and ignore what follows for
             // one hang delay, exactly as Electron does after a resume.
-            if (overslept > SUSPEND_OVERSHOOT_MS * NANOS_PER_MILLI && !isGcPause(gcMillis - gcBefore, overslept)) {
+            resumeDeadlineNanos = step(detector, now, overslept, gcMillis - gcBefore, resumeDeadlineNanos)
+        }
+    }
+
+    /**
+     * One sample and its consequences, guarded: `Thread.getAllStackTraces()`
+     * can fail on a huge heap, JUL propagates a throwing `Handler.publish`
+     * (apps and our own tests attach handlers), and the event executor can
+     * refuse a task. Any of those escaping would kill the watchdog thread with
+     * `running` still true — unrevivable, and silent, which is precisely the
+     * failure mode this class exists to remove. Returns the resume deadline.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun step(
+        detector: EventLoopHangDetector,
+        now: Long,
+        oversleptNanos: Long,
+        gcMillisDuringWait: Long,
+        resumeDeadlineNanos: Long,
+    ): Long {
+        try {
+            if (oversleptNanos > SUSPEND_OVERSHOOT_MS * NANOS_PER_MILLI &&
+                !isGcPause(gcMillisDuringWait, oversleptNanos)
+            ) {
                 // A stall reported before the suspend still gets its recovery:
                 // an app that opened a telemetry span or a prompt on
                 // `unresponsive` must never be left waiting for the close.
                 handle(detector.reset(now))
-                resumeDeadlineNanos = now + RESUME_GRACE_MS * NANOS_PER_MILLI
-            } else if (now >= resumeDeadlineNanos) {
+                return now + RESUME_GRACE_MS * NANOS_PER_MILLI
+            }
+            if (now >= resumeDeadlineNanos) {
                 // An expected stall counts as healthy rather than skipping the
                 // sample: a stall reported before the scope opened still gets
                 // its recovery, so every `unresponsive` keeps its `responsive`.
                 handle(detector.sample(!isStallExpected && isAnyWindowHung(), now))
             }
+        } catch (t: Throwable) {
+            logSafely(t)
+        }
+        return resumeDeadlineNanos
+    }
+
+    /** Last-resort logging: the failure of a log call must not end the watch. */
+    @Suppress("TooGenericExceptionCaught", "EmptyCatchBlock", "SwallowedException")
+    private fun logSafely(t: Throwable) {
+        try {
+            logger.log(Level.WARNING, "Event-loop watchdog sample failed; still watching", t)
+        } catch (_: Throwable) {
+            // Nothing left to report with. Keep watching.
         }
     }
 

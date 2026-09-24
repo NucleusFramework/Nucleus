@@ -318,12 +318,14 @@ public object TaoApplication {
      * to a crash backend, or offer the user the browsers' "wait or quit"
      * choice.
      *
-     * **[listener] runs on the watchdog thread, not the UI thread** — the UI
-     * thread is the one that is stuck, so anything posted to it (Compose
-     * state, `Dispatchers.Main`) would only run once the stall is over, if
-     * ever. Keep it to logging, telemetry, or a dialog of your own opened off
-     * the UI thread. A throwing listener is logged and ignored: the watchdog
-     * must survive it.
+     * **[listener] runs on `nucleus-tao-watchdog-events`, not the UI thread**
+     * — the UI thread is the one that is stuck, so anything posted to it
+     * (Compose state, `Dispatchers.Main`) would only run once the stall is
+     * over, if ever. That thread is the callbacks' own: it is neither the
+     * sampling thread nor the UI thread, so a listener that blocks — a "wait
+     * or quit" prompt is the expected use — delays only the next callback,
+     * never the detection. Callbacks are serialized in order. A throwing
+     * listener is logged and ignored: the watchdog must survive it.
      */
     public fun onUnresponsive(listener: () -> Unit) {
         unresponsiveHandler = listener

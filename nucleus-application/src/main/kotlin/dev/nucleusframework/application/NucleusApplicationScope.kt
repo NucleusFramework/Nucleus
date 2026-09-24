@@ -73,9 +73,11 @@ public sealed interface NucleusApplicationScope : ComposeApplicationScope {
      * }
      * ```
      *
-     * **[block] runs on the watchdog thread, not the UI thread** — the UI
-     * thread is the stuck one, so anything it posts there (Compose state,
-     * `Dispatchers.Main`) would only run once the stall ends, if ever.
+     * **[block] runs on `nucleus-tao-watchdog-events`, not the UI thread** —
+     * the UI thread is the stuck one, so anything it posts there (Compose
+     * state, `Dispatchers.Main`) would only run once the stall ends, if ever.
+     * That thread is the callbacks' own, so blocking in it (a "wait or quit"
+     * prompt) delays only the next callback, never the detection.
      */
     public fun onUnresponsive(block: () -> Unit): Unit = TaoApplication.onUnresponsive(block)
 
