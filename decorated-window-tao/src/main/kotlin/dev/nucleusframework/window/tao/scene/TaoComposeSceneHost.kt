@@ -10,7 +10,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
@@ -38,6 +37,7 @@ import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.clearContentMeasurer
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
+import dev.nucleusframework.window.tao.event.TaoTrackpadRotationContacts
 import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSession
 import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyEvent
@@ -1527,13 +1527,13 @@ internal class TaoComposeSceneHost(
         val dy = radius * sin(gestureAngle)
         return listOf(
             ComposeScenePointer(
-                id = PointerId(TRACKPAD_POINTER_ID_A),
+                id = TaoTrackpadRotationContacts.A,
                 position = Offset(gestureCenterX - dx, gestureCenterY - dy),
                 pressed = pressed,
                 type = PointerType.Touch,
             ),
             ComposeScenePointer(
-                id = PointerId(TRACKPAD_POINTER_ID_B),
+                id = TaoTrackpadRotationContacts.B,
                 position = Offset(gestureCenterX + dx, gestureCenterY + dy),
                 pressed = pressed,
                 type = PointerType.Touch,
@@ -1543,11 +1543,14 @@ internal class TaoComposeSceneHost(
 
     private fun endRotate(cancelled: Boolean) {
         if (!rotateActive) return
+        // Cancel first: a Release delivered before the cancel is an ordinary
+        // unconsumed touch-up, which a tap detector takes as a tap. After it,
+        // the Release only clears the scene's record of the contacts.
+        if (cancelled) scene?.cancelPointerInput()
         sendRotatePointers(PointerEventType.Release)
         rotateActive = false
         gestureAngle = 0f
         rotateScale = 1f
-        if (cancelled) scene?.cancelPointerInput()
     }
 
     /**
@@ -1641,9 +1644,6 @@ internal class TaoComposeSceneHost(
         // zooms through it, and stops there instead of reaching 0 or Infinity.
         private const val MIN_ROTATE_SCALE: Float = 0.05f
         private const val MAX_ROTATE_SCALE: Float = 20f
-
-        private const val TRACKPAD_POINTER_ID_A: Long = 0xA001L
-        private const val TRACKPAD_POINTER_ID_B: Long = 0xA002L
 
         private const val DEGREES_PER_RADIAN: Float = 180f
     }

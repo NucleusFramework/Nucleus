@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao.event
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.scene.ComposeScene
@@ -87,4 +88,19 @@ internal class TaoTrackpadScaleSession(
         const val SMART_MAGNIFY_FACTOR: Float = 1.5f
         const val MIN_GESTURE_SCALE: Float = 0.05f
     }
+}
+
+/**
+ * The two Touch contacts the macOS and Linux hosts synthesise for a trackpad
+ * rotation (Compose has no rotation event). Chrome that reacts to touch — the
+ * title bar's window drag — must tell them from a real finger.
+ */
+internal object TaoTrackpadRotationContacts {
+    private const val ID_A: Long = 0xA001L
+    private const val ID_B: Long = 0xA002L
+
+    val A: PointerId = PointerId(ID_A)
+    val B: PointerId = PointerId(ID_B)
+
+    fun isContact(id: PointerId): Boolean = id == A || id == B
 }
