@@ -11,7 +11,6 @@ import org.gradle.api.logging.Logger
 import org.gradle.process.ExecOperations
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
@@ -74,13 +73,9 @@ internal object NodeToolchainProvisioner {
         val installDir = File(request.installBaseDir, id)
         readMarker(installDir)?.let { return it }
 
-        request.installBaseDir.mkdirs()
-        // Guard against concurrent Gradle builds provisioning the same toolchain.
-        RandomAccessFile(File(request.installBaseDir, "$id.lock"), "rw").use { lockFile ->
-            lockFile.channel.lock().use {
-                readMarker(installDir)?.let { return it }
-                return downloadAndInstall(request, id, installDir, execOperations, logger)
-            }
+        // Guard against concurrent builds and parallel tasks provisioning the same toolchain.
+        return ToolchainDownloads.withInstallLock(request.installBaseDir, id) {
+            readMarker(installDir) ?: downloadAndInstall(request, id, installDir, execOperations, logger)
         }
     }
 
