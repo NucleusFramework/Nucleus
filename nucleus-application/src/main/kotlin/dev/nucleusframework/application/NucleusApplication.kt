@@ -5,6 +5,7 @@ import androidx.compose.ui.ComposeUiFlags
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.pollSystemTheme
 import dev.nucleusframework.application.internal.TaoLauncher
+import dev.nucleusframework.core.runtime.ExecutableRuntime
 import dev.nucleusframework.core.runtime.WindowBackend
 import dev.nucleusframework.graalvm.GraalVmInitializer
 import java.util.Locale
@@ -44,7 +45,10 @@ import java.util.Locale
 @OptIn(ExperimentalComposeUiApi::class)
 public fun nucleusApplication(
     args: Array<String> = emptyArray(),
-    enableSingleInstance: Boolean = true,
+    // Defaults to off in a dev run (`./gradlew run`, IDE launch) so a second
+    // debug instance, or one started while a packaged copy is running, is not
+    // silently forwarded to the first one and exited.
+    enableSingleInstance: Boolean = !ExecutableRuntime.isDev(),
     defaultLocale: Locale? = null,
     // macOS only: run as a menu-bar / agent app whose Dock icon tracks window
     // visibility. The app starts without a Dock icon (accessory policy) and
