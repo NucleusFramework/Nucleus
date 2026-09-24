@@ -86,11 +86,13 @@ nucleusNative {
 // the defaults. Registered as task inputs too: a new seed must re-run the
 // task instead of being served the previous verdict as UP-TO-DATE.
 tasks.withType<Test>().configureEach {
-    listOf(
-        "nucleus.tao.watchdogMonkeySeed",
-        "nucleus.tao.watchdogMonkeySeeds",
-        "nucleus.tao.watchdogMonkeyProfile",
-    ).forEach { key ->
+    val monkeyKnobs =
+        listOf(
+            "nucleus.tao.watchdogMonkeySeed",
+            "nucleus.tao.watchdogMonkeySeeds",
+            "nucleus.tao.watchdogMonkeyProfile",
+        )
+    monkeyKnobs.forEach { key ->
         System.getProperty(key)?.let { value ->
             systemProperty(key, value)
             inputs.property(key, value)
@@ -359,17 +361,19 @@ val taoWatchdogSmoke = tasks.register<JavaExec>("taoWatchdogSmoke") {
     mainClass.set("dev.nucleusframework.window.tao.headful.WatchdogDialogSmokeMain")
     // Timings and watchdog switches, e.g.
     // -Dnucleus.tao.watchdog.smoke.freezeMs=40000 -Dnucleus.tao.watchdogDialog=true
-    listOf(
-        "nucleus.tao.watchdog.smoke.freezeMs",
-        "nucleus.tao.watchdog.smoke.freezeAfterMs",
-        "nucleus.tao.watchdog.smoke.drainMs",
-        "nucleus.tao.watchdog.smoke.holdMs",
-        "nucleus.tao.watchdog.smoke.expected",
-        "nucleus.tao.watchdog",
-        "nucleus.tao.watchdogGraceMs",
-        "nucleus.tao.watchdogDialog",
-        "nucleus.tao.fatalErrorDialog",
-    ).forEach { key -> System.getProperty(key)?.let { systemProperty(key, it) } }
+    val forwarded =
+        listOf(
+            "nucleus.tao.watchdog.smoke.freezeMs",
+            "nucleus.tao.watchdog.smoke.freezeAfterMs",
+            "nucleus.tao.watchdog.smoke.drainMs",
+            "nucleus.tao.watchdog.smoke.holdMs",
+            "nucleus.tao.watchdog.smoke.expected",
+            "nucleus.tao.watchdog",
+            "nucleus.tao.watchdogGraceMs",
+            "nucleus.tao.watchdogDialog",
+            "nucleus.tao.fatalErrorDialog",
+        )
+    forwarded.forEach { key -> System.getProperty(key)?.let { systemProperty(key, it) } }
     // Verifies the debug-session exemption end to end: a real JDWP agent on
     // the command line, which is what the watchdog looks for.
     if (System.getProperty("nucleus.tao.watchdog.smoke.debugAgent").toBoolean()) {
