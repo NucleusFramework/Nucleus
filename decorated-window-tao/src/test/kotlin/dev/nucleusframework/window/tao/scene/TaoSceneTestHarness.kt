@@ -24,6 +24,7 @@ import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.dispatchTrackpadPan
@@ -31,6 +32,7 @@ import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.awaitCancellation
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ImageInfo
@@ -336,6 +338,22 @@ internal class TaoSceneTestScope(
     private val legacyScrollRouter =
         TaoSceneScrollRouter(scrollTarget, legacyPanTimer::schedule, panEnabled = false, clock = { routerNowMillis })
 
+    // The Windows host's touchpad input (#706), on this scene: its debounce
+    // runs on the virtual clock, its pan end on a timer fired by hand.
+    private val touchpadPanTimer = ManualPanTimer()
+    private val touchpad =
+        TaoWindowsTouchpadInput(
+            object : TaoWindowsTouchpadInput.Target {
+                override val scene: ComposeScene get() = this@TaoSceneTestScope.scene
+                override val scale: Float get() = density
+                override val keyboardModifiers get() = taoKeyboardModifiers(modifierState)
+                override val pointerPosition: Offset get() = Offset(pointerDeadband.x, pointerDeadband.y)
+            },
+            CoroutineScope(dispatcher),
+            touchpadPanTimer::schedule,
+            clock = { routerNowMillis },
+        )
+
     var lastPicture: Picture? = null
         private set
 
@@ -527,6 +545,31 @@ internal class TaoSceneTestScope(
     ) {
         val router = if (panEvents) scrollRouter else legacyScrollRouter
         router.onScroll(pointerDeadband.x, pointerDeadband.y, event, taoKeyboardModifiers(modifierState))
+        frame()
+    }
+
+    /** Mirrors `TaoComposeSceneHostWindows.onDirectManipulation` (#706), then renders a frame. */
+    fun directManipulation(
+        event: TaoDirectManipulationEvent,
+        inputEnabled: Boolean = true,
+    ) {
+        touchpad.onDirectManipulation(event, inputEnabled)
+        frame()
+    }
+
+    /** Mirrors the Windows host's Ctrl+wheel tick (`onTrackpadGesture`), then renders a frame. */
+    fun ctrlWheelTick(notches: Float) {
+        touchpad.onCtrlWheel(notches)
+        frame()
+    }
+
+    /** Whether the Windows touchpad input has a pan / a scale gesture open. */
+    val touchpadPanOpen: Boolean get() = touchpad.panOpen
+    val touchpadPinchOpen: Boolean get() = touchpad.pinchOpen
+
+    /** Fires the Windows touchpad pan's deferred PanEnd. */
+    fun elapseTouchpadPanGrace() {
+        touchpadPanTimer.fire()
         frame()
     }
 

@@ -194,6 +194,10 @@ val taoHeadfulTest =
         System.getProperty("nucleus.tao.headful.monkeyNightMinutes")?.let {
             systemProperty("nucleus.tao.headful.monkeyNightMinutes", it)
         }
+        // Length of the #706 touchpad monkey (WindowsDirectManipulationMonkeyHeadfulCases), steps per seed.
+        System.getProperty("nucleus.tao.headful.dmMonkeySteps")?.let {
+            systemProperty("nucleus.tao.headful.dmMonkeySteps", it)
+        }
         // Replays a journal instead of a random walk (comma-separated action names).
         System.getProperty("nucleus.tao.headful.monkeyScript")?.let {
             systemProperty("nucleus.tao.headful.monkeyScript", it)
