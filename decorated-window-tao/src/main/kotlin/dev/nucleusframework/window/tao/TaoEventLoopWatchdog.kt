@@ -170,10 +170,6 @@ internal object TaoEventLoopWatchdog {
     /** Starts the daemon watchdog thread; no-op when unsupported or disabled. */
     fun start() {
         if (!isSupported || !isEnabled) return
-        if (isDebuggerAttached && !isForced) {
-            logger.fine("Event-loop watchdog disabled: a debug agent is attached")
-            return
-        }
         if (!running.compareAndSet(false, true)) return
         thread =
             Thread(::watch, "nucleus-tao-watchdog").apply {
@@ -195,6 +191,16 @@ internal object TaoEventLoopWatchdog {
     }
 
     private fun watch() {
+        // Asked here rather than in `start()`: the first
+        // `ManagementFactory.getRuntimeMXBean()` call initialises the
+        // management subsystem and measures ~6 ms, which `start()` would spend
+        // on the main thread with the event loop not yet running. Off the
+        // startup path it costs the app nothing.
+        if (isDebuggerAttached && !isForced) {
+            logger.fine("Event-loop watchdog disabled: a debug agent is attached")
+            running.set(false)
+            return
+        }
         val detector = EventLoopHangDetector(graceMs)
         var lastSampleNanos = System.nanoTime()
         var resumeDeadlineNanos = 0L
