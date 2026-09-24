@@ -98,6 +98,16 @@ internal object EventLoopWatchdogMonkeyHeadfulCases {
                             MonkeyMove.LongFreeze -> {
                                 Thread.sleep(random.nextLong(LONG_FREEZE_MIN_MS, LONG_FREEZE_MAX_MS))
                                 expectedReports++
+                                // Waited for here, not counted at the end: a
+                                // report that lands during the *next* move would
+                                // otherwise read as "a short freeze was
+                                // reported". Each long freeze answers for itself.
+                                awaitUntil(
+                                    "the long freeze was reported",
+                                    timeoutMillis = REPORT_TIMEOUT_MS,
+                                ) {
+                                    records.count { it.level == Level.SEVERE } > before
+                                }
                             }
                             MonkeyMove.ExpectedLongFreeze ->
                                 TaoApplication.expectUnresponsive {
@@ -207,5 +217,6 @@ internal object EventLoopWatchdogMonkeyHeadfulCases {
     private const val LONG_FREEZE_MAX_MS = 11_000L
     private const val SETTLE_MS = 3_000L
     private const val PAIRING_TIMEOUT_MS = 20_000L
+    private const val REPORT_TIMEOUT_MS = 20_000L
     private const val CASE_TIMEOUT_MS = 300_000L
 }
