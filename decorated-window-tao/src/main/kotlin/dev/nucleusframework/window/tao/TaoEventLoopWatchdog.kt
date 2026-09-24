@@ -5,6 +5,8 @@ import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import java.lang.management.ManagementFactory
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -26,6 +28,9 @@ private const val SUSPEND_OVERSHOOT_MS = 10_000L
 
 /** How long samples are ignored after a resume — Electron's `kHungRendererDelay` rule. */
 private const val RESUME_GRACE_MS = 30_000L
+
+/** An overshoot is a GC pause when collection explains more than this fraction of it. */
+private const val GC_PAUSE_SHARE_DIVISOR = 2
 
 /**
  * Watches the Tao event loop and reports a stall instead of letting the app
@@ -93,6 +98,10 @@ internal object TaoEventLoopWatchdog {
     @Volatile
     private var thread: Thread? = null
 
+    /** Runs the app's `unresponsive` / `responsive` callbacks; see [postEvent]. */
+    @Volatile
+    private var eventExecutor: ExecutorService? = null
+
     /** `true` on a platform that has a non-perturbing liveness probe. */
     private val isSupported: Boolean
         get() = Platform.Current == Platform.Windows && NativeTaoBridge.isLoaded
@@ -136,7 +145,10 @@ internal object TaoEventLoopWatchdog {
      * thread once the window is realized (`WINDOW_READY`).
      */
     fun registerWindow(handle: Long) {
-        if (!isSupported) return
+        // `running` covers every off state — unsupported platform, the
+        // property, a debug agent, a stopped loop. Off means the event loop
+        // pays nothing per window: no JNI round-trip, no signal, no map.
+        if (!running.get()) return
         val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
         if (hwnd == 0L) {
             // Silence here would be the very failure mode this watchdog
@@ -191,8 +203,12 @@ internal object TaoEventLoopWatchdog {
 
     /** Stops the watchdog and drops the window cache; safe to call twice. */
     fun stop() {
-        if (!running.compareAndSet(true, false)) return
-        thread?.interrupt()
+        // Cleanup runs even when `watch()` already cleared `running` itself (a
+        // debug agent, an interrupt): `run()` supports being called again, and
+        // a second run must not inherit the first one's HWNDs — Windows
+        // recycles them, and a non-empty map would also defeat the parking.
+        val wasRunning = running.getAndSet(false)
+        if (wasRunning) thread?.interrupt()
         thread = null
         hwnds.clear()
         wakeWatchdog()
@@ -218,6 +234,7 @@ internal object TaoEventLoopWatchdog {
             // (a listener uploading, a thread dump on a large app) must not
             // make the next iteration look like a system suspend.
             val waitStartNanos = System.nanoTime()
+            val gcBefore = gcMillis
             val wait = awaitNextSample()
             if (wait == WatchWait.Interrupted && running.get()) {
                 // Interrupted by something other than `stop()` — a shutdown
@@ -241,7 +258,7 @@ internal object TaoEventLoopWatchdog {
             // signal a plain JVM gets — `base::PowerMonitor` without the
             // platform hookup. Drop the episode and ignore what follows for
             // one hang delay, exactly as Electron does after a resume.
-            if (overslept > SUSPEND_OVERSHOOT_MS * NANOS_PER_MILLI) {
+            if (overslept > SUSPEND_OVERSHOOT_MS * NANOS_PER_MILLI && !isGcPause(gcMillis - gcBefore, overslept)) {
                 // A stall reported before the suspend still gets its recovery:
                 // an app that opened a telemetry span or a prompt on
                 // `unresponsive` must never be left waiting for the close.
@@ -255,6 +272,32 @@ internal object TaoEventLoopWatchdog {
             }
         }
     }
+
+    /**
+     * `true` when a stop-the-world pause, not a suspended machine, explains an
+     * overshot wait. The watchdog is an ordinary min-priority Java thread, so a
+     * long full GC parks it too — and a GC long enough to freeze the UI is one
+     * of the freezes most worth reporting. Treating it as a resume would drop
+     * the very episode the user felt.
+     */
+    private fun isGcPause(
+        gcMillisDuringWait: Long,
+        oversleptNanos: Long,
+    ): Boolean = gcMillisDuringWait * NANOS_PER_MILLI * GC_PAUSE_SHARE_DIVISOR > oversleptNanos
+
+    /**
+     * Total time this JVM has spent collecting, or 0 when the management beans
+     * are unavailable (possible under native-image), which keeps the plain
+     * suspend rule.
+     */
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
+    private val gcMillis: Long
+        get() =
+            try {
+                ManagementFactory.getGarbageCollectorMXBeans().sumOf { it.collectionTime.coerceAtLeast(0) }
+            } catch (t: Throwable) {
+                0L
+            }
 
     /**
      * Waits for the next sample. With no window registered there is nothing to
@@ -304,7 +347,7 @@ internal object TaoEventLoopWatchdog {
             is HangTransition.Stalled -> report(transition.durationMs)
             is HangTransition.Recovered -> {
                 logger.log(Level.INFO, "Tao event loop responded again after ${transition.durationMs} ms")
-                TaoApplication.notifyResponsive()
+                postEvent(TaoApplication::notifyResponsive)
             }
             null -> Unit
         }
@@ -325,11 +368,26 @@ internal object TaoEventLoopWatchdog {
             "Tao event loop has not pumped messages for at least $durationMs ms — the UI is frozen. " +
                 "Thread dump follows.\n$detail",
         )
-        // Hand the event to the app before anything blocking: a listener that
-        // reports to a crash backend must not queue behind a modal dialog
-        // nobody is there to dismiss.
-        TaoApplication.notifyUnresponsive()
+        // Off the watchdog thread: the documented use of this callback is a
+        // "wait or quit" prompt, which blocks until the user answers. Run
+        // inline it would stop the sampling loop for the whole episode — no
+        // recovery, no `onResponsive`, the next stall missed.
+        postEvent(TaoApplication::notifyUnresponsive)
         if (showsDialog) showNotRespondingDialog(detail)
+    }
+
+    /**
+     * Runs an app callback on the event thread, created on first use. One
+     * thread, so `unresponsive` and `responsive` keep their order; a listener
+     * that blocks delays the next callback but never the detection.
+     */
+    private fun postEvent(event: () -> Unit) {
+        val executor =
+            eventExecutor ?: Executors
+                .newSingleThreadExecutor { runnable ->
+                    Thread(runnable, "nucleus-tao-watchdog-events").apply { isDaemon = true }
+                }.also { eventExecutor = it }
+        executor.execute(event)
     }
 
     /**

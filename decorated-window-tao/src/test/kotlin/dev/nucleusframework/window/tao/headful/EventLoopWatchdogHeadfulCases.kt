@@ -92,12 +92,16 @@ internal object EventLoopWatchdogHeadfulCases {
                     Thread.sleep(FREEZE_MS)
 
                     // Back on our feet: give the watchdog a sample to see it.
+                    // Both, not just the log: the watchdog logs the recovery
+                    // before handing it to the app, so asserting the callback
+                    // right after the log record would race the event thread.
                     awaitUntil(
-                        "watchdog reported the recovery",
+                        "watchdog reported the recovery and told the app",
                         timeoutMillis = RECOVERY_TIMEOUT_MS,
                         detail = { records.joinToString { "${it.level}: ${it.message.lineSequence().first()}" } },
                     ) {
-                        records.any { it.level == Level.INFO && "responded again" in it.message }
+                        records.any { it.level == Level.INFO && "responded again" in it.message } &&
+                            responsive.get() == 1
                     }
                 } finally {
                     stop.set(true)
