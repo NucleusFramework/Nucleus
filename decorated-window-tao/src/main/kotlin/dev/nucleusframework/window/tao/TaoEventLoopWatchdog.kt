@@ -88,6 +88,15 @@ internal object TaoEventLoopWatchdog {
 
     private val running = AtomicBoolean(false)
 
+    /** Run counter; a watchdog thread acts only while it owns the current one. */
+    private val generations = AtomicInteger()
+
+    /** The run's detector, guarded by [lock]: `stop()` drains it from the loop thread. */
+    private var detector: EventLoopHangDetector? = null
+
+    /** `true` once [stop] has torn the callbacks down; guarded by [lock]. */
+    private var stopped = false
+
     /** Guards against stacking one not-responding dialog per stall episode. */
     private val dialogShowing = AtomicBoolean(false)
 
@@ -195,8 +204,18 @@ internal object TaoEventLoopWatchdog {
         // `expectUnresponsive`, a forced exit) would otherwise leave the next
         // run permanently disarmed.
         expectedStalls.set(0)
+        // `stop()` does not join, so the previous run's thread may still be on
+        // its way out. Each run takes a generation and a thread only touches
+        // shared state while it owns the current one — otherwise a straggler
+        // would disarm the run that just started, or keep sampling beside it
+        // and report every stall twice.
+        val generation = generations.incrementAndGet()
+        lock.withLock {
+            stopped = false
+            detector = EventLoopHangDetector(graceMs)
+        }
         thread =
-            Thread(::watch, "nucleus-tao-watchdog").apply {
+            Thread({ watch(generation) }, "nucleus-tao-watchdog").apply {
                 isDaemon = true
                 // Below the event loop: the watchdog must never compete with
                 // the thread whose health it is measuring.
@@ -215,14 +234,22 @@ internal object TaoEventLoopWatchdog {
         if (wasRunning) thread?.interrupt()
         thread = null
         hwnds.clear()
-        // Let queued callbacks finish, then drop the executor: a later run
-        // creates its own rather than inheriting a shut-down one.
-        eventExecutor?.shutdown()
-        eventExecutor = null
+        // A stall still open when the loop exits gets its recovery too: the app
+        // may be holding a prompt or a telemetry span on the strength of
+        // `unresponsive`, and nothing else would ever close it.
+        guarded { handle(lock.withLock { detector?.reset(System.nanoTime()) }) }
+        lock.withLock {
+            // Past this point the callbacks are done, and a straggler thread
+            // must not resurrect the executor it is about to lose.
+            stopped = true
+            detector = null
+            eventExecutor?.shutdown()
+            eventExecutor = null
+        }
         wakeWatchdog()
     }
 
-    private fun watch() {
+    private fun watch(generation: Int) {
         // Asked here rather than in `start()`: the first
         // `ManagementFactory.getRuntimeMXBean()` call initialises the
         // management subsystem and measures ~6 ms, which `start()` would spend
@@ -230,21 +257,20 @@ internal object TaoEventLoopWatchdog {
         // startup path it costs the app nothing.
         if (isDebuggerAttached && !isForced) {
             logger.fine("Event-loop watchdog disabled: a debug agent is attached")
-            running.set(false)
+            if (owns(generation)) running.set(false)
             return
         }
-        val detector = EventLoopHangDetector(graceMs)
         // Not 0: `nanoTime`'s origin is arbitrary and may be negative, and a
         // deadline of 0 would then gate every sample until the clock crossed it.
         var resumeDeadlineNanos = Long.MIN_VALUE
-        while (running.get()) {
+        while (running.get() && owns(generation)) {
             // Stamped around the wait only: a `report()` that takes seconds
             // (a listener uploading, a thread dump on a large app) must not
             // make the next iteration look like a system suspend.
             // The watch list can drain while a stall is still open (the user
             // closed the frozen window). Close the episode before parking, or
             // the app's prompt and telemetry span stay open forever.
-            if (hwnds.isEmpty()) handle(detector.reset(System.nanoTime()))
+            if (hwnds.isEmpty()) guarded { handle(lock.withLock { detector?.reset(System.nanoTime()) }) }
             val waitStartNanos = System.nanoTime()
             val gcBefore = gcMillis
             val wait = awaitNextSample()
@@ -253,6 +279,7 @@ internal object TaoEventLoopWatchdog {
                 // hook or a test harness sweeping threads. Leave, but leave
                 // the door open: `running` stays consistent so a later
                 // `start()` can bring the watchdog back, and say so once.
+                if (!owns(generation)) return // a stale thread on its way out
                 logger.warning("Event-loop watchdog stopped: its thread was interrupted")
                 running.set(false)
                 return
@@ -270,7 +297,7 @@ internal object TaoEventLoopWatchdog {
             // signal a plain JVM gets — `base::PowerMonitor` without the
             // platform hookup. Drop the episode and ignore what follows for
             // one hang delay, exactly as Electron does after a resume.
-            resumeDeadlineNanos = step(detector, now, overslept, gcMillis - gcBefore, resumeDeadlineNanos)
+            resumeDeadlineNanos = step(now, overslept, gcMillis - gcBefore, resumeDeadlineNanos)
         }
     }
 
@@ -284,7 +311,6 @@ internal object TaoEventLoopWatchdog {
      */
     @Suppress("TooGenericExceptionCaught")
     private fun step(
-        detector: EventLoopHangDetector,
         now: Long,
         oversleptNanos: Long,
         gcMillisDuringWait: Long,
@@ -297,19 +323,33 @@ internal object TaoEventLoopWatchdog {
                 // A stall reported before the suspend still gets its recovery:
                 // an app that opened a telemetry span or a prompt on
                 // `unresponsive` must never be left waiting for the close.
-                handle(detector.reset(now))
+                handle(lock.withLock { detector?.reset(now) })
                 return now + RESUME_GRACE_MS * NANOS_PER_MILLI
             }
             if (now >= resumeDeadlineNanos) {
                 // An expected stall counts as healthy rather than skipping the
                 // sample: a stall reported before the scope opened still gets
                 // its recovery, so every `unresponsive` keeps its `responsive`.
-                handle(detector.sample(!isStallExpected && isAnyWindowHung(), now))
+                val hung = !isStallExpected && isAnyWindowHung()
+                handle(lock.withLock { detector?.sample(hung, now) })
             }
         } catch (t: Throwable) {
             logSafely(t)
         }
         return resumeDeadlineNanos
+    }
+
+    /** `true` while this thread is the run's current watchdog — see [start]. */
+    private fun owns(generation: Int): Boolean = generations.get() == generation
+
+    /** Runs [block], swallowing anything it throws — see [step] for why. */
+    @Suppress("TooGenericExceptionCaught")
+    private inline fun guarded(block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            logSafely(t)
+        }
     }
 
     /** Last-resort logging: the failure of a log call must not end the watch. */
@@ -432,11 +472,20 @@ internal object TaoEventLoopWatchdog {
      */
     private fun postEvent(event: () -> Unit) {
         val executor =
-            eventExecutor ?: Executors
-                .newSingleThreadExecutor { runnable ->
-                    Thread(runnable, "nucleus-tao-watchdog-events").apply { isDaemon = true }
-                }.also { eventExecutor = it }
-        executor.execute(event)
+            lock.withLock {
+                // Created and replaced under the lock: a plain read-create-assign
+                // racing `stop()` either resurrects an executor nobody will shut
+                // down, or pushes onto one that is already gone.
+                if (stopped) {
+                    null
+                } else {
+                    eventExecutor ?: Executors
+                        .newSingleThreadExecutor { runnable ->
+                            Thread(runnable, "nucleus-tao-watchdog-events").apply { isDaemon = true }
+                        }.also { eventExecutor = it }
+                }
+            }
+        executor?.execute(event)
     }
 
     /**
