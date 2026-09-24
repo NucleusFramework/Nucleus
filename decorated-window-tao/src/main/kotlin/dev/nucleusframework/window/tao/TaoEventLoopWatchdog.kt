@@ -306,7 +306,7 @@ internal object TaoEventLoopWatchdog {
             if (hwnds.isEmpty()) guarded { handle(detector.reset(System.nanoTime())) }
             val waitStartNanos = System.nanoTime()
             val gcBefore = gcMillis
-            val wait = awaitNextSample(generation)
+            val wait = awaitNextSample(generation, detector)
             if (wait == WatchWait.Interrupted && running.get()) {
                 if (!owns(generation)) return drain(detector)
                 // Interrupted by something other than `stop()` — a shutdown
@@ -440,7 +440,10 @@ internal object TaoEventLoopWatchdog {
      * same way while its watch list is empty, and it is what keeps an app that
      * is merely sitting in the tray free of a timer it does not need.
      */
-    private fun awaitNextSample(generation: Int): WatchWait =
+    private fun awaitNextSample(
+        generation: Int,
+        detector: EventLoopHangDetector,
+    ): WatchWait =
         lock.withLock {
             try {
                 // Re-checked here, under the lock the signal is sent with: a
@@ -449,7 +452,11 @@ internal object TaoEventLoopWatchdog {
                 // The concurrency monkey found 150 such threads alive at once
                 // (profile Thrash) — one leaked per run, for the process's life.
                 if (!running.get() || !owns(generation)) return@withLock WatchWait.Stopped
-                if (hwnds.isEmpty()) {
+                // Never park on an open episode. The drain above this call
+                // runs outside the lock, so the last window can be unregistered
+                // in between — and parking then holds the app's `responsive`
+                // for the whole park. One more timed wait closes it instead.
+                if (hwnds.isEmpty() && !detector.hasOpenEpisode) {
                     // Bounded even so: a missed signal must cost one late
                     // wakeup, never a thread that never leaves.
                     wakeUp.await(PARK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -628,6 +635,14 @@ internal class EventLoopHangDetector(
     // origin and 0 is one of its legal readings.
     private var hangStartNanos: Long? = null
     private var reported = false
+
+    /**
+     * `true` once a stall has been reported and not yet closed. The watchdog
+     * reads it to decide whether it may park: parking on an open episode would
+     * hold the app's `responsive` for the length of the park.
+     */
+    val hasOpenEpisode: Boolean
+        get() = reported
 
     /** Feeds one sample taken at [nowNanos] (a [System.nanoTime] reading). */
     fun sample(

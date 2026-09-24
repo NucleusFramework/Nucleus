@@ -74,6 +74,19 @@ class TaoEventLoopWatchdogMonkeyTest {
     private val unresponsive = AtomicInteger()
     private val responsive = AtomicInteger()
 
+    /**
+     * The last callbacks, with their arrival time and thread. A count that ends
+     * one short says only that; this says *when* the orphan arrived and what
+     * delivered it — the difference between "the recovery is late" and "the run
+     * that opened the episode never closed it".
+     */
+    private val events = ConcurrentLinkedDeque<String>()
+
+    private fun record(event: String) {
+        events.addLast("$event @${System.currentTimeMillis() % EVENT_CLOCK_WRAP}ms on ${Thread.currentThread().name}")
+        while (events.size > EVENT_DEPTH) events.pollFirst()
+    }
+
     @AfterTest
     fun tearDown() {
         TaoEventLoopWatchdog.stop()
@@ -104,7 +117,13 @@ class TaoEventLoopWatchdogMonkeyTest {
         profile: MonkeyProfile,
         seed: Long,
     ) {
-        val ctx = StormContext(hung = AtomicBoolean(false), unresponsive = unresponsive, responsive = responsive)
+        val ctx =
+            StormContext(
+                hung = AtomicBoolean(false),
+                unresponsive = unresponsive,
+                responsive = responsive,
+                onEvent = ::record,
+            )
         val journal = ConcurrentLinkedDeque<String>()
         val failures = ConcurrentLinkedDeque<Throwable>()
 
@@ -152,6 +171,8 @@ class TaoEventLoopWatchdogMonkeyTest {
                     appendLine("  profile: $profile, seed: $seed")
                     appendLine("  replay: -D$PROFILE_PROPERTY=$profile -D$SEED_PROPERTY=$seed")
                     appendLine("  unresponsive=${ctx.unresponsive.get()} responsive=${ctx.responsive.get()}")
+                    appendLine("  last ${events.size} callbacks:")
+                    events.forEach { appendLine("    $it") }
                     appendLine("  last ${journal.size} actions:")
                     journal.forEach { appendLine("    $it") }
                     failures.take(FAILURES_SHOWN).forEach { appendLine("    threw: $it") }
@@ -243,6 +264,7 @@ class TaoEventLoopWatchdogMonkeyTest {
         TaoApplication.onUnresponsive {
             unresponsive.incrementAndGet()
             rearmed.incrementAndGet()
+            record("unresponsive(rearm)")
         }
         TaoEventLoopWatchdog.start()
         TaoEventLoopWatchdog.registerWindow(SETTLE_WINDOW)
@@ -293,16 +315,24 @@ class TaoEventLoopWatchdogMonkeyTest {
         val hung: AtomicBoolean,
         val unresponsive: AtomicInteger,
         val responsive: AtomicInteger,
+        val onEvent: (String) -> Unit,
     ) {
         fun installCountingHandlers() {
-            TaoApplication.onUnresponsive { unresponsive.incrementAndGet() }
-            TaoApplication.onResponsive { responsive.incrementAndGet() }
+            TaoApplication.onUnresponsive {
+                unresponsive.incrementAndGet()
+                onEvent("unresponsive")
+            }
+            TaoApplication.onResponsive {
+                responsive.incrementAndGet()
+                onEvent("responsive")
+            }
         }
 
         /** Counts, then throws: pairing still holds, and the watchdog must survive. */
         fun installHostileHandler() {
             TaoApplication.onUnresponsive {
                 unresponsive.incrementAndGet()
+                onEvent("unresponsive(hostile)")
                 error("hostile listener")
             }
         }
@@ -315,6 +345,7 @@ class TaoEventLoopWatchdogMonkeyTest {
         fun installReentrantHandler(random: Random) {
             TaoApplication.onUnresponsive {
                 unresponsive.incrementAndGet()
+                onEvent("unresponsive(reentrant)")
                 when (random.nextInt(REENTRANT_MOVES)) {
                     0 -> TaoEventLoopWatchdog.stop()
                     1 -> TaoEventLoopWatchdog.start()
@@ -546,6 +577,8 @@ class TaoEventLoopWatchdogMonkeyTest {
         const val SETTLE_WINDOW = 99L
         const val QUIET_MS = 200L
         const val FAILURES_SHOWN = 3
+        const val EVENT_DEPTH = 24
+        const val EVENT_CLOCK_WRAP = 1_000_000L
         const val REENTRANT_MOVES = 4
         const val PRIME = 31L
         const val SWEEP_STRIDE = 7_919L
