@@ -79,6 +79,31 @@ private const val GC_PAUSE_SHARE_DIVISOR = 2
  * the X11 `_NET_WM_PING` equivalent perturbs the loop it observes — which the
  * probe must not do. Elsewhere the watchdog simply never starts.
  */
+/**
+ * Test seams for the watchdog's concurrency monkey, all `null` in production.
+ *
+ * The watchdog is a thread that asks the OS about a real window every two
+ * seconds — none of which a race hunt can wait for. With a fake probe and a
+ * millisecond poll, the same state machine, lifecycle and callback plumbing run
+ * thousands of times a second with no window and no native library, which is
+ * what makes `TaoEventLoopWatchdogMonkeyTest` possible.
+ */
+internal object WatchdogTestHooks {
+    /** Replaces the native probe, keyed by the fake HWND the monkey registers. */
+    @Volatile
+    var probe: ((Long) -> Boolean)? = null
+
+    /** Shortens the poll interval; the real one is [POLL_INTERVAL_MS]. */
+    @Volatile
+    var pollIntervalMs: Long? = null
+
+    /** Back to production behaviour; a test must always land here. */
+    fun reset() {
+        probe = null
+        pollIntervalMs = null
+    }
+}
+
 @Suppress("TooManyFunctions")
 internal object TaoEventLoopWatchdog {
     private val logger = Logger.getLogger(TaoEventLoopWatchdog::class.java.name)
@@ -113,7 +138,9 @@ internal object TaoEventLoopWatchdog {
 
     /** `true` on a platform that has a non-perturbing liveness probe. */
     private val isSupported: Boolean
-        get() = Platform.Current == Platform.Windows && NativeTaoBridge.isLoaded
+        get() =
+            WatchdogTestHooks.probe != null ||
+                (Platform.Current == Platform.Windows && NativeTaoBridge.isLoaded)
 
     private val isEnabled: Boolean
         get() = System.getProperty("nucleus.tao.watchdog", "true").toBoolean()
@@ -141,6 +168,9 @@ internal object TaoEventLoopWatchdog {
         }
     }
 
+    private val pollIntervalMs: Long
+        get() = WatchdogTestHooks.pollIntervalMs ?: POLL_INTERVAL_MS
+
     private val graceMs: Long
         get() = System.getProperty("nucleus.tao.watchdogGraceMs")?.toLongOrNull() ?: DEFAULT_GRACE_MS
 
@@ -158,6 +188,13 @@ internal object TaoEventLoopWatchdog {
         // property, a debug agent, a stopped loop. Off means the event loop
         // pays nothing per window: no JNI round-trip, no signal, no map.
         if (!running.get()) return
+        // The monkey registers windows that do not exist; its probe is keyed
+        // by the handle itself, so there is nothing native to resolve.
+        if (WatchdogTestHooks.probe != null) {
+            hwnds[handle] = handle
+            wakeWatchdog()
+            return
+        }
         val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
         if (hwnd == 0L) {
             // Silence here would be the very failure mode this watchdog
@@ -290,7 +327,7 @@ internal object TaoEventLoopWatchdog {
             // heuristic below would read it as one. Re-baseline and sample on
             // the next tick instead.
             if (wait == WatchWait.Parked) continue
-            val overslept = now - waitStartNanos - POLL_INTERVAL_MS * NANOS_PER_MILLI
+            val overslept = now - waitStartNanos - pollIntervalMs * NANOS_PER_MILLI
             // The machine was suspended (Electron #53529): every process
             // stopped, and on wake the window is briefly flagged while the
             // system pages back in. A sleep that overshot by far is the only
@@ -402,7 +439,7 @@ internal object TaoEventLoopWatchdog {
                     wakeUp.await()
                     if (running.get()) WatchWait.Parked else WatchWait.Stopped
                 } else {
-                    wakeUp.await(POLL_INTERVAL_MS, TimeUnit.MILLISECONDS)
+                    wakeUp.await(pollIntervalMs, TimeUnit.MILLISECONDS)
                     WatchWait.Sampled
                 }
             } catch (_: InterruptedException) {
@@ -435,8 +472,11 @@ internal object TaoEventLoopWatchdog {
         when (transition) {
             is HangTransition.Stalled -> report(transition.durationMs)
             is HangTransition.Recovered -> {
-                logger.log(Level.INFO, "Tao event loop responded again after ${transition.durationMs} ms")
+                // Same order as [report], for the same reason.
                 postEvent(TaoApplication::notifyResponsive)
+                guarded {
+                    logger.log(Level.INFO, "Tao event loop responded again after ${transition.durationMs} ms")
+                }
             }
             null -> Unit
         }
@@ -448,20 +488,32 @@ internal object TaoEventLoopWatchdog {
      * one is the stall of all — and a window whose HWND is already gone simply
      * probes healthy.
      */
-    private fun isAnyWindowHung(): Boolean = hwnds.values.any { NativeTaoBridge.nativeIsWindowHung(it) }
+    private fun isAnyWindowHung(): Boolean {
+        val probe = WatchdogTestHooks.probe ?: NativeTaoBridge::nativeIsWindowHung
+        return hwnds.values.any(probe)
+    }
 
     private fun report(durationMs: Long) {
-        val detail = allThreadStacks()
-        logger.log(
-            Level.SEVERE,
-            "Tao event loop has not pumped messages for at least $durationMs ms — the UI is frozen. " +
-                "Thread dump follows.\n$detail",
-        )
+        // The app hears first, and unconditionally. Logging came first here
+        // until the concurrency monkey (seed 4242) caught what that costs: JUL
+        // propagates a throwing `Handler.publish`, so a hostile log handler
+        // skipped the notification while the detector had already marked the
+        // stall reported — the app then got a `responsive` for a stall it was
+        // never told about. Diagnostics must never outrank the contract.
+        //
         // Off the watchdog thread: the documented use of this callback is a
         // "wait or quit" prompt, which blocks until the user answers. Run
         // inline it would stop the sampling loop for the whole episode — no
         // recovery, no `onResponsive`, the next stall missed.
         postEvent(TaoApplication::notifyUnresponsive)
+        val detail = runCatching { allThreadStacks() }.getOrElse { "thread dump unavailable: $it" }
+        guarded {
+            logger.log(
+                Level.SEVERE,
+                "Tao event loop has not pumped messages for at least $durationMs ms — the UI is frozen. " +
+                    "Thread dump follows.\n$detail",
+            )
+        }
         if (showsDialog) showNotRespondingDialog(detail)
     }
 
