@@ -81,23 +81,28 @@ nucleusNative {
     linux("nucleus_tao", "Compiles the Rust JNI bridge + EGL helper into Linux .so libraries")
 }
 
+// Forwards a `-D` from the Gradle command line into a forked JVM, when set.
+fun JavaExec.forwardSystemProperty(key: String) {
+    System.getProperty(key)?.let { systemProperty(key, it) }
+}
+
+// Same, for test tasks, where the value is also a task input: without that a
+// second run with a different seed is served the first run's verdict.
+fun Test.forwardSystemProperty(key: String) {
+    System.getProperty(key)?.let { value ->
+        systemProperty(key, value)
+        inputs.property(key, value)
+    }
+}
+
 // The watchdog concurrency monkey's knobs, forwarded into the test JVM — a
 // Gradle `-D` does not reach it otherwise, so a seed sweep would silently run
 // the defaults. Registered as task inputs too: a new seed must re-run the
 // task instead of being served the previous verdict as UP-TO-DATE.
 tasks.withType<Test>().configureEach {
-    val monkeyKnobs =
-        listOf(
-            "nucleus.tao.watchdogMonkeySeed",
-            "nucleus.tao.watchdogMonkeySeeds",
-            "nucleus.tao.watchdogMonkeyProfile",
-        )
-    monkeyKnobs.forEach { key ->
-        System.getProperty(key)?.let { value ->
-            systemProperty(key, value)
-            inputs.property(key, value)
-        }
-    }
+    forwardSystemProperty("nucleus.tao.watchdogMonkeySeed")
+    forwardSystemProperty("nucleus.tao.watchdogMonkeySeeds")
+    forwardSystemProperty("nucleus.tao.watchdogMonkeyProfile")
 }
 
 // ── macOS standalone-popup smoke check ──────────────────────────────────────
@@ -354,26 +359,22 @@ val taoFatalDialogSmoke = tasks.register<JavaExec>("taoFatalDialogSmoke") {
 // verdict ("severe=1 unresponsive=1 responsive=1"), so every watchdog switch
 // can be checked from outside the process — and so the native
 // "Application Not Responding" dialog can be looked at. Not part of `check`.
-val taoWatchdogSmoke = tasks.register<JavaExec>("taoWatchdogSmoke") {
+tasks.register<JavaExec>("taoWatchdogSmoke") {
     description = "Smoke: event-loop watchdog — thread dump, app events, not-responding dialog (#643)"
     group = "verification"
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("dev.nucleusframework.window.tao.headful.WatchdogDialogSmokeMain")
     // Timings and watchdog switches, e.g.
     // -Dnucleus.tao.watchdog.smoke.freezeMs=40000 -Dnucleus.tao.watchdogDialog=true
-    val forwarded =
-        listOf(
-            "nucleus.tao.watchdog.smoke.freezeMs",
-            "nucleus.tao.watchdog.smoke.freezeAfterMs",
-            "nucleus.tao.watchdog.smoke.drainMs",
-            "nucleus.tao.watchdog.smoke.holdMs",
-            "nucleus.tao.watchdog.smoke.expected",
-            "nucleus.tao.watchdog",
-            "nucleus.tao.watchdogGraceMs",
-            "nucleus.tao.watchdogDialog",
-            "nucleus.tao.fatalErrorDialog",
-        )
-    forwarded.forEach { key -> System.getProperty(key)?.let { systemProperty(key, it) } }
+    forwardSystemProperty("nucleus.tao.watchdog.smoke.freezeMs")
+    forwardSystemProperty("nucleus.tao.watchdog.smoke.freezeAfterMs")
+    forwardSystemProperty("nucleus.tao.watchdog.smoke.drainMs")
+    forwardSystemProperty("nucleus.tao.watchdog.smoke.holdMs")
+    forwardSystemProperty("nucleus.tao.watchdog.smoke.expected")
+    forwardSystemProperty("nucleus.tao.watchdog")
+    forwardSystemProperty("nucleus.tao.watchdogGraceMs")
+    forwardSystemProperty("nucleus.tao.watchdogDialog")
+    forwardSystemProperty("nucleus.tao.fatalErrorDialog")
     // Verifies the debug-session exemption end to end: a real JDWP agent on
     // the command line, which is what the watchdog looks for.
     if (System.getProperty("nucleus.tao.watchdog.smoke.debugAgent").toBoolean()) {
