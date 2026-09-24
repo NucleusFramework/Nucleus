@@ -5,9 +5,11 @@ import org.gradle.process.ExecOperations
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URI
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Shared download / verify / extract plumbing for the toolchains the plugin provisions itself:
@@ -24,6 +26,30 @@ internal object ToolchainDownloads {
     private const val DOWNLOAD_BUFFER_SIZE = 1 shl 16
     private const val HTTP_FIRST_REDIRECT = 300
     private const val HTTP_FIRST_ERROR = 400
+
+    /** One monitor per lock file, so threads of this JVM queue up instead of colliding. */
+    private val inProcessLocks = ConcurrentHashMap<String, Any>()
+
+    /**
+     * Runs [action] while holding the install lock `<installBaseDir>/<id>.lock`, against both other
+     * Gradle processes (a file lock) and other threads of this one. The file lock alone is not
+     * enough: parallel tasks in one daemon share the JVM, and a second `FileChannel.lock()` there
+     * throws `OverlappingFileLockException` instead of waiting.
+     */
+    fun <T> withInstallLock(
+        installBaseDir: File,
+        id: String,
+        action: () -> T,
+    ): T {
+        installBaseDir.mkdirs()
+        val lockFile = File(installBaseDir, "$id.lock")
+        val monitor = inProcessLocks.computeIfAbsent(lockFile.canonicalPath) { Any() }
+        return synchronized(monitor) {
+            RandomAccessFile(lockFile, "rw").use { file ->
+                file.channel.lock().use { action() }
+            }
+        }
+    }
 
     /** Downloads [url] into [dest]. Throws [IOException] with the URL in the message. */
     fun download(

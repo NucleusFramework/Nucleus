@@ -12,7 +12,6 @@ import org.gradle.api.provider.ValueSourceParameters
 import org.gradle.process.ExecOperations
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import javax.inject.Inject
@@ -102,12 +101,8 @@ internal object NucleusJdkToolchainProvisioner {
         val installDir = File(request.installBaseDir, id)
         readMarker(installDir)?.let { return it }
 
-        request.installBaseDir.mkdirs()
-        RandomAccessFile(File(request.installBaseDir, "$id.lock"), "rw").use { lockFile ->
-            lockFile.channel.lock().use {
-                readMarker(installDir)?.let { return it }
-                return downloadAndInstall(request, id, installDir, execOperations, logger)
-            }
+        return ToolchainDownloads.withInstallLock(request.installBaseDir, id) {
+            readMarker(installDir) ?: downloadAndInstall(request, id, installDir, execOperations, logger)
         }
     }
 

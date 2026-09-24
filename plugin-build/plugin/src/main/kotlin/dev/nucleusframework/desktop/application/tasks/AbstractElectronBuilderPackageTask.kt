@@ -464,7 +464,7 @@ abstract class AbstractElectronBuilderPackageTask
                 }.getOrElse { failure ->
                     // An offline machine with a usable Node.js installed should still package.
                     logger.warn(
-                        "Could not provision Node.js (${failure.message}) — falling back to the one on PATH. " +
+                        "Could not provision Node.js ($failure) — falling back to the one on PATH. " +
                             "Set nativeDistributions { nodejs { autoDownload = false } } to silence this.",
                     )
                     return detectOnPath(customNodePath = null)
