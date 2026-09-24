@@ -49,6 +49,13 @@ jobs:
           pattern: 'natives-*'
           merge-multiple: true
 
+      # ubuntu-22.04 defaults to JDK 11; Gradle 9 needs 17+.
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
       - name: Cache Gradle Caches
         uses: gradle/actions/setup-gradle@v5
 
