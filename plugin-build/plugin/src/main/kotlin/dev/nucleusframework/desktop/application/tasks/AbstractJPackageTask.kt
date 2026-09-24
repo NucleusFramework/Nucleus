@@ -31,7 +31,7 @@ import dev.nucleusframework.desktop.application.internal.files.MacJarSignFileCop
 import dev.nucleusframework.desktop.application.internal.files.NUCLEUS_BUNDLED_NATIVES_MARKER
 import dev.nucleusframework.desktop.application.internal.files.NUCLEUS_NATIVE_LIBRARY_PATH
 import dev.nucleusframework.desktop.application.internal.files.SimpleFileCopyingProcessor
-import dev.nucleusframework.desktop.application.internal.files.containsNucleusNativeLibs
+import dev.nucleusframework.desktop.application.internal.files.nucleusNativeEntries
 import dev.nucleusframework.desktop.application.internal.files.copyTo
 import dev.nucleusframework.desktop.application.internal.files.copyZipEntry
 import dev.nucleusframework.desktop.application.internal.files.findOutputFileOrDir
@@ -406,7 +406,7 @@ abstract class AbstractJPackageTask
                 it.file("libs-mapping.txt")
             }
 
-        /** The [bundleNucleusNatives] decision the libs in [libsDir] were laid out with. */
+        /** The Nucleus library entries the libs in [libsDir] were laid out with (none: not bundled). */
         @get:Internal
         private val nucleusNativesLayoutFile: Provider<RegularFile> =
             workingDir.map {
@@ -571,20 +571,30 @@ abstract class AbstractJPackageTask
 
             // Moving the libraries out of the JARs is only safe when the runtime on the classpath
             // knows to look for them next to the JARs. The sandboxed pipeline has its own layout.
+            val jars = files.files.filter { it.isJarFile }
             bundleNucleusNatives =
                 !sandboxingEnabled.get() &&
-                files.files.any { it.isJarFile && it.hasZipEntry { name -> name == NUCLEUS_BUNDLED_NATIVES_MARKER } }
+                jars.any { jar -> jar.hasZipEntry { it == NUCLEUS_BUNDLED_NATIVES_MARKER } }
+            // Only the libraries the Nucleus modules list are moved, wherever they sit (a module may
+            // list a dependency's); every other entry, and any JAR without one, stays untouched.
+            val nucleusEntries: Set<String> =
+                if (bundleNucleusNatives) jars.flatMapTo(sortedSetOf()) { it.nucleusNativeEntries() } else emptySet()
+            val layout = nucleusEntries.joinToString("\n")
             val layoutFile = nucleusNativesLayoutFile.ioFile
-            val layoutChanged = !layoutFile.exists() || layoutFile.readText() != bundleNucleusNatives.toString()
+            val layoutChanged = !layoutFile.exists() || layoutFile.readText() != layout
 
-            fun File.withNucleusNativesUnpacked(): List<File> =
-                if (bundleNucleusNatives && isJarFile && containsNucleusNativeLibs()) {
-                    val unpackDir = nucleusNativesDir.ioFile.resolve(mangledName())
-                    fileOperations.clearDirs(unpackDir)
-                    unpackNucleusNativeLibs(this, unpackDir.resolve(name), unpackDir, nucleusNativeDir.get())
-                } else {
-                    listOf(this)
-                }
+            fun File.withNucleusNativesUnpacked(): List<File> {
+                if (!isJarFile || !hasZipEntry { it in nucleusEntries }) return listOf(this)
+                val unpackDir = nucleusNativesDir.ioFile.resolve(mangledName())
+                fileOperations.clearDirs(unpackDir)
+                return unpackNucleusNativeLibs(
+                    sourceJar = this,
+                    targetJar = unpackDir.resolve(name),
+                    libsDir = unpackDir,
+                    platformDir = nucleusNativeDir.get(),
+                    nucleusEntries = nucleusEntries,
+                )
+            }
 
             val outdatedLibs = invalidateMappedLibs(inputChanges, layoutChanged)
             for (sourceFile in outdatedLibs) {
@@ -601,7 +611,7 @@ abstract class AbstractJPackageTask
                         .flatMap { it.withNucleusNativesUnpacked() }
                         .map { copyFileToLibsDir(it) }
             }
-            layoutFile.writeText(bundleNucleusNatives.toString())
+            layoutFile.writeText(layout)
 
             // todo: incremental copy
             fileOperations.clearDirs(packagedResourcesDir)

@@ -1,5 +1,6 @@
 package dev.nucleusframework.desktop.application.tasks
 
+import dev.nucleusframework.desktop.application.internal.files.nucleusNativeEntries
 import dev.nucleusframework.desktop.application.internal.files.unpackNucleusNativeLibs
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
 import org.gradle.api.file.DirectoryProperty
@@ -17,7 +18,8 @@ import org.gradle.work.DisableCachingByDefault
 /**
  * Splits the uber JAR the GraalVM native image is compiled from: the Nucleus JNI libraries of
  * [platformDir] go to [libsDir], to be shipped next to the executable, and [strippedJar] is the
- * same JAR without any `nucleus/native/` entry, so native-image embeds none of them.
+ * same JAR without any library a Nucleus module lists, so native-image embeds none of them.
+ * Everything else — including other `nucleus/native/` entries — is left as it is.
  *
  * Embedded libraries could only be loaded by extracting them to the user's cache on first launch;
  * next to the executable, `GraalVmInitializer`'s `java.library.path` resolves them directly.
@@ -43,6 +45,13 @@ abstract class AbstractUnpackNucleusNativesTask : AbstractNucleusTask() {
     fun unpack() {
         val libs = libsDir.get().asFile
         libs.deleteRecursively()
-        unpackNucleusNativeLibs(uberJar.get().asFile, strippedJar.get().asFile, libs, platformDir.get())
+        val source = uberJar.get().asFile
+        unpackNucleusNativeLibs(
+            sourceJar = source,
+            targetJar = strippedJar.get().asFile,
+            libsDir = libs,
+            platformDir = platformDir.get(),
+            nucleusEntries = source.nucleusNativeEntries(),
+        )
     }
 }

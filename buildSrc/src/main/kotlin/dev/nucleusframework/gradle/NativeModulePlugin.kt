@@ -1,14 +1,27 @@
 package dev.nucleusframework.gradle
 
 import org.apache.tools.ant.taskdefs.condition.Os
+import org.gradle.api.DefaultTask
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.plugins.JavaPlugin
+import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Exec
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.SourceSet
+import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.kotlin.dsl.create
+import org.gradle.kotlin.dsl.getByType
 import org.gradle.kotlin.dsl.named
 import org.gradle.kotlin.dsl.register
 import org.gradle.kotlin.dsl.withType
@@ -74,6 +87,23 @@ open class NativeModuleExtension(
         library: String,
         description: String = NativeTarget.LINUX.defaultDescription,
     ): TaskProvider<Exec> = register(NativeTarget.LINUX, library, description)
+
+    /**
+     * Declares libraries a dependency of this module ships under `nucleus/native/` and this
+     * module loads through `NativeLibraryLoader`, so the Nucleus Gradle plugin moves them out of
+     * that dependency's JAR together with the module's own.
+     *
+     * @param library library file name, e.g. `libGLESv2.dll`
+     * @param target the platform the dependency ships it for
+     */
+    fun dependencyLibraries(
+        target: NativeTarget,
+        vararg library: String,
+    ) {
+        nativeLibrariesManifest.configure {
+            dependencyEntries.addAll(target.resourceDirs.flatMap { dir -> library.map { "nucleus/native/$dir/$it" } })
+        }
+    }
 
     private fun register(
         target: NativeTarget,
@@ -143,8 +173,36 @@ open class NativeModuleExtension(
         }
         // Registered by the publishing plugin, which may not be applied yet.
         project.tasks.matching { it.name == "sourcesJar" }.configureEach { dependsOn(task) }
+        nativeLibrariesManifest.configure { dependsOn(task) }
 
         return task
+    }
+
+    /**
+     * Lists the module's libraries under `META-INF/nucleus/native-libraries/`, so the Nucleus
+     * Gradle plugin moves those — and only those — out of the JARs of a packaged application.
+     * The file name is unique per module so the list survives the GraalVM uber JAR's merge.
+     */
+    private val nativeLibrariesManifest: TaskProvider<NativeLibrariesManifestTask> by lazy {
+        val manifest =
+            project.tasks.register<NativeLibrariesManifestTask>("generateNativeLibrariesManifest") {
+                nativeLibraries.from(
+                    project.fileTree(project.layout.projectDirectory.dir(NATIVE_RESOURCE_PATH)) {
+                        include("*/*")
+                        exclude("**/.*")
+                    },
+                )
+                manifestName.set("nucleus.${project.name}")
+                outputDir.set(project.layout.buildDirectory.dir("generated/nucleus-native-libraries"))
+            }
+        project.plugins.withType<JavaPlugin>().configureEach {
+            project.extensions
+                .getByType<JavaPluginExtension>()
+                .sourceSets
+                .named(SourceSet.MAIN_SOURCE_SET_NAME)
+                .configure { resources.srcDir(manifest) }
+        }
+        manifest
     }
 
     /**
@@ -244,6 +302,44 @@ enum class NativeTarget(
 }
 
 private const val NATIVE_RESOURCE_PATH = "src/main/resources/nucleus/native"
+
+/**
+ * Writes `META-INF/nucleus/native-libraries/<manifestName>`: one `nucleus/native/<arch>/<file>`
+ * JAR entry per line, for every library the module ships (sidecars included) plus the
+ * [dependencyEntries] it loads from a dependency's JAR.
+ */
+abstract class NativeLibrariesManifestTask : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val nativeLibraries: ConfigurableFileCollection
+
+    /** `nucleus/native/<arch>/<file>` entries shipped by a dependency, see `dependencyLibraries`. */
+    @get:Input
+    abstract val dependencyEntries: ListProperty<String>
+
+    @get:Input
+    abstract val manifestName: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    /** Rewrites the manifest from the libraries currently in the module resources. */
+    @TaskAction
+    fun generate() {
+        val entries =
+            nativeLibraries.asFileTree.files
+                .map { "nucleus/native/${it.parentFile.name}/${it.name}" }
+                .plus(dependencyEntries.get())
+                .distinct()
+                .sorted()
+        val root = outputDir.get().asFile
+        root.deleteRecursively()
+        File(root, "META-INF/nucleus/native-libraries/${manifestName.get()}").apply {
+            parentFile.mkdirs()
+            writeText(entries.joinToString(separator = "\n", postfix = if (entries.isEmpty()) "" else "\n"))
+        }
+    }
+}
 
 /**
  * Build by-products the native scripts leave inside `src/main/native`. They are
