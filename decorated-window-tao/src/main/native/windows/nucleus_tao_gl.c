@@ -176,8 +176,16 @@ typedef struct {
 static const wchar_t *kSurfaceClassName = L"NucleusTaoGlSurface";
 static volatile LONG sSurfaceClassRegistered = 0;
 
+#ifndef DM_POINTERHITTEST
+#define DM_POINTERHITTEST 0x0250
+#endif
+
 static LRESULT CALLBACK surfaceWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+    case DM_POINTERHITTEST:
+        /* A precision-touchpad contact offered to the window under the
+         * cursor: the parent owns the DirectManipulation viewport (#706). */
+        return SendMessageW(GetParent(hwnd), msg, wParam, lParam);
     case WM_NCHITTEST:
         /* Transparent to every hit test: mouse, touch (WM_POINTER) and
          * WindowFromPoint (OLE drag-and-drop) all resolve to the Tao

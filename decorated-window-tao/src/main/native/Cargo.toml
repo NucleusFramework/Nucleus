@@ -59,7 +59,16 @@ windows = { version = "0.62", features = [
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
+    # Precision-touchpad pan / pinch (#706): the DirectManipulation viewport,
+    # its COM plumbing, the pointer queries and the window subclass it hooks.
+    "Win32_Graphics_DirectManipulation",
+    "Win32_System_Com",
+    "Win32_UI_Input_Pointer",
+    "Win32_UI_Shell",
 ] }
+# `#[implement]` (the viewport's COM event handler) expands to `windows_core`
+# paths, so the crate has to be a direct dependency of ours.
+windows-core = "0.62"
 
 [build-dependencies]
 cc = "1.0"

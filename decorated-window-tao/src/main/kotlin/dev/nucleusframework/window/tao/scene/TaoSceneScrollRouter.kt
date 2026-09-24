@@ -22,7 +22,9 @@ import java.util.logging.Logger
 /**
  * Single front door for wheel and trackpad input into a [ComposeScene],
  * shared by the macOS window host and both NSPanel popup hosts so a
- * two-finger swipe behaves the same over a popup list and the window behind it.
+ * two-finger swipe behaves the same over a popup list and the window behind it
+ * — and by the Windows host for a precision-touchpad pan (#706,
+ * [TaoWindowsTouchpadInput]).
  *
  * - A wheel notch or a phase-less precise scroll (smooth-scroll mice) becomes
  *   an AWT-shaped `Scroll` event ([dispatchAwtShapedScroll]).
@@ -56,6 +58,14 @@ internal class TaoSceneScrollRouter(
     schedule: ((delayMillis: Long, action: () -> Unit) -> (() -> Unit))? = null,
     private val panEnabled: Boolean = trackpadPanEventsEnabled,
     clock: () -> Long = { System.nanoTime() / NANOS_PER_MILLI },
+    /**
+     * Whether a momentum step that found its pan closed is delivered as a
+     * wheel scroll (AppKit's tail, where a wheel unit is a point). A host
+     * whose wheel units are something else — a Windows notch scrolls a
+     * fraction of the viewport — drops it: Compose's own fling, started when
+     * the pan closed, carries the flick.
+     */
+    private val orphanedMomentumAsWheel: Boolean = true,
 ) {
     /** What the router needs from its host, read live at dispatch time. */
     interface Target {
@@ -125,7 +135,7 @@ internal class TaoSceneScrollRouter(
                 }
             }
             val orphanedMomentum = !pan.onGesture(phase, Offset(event.dxAwt, event.dyAwt))
-            if (orphanedMomentum && (event.dxAwt != 0f || event.dyAwt != 0f)) {
+            if (orphanedMomentum && orphanedMomentumAsWheel && (event.dxAwt != 0f || event.dyAwt != 0f)) {
                 // An orphaned momentum step (the grace closed the pan before
                 // AppKit's tail arrived): Compose is flinging on its own, so a
                 // second pan would stack on it — but dropping the tail would

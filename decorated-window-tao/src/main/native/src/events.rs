@@ -422,6 +422,14 @@ pub(crate) enum UserEvent {
         fullscreen: bool,
     },
     // Posted by the macOS quit paths only (Cmd-Q, `-[TaoApp terminate:]`).
+    /// Ticks a window's DirectManipulation viewport and delivers what it
+    /// reported (#706). Posted by the window procedure (hit test, pump timer)
+    /// and the viewport's own callbacks, so the delivery to the JVM happens in
+    /// the loop closure, never nested in a window procedure.
+    #[cfg(target_os = "windows")]
+    DirectManipulationTick {
+        handle: u64,
+    },
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     QuitRequested,
     Exit,
@@ -581,6 +589,54 @@ pub(crate) fn dispatch_scroll_gesture(handle: u64, phase: jint, dx_fixed: jint, 
             JValue::Int(phase),
             JValue::Int(dx_fixed),
             JValue::Int(dy_fixed),
+        ],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
+/// Raw DirectManipulation viewport stream (#706) — see
+/// `EventCallback.onDirectManipulation`. Transform and focal point are
+/// client-area physical pixels.
+#[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn dispatch_direct_manipulation(
+    handle: u64,
+    kind: jint,
+    current: jint,
+    previous: jint,
+    scale: f32,
+    offset_x: f32,
+    offset_y: f32,
+    focal_x: f32,
+    focal_y: f32,
+) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let _ = env.call_method(
+        callback.as_obj(),
+        "onDirectManipulation",
+        "(JIIIFFFFF)V",
+        &[
+            JValue::Long(handle as jlong),
+            JValue::Int(kind),
+            JValue::Int(current),
+            JValue::Int(previous),
+            JValue::Float(scale),
+            JValue::Float(offset_x),
+            JValue::Float(offset_y),
+            JValue::Float(focal_x),
+            JValue::Float(focal_y),
         ],
     );
     if env.exception_check().unwrap_or(false) {

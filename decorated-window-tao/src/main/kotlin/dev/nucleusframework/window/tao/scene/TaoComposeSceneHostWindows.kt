@@ -36,10 +36,8 @@ import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.clearContentMeasurer
 import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
-import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSession
-import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
-import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
@@ -58,12 +56,10 @@ import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import dev.nucleusframework.window.tao.releaseWindowsTextureImports
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.Canvas
@@ -76,7 +72,6 @@ import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
 /**
@@ -693,33 +688,44 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
-    // ── Trackpad pinch-to-zoom (Ctrl-flagged WM_MOUSEWHEEL) ───────────────
+    // ── Precision touchpad: pan and pinch ─────────────────────────────────
     //
-    // Windows delivers a precision-touchpad pinch (and a real Ctrl+wheel) as a
-    // WM_MOUSEWHEEL carrying the Ctrl flag; the vendored Tao patch routes those
-    // to the magnify hook (instead of a scroll, which would drive the
-    // scrollable). Each notch/tick is a discrete delta with no Began/Ended
-    // phase, so we keep ONE continuous Compose scale gesture: the first tick
-    // opens `ScaleStart`, every tick is `ScaleChange`, and an idle debounce
-    // sends `ScaleEnd` (#660).
+    // DirectManipulation (#706) and the legacy Ctrl+wheel emulation — see
+    // [TaoWindowsTouchpadInput].
 
-    private var pinchCenterX = 0f
-    private var pinchCenterY = 0f
-    private val scaleSession =
-        TaoTrackpadScaleSession { type, factor ->
-            scene?.dispatchTrackpadScale(
-                x = pinchCenterX,
-                y = pinchCenterY,
-                type = type,
-                scaleFactor = factor,
-                keyboardModifiers = currentKeyboardModifiers,
-            )
-        }
-    private var pinchEndJob: Job? = null
+    private val touchpad =
+        TaoWindowsTouchpadInput(
+            object : TaoWindowsTouchpadInput.Target {
+                override val scene: ComposeScene? get() = this@TaoComposeSceneHostWindows.scene
+                override val scale: Float get() = this@TaoComposeSceneHostWindows.scale
+                override val keyboardModifiers: PointerKeyboardModifiers get() = currentKeyboardModifiers
+
+                // The raw position, not the deadband's: the zoom centre.
+                override val pointerPosition: Offset get() = Offset(lastPointerX, lastPointerY)
+
+                override fun guard(block: () -> Unit) = exceptionHandler.catchExceptions(block)
+            },
+            gestureScope,
+        )
 
     /**
-     * Forwards one Ctrl+wheel / precision-touchpad pinch tick as a Compose
-     * scale step. [valueFixed] is the normalized wheel delta ×
+     * One step of the window's DirectManipulation viewport (#706). Delivered
+     * while the window takes no input too ([inputEnabled] false), so a gesture
+     * a modal child interrupts still closes.
+     */
+    fun onDirectManipulation(
+        event: TaoDirectManipulationEvent,
+        inputEnabled: Boolean,
+    ) {
+        if (scene == null) return
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
+        touchpad.onDirectManipulation(event, inputEnabled)
+    }
+
+    /**
+     * Forwards one Ctrl+wheel pinch tick (the legacy emulation, or a mouse)
+     * as a Compose scale step. [valueFixed] is the normalized wheel delta ×
      * [TRACKPAD_VALUE_SCALE] (positive = zoom in). Only magnify gestures are
      * produced on Windows, so kind/phase/x/y from the shared
      * `onTrackpadGesture` wire are ignored.
@@ -734,32 +740,7 @@ internal class TaoComposeSceneHostWindows(
         if (scene == null) return
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
-
-        val value = valueFixed / TRACKPAD_VALUE_SCALE
-        // Precision touchpads can deliver many fractional deltas; map the
-        // WHEEL_DELTA-normalized value through a multiplicative curve so small
-        // ticks accumulate smoothly without each message behaving like a large
-        // zoom step.
-        val step = TaoWheelPinchZoom.stepFromWheelDelta(value)
-        pinchCenterX = lastPointerX
-        pinchCenterY = lastPointerY
-        scaleSession.change(step)
-        schedulePinchEnd()
-    }
-
-    /** Re-arms the idle timer that closes the scale gesture once ticks stop. */
-    private fun schedulePinchEnd() {
-        pinchEndJob?.cancel()
-        pinchEndJob =
-            gestureScope.launch {
-                delay(PINCH_IDLE_END_MS.milliseconds)
-                endPinchGesture()
-            }
-    }
-
-    private fun endPinchGesture() {
-        pinchEndJob = null
-        scaleSession.end()
+        touchpad.onCtrlWheel(valueFixed / TRACKPAD_VALUE_SCALE)
     }
 
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
@@ -1581,6 +1562,8 @@ internal class TaoComposeSceneHostWindows(
         if (consumeOverlayEcho(mapButton(buttonCode), pressed)) return
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        // A click ends the pan gesture for Compose too (macOS host: same).
+        if (pressed) touchpad.finishPan()
         sendButtonToScene(mapButton(buttonCode), pressed)
     }
 
@@ -1778,6 +1761,9 @@ internal class TaoComposeSceneHostWindows(
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
         if (nativePointerRedispatchInFlight) return
+        // A wheel notch is another device taking over: close a trackpad pan
+        // where it was, so its PanEnd reaches the node that got its moves.
+        touchpad.finishPan()
         // Stock Compose Desktop wheel path: the event goes straight into the
         // scene and MouseWheelScrollingLogic animates it (smooth-scroll
         // tween) — the same pipeline as upstream Compose on Windows and
@@ -2414,9 +2400,9 @@ internal class TaoComposeSceneHostWindows(
         nativeViewBlending.destroyOverlay()
         shutdownA11yScheduler()
         textToolbar.hide()
-        // Stop the pinch idle timer; the scene is going away so no ScaleEnd needed.
-        pinchEndJob?.cancel()
-        pinchEndJob = null
+        // Stop the pinch idle timer and the pan's end timer; the scene is going
+        // away so no ScaleEnd / PanEnd is needed.
+        touchpad.cancel()
         gestureScope.cancel()
         // Make THIS host's ES context current before tearing down Skia
         // resources. A sibling host (e.g. the main window opened while this
@@ -2475,9 +2461,6 @@ internal class TaoComposeSceneHostWindows(
          * `TRACKPAD_VALUE_FIXED_SCALE` in `events.rs`.
          */
         private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
-
-        /** Idle gap after the last tick before the scale gesture closes. */
-        private const val PINCH_IDLE_END_MS: Long = 120L
 
         /**
          * Live attached-host count across the JVM. When > 1, every host

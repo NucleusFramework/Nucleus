@@ -177,6 +177,7 @@ fn serve_pending_redraws(pending: &mut Vec<u64>) {
             guard.as_ref().is_some_and(|map| map.contains_key(&handle))
         };
         if alive {
+            crate::platform::windows::direct_manipulation::pump(handle);
             dispatch(handle, EVENT_REDRAW_REQUESTED, 0, 0);
         }
     }
@@ -438,6 +439,17 @@ pub(crate) fn run_event_loop_blocking() {
                             });
                         }
 
+                        // Precision-touchpad pan / pinch (#706). Bound before
+                        // WINDOW_READY so the first gesture already has it.
+                        #[cfg(target_os = "windows")]
+                        {
+                            use tao::platform::windows::WindowExtWindows;
+                            crate::platform::windows::direct_manipulation::attach(
+                                handle,
+                                windows::Win32::Foundation::HWND(window.hwnd() as _),
+                            );
+                        }
+
                         {
                             let mut guard = WINDOWS.lock().unwrap();
                             if let Some(map) = guard.as_mut() {
@@ -641,6 +653,10 @@ pub(crate) fn run_event_loop_blocking() {
                         last_minimized.insert(handle, minimized);
                         dispatch(handle, crate::events::EVENT_MINIMIZED, minimized as jint, 0);
                     }
+                }
+                #[cfg(target_os = "windows")]
+                UserEvent::DirectManipulationTick { handle } => {
+                    crate::platform::windows::direct_manipulation::pump(handle);
                 }
                 // Posted from the platform minimize hook (safe point — no native
                 // lock held and not nested in the WndProc / AppKit delegate / GTK
@@ -1214,6 +1230,9 @@ pub(crate) fn run_event_loop_blocking() {
             }
             Event::RedrawRequested(window_id) => {
                 if let Some(handle) = handle_for(window_id) {
+                    // The frame renders the manipulation as of this frame.
+                    #[cfg(target_os = "windows")]
+                    crate::platform::windows::direct_manipulation::pump(handle);
                     dispatch(handle, EVENT_REDRAW_REQUESTED, 0, 0);
                 }
             }
