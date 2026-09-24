@@ -7,6 +7,7 @@ import java.lang.management.ManagementFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -144,6 +145,28 @@ internal object TaoEventLoopWatchdog {
         hwnds.remove(handle)
     }
 
+    /**
+     * Nesting depth of [TaoApplication.expectUnresponsive] blocks. While it is
+     * non-zero the loop is *expected* to be unresponsive, so the watchdog
+     * treats every sample as healthy — Chromium's
+     * `HangWatcher::InvalidateActiveExpectations()`.
+     */
+    private val expectedStalls = AtomicInteger()
+
+    /** `true` while an [TaoApplication.expectUnresponsive] block is in flight. */
+    private val isStallExpected: Boolean
+        get() = expectedStalls.get() > 0
+
+    /** Opens an expected-stall scope. */
+    fun beginExpectedStall() {
+        expectedStalls.incrementAndGet()
+    }
+
+    /** Closes an expected-stall scope; never goes below zero. */
+    fun endExpectedStall() {
+        expectedStalls.updateAndGet { depth -> if (depth > 0) depth - 1 else 0 }
+    }
+
     /** Starts the daemon watchdog thread; no-op when unsupported or disabled. */
     fun start() {
         if (!isSupported || !isEnabled) return
@@ -198,7 +221,10 @@ internal object TaoEventLoopWatchdog {
                 detector.reset()
                 resumeDeadlineNanos = now + RESUME_GRACE_MS * NANOS_PER_MILLI
             } else if (now >= resumeDeadlineNanos) {
-                handle(detector.sample(isAnyWindowHung(), now))
+                // An expected stall counts as healthy rather than skipping the
+                // sample: a stall reported before the scope opened still gets
+                // its recovery, so every `unresponsive` keeps its `responsive`.
+                handle(detector.sample(!isStallExpected && isAnyWindowHung(), now))
             }
         }
     }

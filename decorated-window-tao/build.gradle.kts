@@ -347,6 +347,7 @@ val taoWatchdogSmoke = tasks.register<JavaExec>("taoWatchdogSmoke") {
         "nucleus.tao.watchdog.smoke.freezeAfterMs",
         "nucleus.tao.watchdog.smoke.drainMs",
         "nucleus.tao.watchdog.smoke.holdMs",
+        "nucleus.tao.watchdog.smoke.expected",
         "nucleus.tao.watchdog",
         "nucleus.tao.watchdogGraceMs",
         "nucleus.tao.watchdogDialog",

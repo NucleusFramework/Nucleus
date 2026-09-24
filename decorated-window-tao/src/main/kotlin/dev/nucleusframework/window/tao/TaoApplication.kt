@@ -329,6 +329,37 @@ public object TaoApplication {
         responsiveListeners += listener
     }
 
+    /**
+     * Runs [block] with the hang watchdog told that a stall is *expected*
+     * (#643) — Chromium's `HangWatcher::InvalidateActiveExpectations()`.
+     *
+     * The watchdog reports any UI thread that stops pumping, which includes an
+     * operation the app knows is long and synchronous. Wrap that operation and
+     * neither the `SEVERE` report nor [onUnresponsive] fires for it; everything
+     * else stays watched, unlike the `nucleus.tao.watchdog=false` switch, which
+     * gives up on the whole process.
+     *
+     * ```kotlin
+     * expectUnresponsive { importHugeProjectSynchronously() }
+     * ```
+     *
+     * Reentrant, and thread-safe: the scope is the app's, not one thread's. A
+     * stall already reported when the scope opens still gets its
+     * [onResponsive], so the two events stay paired.
+     *
+     * Prefer moving the work off the UI thread. This is for the cases where
+     * that is not an option — a native call that must run on the loop, a
+     * shutdown flush — not a way to make a slow UI quiet.
+     */
+    public fun <T> expectUnresponsive(block: () -> T): T {
+        TaoEventLoopWatchdog.beginExpectedStall()
+        try {
+            return block()
+        } finally {
+            TaoEventLoopWatchdog.endExpectedStall()
+        }
+    }
+
     /** Fires the [onUnresponsive] listeners; called by the watchdog thread. */
     internal fun notifyUnresponsive(): Unit = notify(unresponsiveListeners, "unresponsive")
 

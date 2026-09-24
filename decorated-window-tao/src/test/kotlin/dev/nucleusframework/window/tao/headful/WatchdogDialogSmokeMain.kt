@@ -36,6 +36,8 @@ import java.util.logging.Logger
  * - `-Dnucleus.tao.watchdog=false` → all zero
  * - a JDWP agent on the command line → all zero (debug sessions are exempt)
  * - a JDWP agent + `-Dnucleus.tao.watchdog=true` → back to one each
+ * - `-Dnucleus.tao.watchdog.smoke.expected=true` → all zero: the freeze runs
+ *   inside `expectUnresponsive { }`, so it is a declared long operation
  * - `-Dnucleus.tao.watchdogDialog=true` → same counts, plus the native
  *   "Application Not Responding" dialog on screen; `holdMs` keeps the process
  *   alive long enough to look at it.
@@ -47,6 +49,7 @@ object WatchdogDialogSmokeMain {
         val freezeAfterMs = longProperty("freezeAfterMs", DEFAULT_SETTLE_MS)
         val drainMs = longProperty("drainMs", DEFAULT_DRAIN_MS)
         val holdMs = longProperty("holdMs", 0L)
+        val expected = System.getProperty("nucleus.tao.watchdog.smoke.expected").toBoolean()
 
         val severe = AtomicInteger()
         val unresponsive = AtomicInteger()
@@ -77,7 +80,13 @@ object WatchdogDialogSmokeMain {
                     // Runs on Dispatchers.Main — the event-loop thread. This is
                     // what a deadlocked loop looks like from the outside.
                     println("[watchdog-smoke] freezing the event loop for $freezeMs ms")
-                    Thread.sleep(freezeMs)
+                    if (expected) {
+                        // The declared-long-operation path: same freeze, but
+                        // the app told the watchdog to expect it.
+                        TaoApplication.expectUnresponsive { Thread.sleep(freezeMs) }
+                    } else {
+                        Thread.sleep(freezeMs)
+                    }
                     println("[watchdog-smoke] loop resumed")
                     // Let the watchdog take the sample that closes the episode.
                     delay(drainMs)

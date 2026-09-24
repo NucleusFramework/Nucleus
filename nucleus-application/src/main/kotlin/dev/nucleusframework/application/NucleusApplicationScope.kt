@@ -85,6 +85,25 @@ public sealed interface NucleusApplicationScope : ComposeApplicationScope {
      * [onUnresponsive]; same threading rules.
      */
     public fun onResponsive(block: () -> Unit): Unit = TaoApplication.onResponsive(block)
+
+    /**
+     * Runs [block] with the hang watchdog told that a stall is *expected* —
+     * Chromium's `HangWatcher::InvalidateActiveExpectations()`.
+     *
+     * An operation the app knows is long and synchronous on the UI thread
+     * looks exactly like a freeze from the outside, so wrap it and neither the
+     * `SEVERE` report nor [onUnresponsive] fires for it. Everything else stays
+     * watched, unlike `-Dnucleus.tao.watchdog=false`, which gives up on the
+     * whole process.
+     *
+     * ```kotlin
+     * expectUnresponsive { importHugeProjectSynchronously() }
+     * ```
+     *
+     * Reentrant and thread-safe. Prefer moving the work off the UI thread;
+     * this is for when that is not an option, not a way to silence a slow UI.
+     */
+    public fun <T> expectUnresponsive(block: () -> T): T = TaoApplication.expectUnresponsive(block)
 }
 
 /**

@@ -60,6 +60,7 @@ public final class dev/nucleusframework/application/NucleusApplicationKt {
 
 public abstract interface class dev/nucleusframework/application/NucleusApplicationScope : androidx/compose/ui/window/ApplicationScope {
 	public abstract fun exitApplication ()V
+	public fun expectUnresponsive (Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
 	public fun getAotMode ()Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
 	public fun isAotRuntime ()Z
 	public fun isAotTraining ()Z
@@ -70,6 +71,7 @@ public abstract interface class dev/nucleusframework/application/NucleusApplicat
 }
 
 public final class dev/nucleusframework/application/NucleusApplicationScope$DefaultImpls {
+	public static fun expectUnresponsive (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
 	public static fun getAotMode (Ldev/nucleusframework/application/NucleusApplicationScope;)Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
 	public static fun isAotRuntime (Ldev/nucleusframework/application/NucleusApplicationScope;)Z
 	public static fun isAotTraining (Ldev/nucleusframework/application/NucleusApplicationScope;)Z
