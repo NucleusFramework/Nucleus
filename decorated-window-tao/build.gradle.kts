@@ -1,3 +1,4 @@
+import dev.nucleusframework.gradle.NativeTarget
 import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -79,6 +80,8 @@ nucleusNative {
     macos("nucleus_tao", "Compiles the Rust JNI bridge into a macOS dylib (arm64 + x86_64)")
     windows("nucleus_tao", "Compiles the Rust JNI bridge + WGL/Deco helpers into Windows DLLs")
     linux("nucleus_tao", "Compiles the Rust JNI bridge + EGL helper into Linux .so libraries")
+    // ANGLE comes from `libs.angle.natives`; it must ship next to nucleus_tao.dll
+    dependencyLibraries(NativeTarget.WINDOWS, "libEGL.dll", "libGLESv2.dll")
 }
 
 // Forwards a `-D` from the Gradle command line into a forked JVM, when set.
