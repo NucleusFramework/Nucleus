@@ -5,9 +5,12 @@ import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import java.lang.management.ManagementFactory
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
 import java.util.logging.Level
 import java.util.logging.Logger
+import kotlin.concurrent.withLock
 
 /** Milliseconds between two liveness samples. */
 private const val POLL_INTERVAL_MS = 2_000L
@@ -70,6 +73,7 @@ private const val RESUME_GRACE_MS = 30_000L
  * the X11 `_NET_WM_PING` equivalent perturbs the loop it observes — which the
  * probe must not do. Elsewhere the watchdog simply never starts.
  */
+@Suppress("TooManyFunctions")
 internal object TaoEventLoopWatchdog {
     private val logger = Logger.getLogger(TaoEventLoopWatchdog::class.java.name)
 
@@ -77,6 +81,10 @@ internal object TaoEventLoopWatchdog {
     private val hwnds = ConcurrentHashMap<Long, Long>()
 
     private val running = AtomicBoolean(false)
+
+    /** Wait target of the watchdog thread; signalled when a window appears or on stop. */
+    private val lock = ReentrantLock()
+    private val wakeUp = lock.newCondition()
 
     @Volatile
     private var thread: Thread? = null
@@ -126,7 +134,9 @@ internal object TaoEventLoopWatchdog {
     fun registerWindow(handle: Long) {
         if (!isSupported) return
         val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
-        if (hwnd != 0L) hwnds[handle] = hwnd
+        if (hwnd == 0L) return
+        hwnds[handle] = hwnd
+        wakeWatchdog()
     }
 
     /** Forgets a window that is gone (`DESTROYED`). */
@@ -158,15 +168,24 @@ internal object TaoEventLoopWatchdog {
         thread?.interrupt()
         thread = null
         hwnds.clear()
+        wakeWatchdog()
     }
 
     private fun watch() {
         val detector = EventLoopHangDetector(graceMs)
         var lastSampleNanos = System.nanoTime()
         var resumeDeadlineNanos = 0L
-        while (running.get() && sleepUntilNextSample()) {
-            if (!running.get()) return
+        while (running.get()) {
+            val wait = awaitNextSample()
+            if (wait == WatchWait.Stopped || !running.get()) return
             val now = System.nanoTime()
+            // An untimed park tells nothing about elapsed time, so the suspend
+            // heuristic below would read it as one. Re-baseline and sample on
+            // the next tick instead.
+            if (wait == WatchWait.Parked) {
+                lastSampleNanos = now
+                continue
+            }
             val overslept = now - lastSampleNanos - POLL_INTERVAL_MS * NANOS_PER_MILLI
             lastSampleNanos = now
             // The machine was suspended (Electron #53529): every process
@@ -184,15 +203,45 @@ internal object TaoEventLoopWatchdog {
         }
     }
 
-    /** Sleeps one poll interval; `false` once the watchdog has been stopped. */
-    private fun sleepUntilNextSample(): Boolean =
-        try {
-            Thread.sleep(POLL_INTERVAL_MS)
-            true
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            false
+    /**
+     * Waits for the next sample. With no window registered there is nothing to
+     * probe and nothing can hang, so the thread parks until one appears rather
+     * than waking every [POLL_INTERVAL_MS] — Chromium's HangWatcher parks the
+     * same way while its watch list is empty, and it is what keeps an app that
+     * is merely sitting in the tray free of a timer it does not need.
+     */
+    private fun awaitNextSample(): WatchWait =
+        lock.withLock {
+            try {
+                if (hwnds.isEmpty()) {
+                    wakeUp.await()
+                    if (running.get()) WatchWait.Parked else WatchWait.Stopped
+                } else {
+                    wakeUp.await(POLL_INTERVAL_MS, TimeUnit.MILLISECONDS)
+                    WatchWait.Sampled
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                WatchWait.Stopped
+            }
         }
+
+    /** Wakes a parked watchdog — a window appeared, or the loop is shutting down. */
+    private fun wakeWatchdog() {
+        lock.withLock { wakeUp.signalAll() }
+    }
+
+    /** Outcome of one [awaitNextSample] wait. */
+    private enum class WatchWait {
+        /** Waited the poll interval: the elapsed time is known, so sample. */
+        Sampled,
+
+        /** Parked with nothing to watch: elapsed time means nothing. */
+        Parked,
+
+        /** The watchdog was stopped. */
+        Stopped,
+    }
 
     private fun handle(transition: HangTransition?) {
         when (transition) {
