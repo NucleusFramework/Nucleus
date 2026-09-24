@@ -1,20 +1,44 @@
 package dev.nucleusframework.window.tao.headful
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.TitleBar
+import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.headful.MacTrackpadGestureProbe.Kind
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.random.Random
 
@@ -58,7 +82,224 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
             SEEDS.map { seed -> randomGesturesMatchTheModel(profile, seed, profile.steps) }
         } + randomGesturesMatchTheModel(GestureMonkeyProfile.CHAOS, LONG_RUN_SEED, LONG_RUN_STEPS) +
             DEGENERATE_ROTATIONS.map { (label, magnification) -> degenerateRotation(label, magnification) } +
-            listOf(offscreenGestures(), windowClosesWithGesturesInFlight(), pinchWorksAfterAWindowClosedMidGesture())
+            listOf(
+                offscreenGestures(),
+                windowClosesWithGesturesInFlight(),
+                pinchWorksAfterAWindowClosedMidGesture(),
+                rotationOnTheTitleBarNeverDragsTheWindow(),
+            ) +
+            nightWindows()
+
+    /**
+     * A rotation centred in the title bar puts its synthetic contacts on the
+     * window-drag area, which arms a drag on any touch press — and the
+     * macOS drag replays the last real mouseDown AppKit saw. After a real
+     * click on the bar (which leaves that mouseDown saved), rotations there
+     * must neither move nor maximize the window.
+     */
+    private fun rotationOnTheTitleBarNeverDragsTheWindow(): TaoWindowTestCase {
+        val trace = GestureTrace()
+        val zoom = ZoomProbe()
+        val frames = AtomicLong()
+        return TaoWindowTestCase(
+            name = "#660 macOS gesture monkey degenerate: rotations on the title bar never drag the window",
+            skip = { macOnly() ?: robotDriverSkipReason() },
+            paintDefaultBackground = false,
+            content = { NightContent(this, trace, zoom, frames) },
+        ) {
+            awaitUntil("window mapped") { bounds() != null }
+            awaitUntil("the animation renders") { frames.get() > NIGHT_WARMUP_FRAMES }
+            settle()
+            val scale = window.scaleFactor
+            // No host listens on macOS: the hook only counts the drags the bar starts.
+            val drags = AtomicLong()
+            window.onDragWindow { drags.incrementAndGet() }
+            val driver =
+                RobotPointerDriver(window) {
+                    IntSize((WINDOW_W * scale).toInt(), (WINDOW_H * scale).toInt())
+                }
+            repeat(TITLE_BAR_ROUNDS) { round ->
+                // A real click on the bar, no drag: AppKit keeps that mouseDown.
+                driver.click(Offset(TITLE_BAR_X * scale, TITLE_BAR_Y * scale))
+                settle()
+                val before = checkNotNull(bounds()).copyOf()
+                val maximizedBefore = window.isMaximized
+                gesture(Kind.ROTATE, 1, TITLE_BAR_X, TITLE_BAR_Y, 0.0)
+                repeat(TITLE_BAR_ROTATE_STEPS) { gesture(Kind.ROTATE, 2, TITLE_BAR_X, TITLE_BAR_Y, 4.0) }
+                gesture(Kind.ROTATE, 4, TITLE_BAR_X, TITLE_BAR_Y, 0.0)
+                settle(TITLE_BAR_SETTLE_MILLIS)
+                val after = bounds()
+                check(after != null && after.contentEquals(before)) {
+                    "round $round: a rotation on the title bar moved the window: " +
+                        "${before.toList()} → ${after?.toList()}"
+                }
+                check(
+                    window.isMaximized == maximizedBefore,
+                ) { "round $round: a rotation on the title bar toggled maximize" }
+                check(
+                    drags.get() == 0L,
+                ) { "round $round: the rotation's contacts started ${drags.get()} window drag(s)" }
+                val touches = trace.snapshot().flatMap { e -> e.changes.filter { it.type == PointerType.Touch } }
+                check(touches.isNotEmpty()) { "round $round: the rotation never reached the scene" }
+            }
+        }
+    }
+
+    /**
+     * The overnight run: the three profiles back to back, seed after seed,
+     * in a real `DecoratedWindow` with a `TitleBar` and content animating
+     * every frame, for `-Dnucleus.tao.headful.monkeyNightMinutes=<n>` (one
+     * short window without it). A fresh window every [NIGHT_WINDOW_MINUTES].
+     * A quarter of the well-formed gestures are centred in the title bar, so
+     * the synthetic contacts land on the window-drag area. On top of the
+     * model: the window never moves, resizes, maximizes or goes fullscreen,
+     * and the animation keeps producing frames between checkpoints.
+     */
+    private fun nightWindows(): List<TaoWindowTestCase> {
+        val minutes = System.getProperty(NIGHT_MINUTES_PROPERTY)?.toLongOrNull()
+        if (minutes == null || minutes <= 0) return listOf(nightWindow(0, 1, NIGHT_SMOKE_MILLIS))
+        val count = ((minutes + NIGHT_WINDOW_MINUTES - 1) / NIGHT_WINDOW_MINUTES).toInt()
+        return List(count) { index ->
+            val left = minutes - index * NIGHT_WINDOW_MINUTES
+            nightWindow(index, count, minOf(left, NIGHT_WINDOW_MINUTES) * MILLIS_PER_MINUTE)
+        }
+    }
+
+    private fun nightWindow(
+        index: Int,
+        count: Int,
+        durationMillis: Long,
+    ): TaoWindowTestCase {
+        val trace = GestureTrace()
+        val zoom = ZoomProbe()
+        val frames = AtomicLong()
+        return TaoWindowTestCase(
+            name =
+                "#660 macOS gesture monkey night window ${index + 1}/$count: ${durationMillis / 1000}s " +
+                    "in a real decorated window with title bar and animation",
+            timeoutMillis = durationMillis + NIGHT_SLACK_MILLIS,
+            skip = { macOnly() },
+            paintDefaultBackground = false,
+            content = { NightContent(this, trace, zoom, frames) },
+        ) {
+            awaitUntil("window mapped") { bounds() != null }
+            awaitUntil("the animation renders") { frames.get() > NIGHT_WARMUP_FRAMES }
+            settle()
+            val initialBounds = checkNotNull(bounds()).copyOf()
+            var lastFrames = frames.get()
+            val drags = AtomicLong()
+            window.onDragWindow { drags.incrementAndGet() }
+            val chrome: () -> String? = {
+                val b = bounds()
+                val f = frames.get()
+                when {
+                    b == null -> "the window is gone"
+                    !b.contentEquals(initialBounds) ->
+                        "the window moved or resized: ${initialBounds.toList()} → ${b.toList()}"
+                    window.isMaximized -> "the window maximized"
+                    window.isFullscreen -> "the window went fullscreen"
+                    drags.get() != 0L -> "synthetic contacts started ${drags.get()} window drag(s)"
+                    f <= lastFrames -> "no frame rendered since the last checkpoint ($f)"
+                    else -> {
+                        lastFrames = f
+                        null
+                    }
+                }
+            }
+            val deadline = System.currentTimeMillis() + durationMillis
+            val base = monkeySeedOr(NIGHT_SEED) + index * NIGHT_SEEDS_PER_WINDOW
+            var session = 0
+            val runtime = Runtime.getRuntime()
+            while (System.currentTimeMillis() < deadline) {
+                val profile = GestureMonkeyProfile.entries[session % GestureMonkeyProfile.entries.size]
+                GestureMonkey(
+                    scope = this,
+                    trace = trace,
+                    zoom = zoom,
+                    profile = profile,
+                    seed = base + session,
+                    steps = profile.steps,
+                    titleBarBand = NIGHT_TITLE_BAR_BAND_DP,
+                    extraCheck = chrome,
+                    echo = false,
+                    canonicalAt = NIGHT_BODY_POINT,
+                ).run()
+                session++
+                if (session % NIGHT_REPORT_EVERY == 0) {
+                    System.gc()
+                    System.err.println(
+                        "[gesture-monkey-night] window ${index + 1}/$count: $session sessions, " +
+                            "frames=${frames.get()}, heap=${(runtime.totalMemory() - runtime.freeMemory()) shr 20} MB",
+                    )
+                }
+            }
+            System.err.println("[gesture-monkey-night] window ${index + 1}/$count survived $session sessions")
+        }
+    }
+
+    @Composable
+    private fun NightContent(
+        scope: TaoDecoratedWindowScope,
+        trace: GestureTrace,
+        zoom: ZoomProbe,
+        frames: AtomicLong,
+    ) {
+        val transition = rememberInfiniteTransition(label = "night")
+        val angle by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = FULL_TURN,
+            animationSpec = infiniteRepeatable(tween(SPIN_MILLIS, easing = LinearEasing)),
+            label = "spin",
+        )
+        val pulse by transition.animateFloat(
+            initialValue = PULSE_MIN,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(PULSE_MILLIS), RepeatMode.Reverse),
+            label = "pulse",
+        )
+        LaunchedEffect(Unit) { while (true) withFrameNanos { frames.incrementAndGet() } }
+        val state =
+            rememberTransformableState {
+                _,
+                zoomChange,
+                _,
+                rotationChange,
+                ->
+                zoom.apply(zoomChange, rotationChange)
+            }
+        Box(
+            Modifier.fillMaxSize().pointerInput(trace) {
+                awaitPointerEventScope {
+                    while (true) trace.add(awaitPointerEvent(PointerEventPass.Initial))
+                }
+            },
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                with(scope) {
+                    TitleBar { _ ->
+                        Box(Modifier.width(TITLE_BAR_PULSE_DP.dp * pulse).height(10.dp).background(Color.Cyan))
+                    }
+                }
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(Color(0xFF15181D))
+                        .transformable(state),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .size(SPINNER_DP.dp)
+                            .graphicsLayer {
+                                rotationZ = angle
+                                alpha = pulse
+                            }.background(Color.Magenta),
+                    )
+                }
+            }
+        }
+    }
 
     /**
      * Gestures centred far outside the window (and absurd rotations): the
@@ -271,6 +512,34 @@ internal object MacOsTrackpadGestureMonkeyHeadfulCases {
         }
 
     private val SEEDS = longArrayOf(MONKEY_DEFAULT_SEED, 42L, 7L)
+
+    private const val WINDOW_W = 800f
+    private const val WINDOW_H = 600f
+    private const val TITLE_BAR_X = 600f
+    private const val TITLE_BAR_Y = 20f
+    private const val TITLE_BAR_ROUNDS = 3
+    private const val TITLE_BAR_ROTATE_STEPS = 6
+    private const val TITLE_BAR_SETTLE_MILLIS = 700L
+
+    private const val NIGHT_MINUTES_PROPERTY = "nucleus.tao.headful.monkeyNightMinutes"
+    private const val NIGHT_WINDOW_MINUTES = 15L
+    private const val MILLIS_PER_MINUTE = 60_000L
+    private const val NIGHT_SMOKE_MILLIS = 60_000L
+    private const val NIGHT_SLACK_MILLIS = 600_000L
+    private const val NIGHT_SEED = 20_260_924L
+    private const val NIGHT_SEEDS_PER_WINDOW = 100_000L
+    private const val NIGHT_WARMUP_FRAMES = 10L
+    private const val NIGHT_REPORT_EVERY = 10
+
+    /** Inside the macOS title bar (the bar is ~40 dp): contacts land on the window-drag area. */
+    private val NIGHT_TITLE_BAR_BAND_DP = 14f..30f
+    private val NIGHT_BODY_POINT = 400f to 360f
+    private const val FULL_TURN = 360f
+    private const val SPIN_MILLIS = 2_000
+    private const val PULSE_MILLIS = 700
+    private const val PULSE_MIN = 0.2f
+    private const val TITLE_BAR_PULSE_DP = 120
+    private const val SPINNER_DP = 160
     private val DEGENERATE_ROTATIONS = listOf("collapse" to -1.5, "explode" to 3.0)
     private const val DEGENERATE_STEPS = 300
     private const val OFFSCREEN_SEED = 660L
@@ -580,6 +849,7 @@ private class GestureOracle {
 
 // ── Driver ──────────────────────────────────────────────────────────────────
 
+@Suppress("LongParameterList")
 private class GestureMonkey(
     private val scope: TaoWindowTestScope,
     private val trace: GestureTrace,
@@ -587,9 +857,16 @@ private class GestureMonkey(
     private val profile: GestureMonkeyProfile,
     seed: Long,
     private val steps: Int,
+    /** When set, a quarter of the well-formed gestures are centred at a y in this band (dp). */
+    private val titleBarBand: ClosedFloatingPointRange<Float>? = null,
+    /** Extra invariant run at every checkpoint: a failure reason, or null. */
+    private val extraCheck: (() -> String?)? = null,
+    echo: Boolean = true,
+    /** Where the closing canonical pinch lands (a `transformable` must be under it); random by default. */
+    private val canonicalAt: Pair<Float, Float>? = null,
 ) {
     private val random = Random(seed)
-    private val journal = MonkeyJournal("gesture-monkey[${profile.label}]", seed)
+    private val journal = MonkeyJournal("gesture-monkey[${profile.label}]", seed, echo = echo)
     private val oracle = GestureOracle()
     private var scrollOpen = false
     private var lastScroll: Pair<Float, Float>? = null
@@ -800,9 +1077,15 @@ private class GestureMonkey(
      * A gesture centre far enough inside the window that the synthetic
      * contacts (120 px either side, 60 dp on a 2× display) press inside it.
      */
-    private fun center(): Pair<Float, Float> =
-        (MARGIN_DP + random.nextFloat() * (WINDOW_W_DP - 2 * MARGIN_DP)) to
-            (MARGIN_DP + random.nextFloat() * (WINDOW_H_DP - 2 * MARGIN_DP))
+    private fun center(): Pair<Float, Float> {
+        val x = MARGIN_DP + random.nextFloat() * (WINDOW_W_DP - 2 * MARGIN_DP)
+        val band = titleBarBand
+        if (band != null && profile != GestureMonkeyProfile.CHAOS && random.nextInt(TITLE_BAR_ONE_IN) == 0) {
+            journal.reach("title bar")
+            return x to band.start + random.nextFloat() * (band.endInclusive - band.start)
+        }
+        return x to (MARGIN_DP + random.nextFloat() * (WINDOW_H_DP - 2 * MARGIN_DP))
+    }
 
     // ── Execution ───────────────────────────────────────────────────────────
 
@@ -864,6 +1147,7 @@ private class GestureMonkey(
     private suspend fun checkpoint() {
         scope.settle(FLUSH_MILLIS)
         verify("checkpoint")
+        extraCheck?.invoke()?.let { fail("checkpoint", it) }
     }
 
     /** Closes whatever the walk left open, lets every timer run out, then checks the rest state. */
@@ -896,13 +1180,16 @@ private class GestureMonkey(
             journal.failure("unbalanced pan: $panStarts PanStart vs $panEnds PanEnd", state())
         }
 
+        extraCheck?.invoke()?.let { fail("quiescence", it) }
+
         // The pipeline still works: a canonical pinch zooms by exactly its factor.
+        val (cx, cy) = canonicalAt ?: (x to y)
         val before = zoom.logZoom
         perform(
             listOf(
-                GestureAction.Magnify(IoPhase.BEGAN, 0.0, x, y),
-                GestureAction.Magnify(IoPhase.CHANGED, CANONICAL_PINCH, x, y),
-                GestureAction.Magnify(IoPhase.ENDED, 0.0, x, y),
+                GestureAction.Magnify(IoPhase.BEGAN, 0.0, cx, cy),
+                GestureAction.Magnify(IoPhase.CHANGED, CANONICAL_PINCH, cx, cy),
+                GestureAction.Magnify(IoPhase.ENDED, 0.0, cx, cy),
             ),
         )
         scope.settle(FLUSH_MILLIS)
@@ -1018,6 +1305,7 @@ private class GestureMonkey(
         const val MARGIN_DP = 140f
 
         const val MAX_CONTACTS = 2
+        const val TITLE_BAR_ONE_IN = 4
 
         /** The pan router's 150 ms momentum grace plus delivery. */
         const val PAN_GRACE_MILLIS = 300L

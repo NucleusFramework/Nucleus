@@ -214,6 +214,10 @@ val taoHeadfulTest =
         System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
             systemProperty("nucleus.tao.headful.monkeySeed", it)
         }
+        // Length of the overnight gesture monkey (MacOsTrackpadGestureMonkeyHeadfulCases), minutes.
+        System.getProperty("nucleus.tao.headful.monkeyNightMinutes")?.let {
+            systemProperty("nucleus.tao.headful.monkeyNightMinutes", it)
+        }
         // Replays a journal instead of a random walk (comma-separated action names).
         System.getProperty("nucleus.tao.headful.monkeyScript")?.let {
             systemProperty("nucleus.tao.headful.monkeyScript", it)

@@ -529,7 +529,11 @@ private suspend fun PointerInputScope.titleBarDragPointerLoop(window: TaoWindow)
         while (ctx.isActive) {
             val event = awaitPointerEvent(PointerEventPass.Final)
             event.changes.forEach {
-                val isTouch = it.type == PointerType.Touch
+                // macOS has no touch screen: its only Touch pointers are the
+                // trackpad rotation's synthetic contacts (#660), which must
+                // never start a window move — the drag would replay the last
+                // real mouseDown AppKit saw.
+                val isTouch = it.type == PointerType.Touch && Platform.Current != Platform.MacOS
                 if (!it.isConsumed && !inUserControl) {
                     when (event.type) {
                         PointerEventType.Press -> {
