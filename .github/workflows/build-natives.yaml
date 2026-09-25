@@ -120,6 +120,11 @@ jobs:
         shell: cmd
         run: call fs-watcher\src\main\native\windows\build.bat
 
+      - name: Build location Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call location\src\main\native\windows\build.bat
+
       - name: Build decorated-window-tao Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
