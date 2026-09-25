@@ -875,9 +875,10 @@ private fun JvmApplicationContext.configurePackageTask(
             val strippedOutputDir = stripNativeLibs.flatMap { it.outputDir }
             packageTask.files.from(
                 strippedOutputDir.map { dir ->
-                    dir.asFileTree.matching { it.exclude(".main-jar-name") }
+                    dir.asFileTree.matching { it.exclude(".main-jar-name", ".classpath-order") }
                 },
             )
+            packageTask.classpathOrderFile.set(strippedOutputDir.map { it.file(".classpath-order") })
             val strippedMainJarName = stripNativeLibs.flatMap { it.mainJarName }
             packageTask.launcherMainJar.fileProvider(
                 strippedOutputDir.zip(strippedMainJarName) { dir, mainJarName ->
