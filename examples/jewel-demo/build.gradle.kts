@@ -95,8 +95,16 @@ tasks.withType<Test>().configureEach {
     )
 }
 
+// Compiled to class file 69, so the app has to *run* on a 25 JVM too — and the Gradle JVM
+// (the packaging default) is often older. Resolved through a toolchain, not a hard-coded path.
+val jvm25 =
+    javaToolchains
+        .launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) }
+        .map { it.metadata.installationPath.asFile.absolutePath }
+
 nucleus.application {
     mainClass = "jewelsample.MainKt"
+    javaHome = jvm25.get()
     buildTypes {
         release {
             proguard {
