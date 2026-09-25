@@ -2051,8 +2051,10 @@ abstract class AbstractElectronBuilderPackageTask
             outputDir: File,
             distributions: JvmApplicationDistributions,
         ) {
+            // Always rewritten: the file is ours, and electron-builder derives the npm name (installer
+            // file name, the %APPDATA% dir NSIS deleteAppDataOnUninstall removes) from it, so a copy
+            // left by an earlier build would keep a stale packageName.
             val packageJson = File(outputDir, "package.json")
-            if (packageJson.exists()) return
 
             val normalizedName = (executableName.orNull ?: packageName.get()).toNpmPackageName()
             val normalizedVersion = packageVersion.orNull?.takeIf { it.isNotBlank() } ?: "1.0.0"
@@ -2145,8 +2147,8 @@ abstract class AbstractElectronBuilderPackageTask
                 )
             ) {
                 val dir = File(outputDir, dirName)
-                if (dir.isDirectory) {
-                    dir.deleteRecursively()
+                if (dir.isDirectory && !dir.deleteRecursivelyClearingReadOnly()) {
+                    logger.warn("Failed to delete build temporary ${dir.absolutePath}")
                 }
             }
             File(outputDir, ".npmrc-user").delete()
@@ -2385,14 +2387,27 @@ private fun deleteWithRetry(
     for (attempt in 1..DELETE_MAX_RETRIES) {
         // Kill processes that may lock files inside the directory
         killProcessesIn(dir, logger)
-        if (dir.deleteRecursively()) return
+        if (dir.deleteRecursivelyClearingReadOnly()) return
         logger.warn("Failed to delete ${dir.absolutePath} (attempt $attempt/$DELETE_MAX_RETRIES)")
         if (attempt < DELETE_MAX_RETRIES) Thread.sleep(DELETE_RETRY_DELAY_MS)
     }
     // Last resort: try once more and throw if it still fails
-    if (dir.exists() && !dir.deleteRecursively()) {
+    if (dir.exists() && !dir.deleteRecursivelyClearingReadOnly()) {
         error("Cannot delete ${dir.absolutePath} after $DELETE_MAX_RETRIES attempts. Is a process locking files?")
     }
+}
+
+/**
+ * [File.deleteRecursively] that first clears the read-only flag of every entry. Windows refuses to
+ * delete a read-only file, and jpackage's launcher `.exe` is one — [copyAppImage] keeps that
+ * attribute (`COPY_ATTRIBUTES`), so the plain delete left `.app-image` behind and the next build
+ * failed to replace it. Symbolic links are left alone: clearing the flag would follow them.
+ */
+internal fun File.deleteRecursivelyClearingReadOnly(): Boolean {
+    walkBottomUp()
+        .filter { !Files.isSymbolicLink(it.toPath()) && !it.canWrite() }
+        .forEach { it.setWritable(true) }
+    return deleteRecursively()
 }
 
 /**
