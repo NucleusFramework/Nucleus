@@ -204,6 +204,7 @@ jobs:
             "spellcheck/nucleus_spellcheck.dll"
             "fs-watcher/nucleus_fs_watcher.dll"
             "share/nucleus_share.dll"
+            "location/nucleus_location.dll"
             "decorated-window-tao/nucleus_tao.dll"
             "decorated-window-tao/nucleus_tao_windows_deco.dll"
             "decorated-window-tao/nucleus_tao_gl.dll"
@@ -363,6 +364,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash share/src/main/native/macos/build.sh
 
+      - name: Build location macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash location/src/main/native/macos/build.sh
+
       - name: Build decorated-window-tao macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/macos/build.sh
@@ -391,6 +396,7 @@ jobs:
             "spellcheck/libnucleus_spellcheck.dylib"
             "fs-watcher/libnucleus_fs_watcher.dylib"
             "share/libnucleus_share.dylib"
+            "location/libnucleus_location.dylib"
             "decorated-window-tao/libnucleus_tao.dylib"
             "decorated-window-tao/libnucleus_tao_metal.dylib"
             "decorated-window-tao/libnucleus_tao_dnd.dylib"
@@ -530,6 +536,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash share/src/main/native/linux/build.sh
 
+      - name: Build location Linux native libraries
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash location/src/main/native/linux/build.sh
+
       - name: Build decorated-window-tao Linux native libraries
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/linux/build.sh
@@ -552,6 +562,7 @@ jobs:
             "media-control/libnucleus_media_control_linux.so"
             "fs-watcher/libnucleus_fs_watcher.so"
             "share/libnucleus_share.so"
+            "location/libnucleus_location.so"
             "decorated-window-tao/libnucleus_tao.so"
             "decorated-window-tao/libnucleus_tao_egl.so"
             "decorated-window-tao/libnucleus_tao_linux_widget.so"

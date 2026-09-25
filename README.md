@@ -246,6 +246,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.scheduler-testing` | Test doubles for `scheduler` |
 | `nucleus.fs-watcher` | Native filesystem watcher |
 | `nucleus.share` | Native share sheet, Kotlin Multiplatform (Android, iOS, macOS, Windows, Linux, web) |
+| `nucleus.location` | Kotlin Multiplatform geolocation — Rust bridge on desktop (Windows Geolocator, Core Location, XDG portal / GeoClue), `LocationManager` on Android, Core Location on iOS, Geolocation API on the web (JS / Wasm) |
 | `nucleus.service-management-macos` | macOS `SMAppService` — login items, launch agents, daemons |
 | `nucleus.native-ssl` | OS trust store integration |
 | `nucleus.native-http` | HTTP client with native SSL |
