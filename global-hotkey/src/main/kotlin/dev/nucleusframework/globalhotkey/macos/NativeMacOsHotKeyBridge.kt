@@ -1,6 +1,7 @@
 package dev.nucleusframework.globalhotkey.macos
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import dev.nucleusframework.core.runtime.NucleusUiThread
 import dev.nucleusframework.globalhotkey.HotKeyListener
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -56,7 +57,9 @@ internal object NativeMacOsHotKeyBridge {
         keyCode: Int,
         modifiers: Int,
     ) {
-        listeners[id]?.onHotKey(keyCode, modifiers)
+        // Native fires on its own thread; resolve the listener on the UI thread so a
+        // press queued before unregister() is dropped rather than delivered late.
+        NucleusUiThread.post { listeners[id]?.onHotKey(keyCode, modifiers) }
     }
 
     fun registerListener(listener: HotKeyListener): Long {
