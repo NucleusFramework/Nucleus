@@ -137,6 +137,8 @@ internal abstract class AbstractTaoComposeSceneHost {
             TaoMouseButton.LEFT -> PointerButton.Primary
             TaoMouseButton.RIGHT -> PointerButton.Secondary
             TaoMouseButton.MIDDLE -> PointerButton.Tertiary
+            TaoMouseButton.BACK -> PointerButton.Back
+            TaoMouseButton.FORWARD -> PointerButton.Forward
             else -> PointerButton.Primary
         }
 

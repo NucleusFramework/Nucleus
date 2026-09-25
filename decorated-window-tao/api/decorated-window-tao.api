@@ -1261,6 +1261,8 @@ public final class dev/nucleusframework/window/tao/TaoMonitors {
 
 public final class dev/nucleusframework/window/tao/TaoMouseButton {
 	public static final field $stable I
+	public static final field BACK I
+	public static final field FORWARD I
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoMouseButton;
 	public static final field LEFT I
 	public static final field MIDDLE I
