@@ -5,9 +5,13 @@ import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.KotlinProjectExtension
 
 plugins {
+    // `clean` (deletes the root build directory) comes from here: Kotlin/JS applies the
+    // lifecycle plugin to the root project, which forbids registering a `clean` of our own.
+    base
     alias(libs.plugins.kotlin) apply false
     alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.androidApplication) apply false
+    alias(libs.plugins.androidKotlinMultiplatformLibrary) apply false
     alias(libs.plugins.vanniktechMavenPublish) apply false
     alias(libs.plugins.graalvmNative) apply false
     // Freezes public ABI for every published library module: `apiCheck` fails on
@@ -156,6 +160,20 @@ subprojects {
             config.setFrom(rootProject.files("config/detekt/detekt.yml"))
         }
 
+        // In a multiplatform module the aggregate `detekt` task has no source: the
+        // analysis runs per source set, and only these tasks enforce the KDoc rules.
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            tasks.named("check") {
+                dependsOn(
+                    tasks.matching {
+                        it.name.startsWith("detekt") &&
+                            !it.name.startsWith("detektBaseline") &&
+                            it.name.endsWith("MainSourceSet")
+                    },
+                )
+            }
+        }
+
         tasks.withType<Detekt>().configureEach {
             jvmTarget.set("25")
         }
@@ -189,10 +207,6 @@ tasks.withType<DependencyUpdatesTask> {
 }
 
 fun String.isNonStable() = "^[0-9,.v-]+(-r)?$".toRegex().matches(this).not()
-
-tasks.register("clean", Delete::class.java) {
-    delete(rootProject.layout.buildDirectory)
-}
 
 tasks.register("cleanNativeLibs", Delete::class.java) {
     group = "cleanup"

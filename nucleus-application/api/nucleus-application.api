@@ -195,6 +195,14 @@ public final class dev/nucleusframework/application/SatelliteWindowKt {
 	public static final fun SatelliteWindow (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/window/tao/SatelliteWindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 }
 
+public final class dev/nucleusframework/application/ShareKt {
+	public static final fun share (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/share/ShareAnchor;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun share (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/share/ShareRequest;Ldev/nucleusframework/share/ShareAnchor;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun share$default (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/share/ShareAnchor;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun share$default (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/share/ShareRequest;Ldev/nucleusframework/share/ShareAnchor;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun shareAnchor (Landroidx/compose/ui/layout/LayoutCoordinates;Landroidx/compose/ui/unit/Density;)Ldev/nucleusframework/share/ShareAnchor;
+}
+
 public final class dev/nucleusframework/application/SingleInstanceRestoreBusKt {
 	public static final fun SingleInstanceRestoreEffect (Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
 }
