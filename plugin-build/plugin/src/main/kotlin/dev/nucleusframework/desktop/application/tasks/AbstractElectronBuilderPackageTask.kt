@@ -34,6 +34,7 @@ import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import dev.nucleusframework.desktop.application.internal.MACOS_DMG_TITLE_BAR_HEIGHT
 import dev.nucleusframework.desktop.application.internal.padDmgBackgroundForTitleBar
 import dev.nucleusframework.desktop.application.internal.readImageDimensions
+import dev.nucleusframework.desktop.application.internal.sanitizeFileName
 import dev.nucleusframework.desktop.application.internal.updateExecutableTypeInAppImage
 import dev.nucleusframework.desktop.application.internal.validation.ValidatedMacOSSigningSettings
 import dev.nucleusframework.desktop.application.internal.validation.validate
@@ -120,6 +121,16 @@ abstract class AbstractElectronBuilderPackageTask
 
         @get:Input
         val packageName: Property<String> = objects.notNullProperty()
+
+        /**
+         * The runtime's `NucleusApp.appId`. On Windows it names the app's data directory under
+         * `%APPDATA%` (the one `nucleusApplication` hands to FileKit), which
+         * `deleteAppDataOnUninstall` must remove even when electron-builder derives other names —
+         * a GraalVM `imageName` that is not the package name.
+         */
+        @get:Input
+        @get:Optional
+        val runtimeAppId: Property<String> = objects.nullableProperty()
 
         @get:Input
         @get:Optional
@@ -541,7 +552,7 @@ abstract class AbstractElectronBuilderPackageTask
                 )
             }
 
-            val nsisProtocolInclude = generateProtocolNsisInclude(distributions, outputDir)
+            val nsisProtocolInclude = generateNucleusNsisInclude(distributions, outputDir)
 
             val configContent =
                 configGenerator.generateConfig(
@@ -574,24 +585,43 @@ abstract class AbstractElectronBuilderPackageTask
          * Linux (.desktop `x-scheme-handler`); the NSIS target ignores it. Windows therefore needs
          * explicit registry writes, which we emit via the `customInstall`/`customUnInstall` hooks.
          *
-         * Returns null (no registration) when the current OS is not Windows, the target is not an
-         * NSIS-family installer, no protocols are declared, or the user already supplied a custom
-         * NSIS include script (which must not be overridden).
+         * With `deleteAppDataOnUninstall`, the same `customUnInstall` also removes
+         * `%APPDATA%\<runtimeAppId>` (see [appendAppDataRemoval]). Both live in one file because
+         * NSIS allows a single `customUnInstall` macro.
+         *
+         * Returns null when the current OS is not Windows, the target is not an NSIS-family
+         * installer, there is nothing to emit, or the user already supplied a custom NSIS include
+         * script (which must not be overridden).
          */
-        private fun generateProtocolNsisInclude(
+        private fun generateNucleusNsisInclude(
             distributions: JvmApplicationDistributions,
             outputDir: File,
         ): File? {
             if (currentOS != OS.Windows) return null
-            if (distributions.protocols.isEmpty()) return null
             if (targetFormat !in setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)) return null
 
+            val appDataDir =
+                runtimeAppId.orNull
+                    ?.takeIf { distributions.windows.nsis.deleteAppDataOnUninstall }
+                    ?.let { appDataDirNameOrNull(it) }
+            if (distributions.protocols.isEmpty() && appDataDir == null) return null
+
             if (distributions.windows.nsis.includeScript.orNull != null) {
-                logger.warn(
-                    "URL protocol handlers are declared but a custom nsis.includeScript is set; " +
-                        "skipping automatic protocol registration. Register the schemes yourself " +
-                        "in a customInstall macro inside your include script.",
-                )
+                if (distributions.protocols.isNotEmpty()) {
+                    logger.warn(
+                        "URL protocol handlers are declared but a custom nsis.includeScript is set; " +
+                            "skipping automatic protocol registration. Register the schemes yourself " +
+                            "in a customInstall macro inside your include script.",
+                    )
+                }
+                if (appDataDir != null) {
+                    logger.warn(
+                        "deleteAppDataOnUninstall is set but a custom nsis.includeScript is set; " +
+                            "%APPDATA%\\$appDataDir (NucleusApp.appId) is only removed if electron-builder " +
+                            "derives the same name. Remove it yourself in a customUnInstall macro " +
+                            "inside your include script.",
+                    )
+                }
                 return null
             }
 
@@ -611,50 +641,55 @@ abstract class AbstractElectronBuilderPackageTask
                             .filter { it.isNotEmpty() }
                             .map { scheme -> scheme to (friendlyName ?: scheme) }
                     }.distinctBy { it.first }
-            if (handlers.isEmpty()) return null
+            if (handlers.isEmpty() && appDataDir == null) return null
 
             // SHELL_CONTEXT resolves to HKLM (per-machine) or HKCU (per-user) automatically.
             // ${APP_EXECUTABLE_FILENAME} is provided by electron-builder's NSIS template.
             val script =
                 buildString {
-                    appendLine("!macro customInstall")
-                    for ((scheme, friendlyName) in handlers) {
-                        val key = "Software\\Classes\\$scheme"
-                        appendLine("  DetailPrint \"Registering $scheme:// URL handler\"")
-                        appendLine("  DeleteRegKey SHELL_CONTEXT \"$key\"")
-                        appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"\" \"URL:$friendlyName\"")
-                        appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"URL Protocol\" \"\"")
-                        appendLine(
-                            "  WriteRegStr SHELL_CONTEXT \"$key\\DefaultIcon\" \"\" " +
-                                "\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME},0\"",
-                        )
-                        appendLine(
-                            "  WriteRegStr SHELL_CONTEXT \"$key\\shell\\open\\command\" \"\" " +
-                                "'\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME}\" \"%1\"'",
-                        )
+                    if (handlers.isNotEmpty()) {
+                        appendLine("!macro customInstall")
+                        for ((scheme, friendlyName) in handlers) {
+                            val key = "Software\\Classes\\$scheme"
+                            appendLine("  DetailPrint \"Registering $scheme:// URL handler\"")
+                            appendLine("  DeleteRegKey SHELL_CONTEXT \"$key\"")
+                            appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"\" \"URL:$friendlyName\"")
+                            appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"URL Protocol\" \"\"")
+                            appendLine(
+                                "  WriteRegStr SHELL_CONTEXT \"$key\\DefaultIcon\" \"\" " +
+                                    "\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME},0\"",
+                            )
+                            appendLine(
+                                "  WriteRegStr SHELL_CONTEXT \"$key\\shell\\open\\command\" \"\" " +
+                                    "'\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME}\" \"%1\"'",
+                            )
+                        }
+                        appendLine("!macroend")
+                        appendLine()
                     }
-                    appendLine("!macroend")
-                    appendLine()
                     appendLine("!macro customUnInstall")
-                    // Guard against auto-update: the new installer runs before the old uninstaller,
-                    // so unconditional cleanup would drop a just-registered scheme.
-                    appendLine("  \${ifNot} \${isUpdated}")
-                    for ((scheme, _) in handlers) {
-                        appendLine("    DeleteRegKey SHELL_CONTEXT \"Software\\Classes\\$scheme\"")
+                    if (handlers.isNotEmpty()) {
+                        // Guard against auto-update: the new installer runs before the old uninstaller,
+                        // so unconditional cleanup would drop a just-registered scheme.
+                        appendLine("  \${ifNot} \${isUpdated}")
+                        for ((scheme, _) in handlers) {
+                            appendLine("    DeleteRegKey SHELL_CONTEXT \"Software\\Classes\\$scheme\"")
+                        }
+                        appendLine("  \${endIf}")
                     }
-                    appendLine("  \${endIf}")
+                    if (appDataDir != null) appendAppDataRemoval(appDataDir)
                     appendLine("!macroend")
                 }
 
-            val nshFile = File(outputDir, "nucleus-protocols.nsh")
+            val nshFile = File(outputDir, "nucleus-installer.nsh")
             nshFile.parentFile.mkdirs()
             // Write with a UTF-8 BOM so makensis detects the encoding and keeps non-ASCII
             // protocol names (e.g. Hebrew) intact. NSIS treats '#' as a comment, so a
             // "#pragma" directive would be inert — the BOM is the supported mechanism.
             nshFile.writeText("﻿$script", Charsets.UTF_8)
             logger.info(
-                "Generated NSIS protocol registration script at ${nshFile.absolutePath} " +
-                    "for schemes: ${handlers.joinToString { it.first }}",
+                "Generated NSIS include at ${nshFile.absolutePath} " +
+                    "(schemes: ${handlers.joinToString { it.first }}; app data: ${appDataDir.orEmpty()})",
             )
             return nshFile
         }
@@ -2395,6 +2430,46 @@ private fun deleteWithRetry(
     if (dir.exists() && !dir.deleteRecursivelyClearingReadOnly()) {
         error("Cannot delete ${dir.absolutePath} after $DELETE_MAX_RETRIES attempts. Is a process locking files?")
     }
+}
+
+/**
+ * [appId] when it is a plain file name — the only form safe to append to `$APPDATA\` in an
+ * `RMDir /r`: an empty name, `.`, `..` or a path separator would target `%APPDATA%` itself or
+ * beyond. Anything electron-builder's sanitizer would rewrite is refused as well.
+ */
+internal fun appDataDirNameOrNull(appId: String): String? =
+    appId.takeIf { it.isNotEmpty() && sanitizeFileName(it) == it }
+
+/**
+ * Emits the removal of `%APPDATA%\<dirName>` under the exact condition electron-builder's
+ * `uninstaller.nsh` removes its own app data directories: `--delete-app-data`, or
+ * `deleteAppDataOnUninstall` outside an update. It has to be re-evaluated here because the
+ * template computes `$isDeleteAppData` only after `customUnInstall` has run, and the later
+ * `customUnInstallSection` hook is never reached by a one-click uninstaller (`quitSuccess`).
+ */
+internal fun StringBuilder.appendAppDataRemoval(dirName: String) {
+    val nsisDirName = dirName.replace("$", "$$")
+    appendLine("  # Nucleus: NucleusApp.appId data directory (deleteAppDataOnUninstall)")
+    appendLine("  StrCpy \$R2 \"0\"")
+    appendLine("  ClearErrors")
+    appendLine("  \${GetParameters} \$R0")
+    appendLine("  \${GetOptions} \$R0 \"--delete-app-data\" \$R1")
+    appendLine("  \${if} \${Errors}")
+    appendLine("    \${ifNot} \${isUpdated}")
+    appendLine("      StrCpy \$R2 \"1\"")
+    appendLine("    \${endIf}")
+    appendLine("  \${else}")
+    appendLine("    StrCpy \$R2 \"1\"")
+    appendLine("  \${endIf}")
+    appendLine("  \${if} \$R2 == \"1\"")
+    appendLine("    \${if} \$installMode == \"all\"")
+    appendLine("      SetShellVarContext current")
+    appendLine("    \${endIf}")
+    appendLine("    RMDir /r \"\$APPDATA\\$nsisDirName\"")
+    appendLine("    \${if} \$installMode == \"all\"")
+    appendLine("      SetShellVarContext all")
+    appendLine("    \${endIf}")
+    appendLine("  \${endIf}")
 }
 
 /**
