@@ -39,7 +39,12 @@ dependencies {
     // `api` so consumers get it without declaring it themselves.
     api(project(":decorated-window-tao"))
 
+    // compileOnly: nucleusApplication initializes FileKit only when the app
+    // ships it (see FileKitIntegration.kt); never forced on consumers.
+    compileOnly(libs.filekit.core)
+
     testImplementation(libs.junit)
+    testImplementation(libs.filekit.core)
     testImplementation(compose.desktop.currentOs)
     testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
@@ -95,6 +100,27 @@ tasks.register("contextMenuE2EClasspath") {
             .asFile
             .apply { parentFile.mkdirs() }
             .writeText(classpath.asPath)
+    }
+}
+
+/**
+ * Process E2E for FileKit auto-initialization: each scenario boots a real
+ * `nucleusApplication` in its own JVM, one of them on a classpath without FileKit.
+ * Not part of `check` — run explicitly: `./gradlew :nucleus-application:fileKitE2E`
+ */
+tasks.register<JavaExec>("fileKitE2E") {
+    group = "verification"
+    description = "Boots nucleusApplication with and without FileKit and checks what FileKit resolves"
+    dependsOn(tasks.named("testClasses"))
+    val runtimeClasspath = sourceSets["test"].runtimeClasspath
+    classpath = runtimeClasspath
+    mainClass.set("dev.nucleusframework.application.filekit.FileKitE2EMainKt")
+    doFirst {
+        systemProperty("fileKitE2E.classpath", runtimeClasspath.asPath)
+        systemProperty(
+            "fileKitE2E.classpathWithoutFileKit",
+            runtimeClasspath.filter { !it.name.startsWith("filekit-") }.asPath,
+        )
     }
 }
 

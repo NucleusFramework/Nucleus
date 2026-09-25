@@ -959,6 +959,7 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
     )
 
     packageTask.packageName.set(packageNameProvider)
+    packageTask.runtimeAppId.set(resolvedAppIdProvider())
     packageTask.executableName.set(
         project.provider {
             val dist = app.nativeDistributions
