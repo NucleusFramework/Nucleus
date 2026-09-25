@@ -45,6 +45,7 @@ fun main() {
 
     scenario("absent", noFileKitClasspath, "fileKitOnClasspath" to "false")
     scenario("uninitialized", fullClasspath, "appId" to expectedAppId, "filesDir" to expectedDefaultDir)
+    scenario("optOut", fullClasspath, "appId" to "<unset>", "filesDir" to "<unset>")
     scenario("preInitAppId", fullClasspath, "appId" to "user-chosen-id")
     scenario(
         "preInitDirs",

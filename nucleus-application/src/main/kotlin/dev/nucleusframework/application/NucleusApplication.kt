@@ -65,6 +65,11 @@ public fun nucleusApplication(
     // Compose/Skiko initialisation indirectly touches AWT, whose non-daemon
     // EDT would otherwise keep the JVM alive after the Tao loop has shut down.
     exitProcessOnExit: Boolean = true,
+    // When true (default) and FileKit is on the runtime classpath, calls
+    // `FileKit.init(NucleusApp.appId)` unless the app already initialized it,
+    // so FileKit's files directory is the one the NSIS uninstaller removes
+    // with `deleteAppDataOnUninstall`. Pass false to leave FileKit untouched.
+    initializeFileKit: Boolean = true,
     content: @Composable NucleusApplicationScope.() -> Unit,
 ) {
     GraalVmInitializer.initialize()
@@ -103,7 +108,9 @@ public fun nucleusApplication(
     // Point FileKit at the app's data directory (the one the NSIS uninstaller
     // removes) when it is on the classpath; an app that already called
     // FileKit.init keeps its own configuration.
-    initializeFileKitIfPresent()
+    if (initializeFileKit) {
+        initializeFileKitIfPresent()
+    }
 
     // Record the active backend so external libraries (depending only on
     // core-runtime) can query WindowBackend.Current without a reflective

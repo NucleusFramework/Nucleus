@@ -23,7 +23,11 @@ fun main(args: Array<String>) {
         "preInitDirs" -> FileKitProbe.initDirs(File(System.getProperty("fileKitE2E.customDir")))
     }
 
-    nucleusApplication(enableSingleInstance = false, exitProcessOnExit = true) {
+    nucleusApplication(
+        enableSingleInstance = false,
+        exitProcessOnExit = true,
+        initializeFileKit = scenario != "optOut",
+    ) {
         LaunchedEffect(Unit) {
             if (scenario == "absent") {
                 val onClasspath =
