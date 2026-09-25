@@ -1,0 +1,33 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.screencapture.internal.DisplayCollector",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "add",
+                    "parameterTypes": [
+                        "java.lang.String",
+                        "java.lang.String",
+                        "int",
+                        "int",
+                        "int",
+                        "int",
+                        "int",
+                        "int",
+                        "float",
+                        "boolean"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.screencapture.internal.NativeScreenCapture",
+            "jniAccessible": true
+        },
+        {
+            "type": "java.lang.String",
+            "jniAccessible": true
+        }
+    ]
+}
