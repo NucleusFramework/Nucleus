@@ -16,7 +16,8 @@ import kotlinx.coroutines.withContext
  * - **Linux X11 / XWayland**: the portal gets `x11:<xid>`.
  * - **Linux Wayland**: the window is exported through `xdg_foreign` for the duration of [block]
  *   and unexported when it returns, which is the lifetime the portal requires.
- * - **macOS**: left unparented — FileKit only accepts an AWT parent there and rejects any other.
+ * - **macOS**: left unparented — FileKit's `runModal` panel is already app-modal (it runs
+ *   `NSApplication.runModal(for:)`), so no other window can take it over.
  *
  * A [settings] that already carries a parent is passed through untouched, and so is every
  * setting when the window exposes no platform identity (not realized yet, native bridge missing).
@@ -71,6 +72,6 @@ private fun TaoWindow.fileKitDialogParent(): BorrowedDialogParent? =
                     BorrowedDialogParent(FileKitDialogParent.wayland(portalParent.handle), lease = portalParent)
                 null -> null
             }
-        // FileKit (0.16) accepts only an AWT parent on macOS: an NSWindow would make the picker throw.
+        // runModal is already app-modal on macOS; FileKit also rejects any non-AWT parent there.
         else -> null
     }
