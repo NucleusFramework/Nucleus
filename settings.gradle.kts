@@ -72,6 +72,7 @@ include(":scheduler-testing")
 include(":updater-testing")
 include(":fs-watcher")
 include(":share")
+include(":speech-recognition")
 
 // Nucleus Lab: the single test bench app (examples/lab). One module per probe domain;
 // each contributes its probes to the Metro graph assembled by :examples:lab:app.

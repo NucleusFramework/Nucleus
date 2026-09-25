@@ -13,9 +13,11 @@ Full license texts are in [`licenses/`](licenses/):
 | [`licenses/LICENSE-MIT-accesskit.txt`](licenses/LICENSE-MIT-accesskit.txt) | AccessKit crates (MIT option) |
 | [`licenses/LICENSE-BSD-3-Clause-angle.txt`](licenses/LICENSE-BSD-3-Clause-angle.txt) | ANGLE runtime libraries and EGL/KHR headers |
 | [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt) | `robius-share` (derived source in `share`) |
+| [`licenses/LICENSE-MIT-robius-speech.txt`](licenses/LICENSE-MIT-robius-speech.txt) | `robius-speech` (desktop binary, Kotlin ports in `speech-recognition`) |
 
 The artifacts that redistribute third-party code ship this file and `licenses/` inside their JAR
-under `META-INF/` (`nucleus.decorated-window-tao`, the desktop JAR of `nucleus.share` and the
+under `META-INF/` (`nucleus.decorated-window-tao`, the desktop JAR of `nucleus.share`, the JVM JAR
+and AAR of `nucleus.speech-recognition` and the
 `dev.nucleusframework` Gradle plugin), as required by Apache-2.0 §4(a) and the MIT notice clause.
 
 ---
@@ -113,6 +115,22 @@ portal), and its minimal D-Bus client is ported from it:
 - Project: Project Robius — https://github.com/project-robius/robius (commit `71966dc2`)
 - License: MIT — [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt)
 - Copyright (c) 2023-2025 Project Robius
+
+---
+
+## 6. robius-speech — compiled into a shipped binary, and ported to Kotlin (MIT)
+
+`speech-recognition` builds its desktop library (`nucleus_speech`) against the `robius-speech`
+crate, pinned by commit in `speech-recognition/src/main/native/Cargo.toml` (it is not published on
+crates.io): Windows SAPI dictation, and on macOS its Swift bridge to SFSpeechRecognizer, both
+statically linked. The module's Kotlin sources also port parts of it: `Dictation` and the word
+comparisons (from `dictation.rs`), the Android backend (from `NativeSpeech.java` /
+`SpeechPermissionFragment.java`), and the iOS backend with its segment tracking (from
+`NativeSpeech.swift`).
+
+- Project: Project Robius — https://github.com/project-robius/robius (`crates/speech`)
+- License: MIT — [`licenses/LICENSE-MIT-robius-speech.txt`](licenses/LICENSE-MIT-robius-speech.txt)
+- Copyright (c) 2026 Project Robius Developers
 
 ---
 
