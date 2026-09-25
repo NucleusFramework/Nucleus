@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntRect
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.core.runtime.UpdateHandoff
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
@@ -1544,6 +1545,9 @@ public class TaoWindow internal constructor(
                 if (startupEraseActive) {
                     startupEraseActive = false
                     setStartupBackgroundEraseEnabled(false)
+                    // A window is on screen with content: after a hot update, the
+                    // version that launched this one may now exit (no-op otherwise).
+                    UpdateHandoff.signalReady()
                 }
             }
             TaoEventCode.FOCUSED -> {

@@ -34,6 +34,8 @@ import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import dev.nucleusframework.desktop.application.internal.MACOS_DMG_TITLE_BAR_HEIGHT
 import dev.nucleusframework.desktop.application.internal.padDmgBackgroundForTitleBar
 import dev.nucleusframework.desktop.application.internal.readImageDimensions
+import dev.nucleusframework.desktop.application.internal.WindowsHotUpdateLayout
+import dev.nucleusframework.desktop.application.internal.WindowsHotUpdateNsis
 import dev.nucleusframework.desktop.application.internal.updateExecutableTypeInAppImage
 import dev.nucleusframework.desktop.application.internal.validation.ValidatedMacOSSigningSettings
 import dev.nucleusframework.desktop.application.internal.validation.validate
@@ -109,6 +111,8 @@ abstract class AbstractElectronBuilderPackageTask
             private const val APPX_SQUARE150_LOGO_SIZE = 150
             private const val APPX_WIDE_LOGO_WIDTH = 310
             private const val APPX_WIDE_LOGO_HEIGHT = 150
+            private const val DEFAULT_PACKAGE_VERSION = "1.0.0"
+            private val NSIS_FORMATS = setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)
         }
 
         @get:InputDirectory
@@ -315,6 +319,7 @@ abstract class AbstractElectronBuilderPackageTask
             bundleSilentUpdateArtifacts(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
+            val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir, dist)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
             val (node, npm) = resolveNodeJs()
@@ -347,6 +352,7 @@ abstract class AbstractElectronBuilderPackageTask
                     windowsIconOverride = windowsIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
                     linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
+                    hotUpdateLayout = hotUpdateLayout,
                 )
             ensureProjectPackageMetadata(outputDir, dist)
 
@@ -508,6 +514,7 @@ abstract class AbstractElectronBuilderPackageTask
             windowsIconOverride: File?,
             linuxAfterInstallTemplate: File?,
             linuxAfterRemoveTemplate: File?,
+            hotUpdateLayout: Boolean,
         ): File {
             val configGenerator = ElectronBuilderConfigGenerator()
             val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
@@ -541,7 +548,7 @@ abstract class AbstractElectronBuilderPackageTask
                 )
             }
 
-            val nsisProtocolInclude = generateProtocolNsisInclude(distributions, outputDir)
+            val nsisInclude = generateNsisInclude(distributions, outputDir, hotUpdateLayout)
 
             val configContent =
                 configGenerator.generateConfig(
@@ -557,7 +564,7 @@ abstract class AbstractElectronBuilderPackageTask
                     executableName = resolveExecutableName(),
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
-                    nsisProtocolInclude = nsisProtocolInclude,
+                    nsisInclude = nsisInclude,
                     macBundleName = macBundleName.orNull,
                 )
             val configFile = File(outputDir, "electron-builder.yml")
@@ -567,26 +574,87 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Generates an NSIS include script that registers the declared URL protocol handlers
-         * (deep linking) in the Windows registry at install time.
+         * Lays the Windows app image out for hot updates (`versions\<version>\`, see
+         * [WindowsHotUpdateLayout]) when the target is an NSIS installer.
+         * Returns whether the layout was applied, which is what the NSIS include keys its hot
+         * update support on.
+         */
+        private fun applyWindowsHotUpdateLayout(
+            appDir: File,
+            distributions: JvmApplicationDistributions,
+        ): Boolean {
+            if (currentOS != OS.Windows || targetFormat !in NSIS_FORMATS) return false
+            val version = packageVersion.orNull?.takeIf { it.isNotBlank() } ?: DEFAULT_PACKAGE_VERSION
+            val applied = WindowsHotUpdateLayout.apply(appDir, version)
+            if (applied) {
+                logger.info(
+                    "Laid the app image out for hot updates " +
+                        "(versions\\${WindowsHotUpdateLayout.versionDirName(version)})",
+                )
+            } else {
+                logger.info("Hot update layout skipped: not a jpackage app image")
+            }
+            return applied
+        }
+
+        /**
+         * Generates the NSIS include script passed to electron-builder, or null when nothing needs
+         * one. It chains, in order: the user's `nsis.includeScript`, the URL protocol registration
+         * (only without a user script, see [protocolNsisMacros]) and the hot update hooks
+         * ([WindowsHotUpdateNsis]) when [hotUpdateLayout] applies.
+         */
+        private fun generateNsisInclude(
+            distributions: JvmApplicationDistributions,
+            outputDir: File,
+            hotUpdateLayout: Boolean,
+        ): File? {
+            if (currentOS != OS.Windows || targetFormat !in NSIS_FORMATS) return null
+            val userInclude =
+                distributions.windows.nsis.includeScript.orNull
+                    ?.asFile
+            val protocolMacros = protocolNsisMacros(distributions, hasUserInclude = userInclude != null)
+            if (protocolMacros == null && !hotUpdateLayout) return null
+
+            val script =
+                buildString {
+                    if (userInclude != null) {
+                        if (hotUpdateLayout) WindowsHotUpdateNsis.warnOnConflicts(userInclude, logger)
+                        appendLine("!include \"${userInclude.absolutePath}\"")
+                        appendLine()
+                    }
+                    protocolMacros?.let { appendLine(it) }
+                    if (hotUpdateLayout) append(WindowsHotUpdateNsis.MACROS)
+                }
+
+            val nshFile = File(outputDir, "nucleus-installer.nsh")
+            nshFile.parentFile.mkdirs()
+            // Write with a UTF-8 BOM so makensis detects the encoding and keeps non-ASCII
+            // protocol names (e.g. Hebrew) intact. NSIS treats '#' as a comment, so a
+            // "#pragma" directive would be inert — the BOM is the supported mechanism.
+            nshFile.writeText("﻿$script", Charsets.UTF_8)
+            logger.info("Generated NSIS include script at ${nshFile.absolutePath}")
+            return nshFile
+        }
+
+        /**
+         * Builds the NSIS macros that register the declared URL protocol handlers (deep linking)
+         * in the Windows registry at install time.
          *
          * electron-builder's `protocols` field only registers schemes on macOS (Info.plist) and
          * Linux (.desktop `x-scheme-handler`); the NSIS target ignores it. Windows therefore needs
          * explicit registry writes, which we emit via the `customInstall`/`customUnInstall` hooks.
          *
-         * Returns null (no registration) when the current OS is not Windows, the target is not an
-         * NSIS-family installer, no protocols are declared, or the user already supplied a custom
-         * NSIS include script (which must not be overridden).
+         * Returns the `customInstall`/`customUnInstall` macros, or null (no registration) when no
+         * protocols are declared or the user already supplied a custom NSIS include script (whose
+         * own macros must not be overridden).
          */
-        private fun generateProtocolNsisInclude(
+        private fun protocolNsisMacros(
             distributions: JvmApplicationDistributions,
-            outputDir: File,
-        ): File? {
-            if (currentOS != OS.Windows) return null
+            hasUserInclude: Boolean,
+        ): String? {
             if (distributions.protocols.isEmpty()) return null
-            if (targetFormat !in setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)) return null
 
-            if (distributions.windows.nsis.includeScript.orNull != null) {
+            if (hasUserInclude) {
                 logger.warn(
                     "URL protocol handlers are declared but a custom nsis.includeScript is set; " +
                         "skipping automatic protocol registration. Register the schemes yourself " +
@@ -646,17 +714,8 @@ abstract class AbstractElectronBuilderPackageTask
                     appendLine("!macroend")
                 }
 
-            val nshFile = File(outputDir, "nucleus-protocols.nsh")
-            nshFile.parentFile.mkdirs()
-            // Write with a UTF-8 BOM so makensis detects the encoding and keeps non-ASCII
-            // protocol names (e.g. Hebrew) intact. NSIS treats '#' as a comment, so a
-            // "#pragma" directive would be inert — the BOM is the supported mechanism.
-            nshFile.writeText("﻿$script", Charsets.UTF_8)
-            logger.info(
-                "Generated NSIS protocol registration script at ${nshFile.absolutePath} " +
-                    "for schemes: ${handlers.joinToString { it.first }}",
-            )
-            return nshFile
+            logger.info("Registering URL handlers for schemes: ${handlers.joinToString { it.first }}")
+            return script
         }
 
         private fun exportPackagingMetadata(

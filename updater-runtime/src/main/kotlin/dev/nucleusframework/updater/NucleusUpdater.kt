@@ -9,9 +9,11 @@ import dev.nucleusframework.updater.exception.NoMatchingFileException
 import dev.nucleusframework.updater.exception.UpdateException
 import dev.nucleusframework.updater.internal.ChecksumVerifier
 import dev.nucleusframework.updater.internal.FileSelector
+import dev.nucleusframework.updater.internal.InstalledVersionWatcher
 import dev.nucleusframework.updater.internal.PlatformInfo
 import dev.nucleusframework.updater.internal.PlatformInstaller
 import dev.nucleusframework.updater.internal.UpdateMarker
+import dev.nucleusframework.updater.internal.WindowsHotUpdate
 import dev.nucleusframework.updater.internal.YamlParser
 import dev.nucleusframework.updater.internal.delta.DeltaPlan
 import dev.nucleusframework.updater.internal.delta.DeltaResolver
@@ -20,6 +22,9 @@ import dev.nucleusframework.updater.internal.delta.UpdateCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
@@ -300,10 +305,75 @@ public class NucleusUpdater(
         }
     }
 
+    /**
+     * Installs [installerFile] and restarts the application on the new version.
+     *
+     * On a per-user Windows NSIS install of a JVM app (the plugin lays every one out for it) this
+     * returns immediately: the new version is installed while the application keeps running, then
+     * launched, and this process exits once the new version's first window is on screen — the
+     * application never disappears while it updates. If that install fails, the application keeps
+     * running on its current version.
+     * Everywhere else the application exits right away, the installer runs, and the new version
+     * is relaunched.
+     */
     public fun installAndRestart(installerFile: File) {
+        installAndRestart(installerFile, relaunchArguments = emptyList())
+    }
+
+    /**
+     * [installAndRestart] that starts the new version with [relaunchArguments] — for an app that
+     * runs one instance per document, the document this instance has open.
+     *
+     * The original command line is deliberately not replayed (Chromium does not either): it may
+     * hold one-shot arguments — the autostart marker, which would make the new version believe it
+     * was started at login, or a deep link that would fire a second time. Honoured on Windows;
+     * macOS and Linux relaunch without arguments.
+     */
+    public fun installAndRestart(
+        installerFile: File,
+        relaunchArguments: List<String>,
+    ) {
         writeUpdateMarker()
         val platform = PlatformInfo.currentPlatform()
-        PlatformInstaller.install(installerFile, platform, restart = true)
+        val hotInstall = WindowsHotUpdate.eligibleInstall(installerFile, platform, resolveExecutableType())
+        if (hotInstall != null) {
+            WindowsHotUpdate.start(installerFile, hotInstall, relaunchArguments)
+            return
+        }
+        PlatformInstaller.install(installerFile, platform, restart = true, relaunchArguments = relaunchArguments)
+    }
+
+    /**
+     * The version installed on disk when it is not the one running — another instance of an app
+     * without single instance installed an update — or `null`. Windows hot-update installs only;
+     * elsewhere it stays `null`.
+     *
+     * Like Chromium's upgrade detector, this is how the other instances learn about an update:
+     * locally, without downloading anything. Observe it to offer "Restart to update", then call
+     * [restartToInstalledVersion]. Nothing restarts on its own — the instance may hold unsaved
+     * work the user has not decided to give up.
+     */
+    public val pendingRestartVersion: StateFlow<String?> by lazy {
+        val install = WindowsHotUpdate.currentInstall(PlatformInfo.currentPlatform(), resolveExecutableType())
+        install?.let { InstalledVersionWatcher(it).apply { start() }.version }
+            ?: MutableStateFlow<String?>(null).asStateFlow()
+    }
+
+    /**
+     * Hands over to the version another instance already installed ([pendingRestartVersion]),
+     * started with [relaunchArguments] (see [installAndRestart]): nothing is downloaded or
+     * installed, and this process exits once the new version is on screen.
+     *
+     * Returns `false`, doing nothing, when no other version is installed.
+     */
+    public fun restartToInstalledVersion(relaunchArguments: List<String> = emptyList()): Boolean {
+        val install =
+            WindowsHotUpdate.currentInstall(PlatformInfo.currentPlatform(), resolveExecutableType())
+                ?: return false
+        val installed = WindowsHotUpdate.installedVersionDir(install) ?: return false
+        writeUpdateMarker(installed.name)
+        WindowsHotUpdate.startHandOff(install, relaunchArguments)
+        return true
     }
 
     public fun installAndQuit(installerFile: File) {
@@ -318,7 +388,9 @@ public class NucleusUpdater(
      * post-update launch (e.g. to show a "What's new" dialog or run migrations).
      */
     public fun consumeUpdateEvent(): UpdateEvent? {
-        val event = peekUpdateEvent() ?: return null
+        if (!UpdateMarker.exists()) return null
+        val event = peekUpdateEvent()
+        // Consumed either way: a marker for another version is stale and must not linger.
         UpdateMarker.delete()
         return event
     }
@@ -327,16 +399,24 @@ public class NucleusUpdater(
      * Returns `true` if the application was launched after an update.
      * Does **not** consume the event — call [consumeUpdateEvent] to clear it.
      */
-    public fun wasJustUpdated(): Boolean = UpdateMarker.exists()
+    public fun wasJustUpdated(): Boolean = peekUpdateEvent() != null
 
+    /**
+     * The event recorded before the last install, if that install is the version now running. The
+     * marker is written *before* the installer runs, so an install that failed — or was never
+     * completed — leaves a marker naming a version this is not; reporting it would announce an
+     * update that did not happen.
+     */
     private fun peekUpdateEvent(): UpdateEvent? {
         val (previousVersion, newVersion) = UpdateMarker.read() ?: return null
-        val level = Version.fromString(newVersion).levelFrom(Version.fromString(previousVersion))
+        val installed = Version.fromString(newVersion)
+        if (installed.compareTo(Version.fromString(config.currentVersion)) != 0) return null
+        val level = installed.levelFrom(Version.fromString(previousVersion))
         return UpdateEvent(previousVersion, newVersion, level)
     }
 
-    private fun writeUpdateMarker() {
-        val targetVersion = pendingUpdateVersion ?: return
+    private fun writeUpdateMarker(targetVersion: String? = pendingUpdateVersion) {
+        if (targetVersion == null) return
         try {
             UpdateMarker.write(config.currentVersion, targetVersion)
         } catch (
@@ -378,6 +458,10 @@ public class NucleusUpdater(
         if (remoteVersion.meta.isNotEmpty() && !config.resolvedAllowPrerelease()) {
             return UpdateResult.NotAvailable
         }
+
+        // Another instance already installed it: nothing to download, only a restart
+        // (pendingRestartVersion).
+        if (isInstalledOnDisk(remoteVersion)) return UpdateResult.NotAvailable
 
         // On macOS, ignore the build-time system property so auto-detection
         // can prefer ZIP (silent install). Users can still force DMG via config.executableType.
@@ -430,6 +514,12 @@ public class NucleusUpdater(
         val level = remoteVersion.levelFrom(currentVersion)
 
         return UpdateResult.Available(updateInfo, level)
+    }
+
+    private fun isInstalledOnDisk(version: Version): Boolean {
+        val install = WindowsHotUpdate.currentInstall(PlatformInfo.currentPlatform(), resolveExecutableType())
+        val installed = install?.let(WindowsHotUpdate::installedVersionDir) ?: return false
+        return Version.fromString(installed.name) >= version
     }
 
     private fun resolveExecutableType(): ExecutableType {
