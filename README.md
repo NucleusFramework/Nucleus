@@ -220,6 +220,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.darkmode-detector` | Reactive OS dark mode detection |
 | `nucleus.system-color` | Reactive accent color & high contrast detection |
 | `nucleus.system-info` | CPU, memory, GPU (NVIDIA/AMD/Intel), temperature, network, processes |
+| `nucleus.screen-capture` | Native screen & window capture in physical pixels, no AWT (GDI / ScreenCaptureKit / X11 / xdg-desktop-portal) |
 | `nucleus.decorated-window-tao` | Windowing backend (Rust `tao`, no AWT) |
 | `nucleus.decorated-window-core` | Shared window types, layout, chrome (design-system agnostic) |
 | `nucleus.decorated-window-jewel` | Jewel (IntelliJ theme) integration |

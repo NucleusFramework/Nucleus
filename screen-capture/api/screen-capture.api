@@ -1,0 +1,102 @@
+public final class dev/nucleusframework/screencapture/CaptureBackend : java/lang/Enum {
+	public static final field CoreGraphics Ldev/nucleusframework/screencapture/CaptureBackend;
+	public static final field Gdi Ldev/nucleusframework/screencapture/CaptureBackend;
+	public static final field ScreenCaptureKit Ldev/nucleusframework/screencapture/CaptureBackend;
+	public static final field Unavailable Ldev/nucleusframework/screencapture/CaptureBackend;
+	public static final field X11 Ldev/nucleusframework/screencapture/CaptureBackend;
+	public static final field XdgDesktopPortal Ldev/nucleusframework/screencapture/CaptureBackend;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/screencapture/CaptureBackend;
+	public static fun values ()[Ldev/nucleusframework/screencapture/CaptureBackend;
+}
+
+public final class dev/nucleusframework/screencapture/CaptureDisplay {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBounds ()Ldev/nucleusframework/screencapture/CaptureRegion;
+	public final fun getHeightPx ()I
+	public final fun getId ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getScaleFactor ()F
+	public final fun getWidthPx ()I
+	public fun hashCode ()I
+	public final fun isPrimary ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/screencapture/CaptureFailure : java/lang/Enum {
+	public static final field Cancelled Ldev/nucleusframework/screencapture/CaptureFailure;
+	public static final field DisplayNotFound Ldev/nucleusframework/screencapture/CaptureFailure;
+	public static final field Failed Ldev/nucleusframework/screencapture/CaptureFailure;
+	public static final field InvalidRegion Ldev/nucleusframework/screencapture/CaptureFailure;
+	public static final field PermissionDenied Ldev/nucleusframework/screencapture/CaptureFailure;
+	public static final field Timeout Ldev/nucleusframework/screencapture/CaptureFailure;
+	public static final field Unsupported Ldev/nucleusframework/screencapture/CaptureFailure;
+	public static final field WindowNotFound Ldev/nucleusframework/screencapture/CaptureFailure;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/screencapture/CaptureFailure;
+	public static fun values ()[Ldev/nucleusframework/screencapture/CaptureFailure;
+}
+
+public final class dev/nucleusframework/screencapture/CapturePermission : java/lang/Enum {
+	public static final field Denied Ldev/nucleusframework/screencapture/CapturePermission;
+	public static final field Granted Ldev/nucleusframework/screencapture/CapturePermission;
+	public static final field NotDetermined Ldev/nucleusframework/screencapture/CapturePermission;
+	public static final field NotRequired Ldev/nucleusframework/screencapture/CapturePermission;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/screencapture/CapturePermission;
+	public static fun values ()[Ldev/nucleusframework/screencapture/CapturePermission;
+}
+
+public final class dev/nucleusframework/screencapture/CaptureRegion {
+	public fun <init> (IIII)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun copy (IIII)Ldev/nucleusframework/screencapture/CaptureRegion;
+	public static synthetic fun copy$default (Ldev/nucleusframework/screencapture/CaptureRegion;IIIIILjava/lang/Object;)Ldev/nucleusframework/screencapture/CaptureRegion;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBottom ()I
+	public final fun getHeight ()I
+	public final fun getRight ()I
+	public final fun getWidth ()I
+	public final fun getX ()I
+	public final fun getY ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/screencapture/ScreenCapture {
+	public static final field INSTANCE Ldev/nucleusframework/screencapture/ScreenCapture;
+	public final fun captureDisplay (Ldev/nucleusframework/screencapture/CaptureDisplay;Ldev/nucleusframework/screencapture/CaptureRegion;Z)Ldev/nucleusframework/screencapture/ScreenImage;
+	public static synthetic fun captureDisplay$default (Ldev/nucleusframework/screencapture/ScreenCapture;Ldev/nucleusframework/screencapture/CaptureDisplay;Ldev/nucleusframework/screencapture/CaptureRegion;ZILjava/lang/Object;)Ldev/nucleusframework/screencapture/ScreenImage;
+	public final fun captureWindow (JZ)Ldev/nucleusframework/screencapture/ScreenImage;
+	public static synthetic fun captureWindow$default (Ldev/nucleusframework/screencapture/ScreenCapture;JZILjava/lang/Object;)Ldev/nucleusframework/screencapture/ScreenImage;
+	public final fun displays ()Ljava/util/List;
+	public final fun getBackend ()Ldev/nucleusframework/screencapture/CaptureBackend;
+	public final fun isSupported ()Z
+	public final fun isWindowCaptureSupported ()Z
+	public final fun permissionStatus ()Ldev/nucleusframework/screencapture/CapturePermission;
+	public final fun primaryDisplay ()Ldev/nucleusframework/screencapture/CaptureDisplay;
+	public final fun requestPermission ()Ldev/nucleusframework/screencapture/CapturePermission;
+}
+
+public final class dev/nucleusframework/screencapture/ScreenCaptureException : java/lang/RuntimeException {
+	public fun <init> (Ldev/nucleusframework/screencapture/CaptureFailure;Ljava/lang/String;)V
+	public final fun getFailure ()Ldev/nucleusframework/screencapture/CaptureFailure;
+}
+
+public final class dev/nucleusframework/screencapture/ScreenImage {
+	public static final field BYTES_PER_PIXEL I
+	public final fun crop (Ldev/nucleusframework/screencapture/CaptureRegion;)Ldev/nucleusframework/screencapture/ScreenImage;
+	public final fun getHeight ()I
+	public final fun getScaleFactor ()F
+	public final fun getWidth ()I
+	public final fun pixelAt (II)I
+	public final fun toArgbArray ()[I
+	public final fun toBgraBytes ()[B
+	public final fun toPng ()[B
+	public fun toString ()Ljava/lang/String;
+	public final fun writePng (Ljava/io/OutputStream;)V
+}
+
