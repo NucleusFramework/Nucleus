@@ -1,6 +1,7 @@
 package dev.nucleusframework.updater.internal
 
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.core.runtime.UpdateHandoff
 import java.io.File
 import java.nio.file.Files
 import java.util.logging.Logger
@@ -55,12 +56,13 @@ internal object PlatformInstaller {
         file: File,
         platform: Platform,
         restart: Boolean = true,
+        relaunchArguments: List<String> = emptyList(),
     ) {
         val extension = file.name.substringAfterLast('.').lowercase()
 
         when {
             platform == Platform.MacOS && extension == "zip" -> installMacZip(file, restart)
-            platform == Platform.Windows -> installWindows(file, extension, restart)
+            platform == Platform.Windows -> installWindows(file, extension, restart, relaunchArguments)
             platform == Platform.Linux && extension == "appimage" -> installLinuxAppImage(file, restart)
             platform == Platform.Linux && (extension == "deb" || extension == "rpm") ->
                 installLinuxPackage(file, extension, restart)
@@ -331,15 +333,17 @@ internal object PlatformInstaller {
         file: File,
         extension: String,
         restart: Boolean,
+        relaunchArguments: List<String>,
     ) {
         val pid = ProcessHandle.current().pid()
         val launcher = currentExecutablePath()
         val script = File(createUpdateWorkDir(), "nucleus-update.ps1")
-        script.writeText(
+        writePowerShellScript(
+            script,
             buildWindowsUpdateScript(
                 pid = pid,
                 installerCommand = windowsInstallerCommand(file, extension),
-                relaunchCommand = windowsRelaunchCommand(restart, launcher),
+                relaunchCommand = windowsRelaunchCommand(restart, launcher, relaunchArguments),
                 artifactPath = file.absolutePath,
                 scriptPath = script.absolutePath,
             ),
@@ -355,6 +359,8 @@ internal object PlatformInstaller {
             script.absolutePath,
         ).redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
+            // A classic update closes the app first: never let the installer think otherwise.
+            .apply { environment().remove(UpdateHandoff.ENV_HOT_INSTALL) }
             .start()
     }
 }

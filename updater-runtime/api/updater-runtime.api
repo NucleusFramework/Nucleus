@@ -25,9 +25,13 @@ public final class dev/nucleusframework/updater/NucleusUpdater {
 	public final fun consumeUpdateEvent ()Ldev/nucleusframework/updater/UpdateEvent;
 	public final fun downloadUpdate (Ldev/nucleusframework/updater/UpdateInfo;)Lkotlinx/coroutines/flow/Flow;
 	public final fun getCurrentVersion ()Ljava/lang/String;
+	public final fun getPendingRestartVersion ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun installAndQuit (Ljava/io/File;)V
 	public final fun installAndRestart (Ljava/io/File;)V
+	public final fun installAndRestart (Ljava/io/File;Ljava/util/List;)V
 	public final fun isUpdateSupported ()Z
+	public final fun restartToInstalledVersion (Ljava/util/List;)Z
+	public static synthetic fun restartToInstalledVersion$default (Ldev/nucleusframework/updater/NucleusUpdater;Ljava/util/List;ILjava/lang/Object;)Z
 	public final fun wasJustUpdated ()Z
 }
 
