@@ -10,6 +10,7 @@ package dev.nucleusframework.share
  * | macOS | `NSSharingServicePicker` |
  * | Windows | Share UI (`DataTransferManager`) |
  * | Linux | XDG desktop portal: "Open With" for one file or URL, "save files" otherwise; `xdg-open` fallback |
+ * | Web (js, wasmJs) | Web Share API (`navigator.share`) |
  *
  * ```kotlin
  * scope.launch {
@@ -32,8 +33,11 @@ public object ShareSheet {
 
     /**
      * Presents the share UI for [request] and returns once it is on screen — on Android
-     * and Linux, once the request is dispatched. It does not report which target the
-     * user picked, nor whether they cancelled.
+     * and Linux, once the request is dispatched; on the web, once the sheet is gone. It
+     * does not report which target the user picked, nor whether they cancelled.
+     *
+     * On the web, call it from a user gesture (a click handler): browsers refuse to open
+     * the sheet otherwise.
      *
      * Safe to call from any dispatcher: the platform hops to its UI thread itself.
      *

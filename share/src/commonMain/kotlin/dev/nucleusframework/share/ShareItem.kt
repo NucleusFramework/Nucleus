@@ -19,7 +19,8 @@ public sealed interface ShareItem {
      * A file on the local filesystem.
      *
      * On Android the file is copied into the app's cache and served to the receiving app
-     * through the library's own content provider, so any path the app can read works.
+     * through the library's own content provider, so any path the app can read works. A web
+     * page has no filesystem: use [FileUri] there.
      *
      * @property mimeType a hint for the receivers; guessed from the extension when `null`.
      * Only Android uses it: the desktop and iOS share UIs derive the type themselves.
@@ -31,9 +32,10 @@ public sealed interface ShareItem {
 
     /**
      * A platform URI to a file: typically an Android `content://` URI the app owns or
-     * received, or a `file://` URI anywhere.
+     * received, a `file://` URI on native platforms, or on the web any URI the page can
+     * `fetch` (`blob:`, `data:`, same-origin `https:`), turned into a `File` before sharing.
      *
-     * @property mimeType a hint for the receivers; only Android uses it.
+     * @property mimeType a hint for the receivers; used on Android and the web.
      */
     public data class FileUri(
         public val uri: String,

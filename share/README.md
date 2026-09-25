@@ -10,6 +10,7 @@ Native share sheet for Kotlin Multiplatform, inspired by
 | macOS | `NSSharingServicePicker` | Rust (JNI) |
 | Windows | Share UI (`DataTransferManager` desktop interop) | Rust (JNI) |
 | Linux | XDG desktop portal: "Open With" for one file or URL, "save files" for a mixed payload, `xdg-open` fallback | Rust (JNI) |
+| Web (`js`, `wasmJs`) | Web Share API (`navigator.share`) | Kotlin/JS + Kotlin/Wasm (`webMain`) |
 
 ```kotlin
 implementation("dev.nucleusframework:nucleus.share:<version>")
@@ -32,7 +33,8 @@ scope.launch {
 ```
 
 `share` returns once the UI is on screen (on Android and Linux, once the request is
-dispatched). It does not report which target was picked or whether the user cancelled.
+dispatched; on the web, once the sheet is gone). It does not report which target was picked
+or whether the user cancelled.
 
 ## Parent window
 
@@ -83,6 +85,13 @@ from the top-left corner of the window content.
   web link; `content://` URIs are unsupported (`ShareError.UnsupportedItem`).
 - **Linux**: there is no share sheet; see the table above. A `ShareParent.Linux.keepAlive`
   is closed once the portal dialog is gone (right away when none was shown).
-- MIME type hints only matter on Android.
+- **Web**: needs a secure context (HTTPS or `localhost`) and a **user gesture** — call `share`
+  from a click handler. `title` is the shared data's title when there is no `subject` (receivers
+  use it as a subject); the first URL is its `url`, the other URLs stay in `text`. There is no
+  filesystem: `file(path)` fails with `UnsupportedItem`; share `fileUri("blob:…" / "data:…" /
+  same-origin "https:…")` instead, fetched into a `File` (checked with `navigator.canShare`).
+  A dismissed sheet is no error. Browsers without `navigator.share` (Firefox desktop) report
+  `isSupported = false` and `Unsupported`. Demo: `./gradlew :examples:share-web-demo:jsBrowserDevelopmentRun`.
+- MIME type hints matter on Android and the web.
 
 Demo: `./gradlew :examples:share-demo:run`.

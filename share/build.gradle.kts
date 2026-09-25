@@ -1,3 +1,4 @@
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -38,6 +39,19 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
     iosX64()
+
+    // Web: the Web Share API, shared by both targets in webMain. Tests run on Node, which
+    // needs no browser on the build machine.
+    js {
+        browser { testTask { enabled = false } }
+        nodejs()
+    }
+
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        browser { testTask { enabled = false } }
+        nodejs()
+    }
 
     sourceSets {
         commonMain.dependencies {
@@ -83,7 +97,7 @@ mavenPublishing {
         name.set("Nucleus Share")
         description.set(
             "Native share sheet for Kotlin Multiplatform: Android Sharesheet, iOS UIActivityViewController, " +
-                "macOS NSSharingServicePicker, Windows Share UI and the Linux XDG portal.",
+                "macOS NSSharingServicePicker, Windows Share UI, the Linux XDG portal and the Web Share API.",
         )
         url.set("https://github.com/NucleusFramework/Nucleus")
 

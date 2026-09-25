@@ -6,9 +6,10 @@ package dev.nucleusframework.share
  * @property items the payload, in order. Texts and URLs are joined by newlines where
  * the platform takes a single text (Android, Windows).
  * @property title the chooser title where the platform shows one (Android chooser and
- * preview, Windows Share UI, Linux save dialog); ignored on macOS and iOS.
+ * preview, Windows Share UI, Linux save dialog); ignored on macOS and iOS. On the web it
+ * is the shared data's title when there is no [subject].
  * @property subject secondary metadata some receivers use (an e-mail subject on
- * Android, the description on Windows); many ignore it.
+ * Android, the description on Windows, the shared data's title on the web); many ignore it.
  */
 public data class ShareRequest(
     public val items: List<ShareItem>,
