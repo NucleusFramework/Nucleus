@@ -1152,14 +1152,24 @@ extern "C" fn right_mouse_up(this: &NSView, _sel: Sel, event: &NSEvent) {
   mouse_click(this, event, MouseButton::Right, ElementState::Released);
 }
 
+// Nucleus: `otherMouseDown:` fires for every button past the right one, so
+// read `buttonNumber` instead of assuming Middle — 3/4 are the back/forward
+// side buttons, surfaced as `Other(3)` / `Other(4)`.
+fn other_mouse_button(event: &NSEvent) -> MouseButton {
+  match event.buttonNumber() {
+    2 => MouseButton::Middle,
+    n => MouseButton::Other(n as u16),
+  }
+}
+
 extern "C" fn other_mouse_down(this: &NSView, _sel: Sel, event: &NSEvent) {
   mouse_motion(this, event);
-  mouse_click(this, event, MouseButton::Middle, ElementState::Pressed);
+  mouse_click(this, event, other_mouse_button(event), ElementState::Pressed);
 }
 
 extern "C" fn other_mouse_up(this: &NSView, _sel: Sel, event: &NSEvent) {
   mouse_motion(this, event);
-  mouse_click(this, event, MouseButton::Middle, ElementState::Released);
+  mouse_click(this, event, other_mouse_button(event), ElementState::Released);
 }
 
 fn mouse_motion(this: &NSView, event: &NSEvent) {

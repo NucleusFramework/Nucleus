@@ -245,7 +245,25 @@ pub(crate) const TOUCH_FORCE_UNKNOWN: jint = -1;
 pub(crate) const MOUSE_BUTTON_LEFT: jint = 0;
 pub(crate) const MOUSE_BUTTON_RIGHT: jint = 1;
 pub(crate) const MOUSE_BUTTON_MIDDLE: jint = 2;
-pub(crate) const MOUSE_BUTTON_OTHER: jint = 3;
+pub(crate) const MOUSE_BUTTON_BACK: jint = 3;
+pub(crate) const MOUSE_BUTTON_FORWARD: jint = 4;
+pub(crate) const MOUSE_BUTTON_OTHER: jint = 5;
+
+// Raw `MouseButton::Other(n)` numbers tao reports for the back / forward side
+// buttons: `XBUTTON1` / `XBUTTON2` on Windows, X11/GDK buttons 8 / 9 on Linux,
+// `NSEvent.buttonNumber` 3 / 4 on macOS.
+#[cfg(target_os = "windows")]
+const OTHER_BACK: u16 = 1;
+#[cfg(target_os = "windows")]
+const OTHER_FORWARD: u16 = 2;
+#[cfg(target_os = "macos")]
+const OTHER_BACK: u16 = 3;
+#[cfg(target_os = "macos")]
+const OTHER_FORWARD: u16 = 4;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+const OTHER_BACK: u16 = 8;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+const OTHER_FORWARD: u16 = 9;
 
 // ── User events posted from JNI calls into the event loop ─────────────────
 
@@ -682,6 +700,8 @@ pub(crate) fn mouse_button_code(b: MouseButton) -> jint {
         MouseButton::Left => MOUSE_BUTTON_LEFT,
         MouseButton::Right => MOUSE_BUTTON_RIGHT,
         MouseButton::Middle => MOUSE_BUTTON_MIDDLE,
+        MouseButton::Other(OTHER_BACK) => MOUSE_BUTTON_BACK,
+        MouseButton::Other(OTHER_FORWARD) => MOUSE_BUTTON_FORWARD,
         _ => MOUSE_BUTTON_OTHER,
     }
 }
