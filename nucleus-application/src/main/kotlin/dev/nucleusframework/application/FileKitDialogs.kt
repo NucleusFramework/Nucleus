@@ -71,6 +71,6 @@ private fun TaoWindow.fileKitDialogParent(): BorrowedDialogParent? =
                     BorrowedDialogParent(FileKitDialogParent.wayland(portalParent.handle), lease = portalParent)
                 null -> null
             }
-        // FileKit 0.15 accepts only an AWT parent on macOS: an NSWindow would make the picker throw.
+        // FileKit (0.16) accepts only an AWT parent on macOS: an NSWindow would make the picker throw.
         else -> null
     }

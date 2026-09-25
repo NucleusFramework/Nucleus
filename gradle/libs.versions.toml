@@ -14,7 +14,7 @@ composenativetray = "2.1.0"
 composewebview = "1.0.1"
 detekt = "2.0.0-alpha.6"
 downloadTask = "5.7.0"
-filekit = "0.15.0"
+filekit = "0.16.0"
 graalvmNative = "1.1.3"
 # Must match the hot-reload version bundled by the Compose Gradle plugin (which auto-applies
 # hot-reload to every Compose module): TaoHotReloadBridgeImpl compiles against these artifacts
