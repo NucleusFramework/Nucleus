@@ -77,6 +77,26 @@ enum class TargetFormat(
         get() = this == Msi || this == Portable
 
     /**
+     * The extension of the artifact listed in this format's update manifest, for the formats whose
+     * manifest the plugin writes itself when electron-builder did not — always for [needsPluginUpdateYml],
+     * and for the others when no `publish` provider is configured (electron-builder then writes none),
+     * so the packaging output is a complete local update feed either way. `null` for formats without a
+     * self-contained artifact to list (NSIS-Web's packages live on its publish host).
+     */
+    internal val updateArtifactExtension: String?
+        get() =
+            when (this) {
+                Nsis, Exe, Portable -> "exe"
+                Msi -> "msi"
+                Dmg -> "dmg"
+                AppImage -> "AppImage"
+                Deb -> "deb"
+                Rpm -> "rpm"
+                Zip -> if (targetOS == OS.MacOS) "zip" else null
+                else -> null
+            }
+
+    /**
      * Whether this format publishes a per-channel auto-update manifest (`<channel><osSuffix>.yml`),
      * generated either by electron-builder (NSIS, NSIS-Web, DMG, ZIP-on-macOS, AppImage, DEB, RPM)
      * or by the plugin ([needsPluginUpdateYml]: MSI, Portable).

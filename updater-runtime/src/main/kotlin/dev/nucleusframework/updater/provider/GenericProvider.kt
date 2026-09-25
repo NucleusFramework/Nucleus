@@ -56,5 +56,6 @@ private fun requireSecureBaseUrl(baseUrl: String) {
     }
 }
 
+// URI.getHost() keeps the brackets of an IPv6 literal: `http://[::1]:8080` has host `[::1]`.
 private fun isLoopbackHost(host: String?): Boolean =
-    host == "localhost" || host == "127.0.0.1" || host == "::1" || host?.startsWith("127.") == true
+    host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]" || host?.startsWith("127.") == true

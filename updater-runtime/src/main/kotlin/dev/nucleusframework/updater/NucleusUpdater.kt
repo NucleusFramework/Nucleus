@@ -8,17 +8,22 @@ import dev.nucleusframework.updater.exception.NetworkException
 import dev.nucleusframework.updater.exception.NoMatchingFileException
 import dev.nucleusframework.updater.exception.UpdateException
 import dev.nucleusframework.updater.internal.ChecksumVerifier
+import dev.nucleusframework.updater.internal.FeedFetcher
+import dev.nucleusframework.updater.internal.FeedOverride
 import dev.nucleusframework.updater.internal.FileSelector
 import dev.nucleusframework.updater.internal.InstalledVersionWatcher
 import dev.nucleusframework.updater.internal.PlatformInfo
 import dev.nucleusframework.updater.internal.PlatformInstaller
+import dev.nucleusframework.updater.internal.SimulatedUpdate
 import dev.nucleusframework.updater.internal.UpdateMarker
+import dev.nucleusframework.updater.internal.UpdaterSettings
 import dev.nucleusframework.updater.internal.WindowsHotUpdate
 import dev.nucleusframework.updater.internal.YamlParser
 import dev.nucleusframework.updater.internal.delta.DeltaPlan
 import dev.nucleusframework.updater.internal.delta.DeltaResolver
 import dev.nucleusframework.updater.internal.delta.DifferentialDownloader
 import dev.nucleusframework.updater.internal.delta.UpdateCache
+import dev.nucleusframework.updater.provider.UpdateProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -29,11 +34,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.URI
 import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Level
 import java.util.logging.Logger
 import kotlin.coroutines.cancellation.CancellationException
@@ -49,7 +52,52 @@ public class NucleusUpdater(
 
     public val currentVersion: String get() = this.config.currentVersion
 
+    /**
+     * The update simulation this updater plays instead of contacting any feed
+     * ([UpdaterConfig.simulation], or the one requested at launch with `nucleus.updater.simulate`),
+     * `null` for real updates — handy to badge a test build's update UI.
+     */
+    public val simulation: UpdateSimulation? =
+        this.config.simulation ?: UpdateSimulation.fromSettings()?.takeIf { launchSimulation ->
+            (isUnpackaged || this.config.allowLaunchOverrides).also { honoured ->
+                if (!honoured) {
+                    logger.warning(
+                        "Ignoring the launch-time update simulation ($launchSimulation): this installed app " +
+                            "does not set UpdaterConfig.allowLaunchOverrides",
+                    )
+                }
+            }
+        }
+
+    private val simulated: SimulatedUpdate? =
+        simulation?.let { SimulatedUpdate(it, this.config.currentVersion) }?.also {
+            logger.warning("Update simulation active, no feed will be contacted: $simulation")
+        }
+
+    private val redirect: FeedOverride.Applied? =
+        if (simulated != null) {
+            null
+        } else {
+            FeedOverride.resolve(
+                raw = UpdaterSettings.get(UpdaterSettings.FEED_URL),
+                packaged = !isUnpackaged,
+                allowed = this.config.allowLaunchOverrides,
+            )
+        }
+
+    /**
+     * The feed this updater reads when it was redirected at launch (see
+     * [UpdaterConfig.allowLaunchOverrides]), or `null` when it reads the configured provider.
+     */
+    public val feedOverride: String? get() = redirect?.raw
+
+    /** The configured provider, unless the feed was redirected at launch. */
+    private val provider: UpdateProvider = redirect?.provider ?: this.config.provider
+
     private var pendingUpdateVersion: String? = null
+
+    /** Whether the next [consumeUpdateEvent] still reports [UpdateSimulation.justUpdatedFrom]. */
+    private val simulatedEventPending = AtomicBoolean(simulation?.justUpdatedFrom != null)
 
     private val httpClient: HttpClient =
         config.httpClient
@@ -58,13 +106,23 @@ public class NucleusUpdater(
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build()
 
+    private val fetcher = FeedFetcher(httpClient) { provider.authHeaders() }
+
     /** Holds the last downloaded artifact, which the next differential download builds upon. */
     private val cache: UpdateCache by lazy {
         config.cacheDir?.let(::UpdateCache) ?: UpdateCache.default()
     }
 
+    /**
+     * Whether this app can update itself: it runs from a self-updatable package (NSIS, MSI, DMG,
+     * macOS ZIP, AppImage, DEB, RPM, Developer ID PKG), updates are simulated ([simulation]), or it
+     * runs unpackaged with its feed redirected at launch — where checking and downloading work and
+     * installing is skipped.
+     */
     public fun isUpdateSupported(): Boolean {
+        if (simulated != null) return true
         val type = resolveExecutableType()
+        if (type == ExecutableType.DEV) return redirect != null
         if (type in SELF_UPDATABLE_TYPES) return true
         // A PKG installs an ordinary .app in /Applications, exactly like a DMG, so a Developer ID
         // PKG can update itself from the ZIP/DMG artifacts of the same release. Only the Mac App
@@ -73,7 +131,8 @@ public class NucleusUpdater(
     }
 
     public suspend fun checkForUpdates(): UpdateResult {
-        if (config.isDevMode()) return UpdateResult.NotAvailable
+        simulated?.let { return it.check() }
+        if (config.isDevMode() && redirect == null) return UpdateResult.NotAvailable
         if (!isUpdateSupported()) return UpdateResult.NotAvailable
         return withContext(Dispatchers.IO) {
             try {
@@ -90,7 +149,13 @@ public class NucleusUpdater(
         }
     }
 
-    public fun downloadUpdate(info: UpdateInfo): Flow<DownloadProgress> =
+    /**
+     * Downloads [info]'s artifact — differentially when the previous one is cached and the host
+     * serves ranges — and verifies its SHA-512. The last progress report carries the staged file.
+     */
+    public fun downloadUpdate(info: UpdateInfo): Flow<DownloadProgress> = simulated?.download(info) ?: download(info)
+
+    private fun download(info: UpdateInfo): Flow<DownloadProgress> =
         flow {
             pendingUpdateVersion = info.version
             val targetFile = info.currentFile
@@ -158,13 +223,14 @@ public class NucleusUpdater(
         targetFile: UpdateFile,
         tempFile: File,
     ): DownloadOutcome? {
-        if (!config.differentialDownload) return null
+        // Range requests are what make a download differential; a local feed has nothing to save.
+        if (!config.differentialDownload || FeedFetcher.isLocal(targetFile.url)) return null
         return try {
-            val resolver = DeltaResolver(httpClient, config.provider.authHeaders(), cache)
+            val resolver = DeltaResolver(httpClient, provider.authHeaders(), cache)
             val resolved =
                 resolver.resolve(
                     target = targetFile,
-                    blockMapUrl = config.provider.getBlockMapUrl(targetFile.url),
+                    blockMapUrl = provider.getBlockMapUrl(targetFile.url),
                     destination = tempFile,
                 ) ?: return null
 
@@ -176,7 +242,7 @@ public class NucleusUpdater(
             emit(DownloadProgress(0, plannedBytes, 0.0, isDifferential = true))
 
             val transferred =
-                DifferentialDownloader(httpClient, config.provider.authHeaders())
+                DifferentialDownloader(httpClient, provider.authHeaders())
                     .download(resolved.download) { downloaded, total ->
                         emit(DownloadProgress(downloaded, total, percentOf(downloaded, total), isDifferential = true))
                     }
@@ -197,22 +263,10 @@ public class NucleusUpdater(
         targetFile: UpdateFile,
         tempFile: File,
     ): DownloadOutcome {
-        val requestBuilder =
-            HttpRequest
-                .newBuilder()
-                .uri(URI.create(targetFile.url))
-                .GET()
-        applyAuthHeaders(requestBuilder)
-        val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofInputStream())
-
-        if (response.statusCode() != HTTP_OK) {
-            throw NetworkException("HTTP ${response.statusCode()} downloading ${targetFile.url}")
-        }
-
         val totalBytes = targetFile.size
         var bytesDownloaded = 0L
 
-        response.body().use { inputStream ->
+        fetcher.open(targetFile.url).use { inputStream ->
             tempFile.outputStream().use { outputStream ->
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 var bytesRead: Int
@@ -236,7 +290,7 @@ public class NucleusUpdater(
         // differential downloads are off.
         val blockMapGzip =
             if (config.differentialDownload && !DeltaResolver.embedsBlockMap(targetFile)) {
-                fetchBlockMap(config.provider.getBlockMapUrl(targetFile.url))
+                fetchBlockMap(provider.getBlockMapUrl(targetFile.url))
             } else {
                 null
             }
@@ -255,16 +309,8 @@ public class NucleusUpdater(
 
     /** Downloads a block map, or returns `null` when the release does not publish one. */
     private fun fetchBlockMap(url: String): ByteArray? =
-        try {
-            val requestBuilder = HttpRequest.newBuilder().uri(URI.create(url)).GET()
-            applyAuthHeaders(requestBuilder)
-            val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray())
-            response.body()?.takeIf { response.statusCode() == HTTP_OK && it.isNotEmpty() }
-        } catch (
-            @Suppress("TooGenericExceptionCaught") e: Exception,
-        ) {
-            logger.log(Level.FINE, "No block map at $url; the next update will be a full download", e)
-            null
+        fetcher.readBytesOrNull(url).also {
+            if (it == null) logger.log(Level.FINE, "No block map at $url; the next update will be a full download")
         }
 
     private fun cacheForNextUpdate(
@@ -286,16 +332,7 @@ public class NucleusUpdater(
         dest: File,
     ) {
         try {
-            val requestBuilder =
-                HttpRequest
-                    .newBuilder()
-                    .uri(URI.create("$url.asc"))
-                    .GET()
-            applyAuthHeaders(requestBuilder)
-            val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray())
-            if (response.statusCode() == HTTP_OK) {
-                dest.writeBytes(response.body())
-            }
+            fetcher.readBytesOrNull("$url.asc")?.let(dest::writeBytes)
         } catch (
             @Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception,
         ) {
@@ -333,6 +370,7 @@ public class NucleusUpdater(
         installerFile: File,
         relaunchArguments: List<String>,
     ) {
+        if (skipsInstall(installerFile, restart = true)) return
         writeUpdateMarker()
         val platform = PlatformInfo.currentPlatform()
         val hotInstall = WindowsHotUpdate.eligibleInstall(installerFile, platform, resolveExecutableType())
@@ -377,6 +415,7 @@ public class NucleusUpdater(
     }
 
     public fun installAndQuit(installerFile: File) {
+        if (skipsInstall(installerFile, restart = false)) return
         writeUpdateMarker()
         val platform = PlatformInfo.currentPlatform()
         PlatformInstaller.install(installerFile, platform, restart = false)
@@ -388,6 +427,7 @@ public class NucleusUpdater(
      * post-update launch (e.g. to show a "What's new" dialog or run migrations).
      */
     public fun consumeUpdateEvent(): UpdateEvent? {
+        if (simulatedEventPending.getAndSet(false)) return simulatedUpdateEvent()
         if (!UpdateMarker.exists()) return null
         val event = peekUpdateEvent()
         // Consumed either way: a marker for another version is stale and must not linger.
@@ -399,7 +439,33 @@ public class NucleusUpdater(
      * Returns `true` if the application was launched after an update.
      * Does **not** consume the event — call [consumeUpdateEvent] to clear it.
      */
-    public fun wasJustUpdated(): Boolean = peekUpdateEvent() != null
+    public fun wasJustUpdated(): Boolean = (simulatedEventPending.get() || peekUpdateEvent() != null)
+
+    private fun simulatedUpdateEvent(): UpdateEvent? {
+        val previous = simulation?.justUpdatedFrom ?: return null
+        val level = Version.fromString(config.currentVersion).levelFrom(Version.fromString(previous))
+        return UpdateEvent(previous, config.currentVersion, level)
+    }
+
+    /**
+     * A simulation installs nothing, and neither does an unpackaged run: it has no installed app to
+     * replace, so the installer would install a copy beside the IDE run and exit it. Both log what
+     * would have been installed and return, leaving the app running.
+     */
+    private fun skipsInstall(
+        installerFile: File,
+        restart: Boolean,
+    ): Boolean {
+        val reason =
+            when {
+                simulated != null -> "updates are simulated"
+                isUnpackaged -> "the app runs unpackaged, with no installed copy to replace"
+                else -> return false
+            }
+        val action = if (restart) "installAndRestart" else "installAndQuit"
+        logger.warning("$action skipped because $reason: would install ${installerFile.absolutePath}")
+        return true
+    }
 
     /**
      * The event recorded before the last install, if that install is the version now running. The
@@ -429,21 +495,8 @@ public class NucleusUpdater(
     private fun doCheckForUpdates(): UpdateResult {
         val platform = PlatformInfo.currentPlatform()
         val arch = PlatformInfo.currentArch()
-        val metadataUrl = config.provider.resolveMetadataUrl(config.channel, platform, httpClient)
-
-        val requestBuilder =
-            HttpRequest
-                .newBuilder()
-                .uri(URI.create(metadataUrl))
-                .GET()
-        applyAuthHeaders(requestBuilder)
-        val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString())
-
-        if (response.statusCode() != HTTP_OK) {
-            return UpdateResult.Error(NetworkException("HTTP ${response.statusCode()} for $metadataUrl"))
-        }
-
-        val metadata = YamlParser.parse(response.body())
+        val metadataUrl = provider.resolveMetadataUrl(config.channel, platform, httpClient)
+        val metadata = YamlParser.parse(fetcher.readText(metadataUrl))
         val currentVersion = Version.fromString(config.currentVersion)
         val remoteVersion = Version.fromString(metadata.version)
 
@@ -465,13 +518,14 @@ public class NucleusUpdater(
 
         // On macOS, ignore the build-time system property so auto-detection
         // can prefer ZIP (silent install). Users can still force DMG via config.executableType.
+        // An unpackaged run has no format of its own: it takes what an install on this OS would.
         val format =
-            config.executableType
-                ?: if (platform == Platform.MacOS) {
-                    null
-                } else {
-                    System.getProperty("nucleus.executable.type")
-                }
+            when {
+                isUnpackaged -> null
+                config.executableType != null -> config.executableType
+                platform == Platform.MacOS -> null
+                else -> System.getProperty("nucleus.executable.type")
+            }
 
         val selectedFile =
             FileSelector.select(
@@ -494,7 +548,7 @@ public class NucleusUpdater(
                 files =
                     metadata.files.map { file ->
                         UpdateFile(
-                            url = config.provider.getDownloadUrl(file.url, metadata.version),
+                            url = provider.getDownloadUrl(file.url, metadata.version),
                             sha512 = file.sha512,
                             size = file.size,
                             blockMapSize = file.blockMapSize,
@@ -503,7 +557,7 @@ public class NucleusUpdater(
                     },
                 currentFile =
                     UpdateFile(
-                        url = config.provider.getDownloadUrl(selectedFile.url, metadata.version),
+                        url = provider.getDownloadUrl(selectedFile.url, metadata.version),
                         sha512 = selectedFile.sha512,
                         size = selectedFile.size,
                         blockMapSize = selectedFile.blockMapSize,
@@ -528,14 +582,10 @@ public class NucleusUpdater(
         return ExecutableRuntime.type()
     }
 
-    private fun applyAuthHeaders(builder: HttpRequest.Builder) {
-        config.provider.authHeaders().forEach { (key, value) ->
-            builder.header(key, value)
-        }
-    }
+    /** Whether this process runs unpackaged (`./gradlew run`, an IDE), with no installed app to replace. */
+    private val isUnpackaged: Boolean get() = resolveExecutableType() == ExecutableType.DEV
 
     public companion object {
-        private const val HTTP_OK = 200
         private const val PERCENT_MAX = 100.0
 
         private val logger: Logger = Logger.getLogger(NucleusUpdater::class.java.name)

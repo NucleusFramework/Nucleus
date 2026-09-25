@@ -320,6 +320,9 @@ abstract class AbstractElectronBuilderPackageTask
             logger.info("Resolved app image directory: ${originalAppDir.absolutePath}")
 
             val outputDir = destinationDir.ioFile.apply { mkdirs() }
+            // A manifest left by a previous run describes a previous artifact; electron-builder
+            // rewrites its own, and generateUpdateYmlIfNeeded() only fills a missing one.
+            UpdateYmlPublish.deleteManifests(outputDir)
 
             // Create a task-private copy of the app image so parallel tasks don't
             // interfere when modifying .cfg files or signing the bundle. On macOS the copy is
@@ -425,11 +428,11 @@ abstract class AbstractElectronBuilderPackageTask
             outputDir: File,
             dist: JvmApplicationDistributions,
         ) {
-            if (!targetFormat.needsPluginUpdateYml) return
+            val extension = targetFormat.updateArtifactExtension ?: return
             val channel = resolveUpdateChannel(dist)
             val ymlFilename = targetFormat.updateYmlFilename(channel)
             val version = packageVersion.orNull ?: "0.0.0"
-            UpdateYmlGenerator.generateIfMissing(outputDir, ymlFilename, version, logger)
+            UpdateYmlGenerator.generateIfMissing(outputDir, ymlFilename, version, logger, artifactExtension = extension)
         }
 
         private fun resolveUpdateChannel(dist: JvmApplicationDistributions): ReleaseChannel {

@@ -69,6 +69,7 @@ include(":system-info")
 include(":autolaunch")
 include(":scheduler")
 include(":scheduler-testing")
+include(":updater-testing")
 include(":fs-watcher")
 
 // Demo / sample applications (consolidated under examples/)
