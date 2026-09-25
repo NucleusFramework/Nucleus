@@ -30,6 +30,7 @@ import dev.nucleusframework.desktop.application.tasks.AbstractPatchMacJvmTask
 import dev.nucleusframework.desktop.application.tasks.AbstractProguardTask
 import dev.nucleusframework.desktop.application.tasks.AbstractRunAppXTask
 import dev.nucleusframework.desktop.application.tasks.AbstractRunDistributableTask
+import dev.nucleusframework.desktop.application.tasks.AbstractServeUpdateFeedTask
 import dev.nucleusframework.desktop.application.tasks.AbstractStripNativeLibsFromJarsTask
 import dev.nucleusframework.desktop.application.tasks.AbstractSuggestModulesTask
 import dev.nucleusframework.desktop.tasks.AbstractJarsFlattenTask
@@ -578,6 +579,8 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     val mergeUpdateYml: TaskProvider<AbstractMergeUpdateYmlTask>? =
         registerUpdateYmlMergeIfNeeded(nonStoreFormats, nonStorePackageFormats)
 
+    registerServeUpdateFeedIfNeeded(nonStoreFormats, nonStorePackageFormats)
+
     val notarizeForCurrentOS =
         if (allNotarizeTasks.isNotEmpty()) {
             tasks.register<DefaultTask>(
@@ -628,7 +631,9 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
             taskNameAction = "run",
             taskNameObject = "distributable",
             args = listOf(createDistributable),
-        )
+        ) {
+            environment.putAll(UpdaterLaunchSettings.environment(project.providers))
+        }
     if (generateAotCache != null) {
         runDistributable.dependsOn(generateAotCache)
     }
@@ -702,6 +707,35 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
 private fun AbstractGenerateAotCacheTask.applyAotCacheSettings(settings: AotCacheSettings) {
     adapterCaching.set(settings.compatibility == AotCacheCompatibility.NATIVE)
     extraTrainingJvmArgs.set(settings.extraTrainingJvmArgs.toList())
+}
+
+/**
+ * Registers `serveUpdateFeed`, which packages the auto-updatable formats of the current OS and
+ * serves them over loopback HTTP, so an installed copy of the app can update to this build with
+ * nothing published. Returns null when no auto-updatable format targets the current OS.
+ */
+private fun JvmApplicationContext.registerServeUpdateFeedIfNeeded(
+    nonStoreFormats: List<TargetFormat>,
+    nonStorePackageFormats: List<TaskProvider<AbstractElectronBuilderPackageTask>>,
+): TaskProvider<AbstractServeUpdateFeedTask>? {
+    val updatableTasks =
+        nonStoreFormats.zip(nonStorePackageFormats)
+            .filter { (format, _) -> format.isCompatibleWithCurrentOS && format.producesUpdateManifest }
+            .map { (_, task) -> task }
+    if (updatableTasks.isEmpty()) return null
+
+    return tasks.register<AbstractServeUpdateFeedTask>(
+        taskNameAction = "serve",
+        taskNameObject = "updateFeed",
+    ) {
+        dependsOn(updatableTasks)
+        perFormatOutputDirs.from(updatableTasks.map { provider -> provider.flatMap { it.destinationDir } })
+        val providers = project.providers
+        UpdaterLaunchSettings.serveSetting(providers, "port")?.toIntOrNull()?.let(port::set)
+        UpdaterLaunchSettings.serveSetting(providers, "throttle")?.let(UpdaterLaunchSettings::parseByteRate)?.let(throttleBytesPerSecond::set)
+        UpdaterLaunchSettings.serveSetting(providers, "latency")?.toLongOrNull()?.let(latencyMillis::set)
+        UpdaterLaunchSettings.serveSetting(providers, "timeout")?.toLongOrNull()?.let(timeoutSeconds::set)
+    }
 }
 
 private fun JvmApplicationContext.registerUpdateYmlMergeIfNeeded(
@@ -1232,6 +1266,8 @@ private fun JvmApplicationContext.configureRunTask(
             app.garbageCollector?.let { addAll(it.jvmArgs) }
             add("-D$APP_EXECUTABLE_TYPE=$EXECUTABLE_TYPE_DEV")
             add("-D$APP_ID=${resolvedAppIdProvider().get()}")
+            // ./gradlew run -Pnucleus.updater.simulate=update / -Pnucleus.updater.feedUrl=<dir or url>
+            UpdaterLaunchSettings.systemProperties(project.providers).forEach { (key, value) -> add("-D$key=$value") }
 
             if (currentOS == OS.MacOS) {
                 val dockName =
