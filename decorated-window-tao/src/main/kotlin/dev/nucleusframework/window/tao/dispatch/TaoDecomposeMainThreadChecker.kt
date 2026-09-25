@@ -11,7 +11,7 @@ import com.arkivanov.decompose.mainthread.MainThreadChecker
  * AWT EDT — never the UI thread under Tao, so every `childStack` / `childSlot`
  * created on `Dispatchers.Main` threw `NotOnMainThreadException`. Because only the
  * first provider counts, the Nucleus Gradle plugin also strips the Swing provider
- * from `extensions-compose` on the runtime classpath (`CleanNativeLibsTransform`),
+ * from `extensions-compose` on the runtime classpath (`DecomposeMainThreadCheckerTransform`),
  * leaving this one as the only candidate whatever the classpath order.
  *
  * The main thread is [TaoMainDispatcher.taoMainThread]: the native loop thread once
