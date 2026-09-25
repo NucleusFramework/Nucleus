@@ -40,11 +40,14 @@ dependencies {
     api(project(":decorated-window-tao"))
 
     // compileOnly: nucleusApplication initializes FileKit only when the app
-    // ships it (see FileKitIntegration.kt); never forced on consumers.
+    // ships it (see FileKitIntegration.kt), and withFileKitDialogSettings is
+    // only callable by an app that has filekit-dialogs; never forced on consumers.
     compileOnly(libs.filekit.core)
+    compileOnly(libs.filekit.dialogs)
 
     testImplementation(libs.junit)
     testImplementation(libs.filekit.core)
+    testImplementation(libs.filekit.dialogs)
     testImplementation(compose.desktop.currentOs)
     testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }

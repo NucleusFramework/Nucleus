@@ -53,6 +53,11 @@ public final class dev/nucleusframework/application/DefaultNucleusWindowHost : d
 	public fun Window-rOktWo0 (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 }
 
+public final class dev/nucleusframework/application/FileKitDialogsKt {
+	public static final fun withFileKitDialogSettings (Ldev/nucleusframework/application/NucleusWindow;Lio/github/vinceglb/filekit/dialogs/FileKitDialogSettings;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun withFileKitDialogSettings$default (Ldev/nucleusframework/application/NucleusWindow;Lio/github/vinceglb/filekit/dialogs/FileKitDialogSettings;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
 public final class dev/nucleusframework/application/NucleusApplicationKt {
 	public static final fun nucleusApplication ([Ljava/lang/String;ZLjava/util/Locale;ZZZLkotlin/jvm/functions/Function3;)V
 	public static synthetic fun nucleusApplication$default ([Ljava/lang/String;ZLjava/util/Locale;ZZZLkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
