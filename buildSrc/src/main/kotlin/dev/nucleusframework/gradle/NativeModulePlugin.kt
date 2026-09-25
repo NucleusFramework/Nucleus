@@ -20,6 +20,7 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.TaskProvider
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.kotlin.dsl.create
 import org.gradle.kotlin.dsl.getByType
 import org.gradle.kotlin.dsl.named
@@ -171,8 +172,12 @@ open class NativeModuleExtension(
         project.plugins.withType<JavaPlugin>().configureEach {
             project.tasks.named<Task>(JavaPlugin.PROCESS_RESOURCES_TASK_NAME).configure { dependsOn(task) }
         }
-        // Registered by the publishing plugin, which may not be applied yet.
-        project.tasks.matching { it.name == "sourcesJar" }.configureEach { dependsOn(task) }
+        project.pluginManager.withPlugin(KOTLIN_MULTIPLATFORM_PLUGIN_ID) {
+            project.tasks.matching { it.name == KMP_PROCESS_RESOURCES_TASK_NAME }.configureEach { dependsOn(task) }
+        }
+        // Registered by the publishing plugin, which may not be applied yet
+        // (`sourcesJar`, or `jvmSourcesJar` in a multiplatform module).
+        project.tasks.matching { it.name.endsWith("sourcesJar", ignoreCase = true) }.configureEach { dependsOn(task) }
         nativeLibrariesManifest.configure { dependsOn(task) }
 
         return task
@@ -201,6 +206,14 @@ open class NativeModuleExtension(
                 .sourceSets
                 .named(SourceSet.MAIN_SOURCE_SET_NAME)
                 .configure { resources.srcDir(manifest) }
+        }
+        // A multiplatform module has no Java source set; the manifest goes straight
+        // into the `jvm` target's resources.
+        project.pluginManager.withPlugin(KOTLIN_MULTIPLATFORM_PLUGIN_ID) {
+            project.tasks
+                .withType<ProcessResources>()
+                .matching { it.name == KMP_PROCESS_RESOURCES_TASK_NAME }
+                .configureEach { from(manifest) }
         }
         manifest
     }
@@ -302,6 +315,14 @@ enum class NativeTarget(
 }
 
 private const val NATIVE_RESOURCE_PATH = "src/main/resources/nucleus/native"
+
+/**
+ * A multiplatform module keeps the JNI layout of a JVM one (`src/main/native`,
+ * `src/main/resources`) so CI globs stay uniform; its build script adds
+ * `src/main/resources` to `jvmMain`, and the target must be named `jvm`.
+ */
+private const val KOTLIN_MULTIPLATFORM_PLUGIN_ID = "org.jetbrains.kotlin.multiplatform"
+private const val KMP_PROCESS_RESOURCES_TASK_NAME = "jvmProcessResources"
 
 /**
  * Writes `META-INF/nucleus/native-libraries/<manifestName>`: one `nucleus/native/<arch>/<file>`

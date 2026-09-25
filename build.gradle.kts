@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.kotlin) apply false
     alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.androidApplication) apply false
+    alias(libs.plugins.androidKotlinMultiplatformLibrary) apply false
     alias(libs.plugins.vanniktechMavenPublish) apply false
     alias(libs.plugins.graalvmNative) apply false
     // Freezes public ABI for every published library module: `apiCheck` fails on
@@ -154,6 +155,20 @@ subprojects {
     if (!isDemoProject) {
         detekt {
             config.setFrom(rootProject.files("config/detekt/detekt.yml"))
+        }
+
+        // In a multiplatform module the aggregate `detekt` task has no source: the
+        // analysis runs per source set, and only these tasks enforce the KDoc rules.
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            tasks.named("check") {
+                dependsOn(
+                    tasks.matching {
+                        it.name.startsWith("detekt") &&
+                            !it.name.startsWith("detektBaseline") &&
+                            it.name.endsWith("MainSourceSet")
+                    },
+                )
+            }
         }
 
         tasks.withType<Detekt>().configureEach {

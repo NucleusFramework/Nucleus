@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Serves staged file attachments and tracks the resumed activity. -->
+        <provider
+            android:name="dev.nucleusframework.share.NucleusShareProvider"
+            android:authorities="${applicationId}.nucleus.share"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

@@ -245,6 +245,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.scheduler` | OS-scheduled background tasks (Task Scheduler / launchd / systemd) |
 | `nucleus.scheduler-testing` | Test doubles for `scheduler` |
 | `nucleus.fs-watcher` | Native filesystem watcher |
+| `nucleus.share` | Native share sheet, Kotlin Multiplatform (Android, iOS, macOS, Windows, Linux) |
 | `nucleus.service-management-macos` | macOS `SMAppService` — login items, launch agents, daemons |
 | `nucleus.native-ssl` | OS trust store integration |
 | `nucleus.native-http` | HTTP client with native SSL |
