@@ -13,6 +13,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
@@ -93,9 +94,7 @@ static void notify_java(jboolean isDark) {
         }
     }
 
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 
     if (didAttach) {
         (*g_jvm)->DetachCurrentThread(g_jvm);

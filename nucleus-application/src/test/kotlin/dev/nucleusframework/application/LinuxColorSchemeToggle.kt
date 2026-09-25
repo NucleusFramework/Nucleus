@@ -10,29 +10,39 @@ internal object LinuxColorSchemeToggle {
     private const val SCHEMA = "org.gnome.desktop.interface"
     private const val KEY = "color-scheme"
 
+    /**
+     * The live toggle is only observable where the XDG desktop portal answers
+     * on a session bus: the detector reads `org.freedesktop.portal.Settings`,
+     * not gsettings. Without it (CI runners), `gsettings set` lands in an
+     * in-memory backend nobody reads and the test could only time out.
+     */
     val isAvailable: Boolean by lazy {
         System
             .getProperty("os.name")
             .orEmpty()
             .lowercase()
             .contains("linux") &&
-            runCatching {
-                ProcessBuilder("gsettings", "get", SCHEMA, KEY)
-                    .redirectErrorStream(true)
-                    .start()
-                    .waitFor(3, TimeUnit.SECONDS)
-            }.getOrDefault(false).let { started ->
-                // waitFor returns true if finished; check exit 0
-                started &&
-                    runCatching {
-                        val p =
-                            ProcessBuilder("gsettings", "get", SCHEMA, KEY)
-                                .redirectErrorStream(true)
-                                .start()
-                        p.waitFor(3, TimeUnit.SECONDS) && p.exitValue() == 0
-                    }.getOrDefault(false)
-            }
+            succeeds("gsettings", "get", SCHEMA, KEY) &&
+            succeeds(
+                "gdbus",
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.portal.Desktop",
+                "--object-path",
+                "/org/freedesktop/portal/desktop",
+                "--method",
+                "org.freedesktop.portal.Settings.Read",
+                "org.freedesktop.appearance",
+                KEY,
+            )
     }
+
+    private fun succeeds(vararg command: String): Boolean =
+        runCatching {
+            val p = ProcessBuilder(*command).redirectErrorStream(true).start()
+            p.waitFor(3, TimeUnit.SECONDS) && p.exitValue() == 0
+        }.getOrDefault(false)
 
     fun read(): String {
         val p =

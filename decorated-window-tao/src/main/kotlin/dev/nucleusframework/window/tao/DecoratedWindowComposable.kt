@@ -43,7 +43,7 @@ import kotlin.math.roundToInt
 
 /**
  * Composable variant of [openDecoratedWindow]. API mirrors
- * `decorated-window-jni`'s `DecoratedWindow`.
+ * the legacy AWT backend's `DecoratedWindow`.
  *
  * Reactive parameters (`title`, `alwaysOnTop`, `visible`, `focusable`,
  * `minimumSize`, `icon`, every field of [state]) push to the underlying
@@ -55,7 +55,7 @@ import kotlin.math.roundToInt
  * natively, [state] is updated. The `applied` snapshot guards against
  * feedback loops so we don't write back values we ourselves originated.
  *
- * Limitations vs. `decorated-window-jni`:
+ * Known limitations:
  *  - `enabled` only applies at construction (no live disabling yet).
  *  - User `content` lambda captures latest via `rememberUpdatedState`; state
  *    declared in the parent application scope and read inside `content`
@@ -73,6 +73,8 @@ public fun ApplicationScope.DecoratedWindow(
     minimumSize: DpSize? = null,
     visible: Boolean = true,
     resizable: Boolean = true,
+    minimizable: Boolean = true,
+    maximizable: Boolean = true,
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
@@ -231,6 +233,9 @@ public fun ApplicationScope.DecoratedWindow(
                 var placement: WindowPlacement? = null
                 var isMinimized: Boolean? = null
                 var wrapSettled: Boolean = !wrapWidth && !wrapHeight
+
+                /** The `Aligned` request a wrap-content window resolves once its real size is known (#546). */
+                val initialAligned: WindowPosition.Aligned? = state.position as? WindowPosition.Aligned
 
                 /** Physical px of the last programmatic [TaoWindow.setInnerSize]; null = user/OS resize. */
                 var pendingProgrammaticPx: IntSize? = null
@@ -410,6 +415,20 @@ public fun ApplicationScope.DecoratedWindow(
             window.setResizable(resizable)
         }
     }
+    // `minimizable` is post-creation only (no builder flag): same re-apply
+    // shape as `resizable` above (#504).
+    LaunchedEffect(window, minimizable) {
+        if (window.isMinimizable != minimizable) {
+            window.setMinimizable(minimizable)
+        }
+    }
+    // `maximizable` likewise: the caption button / zoom button / Win+Up go
+    // with it on Windows and macOS, the Compose chrome everywhere.
+    LaunchedEffect(window, maximizable) {
+        if (window.isMaximizable != maximizable) {
+            window.setMaximizable(maximizable)
+        }
+    }
     LaunchedEffect(window, measuredContent.value) {
         if (applied.wrapSettled) return@LaunchedEffect
         val measured = measuredContent.value ?: return@LaunchedEffect
@@ -435,6 +454,16 @@ public fun ApplicationScope.DecoratedWindow(
         applied.size = resolved
         latestState.size = resolved
         applied.wrapSettled = true
+        // Let the resize land: the scene below fills the new size, and on
+        // macOS the Aligned centring reads the live NSWindow frame.
+        repeat(ALIGNED_POSITION_RETRIES) { if (applied.pendingProgrammaticPx != null) delay(ALIGNED_POSITION_RETRY_MS) }
+        // The scene now fills the window it was measured for (#546: the
+        // TitleBar's fillMaxWidth collapsed under the wrap modifiers).
+        window.resolvedSizePolicy().settled.value = true
+        // #546: the position effect skipped `Aligned` while the size was the
+        // creation fallback; resolve it now.
+        val aligned = applied.initialAligned ?: return@LaunchedEffect
+        alignWithRetries(window, aligned, resolved)
     }
     LaunchedEffect(window, state.size, state.placement) {
         // Maximized / Fullscreen windows derive their size from the
@@ -477,10 +506,29 @@ public fun ApplicationScope.DecoratedWindow(
                 // outer origin so the ghost tracks the cursor instead of
                 // landing up/left by the decoration inset + outer offset.
                 val (xDp, yDp) = absolutePositionForPopup(window, pos)
+                // Asked for before the window is shown, so the platform can map
+                // it where it belongs: GTK and Win32 both carry a move issued
+                // ahead of the map into the initial placement. Without this the
+                // window is mapped wherever the WM felt like and only then
+                // moved — a satellite visibly flashes at the screen's default
+                // spot before snapping beside its parent.
                 window.setOuterPosition(xDp, yDp)
+                // X11: the WM applies its own placement at map time regardless,
+                // and a move issued before the map has been seen to race it
+                // (under Xvfb/openbox the window intermittently stayed at GTK's
+                // unallocated 1×1). Re-apply once the frame is real — that both
+                // overrides the WM and repairs an early move that was lost.
+                if (Platform.Current == Platform.Linux) {
+                    awaitMappedOnX11(window)
+                    window.setOuterPosition(xDp, yDp)
+                }
                 applied.position = pos
             }
             is WindowPosition.Aligned -> {
+                // Wrap-content (#546): the size is still the creation fallback;
+                // the wrap-content effect above resolves `initialAligned` once
+                // the real one is known.
+                if (!applied.wrapSettled) return@LaunchedEffect
                 // Use max(state.size, minimumSize) so the centring math matches
                 // the size the window will actually occupy on screen — Tao
                 // grows the window to honour `minimumSize` asynchronously, and
@@ -494,14 +542,7 @@ public fun ApplicationScope.DecoratedWindow(
                 // native-image start is not, and a single failed attempt left
                 // the window wherever the WM had centred it, for good, since
                 // this effect only re-runs when `state.position` changes.
-                var landed = applyAlignedPosition(window, pos, effectiveSize)
-                var attempt = 0
-                while (!landed && attempt < ALIGNED_POSITION_RETRIES) {
-                    delay(ALIGNED_POSITION_RETRY_MS)
-                    attempt++
-                    landed = applyAlignedPosition(window, pos, effectiveSize)
-                }
-                if (landed) {
+                if (alignWithRetries(window, pos, effectiveSize)) {
                     applied.position = pos
                 }
             }
@@ -628,6 +669,19 @@ private const val ALIGNED_POSITION_RETRY_MS = 16L
 
 /** Native px slop when matching a programmatic setInnerSize echo (#576). */
 private const val PROGRAMMATIC_SIZE_ECHO_PX = 1
+
+/** [applyAlignedPosition], retried while the native window is still being created (see [ALIGNED_POSITION_RETRIES]). */
+private suspend fun alignWithRetries(
+    window: TaoWindow,
+    position: WindowPosition.Aligned,
+    size: DpSize,
+): Boolean {
+    repeat(ALIGNED_POSITION_RETRIES) {
+        if (applyAlignedPosition(window, position, size)) return true
+        delay(ALIGNED_POSITION_RETRY_MS)
+    }
+    return applyAlignedPosition(window, position, size)
+}
 
 /**
  * Resolves a [WindowPosition.Aligned] against the primary monitor's work area
@@ -839,3 +893,22 @@ private fun actualWindowSizeDp(
     if (w <= 0 || h <= 0) return null
     return w to h
 }
+
+/**
+ * Suspends until [window] reports real outer bounds (both axes past GTK's 1px
+ * unallocated placeholder). Gives up after [X11_MAP_WAIT_RETRIES] polls — the
+ * move is then issued regardless, which is the previous behaviour.
+ */
+private suspend fun awaitMappedOnX11(window: TaoWindow) {
+    repeat(X11_MAP_WAIT_RETRIES) {
+        val b = window.outerBoundsPx()
+        if (b != null && b.size == RECT_ARRAY_LENGTH && b[2] > 1L && b[3] > 1L) return
+        delay(X11_MAP_WAIT_RETRY_MS)
+    }
+}
+
+private const val RECT_ARRAY_LENGTH = 4
+
+/** ~1.5 s: a slow Xvfb maps well within this; a real session in a few polls. */
+private const val X11_MAP_WAIT_RETRIES = 60
+private const val X11_MAP_WAIT_RETRY_MS = 25L

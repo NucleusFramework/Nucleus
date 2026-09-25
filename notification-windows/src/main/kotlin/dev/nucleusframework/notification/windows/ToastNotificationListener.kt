@@ -3,7 +3,8 @@ package dev.nucleusframework.notification.windows
 /**
  * Listener for toast notification lifecycle events.
  *
- * All callbacks are dispatched on the Swing EDT for thread safety.
+ * All callbacks are dispatched on the host's UI thread (the Tao main thread
+ * under Nucleus, the AWT EDT in a plain Swing / Compose Desktop host).
  */
 public interface ToastNotificationListener {
     /**

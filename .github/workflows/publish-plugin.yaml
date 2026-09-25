@@ -8,11 +8,19 @@ on:
 jobs:
   validate-release-ref:
     runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+      is-dev: ${{ steps.tag.outputs.is-dev }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Classify release tag
+        id: tag
+        uses: ./.github/actions/release-tag-info
 
       - name: Validate release ref
         uses: ./.github/actions/validate-release-ref
@@ -22,7 +30,7 @@ jobs:
     uses: ./.github/workflows/build-natives.yaml
 
   gradle:
-    needs: build-natives
+    needs: [validate-release-ref, build-natives]
     runs-on: ubuntu-22.04
     env:
       GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
@@ -41,10 +49,20 @@ jobs:
           pattern: 'natives-*'
           merge-multiple: true
 
+      # ubuntu-22.04 defaults to JDK 11; Gradle 9 needs 17+.
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
       - name: Cache Gradle Caches
         uses: gradle/actions/setup-gradle@v5
 
+      # Dev tags (`v2.6.0-dev-<timestamp>`) go out unverified on purpose; real
+      # release tags still have to pass preMerge before reaching the portal.
       - name: Run Gradle tasks
+        if: needs.validate-release-ref.outputs.is-dev != 'true'
         run: ./gradlew preMerge --continue
 
       - name: Publish on Plugin Portal

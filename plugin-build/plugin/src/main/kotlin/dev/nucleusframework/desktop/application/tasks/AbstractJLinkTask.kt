@@ -37,6 +37,10 @@ abstract class AbstractJLinkTask : AbstractJvmToolOperationTask("jlink") {
     @get:PathSensitive(PathSensitivity.NONE)
     val javaRuntimePropertiesFile: RegularFileProperty = objects.fileProperty()
 
+    /** When true, `jlink` drops `java.desktop`'s `lib/fonts` from the runtime image. */
+    @get:Input
+    val stripJreFonts: Property<Boolean> = objects.notNullProperty(true)
+
     @get:Input
     internal val stripDebug: Property<Boolean> = objects.notNullProperty(true)
 
@@ -57,7 +61,10 @@ abstract class AbstractJLinkTask : AbstractJvmToolOperationTask("jlink") {
         super.makeArgs(tmpDir).apply {
             val modulesToInclude =
                 if (includeAllModules.get()) {
+                    // JEP 493 JDKs (no jmods/) refuse to link an image containing jdk.jlink,
+                    // and a shipped app never needs it (#673).
                     JvmRuntimeProperties.readFromFile(javaRuntimePropertiesFile.ioFile).availableModules
+                        .filterNot { it == "jdk.jlink" }
                 } else {
                     modules.get()
                 }
@@ -69,6 +76,7 @@ abstract class AbstractJLinkTask : AbstractJvmToolOperationTask("jlink") {
             cliArg("--no-header-files", noHeaderFiles)
             cliArg("--no-man-pages", noManPages)
             cliArg("--strip-native-commands", stripNativeCommands)
+            cliArg("--exclude-files=glob:/java.desktop/lib/fonts/**", stripJreFonts)
             cliArg("--compress", compressionLevel.orNull?.id)
 
             cliArg("--output", destinationDir)

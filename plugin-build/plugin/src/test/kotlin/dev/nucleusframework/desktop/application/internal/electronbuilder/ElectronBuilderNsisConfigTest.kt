@@ -30,7 +30,7 @@ class ElectronBuilderNsisConfigTest {
             targetArch = Arch.X64,
             windowsIconOverride = null,
             executableName = "nucleusdemo",
-            nsisProtocolInclude = null,
+            nsisInclude = null,
         )
         return yaml.toString()
     }

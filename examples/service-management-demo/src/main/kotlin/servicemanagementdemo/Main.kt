@@ -19,17 +19,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.application.DecoratedWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.notification.common.notification
 import dev.nucleusframework.servicemanagement.AppService
 import dev.nucleusframework.servicemanagement.AppServiceManager
-import java.awt.EventQueue
+import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -56,7 +56,7 @@ private fun runBackgroundTask() {
 }
 
 private fun launchUi() =
-    nucleusApplication(backend = NucleusBackend.Awt) {
+    nucleusApplication {
         DecoratedWindow(
             onCloseRequest = ::exitApplication,
             title = "SMAppService Demo",
@@ -73,17 +73,16 @@ private fun launchUi() =
 fun App() {
     var log by remember { mutableStateOf("") }
     val logScrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
 
     fun appendLog(message: String) {
         log = "$message\n$log"
     }
 
+    // SMAppService completion handlers call back on a private queue; hop to the
+    // composition's dispatcher (the Tao main thread) before touching state.
     fun appendLogSafe(message: String) {
-        if (EventQueue.isDispatchThread()) {
-            appendLog(message)
-        } else {
-            EventQueue.invokeLater { appendLog(message) }
-        }
+        scope.launch { appendLog(message) }
     }
 
     Column(

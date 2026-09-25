@@ -16,13 +16,14 @@ plugins {
 dependencies {
     implementation(project(":decorated-window-tao"))
     // The suites live in decorated-window-tao's test source set; consumed as a
-    // classes jar through the module's taoTestArtifacts configuration.
+    // classes jar through the module's taoTestArtifacts configuration, which
+    // also carries what those classes need at run time (kotlin.test, Compose
+    // Desktop, Material 3) — so a dependency added to that test source set
+    // reaches this image without being repeated here.
     implementation(project(path = ":decorated-window-tao", configuration = "taoTestArtifacts"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
     implementation(compose.desktop.currentOs)
-    // Runtime deps of the compiled test classes (kotlin.test assertions).
-    implementation(kotlin("test"))
     // Regression fixture for issue #443: an SLF4J 2.x backend that must initialize at
     // RUN time. If anything on the classpath restores `--initialize-at-build-time=org.slf4j`,
     // the native-image build fails on LogbackMDCAdapter in the image heap.

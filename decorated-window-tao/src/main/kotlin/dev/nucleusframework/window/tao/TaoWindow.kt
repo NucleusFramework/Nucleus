@@ -2,8 +2,13 @@
 
 package dev.nucleusframework.window.tao
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.IntRect
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.core.runtime.UpdateHandoff
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
@@ -13,8 +18,18 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Logger
+import kotlin.math.roundToInt
 import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION as SHARED_AWT_PIXEL_TO_ROTATION
 import dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT as SHARED_MACOS_AWT_SCROLL_AMOUNT
+
+/**
+ * How long an unanswered redraw request may stay latched before
+ * [TaoWindow.requestRedraw] assumes the OS dropped it and asks again. Far above
+ * a frame, far below anything a user would call a freeze. File-level and
+ * private: a `const val` in the private companion would still land on the
+ * validated ABI.
+ */
+private const val STALE_REDRAW_NANOS: Long = 1_000_000_000L
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
@@ -27,6 +42,8 @@ import dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT as SHARED_M
 public class TaoWindow internal constructor(
     public val handle: Long,
     isResizable: Boolean = true,
+    isMinimizable: Boolean = true,
+    isMaximizable: Boolean = true,
     /**
      * `true` when the window was created as a popup overlay of another window
      * (`openWindow(popupOf = …)` — GTK_WINDOW_POPUP, mapped as a `wl_subsurface`
@@ -61,7 +78,7 @@ public class TaoWindow internal constructor(
      * the `resizable` flag the window was created with; tracks runtime
      * [setResizable] calls. Surfaced to Compose so [WindowControlsLinux] /
      * [WindowControlsWindows] can hide the maximize button on non-resizable
-     * windows (matches the `decorated-window-jni` behaviour).
+     * windows (matches the legacy AWT backend's behaviour).
      */
     public val isResizable: Boolean
         get() = resizableState.value
@@ -71,6 +88,58 @@ public class TaoWindow internal constructor(
         if (resizableState.value == resizable) return
         resizableState.value = resizable
         NativeTaoBridge.nativeSetResizable(handle, resizable)
+    }
+
+    // Same snapshot-backed shape as [resizableState]: the Compose chromes drop
+    // the minimize slot, the native side greys the affordance (#504).
+    private val minimizableState = mutableStateOf(isMinimizable)
+
+    /**
+     * `true` when the user can minimize the window. Initially the
+     * `minimizable` flag the window was created with; tracks runtime
+     * [setMinimizable] calls. Surfaced to Compose so [WindowControlsLinux] /
+     * [WindowControlsWindows] can drop the minimize button (#504).
+     */
+    public val isMinimizable: Boolean
+        get() = minimizableState.value
+
+    /**
+     * Enables/disables user minimizing at runtime. macOS clears
+     * `NSWindowStyleMaskMiniaturizable` (the yellow traffic-light greys out,
+     * Cmd+M and the Window menu follow); Windows drops `WS_MINIMIZEBOX`
+     * (taskbar click, Win+Down, system menu). Linux has no client-side hint
+     * in tao, so only the title-bar button disappears — the window manager's
+     * own shortcuts can still iconify the window.
+     */
+    public fun setMinimizable(minimizable: Boolean) {
+        if (minimizableState.value == minimizable) return
+        minimizableState.value = minimizable
+        NativeTaoBridge.nativeSetMinimizable(handle, minimizable)
+    }
+
+    private val maximizableState = mutableStateOf(isMaximizable)
+
+    /**
+     * `true` when the user can maximize the window. Initially the
+     * `maximizable` flag the window was created with; tracks runtime
+     * [setMaximizable] calls. The Compose chromes drop the maximize slot and
+     * the title-bar double-click when this is `false`. Orthogonal to
+     * [isResizable]: a palette stays resizable without ever filling the screen.
+     */
+    public val isMaximizable: Boolean
+        get() = maximizableState.value
+
+    /**
+     * Enables/disables user maximizing at runtime. macOS clears the zoom
+     * button (Window > Zoom follows); Windows drops `WS_MAXIMIZEBOX` (caption
+     * button, Win+Up, Aero Snap to the top edge). Linux has no client-side
+     * hint in tao, so only the title-bar button and double-click disappear —
+     * the window manager's own shortcuts can still maximize the window.
+     */
+    public fun setMaximizable(maximizable: Boolean) {
+        if (maximizableState.value == maximizable) return
+        maximizableState.value = maximizable
+        NativeTaoBridge.nativeSetMaximizable(handle, maximizable)
     }
 
     @Volatile
@@ -94,6 +163,19 @@ public class TaoWindow internal constructor(
     private var closeRequestedListener: (() -> Unit)? = null
 
     /**
+     * `false` for windows the framework owns (workspace satellites, tab
+     * windows, drag ghosts): a system quit leaves them alone instead of
+     * closing them, so a cancelled quit keeps the layout and an accepted one
+     * still snapshots it whole. See [TaoApplication.requestQuit].
+     */
+    @Volatile
+    internal var closesOnQuit: Boolean = true
+
+    /** Set once [requestClose] started destroying this window. */
+    @Volatile
+    internal var isClosing: Boolean = false
+
+    /**
      * Fires synchronously at the start of [requestClose] — before the native
      * destroy — so the host can present an opaque last frame (backdrop
      * teardown) while the window and its GL surface are still alive.
@@ -103,6 +185,14 @@ public class TaoWindow internal constructor(
      * kill Mica.
      */
     private val prepareCloseListeners = CopyOnWriteArrayList<() -> Unit>()
+
+    /**
+     * Fires synchronously at the start of [requestClose], right after
+     * [prepareCloseListeners]: windows *owned* by this one (satellites) sever
+     * their native owner link here, so Win32 / GTK don't destroy them together
+     * with their former owner while the app is handing them a new one.
+     */
+    private val closingListeners = CopyOnWriteArrayList<() -> Unit>()
 
     private val destroyedListeners = CopyOnWriteArrayList<() -> Unit>()
 
@@ -122,11 +212,23 @@ public class TaoWindow internal constructor(
     // the listener runs, so a redraw posted *during* render still gets through.
     private val redrawPending = AtomicBoolean(false)
 
+    /** When the in-flight redraw was asked for; see [requestRedraw]'s staleness re-issue. */
+    @Volatile
+    private var redrawRequestedAtNanos = 0L
+
     // Startup white-flash workaround: the themed WM_ERASEBKGND fill is armed on
     // show() and disabled once — on the first native redraw after show. Gating
     // on this flag keeps the disable off the per-frame redraw path.
     private var startupEraseActive = false
     private val focusListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
+
+    /**
+     * `true` while this window holds the keyboard focus, as last reported by
+     * the native FOCUSED / UNFOCUSED events. Snapshot-backed, so Compose
+     * readers recompose on change.
+     */
+    public var isFocused: Boolean by mutableStateOf(false)
+        private set
 
     @Volatile
     private var willHideListener: (() -> Unit)? = null
@@ -208,7 +310,29 @@ public class TaoWindow internal constructor(
     }
 
     public fun requestRedraw() {
-        if (!redrawPending.compareAndSet(false, true)) return
+        val now = System.nanoTime()
+        if (redrawPending.compareAndSet(false, true)) {
+            redrawRequestedAtNanos = now
+            NativeTaoBridge.nativeRequestRedraw(handle)
+            return
+        }
+        // A request is already in flight. The latch is a *coalescing* device, so
+        // it only ever holds until the matching REDRAW_REQUESTED comes back — and
+        // when the OS swallows that event instead, the latch suppresses every
+        // later request and the window silently stops painting for good. Two such
+        // cases are patched by hand already ([resetRedrawLatch] for nested modal
+        // pumps, the FOCUSED branch of [dispatch] for an occluding modal child),
+        // and the #643 monkeys found a third: an app frozen long enough for
+        // Windows to ghost its window can come back with a live event loop and a
+        // dead picture.
+        //
+        // Rather than enumerate the ways an invalidation can be lost, treat a
+        // request the OS has not answered within [STALE_REDRAW_NANOS] as lost and
+        // ask again. No frame is lost either way: a genuinely in-flight redraw
+        // just yields one extra, idempotent request, at most once per second.
+        if (now - redrawRequestedAtNanos < STALE_REDRAW_NANOS) return
+        redrawRequestedAtNanos = now
+        logger.fine { "redraw for window $handle unanswered, re-issuing" }
         NativeTaoBridge.nativeRequestRedraw(handle)
     }
 
@@ -233,6 +357,7 @@ public class TaoWindow internal constructor(
     }
 
     public fun requestClose() {
+        isClosing = true
         // Actual destroy path (not the cancelable close-*request*). Present an
         // opaque themed frame first: a live backdrop's translucent clear would
         // composite towards black in the close animation. The host listener
@@ -246,6 +371,7 @@ public class TaoWindow internal constructor(
         } else {
             for (listener in prepareCloseListeners) listener.invoke()
         }
+        for (listener in closingListeners) listener.invoke()
         NativeTaoBridge.nativeRequestClose(handle)
     }
 
@@ -805,18 +931,62 @@ public class TaoWindow internal constructor(
      * a window opened with `forceX11` reports `false` inside an app whose other
      * windows are Wayland. Only meaningful once the native window exists (after
      * `WINDOW_READY`).
+     *
+     * Cheap to poll: the kind is resolved through JNI once and cached, since a
+     * surface never changes backend for the life of its window. Cross-window
+     * gestures read it on every pointer move.
      */
     public val isNativeWaylandSurface: Boolean
-        get() {
-            if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
-            val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return false
-            return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND
-        }
+        get() = linuxSurfaceKind() == WAYLAND_HANDLE_KIND
+
+    /**
+     * `true` when this window's position on screen is the client's to know and
+     * to set — every platform but a native Wayland surface, where xdg-shell
+     * gives the compositor full authority over toplevel placement: GDK reports
+     * every toplevel at `(0, 0)` there and ignores a move.
+     *
+     * This is the capability to branch on, rather than the platform
+     * ([isNativeWaylandSurface]): [outerBoundsPx] still carries a valid *size*
+     * where this is `false`, so a caller that needs only the size keeps using
+     * it, while anything that would treat its origin as a screen coordinate,
+     * move the window, or place another window against it must check here
+     * first.
+     *
+     * What it changes for an app: where it is `false`, moving the window is
+     * the compositor's gesture ([Modifier.windowDragArea]) and a cross-window
+     * drag rides the platform's drag-and-drop session instead of the window
+     * itself, so chrome that carries both has to give each one its own area —
+     * see [Satellite]'s `floatingCaption` and [SatelliteScope.isCompositorPlaced].
+     */
+    public val canPlaceOnScreen: Boolean
+        get() = !isNativeWaylandSurface
+
+    /**
+     * `nativeLinuxHandles` slot 0, cached from the first call that returns a
+     * realized surface: `0` while the native window does not exist yet (not
+     * cached, so the next read asks again), `1` for Xlib, `2` for Wayland.
+     */
+    @Volatile
+    private var cachedLinuxSurfaceKind = 0L
+
+    private fun linuxSurfaceKind(): Long {
+        val cached = cachedLinuxSurfaceKind
+        if (cached != 0L) return cached
+        if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return 0L
+        val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return 0L
+        val kind = if (handles.isNotEmpty()) handles[0] else 0L
+        if (kind != 0L) cachedLinuxSurfaceKind = kind
+        return kind
+    }
 
     /** Features already reported through [warnIfNativeWayland] for this window. */
     private val waylandWarnings = ConcurrentHashMap.newKeySet<String>()
 
-    /** Logical pixels. Pass `null` to clear the minimum. */
+    /**
+     * Logical pixels. The constraint is per-window, not per-axis: a `null` on
+     * either axis clears the whole minimum, so pass `null` for **both** to
+     * clear it and two real values to set it.
+     */
     public fun setMinimumSize(
         widthDp: Double?,
         heightDp: Double?,
@@ -824,6 +994,20 @@ public class TaoWindow internal constructor(
         val w = widthDp ?: -1.0
         val h = heightDp ?: -1.0
         NativeTaoBridge.nativeSetMinInnerSize(handle, w, h)
+    }
+
+    /**
+     * Logical pixels. The constraint is per-window, not per-axis: a `null` on
+     * either axis clears the whole maximum, so pass `null` for **both** to
+     * clear it and two real values to set it.
+     */
+    public fun setMaximumSize(
+        widthDp: Double?,
+        heightDp: Double?,
+    ) {
+        val w = widthDp ?: -1.0
+        val h = heightDp ?: -1.0
+        NativeTaoBridge.nativeSetMaxInnerSize(handle, w, h)
     }
 
     /** [pixels] must be row-major premultiplied RGBA. Empty array clears. */
@@ -873,8 +1057,81 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetOuterPosition(handle, x, y)
     }
 
+    /**
+     * Linux native Wayland only, for a popup overlay (`openWindow(popupOf = …)`):
+     * anchors the popup's content at a point of the parent's content area
+     * through GDK's `move_to_rect`, so it maps as an `xdg_popup` the compositor
+     * keeps on screen — flipped above the point when there is no room below,
+     * slid along an edge — instead of a `wl_subsurface` the compositor cannot
+     * constrain. The shadow margins are the transparent border the surface
+     * carries around its content; the compositor constrains the content, not
+     * the margin. The surface size is applied here too, because GDK builds the
+     * positioner from the window's current geometry — a popup still sized 1×1
+     * asks the compositor to constrain a 1×1 rectangle and is never flipped.
+     * GDK positions a popup once, at map: call before [show], and never
+     * [setOuterPosition] or [setInnerSize] afterwards (either one re-maps it as
+     * a plain subsurface).
+     */
+    internal fun anchorPopupInParent(
+        contentXDp: Double,
+        contentYDp: Double,
+        widthDp: Double,
+        heightDp: Double,
+        shadowLeftDp: Int,
+        shadowTopDp: Int,
+        shadowRightDp: Int,
+        shadowBottomDp: Int,
+    ) {
+        var x = contentXDp
+        var y = contentYDp
+        // Same content-area → parent-surface conversion as setOuterPosition.
+        if (isPopup && popupParentHandle != 0L && parentIsNativeWayland()) {
+            val packed = NativeTaoBridge.nativeLinuxContentOrigin(popupParentHandle)
+            x += (packed shr 32).toInt()
+            y += packed.toInt()
+        }
+        NativeTaoBridge.nativeLinuxPopupAnchor(
+            handle,
+            x.roundToInt(),
+            y.roundToInt(),
+            widthDp.roundToInt(),
+            heightDp.roundToInt(),
+            shadowLeftDp,
+            shadowTopDp,
+            shadowRightDp,
+            shadowBottomDp,
+        )
+    }
+
+    /**
+     * [setOuterPosition] in physical screen pixels — the coordinate space
+     * [outerBoundsPx] reports in, so a caller that computes a target from live
+     * window rects never has to guess a scale factor.
+     *
+     * On Windows this goes straight to `SetWindowPos(SWP_NOSIZE)`: Tao's
+     * logical `set_outer_position` multiplies by the scale the window was
+     * *created* at, which is the wrong factor as soon as the window lives on a
+     * second monitor with a different DPI. macOS and Linux convert with the
+     * window's own scale factor, where logical units and the native frame
+     * (AppKit points / GTK logical pixels) line up.
+     */
+    internal fun setOuterPositionPx(
+        xPx: Int,
+        yPx: Int,
+    ) {
+        if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
+            val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+            if (hwnd != 0L) {
+                NativeTaoWindowsDecoBridge.nativeSetWindowOuterPositionPx(hwnd, xPx, yPx)
+                return
+            }
+        }
+        val scale = scaleFactor.takeIf { it > 0f } ?: 1f
+        setOuterPosition(xPx / scale.toDouble(), yPx / scale.toDouble())
+    }
+
     /** `true` when the popup parent is a native Wayland surface (kind == 2). */
-    private fun parentIsNativeWayland(): Boolean {
+    internal fun parentIsNativeWayland(): Boolean {
         if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
         val handles = NativeTaoBridge.nativeLinuxHandles(popupParentHandle) ?: return false
         return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND
@@ -955,6 +1212,45 @@ public class TaoWindow internal constructor(
         resizedListeners += block
     }
 
+    // ── Multi-cast unsubscribe ────────────────────────────────────────────────
+    // A window that observes *another* window (a satellite following its
+    // parent) has a shorter lifetime than the window it listens to, so it must
+    // be able to detach. Windows that only listen to themselves don't need
+    // this: their listener lists die with the native window.
+
+    /** Detaches a listener registered with [onResized]. */
+    internal fun removeResizedListener(block: (Int, Int) -> Unit) {
+        resizedListeners -= block
+    }
+
+    /** Detaches a listener registered with [onMoved]. */
+    internal fun removeMovedListener(block: (Int, Int) -> Unit) {
+        movedListeners -= block
+    }
+
+    /** Detaches a listener registered with [onDestroyed]. */
+    internal fun removeDestroyedListener(block: () -> Unit) {
+        destroyedListeners -= block
+    }
+
+    /** Detaches a listener registered with [onClosing]. */
+    internal fun removeClosingListener(block: () -> Unit) {
+        closingListeners -= block
+    }
+
+    /** Detaches a listener registered with [onFullscreenPrepare]. */
+    internal fun removeFullscreenPrepareListener(block: (Int, Int, Boolean) -> Unit) {
+        fullscreenPrepareListeners -= block
+    }
+
+    internal fun removeFocusListener(block: (Boolean) -> Unit) {
+        focusListeners -= block
+    }
+
+    internal fun removeMinimizedListener(block: (Boolean) -> Unit) {
+        minimizedListeners -= block
+    }
+
     public fun onScaleFactorChanged(block: (scale: Float) -> Unit) {
         scaleFactorListener = block
     }
@@ -970,6 +1266,14 @@ public class TaoWindow internal constructor(
      */
     internal fun onPrepareClose(block: () -> Unit) {
         prepareCloseListeners += block
+    }
+
+    /**
+     * Owned-window hook: runs at the start of [requestClose], before the native
+     * destroy. Multi-cast; detach with [removeClosingListener].
+     */
+    internal fun onClosing(block: () -> Unit) {
+        closingListeners += block
     }
 
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */
@@ -1154,6 +1458,34 @@ public class TaoWindow internal constructor(
      * See [NativeTaoBridge.EventCallback.onImePreedit].
      */
     @Volatile
+    /**
+     * Renders the current composition of this window's scene into a bitmap —
+     * the whole content area, or the given region of it in physical content
+     * pixels. Installed by the scene host while it is attached; `null` before
+     * and after, and on hosts that do not offer it.
+     *
+     * What a platform drag-and-drop session shows under the pointer where the
+     * window itself cannot follow (native Wayland): a picture of the palette
+     * or panel being dragged rather than a window the client cannot move.
+     */
+    internal var contentSnapshot: ((IntRect?) -> ImageBitmap?)? = null
+
+    /** See [contentSnapshot]; `null` when the host offers none or the scene has no size yet. */
+    internal fun snapshotContent(rectPx: IntRect?): ImageBitmap? = contentSnapshot?.invoke(rectPx)
+
+    /**
+     * This window's scene root as a drag-and-drop target, installed by the
+     * scene host while it is attached; `null` before and after.
+     *
+     * The platform inbound callbacks (`NativeTao*DndBridge.Callback`) resolve
+     * the node through the very same lambda, so a driver inside the process —
+     * the headful suite — can hand a drag to
+     * [dev.nucleusframework.window.tao.dnd.TaoSceneDnD] along the path the OS
+     * takes, rather than a parallel one that could drift from it.
+     */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    internal var inboundDragAndDropNode: (() -> androidx.compose.ui.scene.ComposeSceneDragAndDropNode?)? = null
+
     internal var imePreedit: ((String) -> Unit)? = null
 
     internal fun dispatchImePreedit(text: String) {
@@ -1177,7 +1509,13 @@ public class TaoWindow internal constructor(
         b: Int,
     ) {
         when (code) {
-            TaoEventCode.WINDOW_READY -> readyListener?.invoke(a, b)
+            TaoEventCode.WINDOW_READY -> {
+                // Cache the HWND for the hang watchdog while we are on the
+                // event-loop thread: resolving it later goes through the
+                // native window map, whose lock a stalled loop may hold (#643).
+                TaoEventLoopWatchdog.registerWindow(handle)
+                readyListener?.invoke(a, b)
+            }
             TaoEventCode.RESIZED -> {
                 // Win32 emits WM_SIZE/SIZE_MINIMIZED as 0x0. Keep resize
                 // listeners on the last real content size while minimized.
@@ -1192,6 +1530,7 @@ public class TaoWindow internal constructor(
             TaoEventCode.SCALE_FACTOR_CHANGED -> scaleFactorListener?.invoke(a / 1000f)
             TaoEventCode.CLOSE_REQUESTED -> closeRequestedListener?.invoke()
             TaoEventCode.DESTROYED -> {
+                TaoEventLoopWatchdog.unregisterWindow(handle)
                 destroyedListeners.forEach { it.invoke() }
                 TaoApplication.remove(handle)
             }
@@ -1206,6 +1545,9 @@ public class TaoWindow internal constructor(
                 if (startupEraseActive) {
                     startupEraseActive = false
                     setStartupBackgroundEraseEnabled(false)
+                    // A window is on screen with content: after a hot update, the
+                    // version that launched this one may now exit (no-op otherwise).
+                    UpdateHandoff.signalReady()
                 }
             }
             TaoEventCode.FOCUSED -> {
@@ -1219,9 +1561,13 @@ public class TaoWindow internal constructor(
                 // just yields one extra, idempotent request.
                 redrawPending.set(false)
                 requestRedraw()
+                isFocused = true
                 focusListeners.forEach { it.invoke(true) }
             }
-            TaoEventCode.UNFOCUSED -> focusListeners.forEach { it.invoke(false) }
+            TaoEventCode.UNFOCUSED -> {
+                isFocused = false
+                focusListeners.forEach { it.invoke(false) }
+            }
             TaoEventCode.MINIMIZED -> {
                 val minimized = a != 0
                 isMinimized = minimized
@@ -1294,6 +1640,8 @@ public class TaoWindow internal constructor(
         const val WAYLAND_HANDLE_KIND: Long = 2L
 
         val waylandLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.wayland")
+
+        val logger: Logger = Logger.getLogger(TaoWindow::class.java.name)
     }
 }
 

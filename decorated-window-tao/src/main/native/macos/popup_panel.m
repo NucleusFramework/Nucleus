@@ -37,6 +37,7 @@
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <stdatomic.h>
 
 // ── JVM caching for the per-panel event callback ────────────────────────
@@ -249,7 +250,7 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
     jfloat x, y;
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnPointerMethod, type, x, y, button, [self modifierMaskFor:event]);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* On mouseDown inside a focusable panel, escalate the panel to key
@@ -319,7 +320,7 @@ static jint scrollGesturePhase(NSEvent *event) {
         x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY,
         event.hasPreciseScrollingDeltas ? JNI_TRUE : JNI_FALSE,
         scrollGesturePhase(event));
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 - (void)dispatchKey:(NSEvent *)event type:(jint)type {
@@ -332,7 +333,7 @@ static jint scrollGesturePhase(NSEvent *event) {
     if (chars.length == 0) chars = event.charactersIgnoringModifiers;
     jint cp = (chars.length > 0) ? (jint)[chars characterAtIndex:0] : 0;
     (*env)->CallVoidMethod(env, cb, sOnKeyMethod, type, vk, cp, [self modifierMaskFor:event]);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 - (void)keyDown:(NSEvent *)event { [self dispatchKey:event type:EVT_KEY_DOWN]; }
@@ -351,6 +352,12 @@ static jint scrollGesturePhase(NSEvent *event) {
 @property (nonatomic, strong) id outsideMonitor;           // local NSEvent monitor token
 @property (nonatomic, strong) id outsideGlobalMonitor;       // global NSEvent monitor token (standalone only)
 @property (nonatomic, strong) NSValue *outsideListenerVal;  // jobject global ref boxed
+// Buttons whose press this panel handed to its parent and whose release has
+// not followed. AppKit keeps the whole gesture on the window that took the
+// mouseDown — this panel — so the parent cannot see the end of a gesture we
+// started for it unless we pass it on, and cannot see it at all once the panel
+// is ordered out. See `nucleusCloseForwardedGestures`.
+@property (nonatomic) NSUInteger forwardedButtons;
 @end
 
 @implementation NucleusTaoPopupPanel
@@ -400,12 +407,102 @@ static jint scrollGesturePhase(NSEvent *event) {
     [parent sendEvent:forwarded];
 }
 
+/// Bit of [event]'s button, or 0 for an event that is not part of a button
+/// gesture.
+- (NSUInteger)nucleusGestureBitFor:(NSEvent *)event {
+    switch (event.type) {
+        case NSEventTypeLeftMouseDown:
+        case NSEventTypeLeftMouseUp:
+        case NSEventTypeLeftMouseDragged:
+            return 1u << 0;
+        case NSEventTypeRightMouseDown:
+        case NSEventTypeRightMouseUp:
+        case NSEventTypeRightMouseDragged:
+            return 1u << 1;
+        case NSEventTypeOtherMouseDown:
+        case NSEventTypeOtherMouseUp:
+        case NSEventTypeOtherMouseDragged:
+            return 1u << 2;
+        default:
+            return 0;
+    }
+}
+
+/// Once the press went to the parent, the rest of that gesture goes there too.
+///
+/// Deciding each event on its own — is this point in the content region? —
+/// loses the drags and the release the moment the answer changes mid-gesture,
+/// and it changes often: the press is what dismisses a hover card, which
+/// re-lays out the content under the pointer.
+- (BOOL)nucleusGestureBelongsToParent:(NSEvent *)event {
+    if (self.parentHostWindow == nil) return NO;
+    NSUInteger bit = [self nucleusGestureBitFor:event];
+    return bit != 0 && (self.forwardedButtons & bit) != 0;
+}
+
+- (NSEventType)nucleusUpEventTypeForBit:(NSUInteger)bit {
+    if (bit == (1u << 1)) return NSEventTypeRightMouseUp;
+    if (bit == (1u << 2)) return NSEventTypeOtherMouseUp;
+    return NSEventTypeLeftMouseUp;
+}
+
+/// Ends every gesture this panel forwarded and never finished, by handing the
+/// parent the release AppKit will not deliver.
+///
+/// A popup is very often taken down *by* the press it forwarded — the card
+/// this panel shows is dismissed the moment the pointer presses the tab it
+/// belongs to — and an ordered-out window receives no events, so the real
+/// mouseUp reaches no one at all. Without this the parent's scene is left
+/// holding a press that never ends: the click never completes, and every
+/// gesture after it is read as a continuation of that one.
+- (void)nucleusCloseForwardedGestures {
+    NSUInteger pending = self.forwardedButtons;
+    if (pending == 0) return;
+    self.forwardedButtons = 0;
+    NSWindow *parent = self.parentHostWindow;
+    if (parent == nil) return;
+    NSPoint parentPoint = [parent convertPointFromScreen:[NSEvent mouseLocation]];
+    for (NSUInteger bit = 1u; bit <= (1u << 2); bit <<= 1) {
+        if ((pending & bit) == 0) continue;
+        NSEvent *up = [NSEvent mouseEventWithType:[self nucleusUpEventTypeForBit:bit]
+                                         location:parentPoint
+                                    modifierFlags:0
+                                        timestamp:NSProcessInfo.processInfo.systemUptime
+                                     windowNumber:parent.windowNumber
+                                          context:nil
+                                      eventNumber:0
+                                       clickCount:1
+                                         pressure:0];
+        if (up != nil) [parent sendEvent:up];
+    }
+}
+
 - (void)sendEvent:(NSEvent *)event {
-    if ([self nucleusShouldForwardToParent:event]) {
+    if ([self nucleusGestureBelongsToParent:event] || [self nucleusShouldForwardToParent:event]) {
+        NSUInteger bit = [self nucleusGestureBitFor:event];
+        switch (event.type) {
+            case NSEventTypeLeftMouseDown:
+            case NSEventTypeRightMouseDown:
+            case NSEventTypeOtherMouseDown:
+                self.forwardedButtons |= bit;
+                break;
+            case NSEventTypeLeftMouseUp:
+            case NSEventTypeRightMouseUp:
+            case NSEventTypeOtherMouseUp:
+                self.forwardedButtons &= ~bit;
+                break;
+            default:
+                break;
+        }
         [self nucleusForwardMouseEventToParent:event];
         return;
     }
     [super sendEvent:event];
+}
+
+- (void)orderOut:(id)sender {
+    [self nucleusCloseForwardedGestures];
+    [super orderOut:sender];
 }
 @end
 
@@ -856,7 +953,7 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeInstallOutsideC
         if (e.type == NSEventTypeRightMouseDown) btn = 2;
         else if (e.type == NSEventTypeOtherMouseDown) btn = 3;
         (*jenv)->CallVoidMethod(jenv, cb, sOutsideOnClickMethod, type, btn);
-        if ((*jenv)->ExceptionCheck(jenv)) (*jenv)->ExceptionClear(jenv);
+        nucleus_jni_clear_exception(jenv);
         return e;
     }];
 
@@ -882,7 +979,7 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeInstallOutsideC
             if (e.type == NSEventTypeRightMouseDown) btn = 2;
             else if (e.type == NSEventTypeOtherMouseDown) btn = 3;
             (*jenv)->CallVoidMethod(jenv, cb, sOutsideOnClickMethod, type, btn);
-            if ((*jenv)->ExceptionCheck(jenv)) (*jenv)->ExceptionClear(jenv);
+            nucleus_jni_clear_exception(jenv);
         }];
     }
 }

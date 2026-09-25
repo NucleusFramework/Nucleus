@@ -16,7 +16,6 @@ val publishVersion =
 
 dependencies {
     api(project(":decorated-window-core"))
-    api(project(":decorated-window-awt"))
     api(project(":aot-runtime"))
     // api: nucleusApplication bridges Compose's isSystemInDarkTheme() to the
     // reactive OS detector, so consumers always get darkmode-detector on the
@@ -35,14 +34,20 @@ dependencies {
     // supertype must be visible on consumers' compile classpath.
     api(libs.compose.desktop.common)
 
-    // An app ships exactly one backend at runtime — by construction (their
-    // imports overlap, so coexistence is unsupported). We compile against
-    // jni (which provides the AWT-bound DecoratedWindow signature, identical
-    // to jbr's) and tao for the no-AWT path.
-    compileOnly(project(":decorated-window-jni"))
-    compileOnly(project(":decorated-window-tao"))
+    // Tao is the only window backend: `nucleusApplication` always drives its
+    // native event loop, and the public window/dialog scopes expose Tao types.
+    // `api` so consumers get it without declaring it themselves.
+    api(project(":decorated-window-tao"))
+
+    // compileOnly: nucleusApplication initializes FileKit only when the app
+    // ships it (see FileKitIntegration.kt), and withFileKitDialogSettings is
+    // only callable by an app that has filekit-dialogs; never forced on consumers.
+    compileOnly(libs.filekit.core)
+    compileOnly(libs.filekit.dialogs)
 
     testImplementation(libs.junit)
+    testImplementation(libs.filekit.core)
+    testImplementation(libs.filekit.dialogs)
     testImplementation(compose.desktop.currentOs)
     testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
@@ -55,6 +60,7 @@ java {
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
+        optIn.add("dev.nucleusframework.window.ExperimentalNucleusApi")
     }
 }
 
@@ -76,6 +82,49 @@ tasks.register<JavaExec>("spellcheckConsumer") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("dev.nucleusframework.application.spellcheck.SpellcheckConsumerMainKt")
+}
+
+/**
+ * Writes the test runtime classpath for `scripts/context-menu-wayland-e2e.py`,
+ * which launches `ContextMenuE2EMainKt` itself under a nested compositor (a
+ * JavaExec would not see the driver's WAYLAND_DISPLAY through the daemon).
+ */
+tasks.register("contextMenuE2EClasspath") {
+    group = "verification"
+    description = "Builds the test classes and writes their runtime classpath for the context menu E2E driver"
+    dependsOn(tasks.named("testClasses"))
+    val output = layout.buildDirectory.file("e2e/context-menu-classpath.txt")
+    val classpath = sourceSets["test"].runtimeClasspath
+    inputs.files(classpath)
+    outputs.file(output)
+    doLast {
+        output
+            .get()
+            .asFile
+            .apply { parentFile.mkdirs() }
+            .writeText(classpath.asPath)
+    }
+}
+
+/**
+ * Process E2E for FileKit auto-initialization: each scenario boots a real
+ * `nucleusApplication` in its own JVM, one of them on a classpath without FileKit.
+ * Not part of `check` — run explicitly: `./gradlew :nucleus-application:fileKitE2E`
+ */
+tasks.register<JavaExec>("fileKitE2E") {
+    group = "verification"
+    description = "Boots nucleusApplication with and without FileKit and checks what FileKit resolves"
+    dependsOn(tasks.named("testClasses"))
+    val runtimeClasspath = sourceSets["test"].runtimeClasspath
+    classpath = runtimeClasspath
+    mainClass.set("dev.nucleusframework.application.filekit.FileKitE2EMainKt")
+    doFirst {
+        systemProperty("fileKitE2E.classpath", runtimeClasspath.asPath)
+        systemProperty(
+            "fileKitE2E.classpathWithoutFileKit",
+            runtimeClasspath.filter { !it.name.startsWith("filekit-") }.asPath,
+        )
+    }
 }
 
 tasks.register<JavaExec>("systemThemeE2E") {
@@ -102,8 +151,8 @@ mavenPublishing {
     pom {
         name.set("Nucleus Application")
         description.set(
-            "Unified entry point picking the decorated-window backend " +
-                "(JBR/JNI AWT or no-AWT Tao) and exposing a backend-agnostic window handle.",
+            "Unified entry point for a Nucleus desktop application on the " +
+                "no-AWT Tao backend, exposing a portable window handle.",
         )
         url.set("https://github.com/NucleusFramework/Nucleus")
 

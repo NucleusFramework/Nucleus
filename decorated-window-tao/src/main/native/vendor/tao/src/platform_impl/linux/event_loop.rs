@@ -53,6 +53,23 @@ use super::{
 
 use taskbar::TaskbarIndicator;
 
+/// Whether GTK focus sits on a widget Nucleus did not create — an embedded
+/// native view (`NativeView`), which the widget bridge never marks with
+/// `nucleus_tao_input_box` the way it marks its own capture boxes. Keys then
+/// belong to the embed: no IME filtering on its behalf, no delivery to
+/// Compose, plain GTK propagation to the focus widget. Without this the
+/// toplevel's `GtkIMContext` consumed every printable key and the handler
+/// stopped propagation, so a `WebKitWebView` or a `GtkEntry` the user had
+/// clicked into never received a single character.
+fn embed_owns_keyboard(window: &gtk::Window) -> bool {
+  let Some(focus) = window.focused_widget() else {
+    return false;
+  };
+  // SAFETY: only the presence of the key is read; the pointer stored under it
+  // (a non-null marker set by the widget bridge) is never dereferenced.
+  unsafe { glib::prelude::ObjectExt::data::<()>(&focus, "nucleus_tao_input_box").is_none() }
+}
+
 #[derive(Clone)]
 pub struct EventLoopWindowTarget<T> {
   /// Gdk display
@@ -325,6 +342,13 @@ impl<T: 'static> EventLoop<T> {
         match request {
           WindowRequest::Title(title) => window.set_title(&title),
           WindowRequest::Position((x, y)) => window.move_(x, y),
+          WindowRequest::PopupAnchor {
+            x,
+            y,
+            width,
+            height,
+            shadow,
+          } => popup_anchor(&window, x, y, width, height, shadow),
           WindowRequest::Size((w, h)) => {
             // Nucleus patch: `gtk_window_resize` is a no-op on non-resizable
             // windows (GTK follows the content's natural size instead); route
@@ -1136,7 +1160,10 @@ impl<T: 'static> EventLoop<T> {
             let handler = keyboard_handler.clone();
             let ime_ = ime.clone();
             let ime_state_press = ime_state.clone();
-            window.connect_key_press_event(move |_, event_key| {
+            window.connect_key_press_event(move |window, event_key| {
+              if embed_owns_keyboard(window) {
+                return glib::Propagation::Proceed;
+              }
               // The IME gets first refusal, and a key it consumed must not also
               // reach Compose — otherwise the Enter that confirms a conversion
               // also inserts a newline, and the BackSpace that edits the
@@ -1151,12 +1178,19 @@ impl<T: 'static> EventLoop<T> {
               }
               handler(event_key.to_owned(), ElementState::Pressed);
 
-              glib::Propagation::Proceed
+              // Compose owns the keyboard and has the key: stop here so GtkWindow's
+              // own bindings do not run on it too — an arrow or a Tab would
+              // otherwise `move-focus` into an embedded native view, which then
+              // steals every following keystroke from the Compose text field.
+              glib::Propagation::Stop
             });
 
             let handler = keyboard_handler.clone();
             let ime_state_release = ime_state;
-            window.connect_key_release_event(move |_, event_key| {
+            window.connect_key_release_event(move |window, event_key| {
+              if embed_owns_keyboard(window) {
+                return glib::Propagation::Proceed;
+              }
               let filtered = ime.filter_keypress(event_key);
               if !ime_state_release
                 .borrow_mut()
@@ -1165,7 +1199,7 @@ impl<T: 'static> EventLoop<T> {
                 return glib::Propagation::Stop;
               }
               handler(event_key.to_owned(), ElementState::Released);
-              glib::Propagation::Proceed
+              glib::Propagation::Stop
             });
 
             let tx_clone = event_tx.clone();
@@ -1612,5 +1646,79 @@ impl ResizeDirection {
       ResizeDirection::SouthWest => WindowEdge::SouthWest,
       ResizeDirection::West => WindowEdge::West,
     }
+  }
+}
+
+/// Nucleus patch: the compositor-positioned popup behind
+/// `Window::popup_anchor`. `gdk_window_move_to_rect` arrived in GDK 3.24; it
+/// is resolved at run time so the library still loads against 3.22, where the
+/// request degrades to the plain move a subsurface popup gets.
+fn popup_anchor(
+  window: &gtk::Window,
+  x: i32,
+  y: i32,
+  width: i32,
+  height: i32,
+  shadow: (i32, i32, i32, i32),
+) {
+  use glib::translate::ToGlibPtr;
+  type MoveToRect = unsafe extern "C" fn(
+    *mut gdk::ffi::GdkWindow,
+    *const gdk::ffi::GdkRectangle,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+  );
+  extern "C" {
+    fn dlsym(handle: *mut std::ffi::c_void, symbol: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
+  }
+  const GDK_GRAVITY_NORTH_WEST: i32 = 1;
+  const GDK_ANCHOR_FLIP_X: i32 = 1 << 0;
+  const GDK_ANCHOR_FLIP_Y: i32 = 1 << 1;
+  const GDK_ANCHOR_SLIDE_X: i32 = 1 << 2;
+  const GDK_ANCHOR_SLIDE_Y: i32 = 1 << 3;
+  let (left, right, top, bottom) = shadow;
+  // RTLD_DEFAULT: GDK is already loaded into the process.
+  let symbol = unsafe { dlsym(std::ptr::null_mut(), b"gdk_window_move_to_rect\0".as_ptr() as *const _) };
+  if symbol.is_null() {
+    window.move_(x - left, y - top);
+    return;
+  }
+  let move_to_rect: MoveToRect = unsafe { std::mem::transmute(symbol) };
+  // A popup menu maps as an xdg_popup on Wayland even where GDK would ignore
+  // the positioner; harmless on X11 (a menu-typed override-redirect window).
+  window.set_type_hint(gdk::WindowTypeHint::PopupMenu);
+  // The positioner GDK builds at map time takes the window's geometry as it
+  // stands, so the real size must be in place *before* `move_to_rect` — hence
+  // the size request, the realize and the resize pass here rather than a
+  // separate `WindowRequest::Size`. Popup overlays are non-resizable, where
+  // `gtk_window_resize` is a no-op and the size request is what counts.
+  if width > 0 && height > 0 {
+    window.set_size_request(width, height);
+    window.resize(width, height);
+  }
+  if !window.is_realized() {
+    window.realize();
+  }
+  window.check_resize();
+  let Some(gdk_window) = window.window() else {
+    return;
+  };
+  // GTK only manages the shadow width of client-decorated windows, so this
+  // sticks: the xdg window geometry becomes the content, margins excluded.
+  gdk_window.set_shadow_width(left, right, top, bottom);
+  let rect = gdk::Rectangle::new(x, y, 1, 1);
+  unsafe {
+    move_to_rect(
+      gdk_window.to_glib_none().0,
+      rect.to_glib_none().0,
+      GDK_GRAVITY_NORTH_WEST,
+      GDK_GRAVITY_NORTH_WEST,
+      GDK_ANCHOR_FLIP_X | GDK_ANCHOR_FLIP_Y | GDK_ANCHOR_SLIDE_X | GDK_ANCHOR_SLIDE_Y,
+      0,
+      0,
+    );
   }
 }

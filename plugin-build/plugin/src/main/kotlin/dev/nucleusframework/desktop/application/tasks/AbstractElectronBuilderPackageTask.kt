@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.tasks
 
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
+import dev.nucleusframework.desktop.application.dsl.MacAppExtension
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
@@ -15,9 +16,13 @@ import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
+import dev.nucleusframework.desktop.application.internal.MacPkgScripts
 import dev.nucleusframework.desktop.application.internal.MacDmgLzma
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
+import dev.nucleusframework.desktop.application.internal.NodeToolchainProvisioner
+import dev.nucleusframework.desktop.application.internal.NodeToolchainRequest
+import dev.nucleusframework.desktop.application.internal.NucleusProperties
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
 import dev.nucleusframework.desktop.application.internal.WindowsKitsLocator
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderConfigGenerator
@@ -29,6 +34,9 @@ import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import dev.nucleusframework.desktop.application.internal.MACOS_DMG_TITLE_BAR_HEIGHT
 import dev.nucleusframework.desktop.application.internal.padDmgBackgroundForTitleBar
 import dev.nucleusframework.desktop.application.internal.readImageDimensions
+import dev.nucleusframework.desktop.application.internal.WindowsHotUpdateLayout
+import dev.nucleusframework.desktop.application.internal.WindowsHotUpdateNsis
+import dev.nucleusframework.desktop.application.internal.sanitizeFileName
 import dev.nucleusframework.desktop.application.internal.updateExecutableTypeInAppImage
 import dev.nucleusframework.desktop.application.internal.validation.ValidatedMacOSSigningSettings
 import dev.nucleusframework.desktop.application.internal.validation.validate
@@ -44,13 +52,16 @@ import net.coobird.thumbnailator.Thumbnails
 import net.coobird.thumbnailator.filters.Canvas
 import net.coobird.thumbnailator.geometry.Positions
 import org.gradle.api.GradleException
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.logging.Logger
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.Optional
@@ -101,6 +112,8 @@ abstract class AbstractElectronBuilderPackageTask
             private const val APPX_SQUARE150_LOGO_SIZE = 150
             private const val APPX_WIDE_LOGO_WIDTH = 310
             private const val APPX_WIDE_LOGO_HEIGHT = 150
+            private const val DEFAULT_PACKAGE_VERSION = "1.0.0"
+            private val NSIS_FORMATS = setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)
         }
 
         @get:InputDirectory
@@ -113,6 +126,16 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Input
         val packageName: Property<String> = objects.notNullProperty()
 
+        /**
+         * The runtime's `NucleusApp.appId`. On Windows it names the app's data directory under
+         * `%APPDATA%` (the one `nucleusApplication` hands to FileKit), which
+         * `deleteAppDataOnUninstall` must remove even when electron-builder derives other names —
+         * a GraalVM `imageName` that is not the package name.
+         */
+        @get:Input
+        @get:Optional
+        val runtimeAppId: Property<String> = objects.nullableProperty()
+
         @get:Input
         @get:Optional
         val packageVersion: Property<String> = objects.nullableProperty()
@@ -120,6 +143,18 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Input
         @get:Optional
         val customNodePath: Property<String> = objects.nullableProperty()
+
+        /** Download and cache Node.js instead of requiring one on `PATH`. See `nodejs { }`. */
+        @get:Internal
+        val nodeAutoDownload: Property<Boolean> = objects.notNullProperty(true)
+
+        /** Node.js version to provision: `"22"`, `"lts"` or a pinned `"22.11.0"`. */
+        @get:Internal
+        val nodeVersion: Property<String> = objects.notNullProperty("22")
+
+        /** Where provisioned Node.js installations are cached. */
+        @get:Internal
+        val nodeInstallDir: Property<String> = objects.nullableProperty()
 
         @get:Input
         @get:Optional
@@ -224,9 +259,29 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Optional
         internal val nonValidatedMacBundleID: Property<String> = objects.nullableProperty()
 
+        @get:Internal
+        internal val macAppExtensions: ListProperty<MacAppExtension> =
+            objects.listProperty(MacAppExtension::class.java).convention(emptyList())
+
+        // Tracks the .appex payload + per-extension entitlements/profiles for up-to-date checks.
+        @get:InputFiles
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        internal val macAppExtensionFiles: ConfigurableFileCollection = objects.fileCollection()
+
         @get:Input
         @get:Optional
         val macAppStore: Property<Boolean> = objects.nullableProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val macPkgPreInstall: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val macPkgPostInstall: RegularFileProperty = objects.fileProperty()
 
         @get:Optional
         @get:Nested
@@ -265,6 +320,9 @@ abstract class AbstractElectronBuilderPackageTask
             logger.info("Resolved app image directory: ${originalAppDir.absolutePath}")
 
             val outputDir = destinationDir.ioFile.apply { mkdirs() }
+            // A manifest left by a previous run describes a previous artifact; electron-builder
+            // rewrites its own, and generateUpdateYmlIfNeeded() only fills a missing one.
+            UpdateYmlPublish.deleteManifests(outputDir)
 
             // Create a task-private copy of the app image so parallel tasks don't
             // interfere when modifying .cfg files or signing the bundle. On macOS the copy is
@@ -275,10 +333,10 @@ abstract class AbstractElectronBuilderPackageTask
             bundleSilentUpdateArtifacts(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
+            val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir, dist)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
-            val node = detectNode()
-            val npm = detectNpm()
+            val (node, npm) = resolveNodeJs()
             validateNodeVersion(node)
 
             val linuxIconOverride = prepareLinuxIconSet(outputDir)
@@ -296,6 +354,9 @@ abstract class AbstractElectronBuilderPackageTask
                     hasExplicitWindowsIcon = hasExplicitWindowsIcon,
                 )
             }
+            if (targetFormat == TargetFormat.Pkg) {
+                stagePkgScripts(outputDir)
+            }
             val configFile =
                 generateConfig(
                     distributions = dist,
@@ -305,6 +366,7 @@ abstract class AbstractElectronBuilderPackageTask
                     windowsIconOverride = windowsIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
                     linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
+                    hotUpdateLayout = hotUpdateLayout,
                 )
             ensureProjectPackageMetadata(outputDir, dist)
 
@@ -323,7 +385,7 @@ abstract class AbstractElectronBuilderPackageTask
                     currentOs = currentOS,
                     currentArchitecture = currentArch,
                     logger = logger,
-                ) + isolatedCacheEnv(outputDir)
+                ) + isolatedCacheEnv(outputDir) + pkgInstallerSigningEnv()
             toolManager.invoke(
                 ElectronBuilderInvocation(
                     configFile = configFile,
@@ -341,6 +403,7 @@ abstract class AbstractElectronBuilderPackageTask
 
             if (targetFormat == TargetFormat.Pkg) {
                 signPkgInstaller(outputDir)
+                verifyDeveloperIdPkgSignature(outputDir)
             }
 
             // Must run before signLinuxPackage(): rebuilding the .deb archive to recompress its
@@ -365,11 +428,11 @@ abstract class AbstractElectronBuilderPackageTask
             outputDir: File,
             dist: JvmApplicationDistributions,
         ) {
-            if (!targetFormat.needsPluginUpdateYml) return
+            val extension = targetFormat.updateArtifactExtension ?: return
             val channel = resolveUpdateChannel(dist)
             val ymlFilename = targetFormat.updateYmlFilename(channel)
             val version = packageVersion.orNull ?: "0.0.0"
-            UpdateYmlGenerator.generateIfMissing(outputDir, ymlFilename, version, logger)
+            UpdateYmlGenerator.generateIfMissing(outputDir, ymlFilename, version, logger, artifactExtension = extension)
         }
 
         private fun resolveUpdateChannel(dist: JvmApplicationDistributions): ReleaseChannel {
@@ -397,24 +460,55 @@ abstract class AbstractElectronBuilderPackageTask
             return flag
         }
 
-        private fun detectNode(): File =
-            NodeJsDetector.detectNode(
-                customNodePath = customNodePath.orNull,
-                logger = logger,
-            ) ?: throw GradleException(
-                "node not found. Node.js 18+ is required for electron-builder packaging. " +
-                    "Install Node.js or set the 'compose.electronBuilder.nodePath' Gradle property.",
-            )
+        /**
+         * Resolves the `node` and `npm` electron-builder runs with: the explicitly configured
+         * installation, else the one the plugin provisions itself, else whatever is on `PATH`.
+         */
+        private fun resolveNodeJs(): Pair<File, File> {
+            customNodePath.orNull?.let { return detectOnPath(it) }
+            if (!nodeAutoDownload.get()) return detectOnPath(customNodePath = null)
 
-        private fun detectNpm(): File =
-            NodeJsDetector.detectNpm(
-                customNodePath = customNodePath.orNull,
-                logger = logger,
-            ) ?: throw GradleException(
-                "npm not found. It provisions the pinned electron-builder toolchain from the " +
-                    "plugin's package-lock.json. Install Node.js 18+ (npm ships with it) or set " +
-                    "the 'compose.electronBuilder.nodePath' Gradle property.",
-            )
+            val installation =
+                runCatching {
+                    NodeToolchainProvisioner.provision(
+                        request =
+                            NodeToolchainRequest(
+                                version = nodeVersion.get(),
+                                os = currentOS,
+                                arch = currentArch,
+                                installBaseDir = File(nodeInstallDir.get()),
+                            ),
+                        execOperations = execOperations,
+                        logger = logger,
+                    )
+                }.getOrElse { failure ->
+                    // An offline machine with a usable Node.js installed should still package.
+                    logger.warn(
+                        "Could not provision Node.js ($failure) — falling back to the one on PATH. " +
+                            "Set nativeDistributions { nodejs { autoDownload = false } } to silence this.",
+                    )
+                    return detectOnPath(customNodePath = null)
+                }
+            return installation.node to installation.npm
+        }
+
+        private fun detectOnPath(customNodePath: String?): Pair<File, File> {
+            val node =
+                NodeJsDetector.detectNode(customNodePath, logger) ?: throw GradleException(
+                    "node not found. Node.js 18+ is required for electron-builder packaging. " +
+                        "Enable nativeDistributions { nodejs { autoDownload } } to let the plugin " +
+                        "download one, install Node.js, or set the " +
+                        "'${NucleusProperties.ELECTRON_BUILDER_NODE_PATH}' Gradle property.",
+                )
+            val npm =
+                NodeJsDetector.detectNpm(customNodePath, logger) ?: throw GradleException(
+                    "npm not found next to ${node.absolutePath}. It provisions the pinned " +
+                        "electron-builder toolchain from the plugin's package-lock.json. Install " +
+                        "Node.js 18+ (npm ships with it) or set the " +
+                        "'${NucleusProperties.ELECTRON_BUILDER_NODE_PATH}' Gradle property.",
+                )
+            return node to npm
+        }
 
         private fun validateNodeVersion(node: File) {
             val version = NodeJsDetector.getNodeVersion(node) ?: return
@@ -434,6 +528,7 @@ abstract class AbstractElectronBuilderPackageTask
             windowsIconOverride: File?,
             linuxAfterInstallTemplate: File?,
             linuxAfterRemoveTemplate: File?,
+            hotUpdateLayout: Boolean,
         ): File {
             val configGenerator = ElectronBuilderConfigGenerator()
             val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
@@ -467,7 +562,7 @@ abstract class AbstractElectronBuilderPackageTask
                 )
             }
 
-            val nsisProtocolInclude = generateProtocolNsisInclude(distributions, outputDir)
+            val nsisInclude = generateNsisInclude(distributions, outputDir, hotUpdateLayout)
 
             val configContent =
                 configGenerator.generateConfig(
@@ -483,7 +578,7 @@ abstract class AbstractElectronBuilderPackageTask
                     executableName = resolveExecutableName(),
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
-                    nsisProtocolInclude = nsisProtocolInclude,
+                    nsisInclude = nsisInclude,
                     macBundleName = macBundleName.orNull,
                 )
             val configFile = File(outputDir, "electron-builder.yml")
@@ -493,31 +588,109 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Generates an NSIS include script that registers the declared URL protocol handlers
-         * (deep linking) in the Windows registry at install time.
+         * Lays the Windows app image out for hot updates (`versions\<version>\`, see
+         * [WindowsHotUpdateLayout]) when the target is an NSIS installer.
+         * Returns whether the layout was applied, which is what the NSIS include keys its hot
+         * update support on.
+         */
+        private fun applyWindowsHotUpdateLayout(
+            appDir: File,
+            distributions: JvmApplicationDistributions,
+        ): Boolean {
+            if (currentOS != OS.Windows || targetFormat !in NSIS_FORMATS) return false
+            val version = packageVersion.orNull?.takeIf { it.isNotBlank() } ?: DEFAULT_PACKAGE_VERSION
+            val applied = WindowsHotUpdateLayout.apply(appDir, version)
+            if (applied) {
+                logger.info(
+                    "Laid the app image out for hot updates " +
+                        "(versions\\${WindowsHotUpdateLayout.versionDirName(version)})",
+                )
+            } else {
+                logger.info("Hot update layout skipped: not a jpackage app image")
+            }
+            return applied
+        }
+
+        /**
+         * Generates the NSIS include script passed to electron-builder, or null when nothing needs
+         * one. It chains, in order: the user's `nsis.includeScript`, the URL protocol registration and
+         * app data removal (only without a user script, see [nucleusNsisMacros]) and the hot update hooks
+         * ([WindowsHotUpdateNsis]) when [hotUpdateLayout] applies.
+         */
+        private fun generateNsisInclude(
+            distributions: JvmApplicationDistributions,
+            outputDir: File,
+            hotUpdateLayout: Boolean,
+        ): File? {
+            if (currentOS != OS.Windows || targetFormat !in NSIS_FORMATS) return null
+            val userInclude =
+                distributions.windows.nsis.includeScript.orNull
+                    ?.asFile
+            val nucleusMacros = nucleusNsisMacros(distributions, hasUserInclude = userInclude != null)
+            if (nucleusMacros == null && !hotUpdateLayout) return null
+
+            val script =
+                buildString {
+                    if (userInclude != null) {
+                        if (hotUpdateLayout) WindowsHotUpdateNsis.warnOnConflicts(userInclude, logger)
+                        appendLine("!include \"${userInclude.absolutePath}\"")
+                        appendLine()
+                    }
+                    nucleusMacros?.let { appendLine(it) }
+                    if (hotUpdateLayout) append(WindowsHotUpdateNsis.MACROS)
+                }
+
+            val nshFile = File(outputDir, "nucleus-installer.nsh")
+            nshFile.parentFile.mkdirs()
+            // Write with a UTF-8 BOM so makensis detects the encoding and keeps non-ASCII
+            // protocol names (e.g. Hebrew) intact. NSIS treats '#' as a comment, so a
+            // "#pragma" directive would be inert — the BOM is the supported mechanism.
+            nshFile.writeText("﻿$script", Charsets.UTF_8)
+            logger.info("Generated NSIS include script at ${nshFile.absolutePath}")
+            return nshFile
+        }
+
+        /**
+         * Builds the NSIS macros that register the declared URL protocol handlers (deep linking)
+         * in the Windows registry at install time.
          *
          * electron-builder's `protocols` field only registers schemes on macOS (Info.plist) and
          * Linux (.desktop `x-scheme-handler`); the NSIS target ignores it. Windows therefore needs
          * explicit registry writes, which we emit via the `customInstall`/`customUnInstall` hooks.
          *
-         * Returns null (no registration) when the current OS is not Windows, the target is not an
-         * NSIS-family installer, no protocols are declared, or the user already supplied a custom
-         * NSIS include script (which must not be overridden).
+         * With `deleteAppDataOnUninstall`, the same `customUnInstall` also removes
+         * `%APPDATA%\<runtimeAppId>` (see [appendAppDataRemoval]). Both live in one macro because
+         * NSIS allows a single `customUnInstall`.
+         *
+         * Returns the macros, or null when there is nothing to emit or the user already supplied a
+         * custom NSIS include script (whose own macros must not be overridden).
          */
-        private fun generateProtocolNsisInclude(
+        private fun nucleusNsisMacros(
             distributions: JvmApplicationDistributions,
-            outputDir: File,
-        ): File? {
-            if (currentOS != OS.Windows) return null
-            if (distributions.protocols.isEmpty()) return null
-            if (targetFormat !in setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)) return null
+            hasUserInclude: Boolean,
+        ): String? {
+            val appDataDir =
+                runtimeAppId.orNull
+                    ?.takeIf { distributions.windows.nsis.deleteAppDataOnUninstall }
+                    ?.let { appDataDirNameOrNull(it) }
+            if (distributions.protocols.isEmpty() && appDataDir == null) return null
 
-            if (distributions.windows.nsis.includeScript.orNull != null) {
-                logger.warn(
-                    "URL protocol handlers are declared but a custom nsis.includeScript is set; " +
-                        "skipping automatic protocol registration. Register the schemes yourself " +
-                        "in a customInstall macro inside your include script.",
-                )
+            if (hasUserInclude) {
+                if (distributions.protocols.isNotEmpty()) {
+                    logger.warn(
+                        "URL protocol handlers are declared but a custom nsis.includeScript is set; " +
+                            "skipping automatic protocol registration. Register the schemes yourself " +
+                            "in a customInstall macro inside your include script.",
+                    )
+                }
+                if (appDataDir != null) {
+                    logger.warn(
+                        "deleteAppDataOnUninstall is set but a custom nsis.includeScript is set; " +
+                            "%APPDATA%\\$appDataDir (NucleusApp.appId) is only removed if electron-builder " +
+                            "derives the same name. Remove it yourself in a customUnInstall macro " +
+                            "inside your include script.",
+                    )
+                }
                 return null
             }
 
@@ -537,52 +710,50 @@ abstract class AbstractElectronBuilderPackageTask
                             .filter { it.isNotEmpty() }
                             .map { scheme -> scheme to (friendlyName ?: scheme) }
                     }.distinctBy { it.first }
-            if (handlers.isEmpty()) return null
+            if (handlers.isEmpty() && appDataDir == null) return null
 
             // SHELL_CONTEXT resolves to HKLM (per-machine) or HKCU (per-user) automatically.
             // ${APP_EXECUTABLE_FILENAME} is provided by electron-builder's NSIS template.
             val script =
                 buildString {
-                    appendLine("!macro customInstall")
-                    for ((scheme, friendlyName) in handlers) {
-                        val key = "Software\\Classes\\$scheme"
-                        appendLine("  DetailPrint \"Registering $scheme:// URL handler\"")
-                        appendLine("  DeleteRegKey SHELL_CONTEXT \"$key\"")
-                        appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"\" \"URL:$friendlyName\"")
-                        appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"URL Protocol\" \"\"")
-                        appendLine(
-                            "  WriteRegStr SHELL_CONTEXT \"$key\\DefaultIcon\" \"\" " +
-                                "\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME},0\"",
-                        )
-                        appendLine(
-                            "  WriteRegStr SHELL_CONTEXT \"$key\\shell\\open\\command\" \"\" " +
-                                "'\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME}\" \"%1\"'",
-                        )
+                    if (handlers.isNotEmpty()) {
+                        appendLine("!macro customInstall")
+                        for ((scheme, friendlyName) in handlers) {
+                            val key = "Software\\Classes\\$scheme"
+                            appendLine("  DetailPrint \"Registering $scheme:// URL handler\"")
+                            appendLine("  DeleteRegKey SHELL_CONTEXT \"$key\"")
+                            appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"\" \"URL:$friendlyName\"")
+                            appendLine("  WriteRegStr SHELL_CONTEXT \"$key\" \"URL Protocol\" \"\"")
+                            appendLine(
+                                "  WriteRegStr SHELL_CONTEXT \"$key\\DefaultIcon\" \"\" " +
+                                    "\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME},0\"",
+                            )
+                            appendLine(
+                                "  WriteRegStr SHELL_CONTEXT \"$key\\shell\\open\\command\" \"\" " +
+                                    "'\"\$INSTDIR\\\${APP_EXECUTABLE_FILENAME}\" \"%1\"'",
+                            )
+                        }
+                        appendLine("!macroend")
+                        appendLine()
                     }
-                    appendLine("!macroend")
-                    appendLine()
                     appendLine("!macro customUnInstall")
-                    // Guard against auto-update: the new installer runs before the old uninstaller,
-                    // so unconditional cleanup would drop a just-registered scheme.
-                    appendLine("  \${ifNot} \${isUpdated}")
-                    for ((scheme, _) in handlers) {
-                        appendLine("    DeleteRegKey SHELL_CONTEXT \"Software\\Classes\\$scheme\"")
+                    if (handlers.isNotEmpty()) {
+                        // Guard against auto-update: the new installer runs before the old uninstaller,
+                        // so unconditional cleanup would drop a just-registered scheme.
+                        appendLine("  \${ifNot} \${isUpdated}")
+                        for ((scheme, _) in handlers) {
+                            appendLine("    DeleteRegKey SHELL_CONTEXT \"Software\\Classes\\$scheme\"")
+                        }
+                        appendLine("  \${endIf}")
                     }
-                    appendLine("  \${endIf}")
+                    if (appDataDir != null) appendAppDataRemoval(appDataDir)
                     appendLine("!macroend")
                 }
 
-            val nshFile = File(outputDir, "nucleus-protocols.nsh")
-            nshFile.parentFile.mkdirs()
-            // Write with a UTF-8 BOM so makensis detects the encoding and keeps non-ASCII
-            // protocol names (e.g. Hebrew) intact. NSIS treats '#' as a comment, so a
-            // "#pragma" directive would be inert — the BOM is the supported mechanism.
-            nshFile.writeText("﻿$script", Charsets.UTF_8)
             logger.info(
-                "Generated NSIS protocol registration script at ${nshFile.absolutePath} " +
-                    "for schemes: ${handlers.joinToString { it.first }}",
+                "NSIS macros: schemes ${handlers.joinToString { it.first }}; app data ${appDataDir.orEmpty()}",
             )
-            return nshFile
+            return script
         }
 
         private fun exportPackagingMetadata(
@@ -737,12 +908,12 @@ abstract class AbstractElectronBuilderPackageTask
             if (currentOS != OS.MacOS) return
             if (!appDir.isDirectory) return
 
-            // For PKG (App Store), re-sign the .app with proper entitlements after .cfg modification.
-            // The jpackage task signed the app, but updateExecutableTypeInAppImage() modified .cfg
-            // files which invalidated the code signature. We must re-sign before electron-builder
-            // packages it into the PKG.
-            if (targetFormat == TargetFormat.Pkg) {
-                resignAppForPkg(appDir)
+            // For an App Store PKG, re-sign the .app with the store entitlements after .cfg
+            // modification. The jpackage task signed the app, but updateExecutableTypeInAppImage()
+            // modified .cfg files which invalidated the code signature. We must re-sign before
+            // electron-builder packages it into the PKG. A Developer ID PKG takes the DMG path below.
+            if (targetFormat == TargetFormat.Pkg && macAppStore.orNull == true) {
+                resignAppForAppStorePkg(appDir)
                 return
             }
 
@@ -769,6 +940,15 @@ abstract class AbstractElectronBuilderPackageTask
                         appDir.absolutePath,
                     )
                 spec.isIgnoreExitValue = false
+            }
+
+            // The blanket `--deep` above re-signs embedded extensions ad-hoc, dropping their
+            // own entitlements. When extensions are configured, re-sign them with their
+            // entitlements and re-seal the outer bundle (without --deep) to preserve them.
+            // NoCertificateSigner only signs on Apple Silicon; on Intel the --deep result stands.
+            if (signer != null && currentArch == Arch.Arm64 && macAppExtensions.get().isNotEmpty()) {
+                signAppExtensions(appDir, signer)
+                signer.sign(appDir, macEntitlementsFile.orNull?.asFile, forceEntitlements = true)
             }
 
             logger.info("Ad-hoc signature applied successfully")
@@ -837,29 +1017,74 @@ abstract class AbstractElectronBuilderPackageTask
                 }
             }
 
+            // Re-sign embedded app extensions (Contents/PlugIns) with their own entitlements
+            // before sealing the outer bundle. The jpackage task embedded them; the copy that
+            // electron-builder packages must carry a valid nested signature.
+            signAppExtensions(appDir, signer)
+
             // Re-sign the entire app bundle
             signer.sign(appDir, appEntitlements, forceEntitlements = true)
         }
 
         /**
-         * Re-signs the .app bundle for PKG builds (always App Store).
-         * Delegates to [resignApp] for the core signing, then augments entitlements
-         * with application-identifier and team-identifier for App Store submissions.
+         * Re-signs each configured app extension found under `Contents/PlugIns/` with its own
+         * entitlements, inside-out. Mirrors the embedding done by the jpackage task; here the
+         * `.appex` already exists in the bundle copy and only needs a fresh signature.
          */
-        private fun resignAppForPkg(appDir: File) {
-            resignApp(appDir, "PKG format")
+        private fun signAppExtensions(
+            appDir: File,
+            signer: MacSigner,
+        ) {
+            val extensions = macAppExtensions.get()
+            if (extensions.isEmpty()) return
 
-            // For App Store builds, re-sign the bundle with augmented entitlements
-            // (application-identifier + team-identifier required by TestFlight / Transporter, error 90886).
-            if (macAppStore.orNull == true) {
-                val signer = macSigner ?: return
-                val appEntitlements = macEntitlementsFile.orNull?.asFile
-                // augmentEntitlementsForAppStore returns null when settings is null (NoCertificateSigner /
-                // unsigned builds). Fall back to the original entitlements so the app is never re-signed
-                // without them — which would silently strip sandbox entitlements from the bundle.
-                val bundleEntitlements = augmentEntitlementsForAppStore(appEntitlements, signer.settings)
-                signer.sign(appDir, bundleEntitlements ?: appEntitlements, forceEntitlements = true)
+            val plugInsDir = appDir.resolve("Contents/PlugIns")
+            for (extension in extensions) {
+                val appexName = extension.appex?.name ?: continue
+                val appex = plugInsDir.resolve(appexName)
+                if (!appex.exists()) continue
+                signBundleInsideOut(appex, extension.entitlements, signer)
             }
+        }
+
+        /**
+         * Signs a nested bundle (e.g. an `.appex`) inside-out: nested executables/dylibs in its
+         * `Contents/Frameworks` first, then the bundle itself with its [entitlements].
+         */
+        private fun signBundleInsideOut(
+            bundle: File,
+            entitlements: File?,
+            signer: MacSigner,
+        ) {
+            val frameworks = bundle.resolve("Contents/Frameworks")
+            if (frameworks.exists()) {
+                frameworks.walk().forEach { file ->
+                    val path = file.toPath()
+                    if (path.isRegularFile(LinkOption.NOFOLLOW_LINKS) &&
+                        (path.isExecutable() || file.name.isDylibPath)
+                    ) {
+                        signer.sign(file, entitlements)
+                    }
+                }
+            }
+            signer.sign(bundle, entitlements, forceEntitlements = true)
+        }
+
+        /**
+         * Re-signs the .app bundle for an App Store PKG. Delegates to [resignApp] for the core
+         * signing, then re-signs the bundle with entitlements augmented with application-identifier
+         * and team-identifier (required by TestFlight / Transporter, error 90886).
+         */
+        private fun resignAppForAppStorePkg(appDir: File) {
+            resignApp(appDir, "App Store PKG format")
+
+            val signer = macSigner ?: return
+            val appEntitlements = macEntitlementsFile.orNull?.asFile
+            // augmentEntitlementsForAppStore returns null when settings is null (NoCertificateSigner /
+            // unsigned builds). Fall back to the original entitlements so the app is never re-signed
+            // without them — which would silently strip sandbox entitlements from the bundle.
+            val bundleEntitlements = augmentEntitlementsForAppStore(appEntitlements, signer.settings)
+            signer.sign(appDir, bundleEntitlements ?: appEntitlements, forceEntitlements = true)
         }
 
         /**
@@ -905,11 +1130,12 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Signs the PKG installer for App Store distribution using `productsign`.
+         * Signs an App Store PKG installer with `productsign`.
          *
-         * PKG is always treated as an App Store format. electron-builder creates an
-         * unsigned PKG (installer identity is always null), and this method re-signs
-         * it with the correct "3rd Party Mac Developer Installer" certificate.
+         * electron-builder's PKG target only knows the "Developer ID Installer" certificate type, so
+         * for the store channel the config hands it no identity, it produces an unsigned PKG, and
+         * this method re-signs it with the "3rd Party Mac Developer Installer" certificate. A
+         * Developer ID PKG is signed by electron-builder itself and skips this step.
          */
         private fun signPkgInstaller(outputDir: File) {
             if (currentOS != OS.MacOS) return
@@ -956,6 +1182,81 @@ abstract class AbstractElectronBuilderPackageTask
             pkgFile.delete()
             signedPkg.renameTo(pkgFile)
             logger.lifecycle("Signed PKG installer: ${pkgFile.name}")
+        }
+
+        /**
+         * Stages `macOS { pkg { preInstall / postInstall } }` under electron-builder's build
+         * resources directory (`<outputDir>/build`, the same root as the AppX assets), see
+         * [MacPkgScripts].
+         */
+        private fun stagePkgScripts(outputDir: File) {
+            val staged =
+                MacPkgScripts.stage(
+                    buildResourcesDir = outputDir.resolve("build"),
+                    preInstall = macPkgPreInstall.orNull?.asFile,
+                    postInstall = macPkgPostInstall.orNull?.asFile,
+                    appStore = macAppStore.orNull == true,
+                )
+            if (staged != null) {
+                logger.info("Staged PKG install scripts: ${staged.listFiles()?.map { it.name }}")
+            }
+        }
+
+        /**
+         * electron-builder signs a Developer ID PKG itself (`productbuild --sign`) and looks the
+         * "Developer ID Installer" certificate up in the keychain named by `CSC_KEYCHAIN`, so a
+         * keychain configured in the signing DSL must be handed over; without it only the default
+         * keychain search list is consulted.
+         */
+        private fun pkgInstallerSigningEnv(): Map<String, String> {
+            if (currentOS != OS.MacOS || targetFormat != TargetFormat.Pkg || macAppStore.orNull == true) {
+                return emptyMap()
+            }
+            val keychain = macSigner?.settings?.keychain ?: return emptyMap()
+            return mapOf("CSC_KEYCHAIN" to keychain.absolutePath)
+        }
+
+        /**
+         * electron-builder silently emits an unsigned PKG when it finds no "Developer ID Installer"
+         * certificate matching the configured identity. When signing is configured for a Developer
+         * ID PKG, fail loudly instead of shipping an installer Gatekeeper will refuse.
+         */
+        private fun verifyDeveloperIdPkgSignature(outputDir: File) {
+            if (currentOS != OS.MacOS || macAppStore.orNull == true) return
+            val settings = macSigner?.settings ?: return
+            val pkgFile =
+                outputDir
+                    .listFiles()
+                    ?.firstOrNull { it.isFile && it.extension == "pkg" }
+                    ?: return
+
+            var output = ""
+            val result =
+                runExternalTool(
+                    tool = File("/usr/sbin/pkgutil"),
+                    args = listOf("--check-signature", pkgFile.absolutePath),
+                    checkExitCodeIsNormal = false,
+                    processStdout = { output = it },
+                )
+            if (output.contains("no signature")) {
+                val keychainHint = settings.keychain?.let { " in keychain ${it.absolutePath}" } ?: ""
+                throw GradleException(
+                    "${pkgFile.name} is not signed: electron-builder found no \"Developer ID Installer\" " +
+                        "certificate matching '${settings.bareIdentityName}'$keychainHint. Import the " +
+                        "Developer ID Installer certificate of the same team, or set " +
+                        "macOS { pkg { appStore = true } } for the Mac App Store channel.\n$output",
+                )
+            }
+            if (result.exitValue != 0) {
+                // Signed, but the chain did not validate — an expired certificate or a keychain
+                // missing the Apple intermediate. Report it as such instead of "no certificate".
+                logger.warn(
+                    "${pkgFile.name} carries a signature that pkgutil could not validate. " +
+                        "Check the certificate chain (expiry, Apple WWDR intermediate).\n$output",
+                )
+                return
+            }
+            logger.lifecycle("Verified Developer ID signature of ${pkgFile.name}")
         }
 
         /**
@@ -1847,8 +2148,10 @@ abstract class AbstractElectronBuilderPackageTask
             outputDir: File,
             distributions: JvmApplicationDistributions,
         ) {
+            // Always rewritten: the file is ours, and electron-builder derives the npm name (installer
+            // file name, the %APPDATA% dir NSIS deleteAppDataOnUninstall removes) from it, so a copy
+            // left by an earlier build would keep a stale packageName.
             val packageJson = File(outputDir, "package.json")
-            if (packageJson.exists()) return
 
             val normalizedName = (executableName.orNull ?: packageName.get()).toNpmPackageName()
             val normalizedVersion = packageVersion.orNull?.takeIf { it.isNotBlank() } ?: "1.0.0"
@@ -1935,11 +2238,14 @@ abstract class AbstractElectronBuilderPackageTask
                     ".electron-builder-cache",
                     ELECTRON_BUILDER_TOOL_DIR_NAME,
                     ".app-image",
+                    // electron-builder's build-resources dir: staged AppX assets and PKG install
+                    // scripts. Leaving it behind would publish a root-run script next to the .pkg.
+                    "build",
                 )
             ) {
                 val dir = File(outputDir, dirName)
-                if (dir.isDirectory) {
-                    dir.deleteRecursively()
+                if (dir.isDirectory && !dir.deleteRecursivelyClearingReadOnly()) {
+                    logger.warn("Failed to delete build temporary ${dir.absolutePath}")
                 }
             }
             File(outputDir, ".npmrc-user").delete()
@@ -2178,14 +2484,67 @@ private fun deleteWithRetry(
     for (attempt in 1..DELETE_MAX_RETRIES) {
         // Kill processes that may lock files inside the directory
         killProcessesIn(dir, logger)
-        if (dir.deleteRecursively()) return
+        if (dir.deleteRecursivelyClearingReadOnly()) return
         logger.warn("Failed to delete ${dir.absolutePath} (attempt $attempt/$DELETE_MAX_RETRIES)")
         if (attempt < DELETE_MAX_RETRIES) Thread.sleep(DELETE_RETRY_DELAY_MS)
     }
     // Last resort: try once more and throw if it still fails
-    if (dir.exists() && !dir.deleteRecursively()) {
+    if (dir.exists() && !dir.deleteRecursivelyClearingReadOnly()) {
         error("Cannot delete ${dir.absolutePath} after $DELETE_MAX_RETRIES attempts. Is a process locking files?")
     }
+}
+
+/**
+ * [appId] when it is a plain file name — the only form safe to append to `$APPDATA\` in an
+ * `RMDir /r`: an empty name, `.`, `..` or a path separator would target `%APPDATA%` itself or
+ * beyond. Anything electron-builder's sanitizer would rewrite is refused as well.
+ */
+internal fun appDataDirNameOrNull(appId: String): String? =
+    appId.takeIf { it.isNotEmpty() && sanitizeFileName(it) == it }
+
+/**
+ * Emits the removal of `%APPDATA%\<dirName>` under the exact condition electron-builder's
+ * `uninstaller.nsh` removes its own app data directories: `--delete-app-data`, or
+ * `deleteAppDataOnUninstall` outside an update. It has to be re-evaluated here because the
+ * template computes `$isDeleteAppData` only after `customUnInstall` has run, and the later
+ * `customUnInstallSection` hook is never reached by a one-click uninstaller (`quitSuccess`).
+ */
+internal fun StringBuilder.appendAppDataRemoval(dirName: String) {
+    val nsisDirName = dirName.replace("$", "$$")
+    appendLine("  # Nucleus: NucleusApp.appId data directory (deleteAppDataOnUninstall)")
+    appendLine("  StrCpy \$R2 \"0\"")
+    appendLine("  ClearErrors")
+    appendLine("  \${GetParameters} \$R0")
+    appendLine("  \${GetOptions} \$R0 \"--delete-app-data\" \$R1")
+    appendLine("  \${if} \${Errors}")
+    appendLine("    \${ifNot} \${isUpdated}")
+    appendLine("      StrCpy \$R2 \"1\"")
+    appendLine("    \${endIf}")
+    appendLine("  \${else}")
+    appendLine("    StrCpy \$R2 \"1\"")
+    appendLine("  \${endIf}")
+    appendLine("  \${if} \$R2 == \"1\"")
+    appendLine("    \${if} \$installMode == \"all\"")
+    appendLine("      SetShellVarContext current")
+    appendLine("    \${endIf}")
+    appendLine("    RMDir /r \"\$APPDATA\\$nsisDirName\"")
+    appendLine("    \${if} \$installMode == \"all\"")
+    appendLine("      SetShellVarContext all")
+    appendLine("    \${endIf}")
+    appendLine("  \${endIf}")
+}
+
+/**
+ * [File.deleteRecursively] that first clears the read-only flag of every entry. Windows refuses to
+ * delete a read-only file, and jpackage's launcher `.exe` is one — [copyAppImage] keeps that
+ * attribute (`COPY_ATTRIBUTES`), so the plain delete left `.app-image` behind and the next build
+ * failed to replace it. Symbolic links are left alone: clearing the flag would follow them.
+ */
+internal fun File.deleteRecursivelyClearingReadOnly(): Boolean {
+    walkBottomUp()
+        .filter { !Files.isSymbolicLink(it.toPath()) && !it.canWrite() }
+        .forEach { it.setWritable(true) }
+    return deleteRecursively()
 }
 
 /**

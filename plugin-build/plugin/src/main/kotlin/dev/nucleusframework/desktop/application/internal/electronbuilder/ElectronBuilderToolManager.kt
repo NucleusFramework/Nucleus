@@ -61,7 +61,7 @@ internal class ElectronBuilderToolManager(
          * builds: left unpinned, the same plugin + sources produce different artifacts on different
          * days. See #266.
          */
-        internal const val ELECTRON_BUILDER_VERSION = "26.15.5"
+        internal const val ELECTRON_BUILDER_VERSION = "26.16.1"
 
         /** Classpath directory holding the pinned toolchain manifest and its lock file. */
         internal const val TOOLCHAIN_RESOURCE_DIR = "/nucleus/electron-builder"

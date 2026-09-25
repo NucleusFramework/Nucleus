@@ -46,7 +46,7 @@ class TaoRuntimeResizableSmokeTest {
                 Runtime.getRuntime().halt(WATCHDOG_EXIT_CODE)
             }
 
-        taoApplication {
+        taoApplication(exitProcessOnExit = false) {
             var resizable by remember { mutableStateOf(true) }
             DecoratedWindow(
                 onCloseRequest = ::exitApplication,

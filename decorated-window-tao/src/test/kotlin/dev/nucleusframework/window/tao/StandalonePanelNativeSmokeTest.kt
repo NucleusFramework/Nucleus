@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao
 
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import org.jetbrains.skia.DirectContext
@@ -63,6 +64,15 @@ class StandalonePanelNativeSmokeTest {
             val rc = NativeTaoWindowsDndBridge.nativeRegister(hwnd, NoOpInboundDnDCallback())
             assertEquals(0, rc, "RegisterDragDrop on standalone panel failed (rc=$rc)")
             NativeTaoWindowsDndBridge.nativeRevoke(hwnd)
+
+            assertTrue(NativeTaoWindowsDecoBridge.isLoaded, "nucleus_tao_windows_deco failed to load")
+            val geometry = NativeTaoWindowsDecoBridge.nativeFontSmoothingPixelGeometry()
+            assertTrue(
+                geometry == NativeTaoWindowsDecoBridge.FONT_SMOOTHING_UNKNOWN ||
+                    geometry == NativeTaoWindowsDecoBridge.FONT_SMOOTHING_RGB ||
+                    geometry == NativeTaoWindowsDecoBridge.FONT_SMOOTHING_BGR,
+                "unexpected font-smoothing geometry $geometry",
+            )
         } finally {
             PopupNativeBridgeWindows.nativeRelease(panel)
         }

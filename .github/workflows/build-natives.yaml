@@ -48,11 +48,6 @@ jobs:
         shell: cmd
         run: call native-ssl\src\main\native\windows\build.bat
 
-      - name: Build decorated-window-jni Windows DLLs
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        shell: cmd
-        run: call decorated-window-jni\src\main\native\windows\build.bat
-
       - name: Build system-color Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -130,22 +125,12 @@ jobs:
         shell: cmd
         run: call decorated-window-tao\src\main\native\windows\build.bat
 
-      # ANGLE (libEGL + libGLESv2) backs the Tao Windows Direct3D-11 render path.
-      # Fetched from a pinned Electron release with SHA-256 verification (never
-      # committed — see .gitignore). Lands in the same win32-*/ dirs so it ships
-      # (and is cached) inside the natives-windows artifact.
-      - name: Fetch ANGLE runtime DLLs
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: bash decorated-window-tao/src/main/native/windows/fetch-angle.sh all
-
       - name: Verify Windows natives
         shell: bash
         run: |
           FILES=(
             "darkmode-detector/nucleus_windows_theme.dll"
             "native-ssl/nucleus_ssl.dll"
-            "decorated-window-jni/nucleus_windows_decoration.dll"
             "system-color/nucleus_systemcolor.dll"
             "energy-manager/nucleus_energy_manager.dll"
             "taskbar-progress/nucleus_taskbar_progress.dll"
@@ -164,8 +149,6 @@ jobs:
             "decorated-window-tao/nucleus_tao_gl.dll"
             "decorated-window-tao/nucleus_tao_dnd.dll"
             "decorated-window-tao/nucleus_tao_windows_native_view.dll"
-            "decorated-window-tao/libEGL.dll"
-            "decorated-window-tao/libGLESv2.dll"
           )
           MISSING=0
           for arch in win32-x64 win32-aarch64; do
@@ -216,14 +199,6 @@ jobs:
       - name: Build native-ssl macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash native-ssl/src/main/native/macos/build.sh
-
-      - name: Build decorated-window-jbr macOS dylibs
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: bash decorated-window-jbr/src/main/native/macos/build.sh
-
-      - name: Build decorated-window-jni macOS dylibs
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: bash decorated-window-jni/src/main/native/macos/build.sh
 
       - name: Build system-color macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
@@ -301,8 +276,6 @@ jobs:
           FILES=(
             "darkmode-detector/libnucleus_darkmode.dylib"
             "native-ssl/libnucleus_ssl.dylib"
-            "decorated-window-jbr/libnucleus_macos.dylib"
-            "decorated-window-jni/libnucleus_macos_jni.dylib"
             "system-color/libnucleus_systemcolor.dylib"
             "energy-manager/libnucleus_energy_manager.dylib"
             "taskbar-progress/libnucleus_taskbar_progress.dylib"
@@ -391,10 +364,6 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash darkmode-detector/src/main/native/linux/build.sh
 
-      - name: Build decorated-window-jni Linux native shared library
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: bash decorated-window-jni/src/main/native/linux/build.sh
-
       - name: Build linux-hidpi native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash linux-hidpi/src/main/native/linux/build.sh
@@ -462,7 +431,6 @@ jobs:
         run: |
           FILES=(
             "darkmode-detector/libnucleus_linux_theme.so"
-            "decorated-window-jni/libnucleus_linux_jni.so"
             "linux-hidpi/libnucleus_linux_hidpi_jni.so"
             "spellcheck/libnucleus_spellcheck.so"
             "system-color/libnucleus_systemcolor.so"

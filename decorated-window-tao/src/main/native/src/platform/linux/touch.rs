@@ -541,3 +541,58 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTo
     revoke(handle as u64);
     0
 }
+
+// ── Headful e2e injection ─────────────────────────────────────────────────
+
+/// Linux only, headful e2e: deliver a synthetic `GdkEventTouchpadPinch` to
+/// the GtkWindow behind [handle] through the `event` signal — the handler a
+/// real touchpad pinch reaches, so [handle_touchpad_pinch]'s absolute-scale
+/// and radian conversions run as they do for a real gesture.
+///
+/// [phase] is a `GdkTouchpadGesturePhase` (`0=BEGIN … 3=CANCEL`), [scale_micro]
+/// GDK's *absolute* scale × 1 000 000 (1 000 000 at BEGIN), [angle_delta_micro]
+/// the per-event angle in micro-radians. Coordinates are widget-local logical
+/// px. Returns JNI `true` when the signal was emitted on a realized window.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeLinuxInjectGdkTouchpadPinch(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    phase: jint,
+    x: jint,
+    y: jint,
+    scale_micro: jint,
+    angle_delta_micro: jint,
+) -> jni::sys::jboolean {
+    use glib::translate::{ToGlibPtr, ToGlibPtrMut};
+
+    if !(GDK_TOUCHPAD_PHASE_BEGIN..=GDK_TOUCHPAD_PHASE_CANCEL).contains(&phase) {
+        return 0;
+    }
+    let Some(gtk_window) = with_window(handle as u64, |w| w.gtk_window().clone()) else {
+        return 0;
+    };
+    let Some(gdk_window) = gtk_window.window() else {
+        return 0;
+    };
+    let mut event = gdk::Event::new(EventType::TouchpadPinch);
+    unsafe {
+        let raw: *mut gdk::ffi::GdkEvent = event.to_glib_none_mut().0;
+        let ptr = raw as *mut gdk::ffi::GdkEventTouchpadPinch;
+        (*ptr).window = gdk_window.to_glib_full();
+        (*ptr).send_event = 1;
+        (*ptr).phase = phase as i8;
+        (*ptr).n_fingers = 2;
+        (*ptr).x = x as f64;
+        (*ptr).y = y as f64;
+        (*ptr).x_root = x as f64;
+        (*ptr).y_root = y as f64;
+        (*ptr).scale = scale_micro as f64 / 1_000_000.0;
+        (*ptr).angle_delta = angle_delta_micro as f64 / 1_000_000.0;
+    }
+    if let Some(pointer) = gdk_window.display().default_seat().and_then(|s| s.pointer()) {
+        event.set_device(Some(&pointer));
+    }
+    let _handled: bool = glib::prelude::ObjectExt::emit_by_name(&gtk_window, "event", &[&event]);
+    1
+}

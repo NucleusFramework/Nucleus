@@ -48,6 +48,44 @@ public class UpdaterConfig {
     public var cacheDir: File? = null
 
     /**
+     * Whether an **installed** app honours the launch-time test switches, set as system properties
+     * or, easier for an installed app, as environment variables:
+     *
+     * - the feed redirect `nucleus.updater.feedUrl` / `NUCLEUS_UPDATER_FEED_URL`, which replaces
+     *   [provider] with a local directory
+     *   ([dev.nucleusframework.updater.provider.LocalFileProvider]) or a test server
+     *   ([dev.nucleusframework.updater.provider.GenericProvider]) — a local path or `file:` URL,
+     *   `https`, or plain `http` to a loopback host;
+     * - the simulation `nucleus.updater.simulate*` / `NUCLEUS_UPDATER_SIMULATE*` (see
+     *   [UpdateSimulation.fromSettings]).
+     *
+     * ```
+     * NUCLEUS_UPDATER_FEED_URL=C:\work\app\build\compose\binaries\main\nsis   MyApp.exe
+     * NUCLEUS_UPDATER_FEED_URL=http://127.0.0.1:8080                         MyApp.exe
+     * ```
+     *
+     * The redirect is how the next version is tested on a machine running the current one with
+     * nothing published: the installed app checks, downloads, verifies and installs it through the
+     * production path.
+     *
+     * An unpackaged run (`./gradlew run`, an IDE) always honours both — it has no production feed
+     * to protect, and like electron-updater's `dev-app-update.yml` this is what makes the check and
+     * the download testable there (installing is skipped: there is no installed app to replace). An
+     * installed app honours them only when this is `true`, since whoever sets the variable would
+     * otherwise choose what the app installs, or silence its real updates. Leave it `false` in
+     * release builds unless the switches are part of how you test them; ignored switches are logged.
+     */
+    public var allowLaunchOverrides: Boolean = false
+
+    /**
+     * Plays a scripted update instead of contacting [provider], to build and review the update UI
+     * without publishing anything — see [UpdateSimulation]. When `null` (the default), the
+     * simulation requested at launch with `nucleus.updater.simulate` applies, if any (see
+     * [allowLaunchOverrides]).
+     */
+    public var simulation: UpdateSimulation? = null
+
+    /**
      * Validates the config and freezes it into an immutable snapshot, so a [NucleusUpdater]
      * never observes post-construction mutation and a missing [provider] fails at
      * construction instead of at the first network call.
@@ -66,6 +104,8 @@ public class UpdaterConfig {
             httpClient = httpClient,
             differentialDownload = differentialDownload,
             cacheDir = cacheDir,
+            allowLaunchOverrides = allowLaunchOverrides,
+            simulation = simulation,
         )
     }
 
@@ -85,6 +125,8 @@ internal data class ResolvedUpdaterConfig(
     val httpClient: HttpClient?,
     val differentialDownload: Boolean,
     val cacheDir: File?,
+    val allowLaunchOverrides: Boolean = false,
+    val simulation: UpdateSimulation? = null,
 ) {
     fun resolvedAllowPrerelease(): Boolean = allowPrerelease || currentVersion.contains("-")
 

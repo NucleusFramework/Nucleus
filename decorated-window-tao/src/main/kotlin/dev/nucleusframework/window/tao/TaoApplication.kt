@@ -1,15 +1,19 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.core.runtime.NucleusUiThread
+import dev.nucleusframework.core.runtime.WindowBackend
 import dev.nucleusframework.window.tao.dispatch.LifecycleMainDispatcherPriming
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Level
 import java.util.logging.Logger
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Phase 1 entry point for the Tao backend.
@@ -28,6 +32,7 @@ import java.util.logging.Logger
  * The lambda runs once Tao has finished launching, on the macOS main thread.
  * [run] does **not** return until [TaoApplication.exit] is called.
  */
+@Suppress("TooManyFunctions")
 public object TaoApplication {
     private val logger = Logger.getLogger(TaoApplication::class.java.name)
     private val handleSeq = AtomicLong(1L)
@@ -66,6 +71,7 @@ public object TaoApplication {
         // make a genuine new fatal take the log-only branch.
         fatalError.set(null)
         fatalDialogShown.set(false)
+        resetQuit()
         // Capture the Tao main thread eagerly, before the native event loop
         // takes over this thread. Required so `Dispatchers.Main` consumers
         // (notably AndroidX Lifecycle's synchronous `MainDispatcherChecker`)
@@ -73,6 +79,19 @@ public object TaoApplication {
         // pump would race the very first `NavHost.setGraph` → `addObserver`
         // call on real apps.
         TaoMainDispatcher.taoMainThread = Thread.currentThread()
+        // Record the backend for libraries that branch on it without depending
+        // on Compose or Tao. `nucleusApplication` sets it earlier in its own
+        // bootstrap (before the loop exists); setting it again here is
+        // idempotent and covers a bare `TaoApplication.run` app, which would
+        // otherwise keep reporting the `Awt` fallback.
+        WindowBackend.setActive(WindowBackend.Tao)
+        // Route native integrations (notifications, launchers, media keys, …)
+        // to this thread instead of the AWT EDT, which is not Compose's UI
+        // thread under Tao (issue #310). Registered here rather than in
+        // `nucleusApplication` so a bare `TaoApplication.run` app gets it too.
+        NucleusUiThread.setExecutor(
+            Executor { runnable -> TaoMainDispatcher.dispatch(EmptyCoroutineContext, runnable) },
+        )
         // Hand queue draining over to the native loop: from here `dispatch`
         // wakes Tao and `pump()` drains `pending`, instead of the pre-loop
         // fallback thread (see TaoMainDispatcher, issue #337). Done *before*
@@ -85,7 +104,15 @@ public object TaoApplication {
         // first `NavController.setGraph` call.
         LifecycleMainDispatcherPriming.primeWithCurrentThread()
         onLaunched = block
-        NativeTaoBridge.nativeRunBlocking(EventDispatcher)
+        // Watch the loop from the outside (#643): a stall deadlocks this
+        // thread, so nothing downstream of `nativeRunBlocking` — including
+        // `rethrowPendingFatal` below — can ever report it.
+        TaoEventLoopWatchdog.start()
+        try {
+            NativeTaoBridge.nativeRunBlocking(EventDispatcher)
+        } finally {
+            TaoEventLoopWatchdog.stop()
+        }
         // The loop has exited (reportFatal posted the exit) and every tao
         // callback frame is unwound — only now is it safe to block in the
         // app-modal native dialog (a modal pump inside a tao callback
@@ -97,7 +124,7 @@ public object TaoApplication {
     /**
      * Shows the native error dialog (once) and rethrows the recorded fatal,
      * if any. [run] calls it right after the loop exits; [taoApplication]
-     * calls it again just before its clean `exitProcess(0)` to catch a fatal
+     * calls it again just before finishing (exit or return) to catch a fatal
      * reported from a non-main thread (the coroutine exception handler runs
      * on the failing coroutine's thread) after [run]'s check already passed —
      * without the recheck such a crash would end the process with exit
@@ -152,6 +179,213 @@ public object TaoApplication {
             block()
         } catch (t: Throwable) {
             reportFatal(t)
+        }
+    }
+
+    /**
+     * `true` from the moment the OS asks the app to quit — macOS Cmd+Q, Dock →
+     * Quit, logout / restart / shutdown — while the windows are being asked to
+     * close, and for good once they all did. Reset when a window keeps itself
+     * open, which cancels the quit. Electron's `before-quit` flag: an
+     * `onCloseRequest` that normally hides to the tray checks it to let a real
+     * quit through (`if (isQuitting) exitApplication() else hide()`).
+     */
+    @Volatile
+    public var isQuitting: Boolean = false
+        private set
+
+    /** How a completed quit ends the app; the Compose loop routes it through `exitApplication`. */
+    internal var quitExit: () -> Unit = ::exit
+
+    /** Runs its argument once the close requests have taken effect; the Compose loop waits for recomposition. */
+    internal var afterQuitRequests: (() -> Unit) -> Unit = { it() }
+
+    /**
+     * System quit (#696), Electron's `Browser::Quit`: every app window gets its
+     * cancelable close request, newest first; the app exits once they all
+     * closed, and a window that stays open cancels the quit. No app window →
+     * exit at once. Repeated requests while one is in flight are ignored; a
+     * window opened meanwhile defers the exit until it closes, and a new
+     * request asks every window again.
+     */
+    internal fun requestQuit(open: Collection<TaoWindow> = windows.values) {
+        if (quitInFlight) return
+        quitScope = open
+        waitingForLastWindow = false
+        val targets = open.filter { it.closesOnQuit && !it.isClosing }.sortedByDescending { it.handle }
+        isQuitting = true
+        if (targets.isEmpty()) {
+            quitExit()
+            return
+        }
+        quitInFlight = true
+        quitConsented.clear()
+        targets.forEach { window ->
+            askingWindow = window
+            try {
+                window.requestUserClose()
+            } finally {
+                askingWindow = null
+            }
+            if (quitConsent) quitConsented += window
+            quitConsent = false
+        }
+        afterQuitRequests {
+            quitInFlight = false
+            when {
+                targets.any { !it.isClosing && it !in quitConsented } -> isQuitting = false
+                // A window opened meanwhile (a "Save?" dialog) keeps the app alive;
+                // the quit completes once it is gone — Electron's OnWindowAllClosed.
+                openAppWindows().isEmpty() -> quitExit()
+                else -> waitingForLastWindow = true
+            }
+        }
+    }
+
+    /** App windows still open that have not agreed to the quit in flight. */
+    private fun openAppWindows(): List<TaoWindow> =
+        quitScope.filter { it.closesOnQuit && !it.isClosing && it !in quitConsented }
+
+    /** Called as a window goes away: completes a quit that was waiting for the last one. */
+    private fun completeQuitIfLastWindow() {
+        if (waitingForLastWindow && openAppWindows().isEmpty()) {
+            waitingForLastWindow = false
+            quitExit()
+        }
+    }
+
+    private var quitInFlight = false
+    private var waitingForLastWindow = false
+    private var quitScope: Collection<TaoWindow> = emptyList()
+    private val quitConsented = HashSet<TaoWindow>()
+
+    /** The window whose close request [requestQuit] is running, or `null`. */
+    private var askingWindow: TaoWindow? = null
+    private var quitConsent = false
+
+    /**
+     * `exitApplication()` called from a window's close request during a quit
+     * is that window's *consent* (Electron's `app.quit()` while quitting), not
+     * an exit that would override another window's veto: `true` when the call
+     * was absorbed that way.
+     */
+    internal fun consentToQuit(): Boolean {
+        if (askingWindow == null) return false
+        quitConsent = true
+        return true
+    }
+
+    /** Fresh-run quit state; [run] starts with it, tests reset through it. */
+    internal fun resetQuit() {
+        isQuitting = false
+        quitInFlight = false
+        waitingForLastWindow = false
+        quitScope = emptyList()
+        quitConsented.clear()
+        askingWindow = null
+        quitConsent = false
+        quitExit = ::exit
+        afterQuitRequests = { it() }
+    }
+
+    /**
+     * Handlers for [onUnresponsive] / [onResponsive]. One each, replaced on
+     * registration rather than appended — `nucleusApplication`'s block is
+     * `@Composable`, so an appending registry would grow by one copy per
+     * recomposition and fire the app's crash reporter N times for one stall.
+     * `onDeepLink` has the same replace semantics for the same reason.
+     * Volatile: written on the loop thread, read from the watchdog thread.
+     */
+    @Volatile
+    private var unresponsiveHandler: (() -> Unit)? = null
+
+    @Volatile
+    private var responsiveHandler: (() -> Unit)? = null
+
+    /**
+     * Registers [listener] for "the UI stopped responding", Electron's
+     * `webContents` `unresponsive` event (#643). Fires once per stall, after
+     * the OS has flagged the window and the watchdog's grace period on top of
+     * it; [onResponsive] closes the episode.
+     *
+     * One handler at a time: a second call replaces the first, like
+     * [onDeepLink]'s sink. That is what makes it safe to call straight from
+     * the `@Composable` application block, which recomposes.
+     *
+     * Nucleus itself only logs `SEVERE` with a thread dump — like Chromium's
+     * HangWatcher or IntelliJ's PerformanceWatcher, and like Electron it ships
+     * no built-in UI. What to do with the event is the app's call: report it
+     * to a crash backend, or offer the user the browsers' "wait or quit"
+     * choice.
+     *
+     * **[listener] runs on `nucleus-tao-watchdog-events`, not the UI thread**
+     * — the UI thread is the one that is stuck, so anything posted to it
+     * (Compose state, `Dispatchers.Main`) would only run once the stall is
+     * over, if ever. That thread is the callbacks' own: it is neither the
+     * sampling thread nor the UI thread, so a listener that blocks — a "wait
+     * or quit" prompt is the expected use — delays only the next callback,
+     * never the detection. Callbacks are serialized in order. A throwing
+     * listener is logged and ignored: the watchdog must survive it.
+     */
+    public fun onUnresponsive(listener: () -> Unit) {
+        unresponsiveHandler = listener
+    }
+
+    /**
+     * Registers [listener] for "the UI is responding again", Electron's
+     * `responsive` event — the counterpart of [onUnresponsive], fired only
+     * after a stall that was reported. Same threading and replace semantics.
+     */
+    public fun onResponsive(listener: () -> Unit) {
+        responsiveHandler = listener
+    }
+
+    /**
+     * Runs [block] with the hang watchdog told that a stall is *expected*
+     * (#643) — Chromium's `HangWatcher::InvalidateActiveExpectations()`.
+     *
+     * The watchdog reports any UI thread that stops pumping, which includes an
+     * operation the app knows is long and synchronous. Wrap that operation and
+     * neither the `SEVERE` report nor [onUnresponsive] fires for it; everything
+     * else stays watched, unlike the `nucleus.tao.watchdog=false` switch, which
+     * gives up on the whole process.
+     *
+     * ```kotlin
+     * expectUnresponsive { importHugeProjectSynchronously() }
+     * ```
+     *
+     * Reentrant, and thread-safe: the scope is the app's, not one thread's. A
+     * stall already reported when the scope opens still gets its
+     * [onResponsive], so the two events stay paired.
+     *
+     * Prefer moving the work off the UI thread. This is for the cases where
+     * that is not an option — a native call that must run on the loop, a
+     * shutdown flush — not a way to make a slow UI quiet.
+     */
+    public fun <T> expectUnresponsive(block: () -> T): T {
+        TaoEventLoopWatchdog.beginExpectedStall()
+        try {
+            return block()
+        } finally {
+            TaoEventLoopWatchdog.endExpectedStall()
+        }
+    }
+
+    /** Fires the [onUnresponsive] handler; called by the watchdog thread. */
+    internal fun notifyUnresponsive(): Unit = notify(unresponsiveHandler, "unresponsive")
+
+    /** Fires the [onResponsive] handler; called by the watchdog thread. */
+    internal fun notifyResponsive(): Unit = notify(responsiveHandler, "responsive")
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun notify(
+        handler: (() -> Unit)?,
+        event: String,
+    ) {
+        try {
+            handler?.invoke()
+        } catch (t: Throwable) {
+            logger.log(Level.SEVERE, "Unhandled exception in the '$event' handler", t)
         }
     }
 
@@ -223,8 +457,12 @@ public object TaoApplication {
 
     internal fun lookup(handle: Long): TaoWindow? = windows[handle]
 
+    /** Live native windows, by handle. Used by tests to catch leaked windows. */
+    internal fun liveWindowCount(): Int = windows.size
+
     internal fun remove(handle: Long) {
         windows.remove(handle)
+        completeQuitIfLastWindow()
     }
 
     private object EventDispatcher : NativeTaoBridge.EventCallback {
@@ -241,6 +479,7 @@ public object TaoApplication {
                         onLaunched = null
                         cb?.invoke(this@TaoApplication)
                     }
+                    TaoEventCode.QUIT_REQUESTED -> requestQuit()
                     TaoEventCode.MAIN_EVENTS_CLEARED -> TaoMainDispatcher.pump()
                     else -> lookup(handle)?.dispatch(code, a, b)
                 }

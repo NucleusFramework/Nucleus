@@ -184,6 +184,7 @@ pub(crate) const EVENT_SHOWN: jint = 24;
 // loop — see `on_tao_size_move`.
 #[cfg(target_os = "windows")]
 pub(crate) const EVENT_SIZE_MOVE: jint = 25;
+pub(crate) const EVENT_QUIT_REQUESTED: jint = 26;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;
@@ -244,7 +245,25 @@ pub(crate) const TOUCH_FORCE_UNKNOWN: jint = -1;
 pub(crate) const MOUSE_BUTTON_LEFT: jint = 0;
 pub(crate) const MOUSE_BUTTON_RIGHT: jint = 1;
 pub(crate) const MOUSE_BUTTON_MIDDLE: jint = 2;
-pub(crate) const MOUSE_BUTTON_OTHER: jint = 3;
+pub(crate) const MOUSE_BUTTON_BACK: jint = 3;
+pub(crate) const MOUSE_BUTTON_FORWARD: jint = 4;
+pub(crate) const MOUSE_BUTTON_OTHER: jint = 5;
+
+// Raw `MouseButton::Other(n)` numbers tao reports for the back / forward side
+// buttons: `XBUTTON1` / `XBUTTON2` on Windows, X11/GDK buttons 8 / 9 on Linux,
+// `NSEvent.buttonNumber` 3 / 4 on macOS.
+#[cfg(target_os = "windows")]
+const OTHER_BACK: u16 = 1;
+#[cfg(target_os = "windows")]
+const OTHER_FORWARD: u16 = 2;
+#[cfg(target_os = "macos")]
+const OTHER_BACK: u16 = 3;
+#[cfg(target_os = "macos")]
+const OTHER_FORWARD: u16 = 4;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+const OTHER_BACK: u16 = 8;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+const OTHER_FORWARD: u16 = 9;
 
 // ── User events posted from JNI calls into the event loop ─────────────────
 
@@ -329,6 +348,14 @@ pub(crate) enum UserEvent {
         handle: u64,
         resizable: bool,
     },
+    SetMinimizable {
+        handle: u64,
+        minimizable: bool,
+    },
+    SetMaximizable {
+        handle: u64,
+        maximizable: bool,
+    },
     SetMinimized {
         handle: u64,
         minimized: bool,
@@ -372,6 +399,12 @@ pub(crate) enum UserEvent {
         width: f64,
         height: f64,
     },
+    SetMaxInnerSize {
+        handle: u64,
+        // Negative width/height means "clear the maximum".
+        width: f64,
+        height: f64,
+    },
     SetWindowIcon {
         handle: u64,
         // Premultiplied RGBA pixel buffer, row-major. Empty `pixels` clears.
@@ -389,10 +422,26 @@ pub(crate) enum UserEvent {
         x: f64,
         y: f64,
     },
+    /// Linux: anchor a popup overlay at a logical point of its parent so GDK
+    /// maps it as a compositor-positioned `xdg_popup` (see `popup_anchor`).
+    PopupAnchor {
+        handle: u64,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        shadow_left: i32,
+        shadow_top: i32,
+        shadow_right: i32,
+        shadow_bottom: i32,
+    },
     SetFullscreen {
         handle: u64,
         fullscreen: bool,
     },
+    // Posted by the macOS quit paths only (Cmd-Q, `-[TaoApp terminate:]`).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    QuitRequested,
     Exit,
 }
 
@@ -651,6 +700,8 @@ pub(crate) fn mouse_button_code(b: MouseButton) -> jint {
         MouseButton::Left => MOUSE_BUTTON_LEFT,
         MouseButton::Right => MOUSE_BUTTON_RIGHT,
         MouseButton::Middle => MOUSE_BUTTON_MIDDLE,
+        MouseButton::Other(OTHER_BACK) => MOUSE_BUTTON_BACK,
+        MouseButton::Other(OTHER_FORWARD) => MOUSE_BUTTON_FORWARD,
         _ => MOUSE_BUTTON_OTHER,
     }
 }

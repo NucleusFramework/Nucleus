@@ -19,6 +19,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -37,17 +38,24 @@ import kotlin.system.exitProcess
  * `LaunchedEffect`/`DisposableEffect`, observe `MutableState`, etc. The
  * composition lives until [ApplicationScope.exitApplication] is called.
  *
- * The JVM is terminated once the Tao event loop returns: `exitProcess(0)`
- * on a normal quit, `exitProcess(1)` after a fatal error (#622 — already
- * logged at SEVERE and shown in the native error dialog by then). A forced
- * exit is required because Compose/Skiko initialisation indirectly touches
- * AWT, which spawns the non-daemon EDT, and that thread keeps the JVM alive
- * long after the Tao loop has shut down. Mirrors Compose Desktop's
- * `application { … }` (which also force-exits the process).
+ * Once the Tao event loop returns, the default is to terminate the JVM:
+ * `exitProcess(0)` on a normal quit, `exitProcess(1)` after a fatal error
+ * (#622 — already logged at SEVERE and shown in the native error dialog by
+ * then). A forced exit is the default because Compose/Skiko initialisation
+ * indirectly touches AWT, which spawns the non-daemon EDT, and that thread
+ * keeps the JVM alive long after the Tao loop has shut down. Mirrors Compose
+ * Desktop's `application { … }` (which also force-exits the process).
+ *
+ * Pass [exitProcessOnExit] `false` to return normally instead, matching
+ * Compose Desktop's `application(exitProcessOnExit = false)`. A fatal error
+ * is then rethrown to the caller after the same SEVERE log.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Suppress("TooGenericExceptionCaught", "SwallowedException")
-public fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
+public fun taoApplication(
+    exitProcessOnExit: Boolean = true,
+    content: @Composable ApplicationScope.() -> Unit,
+) {
     check(NativeTaoBridge.isLoaded) {
         "nucleus_tao native library is not available — supported targets: " +
             "macOS (arm64/x86_64), Windows (x64/aarch64), Linux (x64/aarch64)."
@@ -55,29 +63,55 @@ public fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
 
     // A fatal dispatch failure (#622) is rethrown by TaoApplication.run after
     // the loop exits — it was already logged at SEVERE and shown in the native
-    // error dialog, so here it only needs to become a non-zero exit. A plain
-    // rethrow would skip exitProcess(0) below and the non-daemon AWT EDT would
-    // keep the dead process alive.
+    // error dialog, so here it only needs to become a non-zero exit when
+    // [exitProcessOnExit] is true. A plain rethrow would skip exitProcess(0)
+    // below and the non-daemon AWT EDT would keep the dead process alive.
     try {
         runTaoComposeLoop(content)
         // Recheck: reportFatal can fire from a non-main thread (the coroutine
         // exception handler runs on the failing coroutine's thread) after
         // run()'s own post-loop check already passed — without this a genuine
-        // fatal would fall through to exitProcess(0) below.
+        // fatal would fall through to a clean finish.
         TaoApplication.rethrowPendingFatal()
     } catch (t: Throwable) {
+        finishTaoApplication(exitProcessOnExit, failure = t)
+        return
+    }
+    finishTaoApplication(exitProcessOnExit, failure = null)
+}
+
+/**
+ * After the Tao loop has stopped: force-exit the process, return to the
+ * caller, or rethrow [failure]. [exit] is `exitProcess` in production; tests
+ * inject a recorder so this path can run inside the test JVM.
+ */
+internal fun finishTaoApplication(
+    exitProcessOnExit: Boolean,
+    failure: Throwable?,
+    exit: (Int) -> Unit = { exitProcess(it) },
+) {
+    if (failure != null) {
         // Anything that is NOT the already-handled fatal (broken native lib,
         // wrong-thread init failure, …) would otherwise vanish with exit
-        // code 1 and zero output — log it before exiting.
-        if (!TaoApplication.isReportedFatal(t)) {
-            composeEntryLogger.log(Level.SEVERE, "taoApplication failed", t)
+        // code 1 and zero output — log it before exiting or rethrowing.
+        if (!TaoApplication.isReportedFatal(failure)) {
+            composeEntryLogger.log(Level.SEVERE, "taoApplication failed", failure)
         }
-        exitProcess(1)
+        if (exitProcessOnExit) {
+            exit(1)
+            return
+        }
+        throw failure
     }
-    exitProcess(0)
+    if (exitProcessOnExit) {
+        exit(0)
+    }
 }
 
 private val composeEntryLogger: Logger = Logger.getLogger(TaoApplication::class.java.name)
+
+/** Upper bound on waiting for the close requests of a system quit to recompose. */
+private const val QUIT_SETTLE_TIMEOUT_MS = 500L
 
 @OptIn(ExperimentalFoundationApi::class)
 private fun runTaoComposeLoop(content: @Composable ApplicationScope.() -> Unit) {
@@ -104,6 +138,22 @@ private fun runTaoComposeLoop(content: @Composable ApplicationScope.() -> Unit) 
         val composition = Composition(NoOpApplier, recomposer)
 
         coroutineScope.launch { recomposer.runRecomposeAndApplyChanges() }
+
+        // A quit completes through exitApplication (composition disposed first),
+        // and is judged only once the close requests' state writes have been
+        // recomposed — a window that accepted has been disposed by then.
+        // ponytail: the timeout is a liveness guard only — a recomposer that never
+        // reports Idle would otherwise leave isQuitting stuck and swallow every later quit.
+        app.quitExit = scope::exitApplication
+        app.afterQuitRequests = { then ->
+            coroutineScope.launch {
+                Snapshot.sendApplyNotifications()
+                withTimeoutOrNull(QUIT_SETTLE_TIMEOUT_MS) {
+                    recomposer.currentState.first { it == Recomposer.State.Idle || it <= Recomposer.State.ShuttingDown }
+                }
+                then()
+            }
+        }
 
         coroutineScope.launch {
             try {

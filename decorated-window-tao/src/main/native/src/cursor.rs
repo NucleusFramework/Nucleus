@@ -17,8 +17,9 @@ use tao::window::CursorIcon;
 use crate::state::WINDOWS;
 
 /// Mirrors `TaoCursorIcon` on the JVM side. Numeric codes only, so the JNI
-/// signature stays `(JI)V`. Subset chosen to cover what Compose Desktop's
-/// `PointerIcon` constants surface — additional shapes can be added later.
+/// signature stays `(JI)V`. Covers what Compose Desktop's `PointerIcon`
+/// constants surface, plus the shapes Nucleus exposes itself through
+/// `TaoPointerIcons` (grab / grabbing for drag handles, move, …).
 /// On macOS, code 0 is an explicit arrow cursor rather than Tao's null
 /// `Default`, matching Compose AWT's concrete `Cursor.DEFAULT_CURSOR`.
 fn cursor_from_code(code: jint) -> CursorIcon {
@@ -37,6 +38,8 @@ fn cursor_from_code(code: jint) -> CursorIcon {
         10 => CursorIcon::NsResize,
         11 => CursorIcon::NeswResize,
         12 => CursorIcon::NwseResize,
+        13 => CursorIcon::Grab,
+        14 => CursorIcon::Grabbing,
         #[cfg(target_os = "macos")]
         _ => CursorIcon::Arrow,
         #[cfg(not(target_os = "macos"))]

@@ -12,6 +12,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <gio/gio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -156,13 +157,13 @@ static int ensure_callback_ids(JNIEnv *env) {
     if (g_bridge_class != NULL) return 1;
     jclass cls = (*env)->FindClass(env,
         "dev/nucleusframework/media/control/linux/NativeLinuxBridge");
-    if (!cls) { if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); return 0; }
+    if (!cls) { nucleus_jni_clear_exception(env); return 0; }
     g_bridge_class = (jclass)(*env)->NewGlobalRef(env, cls);
     (*env)->DeleteLocalRef(env, cls);
     g_on_event_method = (*env)->GetStaticMethodID(env, g_bridge_class,
         "onMediaControlEvent", "(Ljava/lang/String;)V");
     if (!g_on_event_method) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, g_bridge_class);
         g_bridge_class = NULL;
         return 0;
@@ -206,7 +207,7 @@ static void dispatch_event_simple(const char *type) {
 
     jstring js = (*env)->NewStringUTF(env, s->str);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
 
     g_string_free(s, TRUE);
@@ -224,7 +225,7 @@ static void dispatch_event_offset(const char *type, gint64 value_us) {
 
     jstring js = (*env)->NewStringUTF(env, s->str);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
 
     g_string_free(s, TRUE);
@@ -241,7 +242,7 @@ static void dispatch_event_position(gint64 position_us) {
 
     jstring js = (*env)->NewStringUTF(env, s->str);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
 
     g_string_free(s, TRUE);
@@ -258,7 +259,7 @@ static void dispatch_event_volume(gdouble volume) {
 
     jstring js = (*env)->NewStringUTF(env, buf);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
     release_env(attached);
 }
@@ -274,7 +275,7 @@ static void dispatch_event_uri(const char *uri) {
 
     jstring js = (*env)->NewStringUTF(env, s->str);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
 
     g_string_free(s, TRUE);

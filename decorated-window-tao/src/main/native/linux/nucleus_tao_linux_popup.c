@@ -79,6 +79,7 @@
  */
 
 #include "nucleus_tao_linux_popup.h"
+#include "../../../../../native-common/nucleus_jni.h"
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -279,7 +280,7 @@ static void cache_event_callback_ids(JNIEnv *env, jobject callback) {
     g_on_scroll        = (*env)->GetMethodID(env, cls, "onScroll", "(FFFF)V");
     g_on_key_event     = (*env)->GetMethodID(env, cls, "onKeyEvent", "(IIII)V");
     (*env)->DeleteLocalRef(env, cls);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static void cache_outside_listener_id(JNIEnv *env, jobject listener) {
@@ -288,7 +289,7 @@ static void cache_outside_listener_id(JNIEnv *env, jobject listener) {
     if (cls == NULL) return;
     g_on_outside_click = (*env)->GetMethodID(env, cls, "onOutsideClick", "(II)V");
     (*env)->DeleteLocalRef(env, cls);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* ── Keysym helpers ─────────────────────────────────────────────────────── */
@@ -390,7 +391,7 @@ static void forward_pointer(JNIEnv *env, Panel *p, int type, float x, float y,
     if (cb == NULL || g_on_pointer_event == NULL) return;
     (*env)->CallVoidMethod(env, cb, g_on_pointer_event, (jint) type,
                            (jfloat) x, (jfloat) y, (jint) button, (jint) mods);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static void forward_scroll(JNIEnv *env, Panel *p, float x, float y,
@@ -401,7 +402,7 @@ static void forward_scroll(JNIEnv *env, Panel *p, float x, float y,
     if (cb == NULL || g_on_scroll == NULL) return;
     (*env)->CallVoidMethod(env, cb, g_on_scroll, (jfloat) x, (jfloat) y,
                            (jfloat) dx, (jfloat) dy);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static void forward_key(JNIEnv *env, Panel *p, int type, int vk, int codepoint,
@@ -412,7 +413,7 @@ static void forward_key(JNIEnv *env, Panel *p, int type, int vk, int codepoint,
     if (cb == NULL || g_on_key_event == NULL) return;
     (*env)->CallVoidMethod(env, cb, g_on_key_event, (jint) type, (jint) vk,
                            (jint) codepoint, (jint) mods);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static void forward_outside_click(JNIEnv *env, Panel *p, int button) {
@@ -421,7 +422,7 @@ static void forward_outside_click(JNIEnv *env, Panel *p, int button) {
     pthread_mutex_unlock(&p->lock);
     if (cb == NULL || g_on_outside_click == NULL) return;
     (*env)->CallVoidMethod(env, cb, g_on_outside_click, (jint) 1, (jint) button);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* Raw XI2 ButtonPress: hit-test the pointer against the panel rect and

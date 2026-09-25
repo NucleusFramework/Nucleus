@@ -95,6 +95,12 @@ class LinuxLauncherTest {
     @Test
     fun `launcher entry methods drive the native bridge when it is loaded`() {
         if (!LinuxLauncherEntry.isAvailable) return
+        // Every call below reaches the session bus; see LinuxQuicklistNativeTest
+        // for why there is nothing to exercise — and previously a hang — without one.
+        if (System.getenv("DBUS_SESSION_BUS_ADDRESS").isNullOrBlank()) {
+            println("SKIPPED: no D-Bus session bus")
+            return
+        }
         val uri = LinuxLauncherEntry.appUri("nucleus-kover-coverage.desktop")
         LinuxLauncherEntry.update(uri, LauncherProperties(count = 1L, countVisible = true))
         LinuxLauncherEntry.update(uri, LauncherProperties(progress = 0.2, progressVisible = false))

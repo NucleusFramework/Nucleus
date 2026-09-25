@@ -93,18 +93,36 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
     var setDockNameSameAsPackageName: Boolean = true
 
     /**
-     * Previously used to enable App Store signing for PKG builds.
+     * PKG installer settings: distribution channel (Mac App Store or Developer ID) and install
+     * scripts. See [PkgSettings].
+     */
+    val pkg: PkgSettings = objects.newInstance(PkgSettings::class.java)
+
+    /** Configures the PKG installer, see [PkgSettings]. */
+    fun pkg(fn: Action<PkgSettings>) {
+        fn.execute(pkg)
+    }
+
+    /**
+     * Whether a PKG targets the Mac App Store. Alias of `pkg { appStore = ... }`, see
+     * [PkgSettings.appStore].
      *
-     * This property is now ignored — PKG is always treated as an App Store format.
-     * Store-specific signing (sandbox entitlements, "3rd Party Mac Developer" certificates,
-     * provisioning profiles, `productsign`) is applied automatically when the target format
-     * is [TargetFormat.Pkg].
+     * Deprecated at ERROR level on purpose: this property used to be **ignored** and defaulted to
+     * `false`, so silently aliasing it would flip an existing `appStore = false` build from the Mac
+     * App Store to the Developer ID channel — a different pipeline, a different certificate and a
+     * different installer signature. Migrating is a one-line edit that has to be deliberate.
      */
     @Deprecated(
-        "PKG is always built for the App Store. This property is ignored and will be removed in a future release.",
-        level = DeprecationLevel.WARNING,
+        "Use pkg { appStore = ... }. Note the meaning changed: this property was previously ignored " +
+            "(PKG was always App Store), so review which channel you want before migrating.",
+        ReplaceWith("pkg.appStore"),
+        level = DeprecationLevel.ERROR,
     )
-    var appStore: Boolean = false
+    var appStore: Boolean
+        get() = pkg.appStore
+        set(value) {
+            pkg.appStore = value
+        }
     val entitlementsFile: RegularFileProperty = objects.fileProperty()
     val runtimeEntitlementsFile: RegularFileProperty = objects.fileProperty()
     var pkgPackageVersion: String? = null
@@ -145,6 +163,29 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
 
     fun launchAgents(fn: Action<LaunchAgentSettings>) {
         fn.execute(launchAgents)
+    }
+
+    /**
+     * Configures macOS app extensions (`.appex`) to embed under `Contents/PlugIns/`,
+     * each signed with its own entitlements and provisioning profile.
+     *
+     * ```kotlin
+     * macOS {
+     *     appExtensions {
+     *         extension("NetworkFilter") {
+     *             appex(file("build/NetworkExtension/NetworkFilter.appex"))
+     *             entitlements(file("packaging/networkextension.entitlements"))
+     *             provisioningProfile(file("packaging/NetworkFilter.provisionprofile"))
+     *         }
+     *     }
+     * }
+     * ```
+     */
+    val appExtensions: MacAppExtensionSettings = MacAppExtensionSettings()
+
+    /** Configures [appExtensions]. See [MacAppExtensionSettings] for the caveats. */
+    fun appExtensions(fn: Action<MacAppExtensionSettings>) {
+        fn.execute(appExtensions)
     }
 
     internal val infoPlistSettings = InfoPlistSettings()

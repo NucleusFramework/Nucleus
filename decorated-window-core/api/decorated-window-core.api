@@ -131,6 +131,9 @@ public final class dev/nucleusframework/window/DialogTitleBarInfo {
 	public fun toString ()Ljava/lang/String;
 }
 
+public abstract interface annotation class dev/nucleusframework/window/ExperimentalNucleusApi : java/lang/annotation/Annotation {
+}
+
 public final class dev/nucleusframework/window/LocalModalDialogCountKt {
 	public static final fun getGlobalModalDialogCount ()Landroidx/compose/runtime/MutableState;
 	public static final fun getLocalModalDialogCount ()Landroidx/compose/runtime/ProvidableCompositionLocal;
