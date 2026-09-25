@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- No <uses-permission> here: which location permissions an app holds is its own decision
+         (ACCESS_COARSE_LOCATION alone is enough for LocationAccuracy.Approximate). -->
+    <application>
+        <!-- Captures the application context and tracks the resumed activity, which the
+             permission prompt needs, before any app code runs. -->
+        <provider
+            android:name="dev.nucleusframework.location.LocationContextProvider"
+            android:authorities="${applicationId}.nucleus-location"
+            android:exported="false" />
+    </application>
+</manifest>

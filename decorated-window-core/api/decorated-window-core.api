@@ -710,6 +710,7 @@ public final class dev/nucleusframework/window/styling/DecoratedWindowColors {
 
 public final class dev/nucleusframework/window/styling/DecoratedWindowMetrics {
 	public static final field $stable I
+	public fun <init> ()V
 	public synthetic fun <init> (FILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (FLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-D9Ej5fM ()F
@@ -771,6 +772,7 @@ public final class dev/nucleusframework/window/styling/TitleBarColors {
 
 public final class dev/nucleusframework/window/styling/TitleBarMetrics {
 	public static final field $stable I
+	public fun <init> ()V
 	public synthetic fun <init> (FFFJILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (FFFJLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-D9Ej5fM ()F

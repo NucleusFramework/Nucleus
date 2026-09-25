@@ -1,0 +1,36 @@
+[package]
+name = "nucleus_location"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "nucleus_location"
+crate-type = ["cdylib"]
+
+[dependencies]
+jni = "0.21"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = ["Devices_Geolocation", "Foundation"] }
+windows-core = "0.62"
+windows-future = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-core-foundation = { version = "0.3", features = ["CFRunLoop", "CFDate", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSBundle", "NSDate", "NSEnumerator", "NSError", "NSString"] }
+objc2-core-location = { version = "0.3", features = ["CLError", "CLLocation", "CLLocationManager", "CLLocationManagerDelegate"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Pure-Rust D-Bus: no libdbus at build or run time. The blocking API runs on the session's own
+# thread, so the app's async runtime (if any) is never involved.
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
