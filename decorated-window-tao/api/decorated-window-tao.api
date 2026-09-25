@@ -591,6 +591,7 @@ public final class dev/nucleusframework/window/tao/SatellitePlacement$Docked : d
 public final class dev/nucleusframework/window/tao/SatellitePlacement$Floating : dev/nucleusframework/window/tao/SatellitePlacement {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/SatellitePlacement$Floating$Companion;
+	public fun <init> ()V
 	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowPositioner;JLandroidx/compose/ui/unit/DpRect;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowPositioner;JLandroidx/compose/ui/unit/DpRect;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ldev/nucleusframework/window/tao/WindowPositioner;
@@ -649,6 +650,7 @@ public final class dev/nucleusframework/window/tao/SatelliteWindowKt {
 
 public final class dev/nucleusframework/window/tao/SatelliteWindowState {
 	public static final field $stable I
+	public fun <init> ()V
 	public synthetic fun <init> (JLdev/nucleusframework/window/tao/WindowPositioner;Landroidx/compose/ui/unit/DpRect;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (JLdev/nucleusframework/window/tao/WindowPositioner;Landroidx/compose/ui/unit/DpRect;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getAnchorRect ()Landroidx/compose/ui/unit/DpRect;
@@ -815,6 +817,7 @@ public final class dev/nucleusframework/window/tao/TabGroupSnapshot {
 public final class dev/nucleusframework/window/tao/TabHoverPreview {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/TabHoverPreview$Companion;
+	public fun <init> ()V
 	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getContent ()Lkotlin/jvm/functions/Function3;
@@ -915,6 +918,7 @@ public final class dev/nucleusframework/window/tao/TabWindowsKt {
 public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/TabWorkspace$Companion;
+	public fun <init> ()V
 	public synthetic fun <init> (JZILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (JZLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun beginDrag-0AR0LA0 (Ljava/lang/String;Ldev/nucleusframework/window/tao/TabDragOrigin;J)Ldev/nucleusframework/window/tao/TabDragSession;
@@ -1510,6 +1514,7 @@ public final class dev/nucleusframework/window/tao/WindowExceptionHandlerFactory
 
 public final class dev/nucleusframework/window/tao/WindowPositioner {
 	public static final field $stable I
+	public fun <init> ()V
 	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowAnchor;Ldev/nucleusframework/window/tao/WindowAnchor;JLdev/nucleusframework/window/tao/WindowConstraintAdjustment;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowAnchor;Ldev/nucleusframework/window/tao/WindowAnchor;JLdev/nucleusframework/window/tao/WindowConstraintAdjustment;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ldev/nucleusframework/window/tao/WindowAnchor;
