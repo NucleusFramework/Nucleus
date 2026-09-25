@@ -22,6 +22,7 @@ import dev.nucleusframework.desktop.application.internal.MacAssetsTool
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
+import dev.nucleusframework.desktop.application.internal.LauncherClasspathOrder
 import dev.nucleusframework.desktop.application.internal.PathingJarClasspath
 import dev.nucleusframework.desktop.application.internal.PlistKeys
 import dev.nucleusframework.desktop.application.internal.SKIKO_LIBRARY_PATH
@@ -150,6 +151,16 @@ abstract class AbstractJPackageTask
          */
         @get:Input
         val packageFromUberJar: Property<Boolean> = objects.notNullProperty(false)
+
+        /**
+         * Classpath order of [files] when they come from a directory and so carry none (the
+         * sandboxed strip task's output): one file name per line, first wins. Unset: [files] is
+         * already in classpath order. See [LauncherClasspathOrder].
+         */
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.NONE)
+        val classpathOrderFile: RegularFileProperty = objects.fileProperty()
 
         @get:InputFile
         @get:Optional
@@ -700,6 +711,10 @@ abstract class AbstractJPackageTask
 
         override fun checkResult(result: ExecResult) {
             super.checkResult(result)
+            // Before signing (macOS) and the pathing-jar collapse (Linux), which both keep the order.
+            if (targetFormat == TargetFormat.RawAppImage) {
+                LauncherClasspathOrder.apply(destinationDir.ioFile, launcherClasspathOrder(), logger)
+            }
             modifyRuntimeOnMacOsIfNeeded()
             // Linux only: shrink the jpackage launcher's serialized classpath so the parent
             // process's single pipe read cannot short-read (JDK-8380085 / Nucleus #454).
@@ -712,6 +727,25 @@ abstract class AbstractJPackageTask
             }
             val outputFile = findOutputFileOrDir(destinationDir.ioFile, targetFormat)
             logger.lifecycle("The distribution is written to ${outputFile.canonicalPath}")
+        }
+
+        /** The file names jpackage copied into `--input`, in classpath order, main JAR first. */
+        private fun launcherClasspathOrder(): List<String> {
+            val sources = files.files.toList()
+            val rank =
+                classpathOrderFile.orNull
+                    ?.asFile
+                    ?.takeIf { it.isFile }
+                    ?.readLines()
+                    ?.filter { it.isNotBlank() }
+                    ?.withIndex()
+                    ?.associate { (index, name) -> name.trim() to index }
+            val ordered = if (rank == null) sources else sources.sortedBy { rank[it.name] ?: Int.MAX_VALUE }
+            val mainJar = libsMapping[launcherMainJar.ioFile].orEmpty().filter { it.isJarFile }
+            return (mainJar + ordered.flatMap { libsMapping[it].orEmpty() })
+                .filter { it.isJarFile }
+                .map { it.name }
+                .distinct()
         }
 
         /** Bundle directory name jpackage's macOS output is renamed to, without the `.app` suffix. */
