@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Package visibility (API 30+): lets SpeechRecognizer find the installed recognition service. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
+    <application>
+        <!-- Tracks the foreground Activity, which recognition and the permission prompt need. -->
+        <provider
+            android:name="dev.nucleusframework.speech.SpeechActivityTracker"
+            android:authorities="${applicationId}.nucleus-speech-recognition"
+            android:exported="false" />
+    </application>
+</manifest>

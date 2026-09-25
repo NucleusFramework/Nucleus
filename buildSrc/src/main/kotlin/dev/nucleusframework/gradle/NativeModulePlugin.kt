@@ -7,6 +7,7 @@ import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileCollection
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.ListProperty
@@ -171,12 +172,30 @@ open class NativeModuleExtension(
         project.plugins.withType<JavaPlugin>().configureEach {
             project.tasks.named<Task>(JavaPlugin.PROCESS_RESOURCES_TASK_NAME).configure { dependsOn(task) }
         }
+        // Kotlin Multiplatform: the JVM target's resources, see [jvmResources].
+        project.tasks.matching { it.name == KMP_JVM_PROCESS_RESOURCES }.configureEach { dependsOn(task) }
         // Registered by the publishing plugin, which may not be applied yet.
-        project.tasks.matching { it.name == "sourcesJar" }.configureEach { dependsOn(task) }
+        project.tasks.matching { it.name == "sourcesJar" || it.name == KMP_JVM_SOURCES_JAR }.configureEach {
+            dependsOn(task)
+        }
         nativeLibrariesManifest.configure { dependsOn(task) }
 
         return task
     }
+
+    /**
+     * What a Kotlin Multiplatform module adds to its JVM target's resources, since only
+     * `java`-based modules get it wired automatically:
+     *
+     * ```kotlin
+     * kotlin.sourceSets.jvmMain { resources.srcDirs(nucleusNative.jvmResources) }
+     * ```
+     *
+     * The libraries stay in `src/main/resources/nucleus/native` for every module, which is
+     * where the CI workflows download and verify them.
+     */
+    val jvmResources: FileCollection
+        get() = project.files(project.layout.projectDirectory.dir(NATIVE_RESOURCE_ROOT), nativeLibrariesManifest)
 
     /**
      * Lists the module's libraries under `META-INF/nucleus/native-libraries/`, so the Nucleus
@@ -301,7 +320,10 @@ enum class NativeTarget(
         }
 }
 
-private const val NATIVE_RESOURCE_PATH = "src/main/resources/nucleus/native"
+private const val NATIVE_RESOURCE_ROOT = "src/main/resources"
+private const val NATIVE_RESOURCE_PATH = "$NATIVE_RESOURCE_ROOT/nucleus/native"
+private const val KMP_JVM_PROCESS_RESOURCES = "jvmProcessResources"
+private const val KMP_JVM_SOURCES_JAR = "jvmSourcesJar"
 
 /**
  * Writes `META-INF/nucleus/native-libraries/<manifestName>`: one `nucleus/native/<arch>/<file>`
