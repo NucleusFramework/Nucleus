@@ -43,7 +43,12 @@ dependencies {
     compileOnly(libs.hot.reload.core)
     compileOnly(libs.hot.reload.orchestration)
     compileOnly(libs.hot.reload.devtools.api)
+    // Decompose interop (TaoDecomposeMainThreadChecker, #513). compileOnly: the
+    // provider is only instantiated by Decompose's own ServiceLoader lookup, so
+    // it is never loaded when Decompose is absent.
+    compileOnly(libs.decompose)
     testImplementation(kotlin("test"))
+    testImplementation(libs.decompose)
     // Skiko native runtime for the opt-in real-window smoke test
     testImplementation(compose.desktop.currentOs)
     // The Material 3 AlertDialog the headful appearance film compares against nucleus-demo

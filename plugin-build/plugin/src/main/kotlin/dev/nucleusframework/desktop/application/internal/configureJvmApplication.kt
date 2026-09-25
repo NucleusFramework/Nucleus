@@ -13,6 +13,7 @@ import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.PkgSettings
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
+import dev.nucleusframework.desktop.application.internal.transforms.configureDecomposeMainThreadCheckerTransform
 import dev.nucleusframework.desktop.application.internal.transforms.configureLcdTextDefaultTransform
 import dev.nucleusframework.desktop.application.internal.validation.validateMacBundleName
 import dev.nucleusframework.desktop.application.internal.validation.validatePackageVersions
@@ -95,6 +96,10 @@ internal fun JvmApplicationContext.configureJvmApplication() {
     // LCD / ClearType text on Windows (#875): patch Compose's hardcoded
     // grayscale PlatformDefault at build time — see LcdTextDefaultTransform.
     configureLcdTextDefaultTransform(project)
+
+    // Decompose + Tao (#513): drop the Swing (EDT-only) MainThreadChecker so the
+    // Tao-aware one shipped by decorated-window-tao is the one Decompose picks.
+    configureDecomposeMainThreadCheckerTransform(project)
 
     validatePackageVersions()
     validateMacBundleName()
