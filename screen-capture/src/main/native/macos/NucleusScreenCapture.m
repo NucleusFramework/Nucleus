@@ -79,6 +79,13 @@ static void setResult(JNIEnv *env, jintArray result, jint status, jint width, ji
     (*env)->SetIntArrayRegion(env, result, 0, 3, values);
 }
 
+// Reports the captured source's scale (px per point), in the result's fourth slot.
+static void setScale(JNIEnv *env, jintArray result, CGFloat scale) {
+    if (result == NULL || (*env)->GetArrayLength(env, result) < 4 || !(scale > 0)) return;
+    jint value = (jint)lround(scale * 1000);
+    (*env)->SetIntArrayRegion(env, result, 3, 1, &value);
+}
+
 static void setMessage(JNIEnv *env, jobjectArray message, NSString *text) {
     if (message == NULL || text == nil || (*env)->GetArrayLength(env, message) < 1) return;
     jstring str = (*env)->NewStringUTF(env, text.UTF8String ?: "");
@@ -134,6 +141,37 @@ static jintArray imageToPixels(JNIEnv *env, CGImageRef image, jintArray result, 
     return pixels;
 }
 
+// A region is captured from a grid-aligned rect around it and cropped back out:
+// - a region starting mid-point (an odd pixel at 2x) is otherwise resampled;
+// - the WindowServer re-renders the rect it is asked for, and dithered content (a gradient
+//   wallpaper) follows a 32 px tile anchored at that rect: an unaligned origin gives pixels up
+//   to 2 levels off the full capture's.
+// ponytail: fixed 32 pt grid (>= 32 px at every scale), measured on macOS 26 at 2x; widen it if
+// a display shows a larger dither tile.
+#define CAPTURE_GRID_POINTS 32.0
+
+static CGRect pointRectAround(CGRect regionPx, CGFloat scale) {
+    CGFloat left = floor(regionPx.origin.x / scale / CAPTURE_GRID_POINTS) * CAPTURE_GRID_POINTS;
+    CGFloat top = floor(regionPx.origin.y / scale / CAPTURE_GRID_POINTS) * CAPTURE_GRID_POINTS;
+    CGFloat right = ceil(CGRectGetMaxX(regionPx) / scale);
+    CGFloat bottom = ceil(CGRectGetMaxY(regionPx) / scale);
+    return CGRectMake(left, top, right - left, bottom - top);
+}
+
+// +1 image: the [regionPx] pixels of [image], a capture of [points]. Consumes [image].
+static CGImageRef cropToRegion(CGImageRef image, CGRect points, CGRect regionPx, CGFloat scale) {
+    CGRect crop = CGRectMake(regionPx.origin.x - lround(points.origin.x * scale),
+                             regionPx.origin.y - lround(points.origin.y * scale),
+                             regionPx.size.width, regionPx.size.height);
+    if (crop.origin.x == 0 && crop.origin.y == 0 &&
+        CGImageGetWidth(image) == (size_t)crop.size.width && CGImageGetHeight(image) == (size_t)crop.size.height) {
+        return image;
+    }
+    CGImageRef cropped = CGImageCreateWithImageInRect(image, crop);
+    CGImageRelease(image);
+    return cropped;
+}
+
 // ---------------------------------------------------------------------------------------------
 // ScreenCaptureKit plumbing
 // ---------------------------------------------------------------------------------------------
@@ -154,7 +192,7 @@ static jintArray imageToPixels(JNIEnv *env, CGImageRef image, jintArray result, 
 @end
 
 // Waits for [sem]. ScreenCaptureKit completes on its own queue, so a plain wait is safe on any
-// thread — including the main thread, whose run loop is deliberately not pumped here: turning
+// thread â€” including the main thread, whose run loop is deliberately not pumped here: turning
 // it would dispatch the app's own events re-entrantly from inside a capture call.
 static BOOL waitFor(dispatch_semaphore_t sem) {
     return dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(CAPTURE_TIMEOUT_SECONDS * NSEC_PER_SEC))) == 0;
@@ -384,15 +422,17 @@ static jintArray captureDisplayWithKit(
     SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:target excludingWindows:@[]];
     SCStreamConfiguration *config = [SCStreamConfiguration new];
     configureCommon(config, includeCursor);
-    config.width = (size_t)regionPx.size.width;
-    config.height = (size_t)regionPx.size.height;
     // sourceRect is in points, relative to the display.
-    config.sourceRect = CGRectMake(regionPx.origin.x / scale, regionPx.origin.y / scale,
-                                   regionPx.size.width / scale, regionPx.size.height / scale);
+    CGRect points = pointRectAround(regionPx, scale);
+    config.width = (size_t)lround(points.size.width * scale);
+    config.height = (size_t)lround(points.size.height * scale);
+    config.sourceRect = points;
 
     CGImageRef image = NULL;
     status = screenshot(filter, config, &image, &why);
     if (status != STATUS_OK) return fail(env, result, message, status, why);
+    image = cropToRegion(image, points, regionPx, scale);
+    if (image == NULL) return fail(env, result, message, STATUS_FAILED, @"Cannot crop the capture to the region");
     jintArray pixels = imageToPixels(env, image, result, message);
     CGImageRelease(image);
     return pixels;
@@ -409,9 +449,9 @@ static jintArray captureDisplayWithCoreGraphics(
     if (!CGPreflightScreenCaptureAccess()) {
         return fail(env, result, message, STATUS_PERMISSION_DENIED, @"Screen recording permission is not granted");
     }
-    CGRect points = CGRectMake(regionPx.origin.x / scale, regionPx.origin.y / scale,
-                               regionPx.size.width / scale, regionPx.size.height / scale);
+    CGRect points = pointRectAround(regionPx, scale);
     CGImageRef image = create(displayId, points);
+    if (image != NULL) image = cropToRegion(image, points, regionPx, scale);
     if (image == NULL) {
         return fail(env, result, message, STATUS_FAILED, @"CGDisplayCreateImageForRect returned nothing");
     }
@@ -490,6 +530,11 @@ static jintArray captureWindowWithKit(
         return fail(env, result, message, STATUS_WINDOW_NOT_FOUND,
                     [NSString stringWithFormat:@"ScreenCaptureKit does not list window %u", windowId]);
     }
+    // Minimized and hidden windows are listed too, with their last contents.
+    if (!target.onScreen) {
+        return fail(env, result, message, STATUS_WINDOW_NOT_FOUND,
+                    [NSString stringWithFormat:@"Window %u is not on screen", windowId]);
+    }
 
     SCContentFilter *filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:target];
     CGRect rect = filter.contentRect;
@@ -511,7 +556,27 @@ static jintArray captureWindowWithKit(
     if (status != STATUS_OK) return fail(env, result, message, status, why);
     jintArray pixels = imageToPixels(env, image, result, message);
     CGImageRelease(image);
+    if (pixels != NULL) setScale(env, result, scale);
     return pixels;
+}
+
+// Px per point of a Core Graphics window image: its width over the window's bounds, in points.
+static CGFloat coreGraphicsWindowScale(CGWindowID windowId, size_t widthPx) {
+    CGFloat scale = 0;
+    const void *values[] = {(const void *)(uintptr_t)windowId};
+    CFArrayRef ids = CFArrayCreate(NULL, values, 1, NULL);
+    CFArrayRef info = ids != NULL ? CGWindowListCreateDescriptionFromArray(ids) : NULL;
+    if (info != NULL && CFArrayGetCount(info) > 0) {
+        CFDictionaryRef entry = CFArrayGetValueAtIndex(info, 0);
+        CFDictionaryRef boundsDict = CFDictionaryGetValue(entry, kCGWindowBounds);
+        CGRect bounds;
+        if (boundsDict != NULL && CGRectMakeWithDictionaryRepresentation(boundsDict, &bounds) && bounds.size.width > 0) {
+            scale = (CGFloat)widthPx / bounds.size.width;
+        }
+    }
+    if (info != NULL) CFRelease(info);
+    if (ids != NULL) CFRelease(ids);
+    return scale;
 }
 
 static jintArray captureWindowWithCoreGraphics(
@@ -531,6 +596,7 @@ static jintArray captureWindowWithCoreGraphics(
                     [NSString stringWithFormat:@"No capturable window %u", windowId]);
     }
     jintArray pixels = imageToPixels(env, image, result, message);
+    if (pixels != NULL) setScale(env, result, coreGraphicsWindowScale(windowId, CGImageGetWidth(image)));
     CGImageRelease(image);
     return pixels;
 }

@@ -10,7 +10,7 @@ import dev.nucleusframework.screencapture.ScreenImage
 internal class NativeCall(
     private val what: String,
 ) {
-    /** `[status, width, height]`. */
+    /** `[status, width, height, scale × 1000]`; the scale is `0` where the native side reports none. */
     val result = IntArray(RESULT_SIZE)
 
     /** A diagnostic from the native side, on failure. */
@@ -33,6 +33,10 @@ internal class NativeCall(
         return ScreenImage(result[1], result[2], checkNotNull(pixels), scaleFactor)
     }
 
+    /** The scale the native side reported for the captured source, or [fallback]. */
+    fun reportedScale(fallback: Float): Float =
+        if (result[SCALE_INDEX] > 0) result[SCALE_INDEX] / SCALE_UNIT else fallback
+
     private fun failureOf(status: Int): CaptureFailure =
         when (status) {
             NativeScreenCapture.STATUS_UNSUPPORTED -> CaptureFailure.Unsupported
@@ -46,7 +50,9 @@ internal class NativeCall(
         }
 
     private companion object {
-        const val RESULT_SIZE = 3
+        const val RESULT_SIZE = 4
+        const val SCALE_INDEX = 3
+        const val SCALE_UNIT = 1000f
     }
 }
 
