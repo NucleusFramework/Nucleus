@@ -1,7 +1,6 @@
 #!/bin/bash
 # macOS E2E of screen-capture: runs examples/screen-capture-demo in self-test mode, the same
 # protocol as screen-capture-windows-e2e.ps1. On top of the demo's own checks this script:
-#   - hands the demo its CGWindowID (Tao does not expose it yet);
 #   - parks the cursor at the centre of the main display (cursor compositing check);
 #   - opens a window whose app never pumps its run loop again (a hung foreign window);
 #   - samples the demo's file descriptors, threads, Mach ports and RSS around the torture phase.
@@ -14,8 +13,8 @@ TIMEOUT=${2:-900}
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT=${OUT_DIR:-${TMPDIR:-/tmp}/screen-capture-e2e}
 mkdir -p "$OUT"
-LOG="$OUT/selftest.log"; IDFILE="$OUT/window.id"; HUNGFILE="$OUT/hung.id"
-rm -f "$LOG" "$IDFILE" "$HUNGFILE"
+LOG="$OUT/selftest.log"; HUNGFILE="$OUT/hung.id"
+rm -f "$LOG" "$HUNGFILE"
 
 HELPER="$OUT/helper"
 swiftc -O -o "$HELPER" "$ROOT/scripts/screen-capture-macos-e2e/helper.swift" || exit 1
@@ -33,16 +32,13 @@ $(top -l 1 -pid "$1" -stats ports | tail -1 | tr -dc '0-9') $(ps -o rss= -p "$1"
 
 SCREEN_CAPTURE_DEMO_SELFTEST=1 SCREEN_CAPTURE_DEMO_LOG="$LOG" SCREEN_CAPTURE_DEMO_OUT="$OUT" \
 SCREEN_CAPTURE_DEMO_TORTURE="$TORTURE" SCREEN_CAPTURE_DEMO_HUNG_HWND="$HUNG_ID" \
-SCREEN_CAPTURE_DEMO_CURSOR_EXPECTED=1 SCREEN_CAPTURE_DEMO_WINDOW_ID_FILE="$IDFILE" \
+SCREEN_CAPTURE_DEMO_CURSOR_EXPECTED=1 \
     "$ROOT/gradlew" -p "$ROOT" :examples:screen-capture-demo:run --console=plain -q >"$OUT/gradle.out" 2>&1 &
 GRADLE=$!
 
 deadline=$((SECONDS + TIMEOUT)); APP=0; BEFORE=""; AFTER=""
 while [ $SECONDS -lt $deadline ]; do
     sleep 0.5
-    if [ ! -s "$IDFILE" ]; then
-        id=$("$HELPER" windowid 0 "Screen Capture Demo" 2>/dev/null) && echo "$id" >"$IDFILE" && echo "demo window: $id"
-    fi
     [ -f "$LOG" ] || { kill -0 $GRADLE 2>/dev/null && continue || break; }
     [ $APP = 0 ] && APP=$(sed -n 's/.*START pid=\([0-9]*\).*/\1/p' "$LOG" | head -1) && APP=${APP:-0}
     if [ $APP != 0 ] && [ -z "$BEFORE" ] && grep -q "PHASE torture-begin" "$LOG"; then sleep 1; BEFORE=$(sample $APP); fi

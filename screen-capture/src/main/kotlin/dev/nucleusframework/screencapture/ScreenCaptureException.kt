@@ -1,6 +1,10 @@
 package dev.nucleusframework.screencapture
 
-/** Why a capture failed. */
+/**
+ * Why a capture failed.
+ *
+ * Later versions may add values: keep an `else` branch in a `when` over it.
+ */
 public enum class CaptureFailure {
     /** The platform or session has no capture backend (e.g. Wayland without a portal). */
     Unsupported,

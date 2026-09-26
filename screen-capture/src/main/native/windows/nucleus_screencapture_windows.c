@@ -574,6 +574,132 @@ Java_dev_nucleusframework_screencapture_internal_NativeScreenCapture_nativeCaptu
     return pixels;
 }
 
+/* ---------------------------------------------------------------- window list */
+
+#define MAX_LISTED_WINDOWS 4096
+
+typedef struct {
+    HWND items[MAX_LISTED_WINDOWS];
+    int count;
+} WindowList;
+
+static BOOL CALLBACK collect_window(HWND hwnd, LPARAM param) {
+    WindowList *list = (WindowList *)param;
+    if (list->count < MAX_LISTED_WINDOWS) list->items[list->count++] = hwnd;
+    return TRUE;
+}
+
+/*
+ * What the Alt+Tab switcher would show: visible, not minimized, not cloaked (another virtual
+ * desktop, a suspended UWP app), not a tool window, titled, and not the shell's own surfaces.
+ */
+static BOOL is_listed_window(HWND hwnd) {
+    if (!IsWindowVisible(hwnd) || IsIconic(hwnd)) return FALSE;
+    if (GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) return FALSE;
+    DWORD cloaked = 0;
+    if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && cloaked != 0) return FALSE;
+    WCHAR cls[64];
+    if (GetClassNameW(hwnd, cls, 64) > 0 &&
+        (lstrcmpW(cls, L"Progman") == 0 || lstrcmpW(cls, L"WorkerW") == 0 || lstrcmpW(cls, L"Shell_TrayWnd") == 0 ||
+         lstrcmpW(cls, L"Shell_SecondaryTrayWnd") == 0)) {
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* UTF-8 bytes of a UTF-16 string, for WindowCollector.add; NULL with an OutOfMemoryError pending. */
+static jbyteArray utf8_bytes(JNIEnv *env, const WCHAR *text, int length) {
+    int size = length > 0 ? WideCharToMultiByte(CP_UTF8, 0, text, length, NULL, 0, NULL, NULL) : 0;
+    char *buffer = size > 0 ? (char *)malloc((size_t)size) : NULL;
+    if (buffer != NULL) WideCharToMultiByte(CP_UTF8, 0, text, length, buffer, size, NULL, NULL);
+    else size = 0;
+    jbyteArray bytes = (*env)->NewByteArray(env, size);
+    if (bytes != NULL && size > 0) (*env)->SetByteArrayRegion(env, bytes, 0, size, (const jbyte *)buffer);
+    free(buffer);
+    return bytes;
+}
+
+/* The process's executable name without its extension ("chrome"); empty when it cannot be read. */
+static int process_name(DWORD pid, WCHAR *out, int capacity) {
+    out[0] = 0;
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (process == NULL) return 0;
+    WCHAR path[MAX_PATH];
+    DWORD size = MAX_PATH;
+    BOOL ok = QueryFullProcessImageNameW(process, 0, path, &size);
+    CloseHandle(process);
+    if (!ok) return 0;
+    const WCHAR *name = path;
+    for (const WCHAR *p = path; *p; p++) {
+        if (*p == L'\\' || *p == L'/') name = p + 1;
+    }
+    lstrcpynW(out, name, capacity);
+    WCHAR *dot = NULL;
+    for (WCHAR *p = out; *p; p++) {
+        if (*p == L'.') dot = p;
+    }
+    if (dot != NULL && dot != out) *dot = 0;
+    return lstrlenW(out);
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_screencapture_internal_NativeScreenCapture_nativeListWindows(JNIEnv *env, jclass cls,
+                                                                                        jobject sink,
+                                                                                        jobjectArray message) {
+    (void)cls;
+    jclass sink_class = (*env)->GetObjectClass(env, sink);
+    jmethodID add = (*env)->GetMethodID(env, sink_class, "add", "(J[B[BJIIII)V");
+    (*env)->DeleteLocalRef(env, sink_class);
+    if (add == NULL) {
+        nucleus_jni_clear_exception(env);
+        set_message(env, message, "WindowCollector.add not found");
+        return STATUS_FAILED;
+    }
+    WindowList *list = (WindowList *)calloc(1, sizeof(WindowList));
+    if (list == NULL) return STATUS_FAILED;
+    EnumWindows(collect_window, (LPARAM)list); /* top-level windows, front to back */
+
+    DPI_AWARENESS_CONTEXT old = enter_physical_pixels();
+    int status = STATUS_OK;
+    for (int i = 0; i < list->count && status == STATUS_OK; i++) {
+        HWND hwnd = list->items[i];
+        if (!is_listed_window(hwnd)) continue;
+        /* InternalGetWindowText never sends WM_GETTEXT: a hung window (ours included) cannot block it. */
+        WCHAR title[512];
+        int title_length = InternalGetWindowText(hwnd, title, 512);
+        if (title_length <= 0) continue;
+        RECT frame;
+        if (FAILED(DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &frame, sizeof(frame))) &&
+            !GetWindowRect(hwnd, &frame)) {
+            continue;
+        }
+        if (frame.right <= frame.left || frame.bottom <= frame.top) continue;
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        WCHAR app[MAX_PATH];
+        int app_length = process_name(pid, app, MAX_PATH);
+
+        jbyteArray jtitle = utf8_bytes(env, title, title_length);
+        jbyteArray japp = jtitle != NULL ? utf8_bytes(env, app, app_length) : NULL;
+        if (jtitle == NULL || japp == NULL) {
+            if (jtitle != NULL) (*env)->DeleteLocalRef(env, jtitle);
+            status = STATUS_FAILED; /* OutOfMemoryError pending: let it propagate */
+            break;
+        }
+        (*env)->CallVoidMethod(env, sink, add, (jlong)(intptr_t)hwnd, jtitle, japp, (jlong)pid, (jint)frame.left,
+                               (jint)frame.top, (jint)(frame.right - frame.left), (jint)(frame.bottom - frame.top));
+        (*env)->DeleteLocalRef(env, jtitle);
+        (*env)->DeleteLocalRef(env, japp);
+        if (nucleus_jni_clear_exception(env)) {
+            set_message(env, message, "WindowCollector.add threw");
+            status = STATUS_FAILED;
+        }
+    }
+    leave_physical_pixels(old);
+    free(list);
+    return status;
+}
+
 JNIEXPORT jint JNICALL
 Java_dev_nucleusframework_screencapture_internal_NativeScreenCapture_nativePermissionStatus(JNIEnv *env, jclass cls) {
     (void)env;

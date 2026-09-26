@@ -28,6 +28,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xfixes.h>
 #include <X11/extensions/Xcomposite.h>
@@ -114,6 +115,11 @@ static struct {
     int (*Free)(void *);
     int (*FreePixmap)(Display *, Pixmap);
     Bool (*QueryExtension)(Display *, const char *, int *, int *, int *);
+    /* Window list only: optional, X.loaded does not depend on them. */
+    Atom (*InternAtom)(Display *, const char *, Bool);
+    int (*GetWindowProperty)(Display *, Window, Atom, long, long, Bool, Atom, Atom *, int *, unsigned long *,
+                             unsigned long *, unsigned char **);
+    Status (*QueryTree)(Display *, Window, Window *, Window *, Window **, unsigned int *);
 } X;
 
 static struct {
@@ -165,6 +171,9 @@ static void load_x11(void) {
         LOAD(lib, X, Free, "XFree");
         LOAD(lib, X, FreePixmap, "XFreePixmap");
         LOAD(lib, X, QueryExtension, "XQueryExtension");
+        LOAD(lib, X, InternAtom, "XInternAtom");
+        LOAD(lib, X, GetWindowProperty, "XGetWindowProperty");
+        LOAD(lib, X, QueryTree, "XQueryTree");
         X.loaded = X.OpenDisplay && X.CloseDisplay && X.SetErrorHandler && X.Sync && X.GetImage &&
                    X.GetWindowAttributes && X.TranslateCoordinates && X.QueryColors && X.GetAtomName &&
                    X.Free && X.FreePixmap;
@@ -683,6 +692,176 @@ EXPORT JNIEXPORT jint JNICALL Java_dev_nucleusframework_screencapture_internal_N
         }
     }
     free(list.items);
+    return status;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Window list                                                              */
+/* ------------------------------------------------------------------------ */
+
+#define MAX_LISTED_WINDOWS 4096
+#define MAX_TEXT 1024
+
+typedef struct {
+    Window id;
+    char title[MAX_TEXT];
+    char app[MAX_TEXT];
+    long pid;
+    int x, y, w, h;
+} ListedWindow;
+
+/* The property's value (XFree it), or NULL. [type] AnyPropertyType accepts any type. */
+static unsigned char *window_property(Display *dpy, Window w, Atom property, Atom type, unsigned long *count) {
+    Atom actual = None;
+    int format = 0;
+    unsigned long after = 0;
+    unsigned char *data = NULL;
+    *count = 0;
+    if (property == None) return NULL;
+    if (X.GetWindowProperty(dpy, w, property, 0, MAX_TEXT, False, type, &actual, &format, count, &after, &data) !=
+            Success ||
+        x_take_error(dpy) != 0 || data == NULL) {
+        return NULL;
+    }
+    if (actual == None || *count == 0) {
+        X.Free(data);
+        return NULL;
+    }
+    return data;
+}
+
+static void copy_text(char *out, const unsigned char *data, unsigned long length) {
+    if (length >= MAX_TEXT) length = MAX_TEXT - 1;
+    memcpy(out, data, length);
+    out[length] = 0;
+}
+
+typedef struct {
+    Atom net_wm_name, utf8, wm_name, wm_class, net_wm_pid;
+} Atoms;
+
+/* Reads the window's attributes; returns 0 when it is not a viewable, capturable window. */
+static int describe_window(Display *dpy, Window root, Window w, int from_tree, const Atoms *atoms, ListedWindow *out) {
+    XWindowAttributes attrs;
+    memset(&attrs, 0, sizeof(attrs));
+    if (!X.GetWindowAttributes(dpy, w, &attrs) || x_take_error(dpy) != 0) return 0;
+    if (attrs.map_state != IsViewable || attrs.class != InputOutput || attrs.width <= 0 || attrs.height <= 0) return 0;
+    /* Without a window manager the root's children include menus and tooltips. */
+    if (from_tree && attrs.override_redirect) return 0;
+    int x = 0, y = 0;
+    Window child;
+    if (!X.TranslateCoordinates(dpy, w, root, 0, 0, &x, &y, &child) || x_take_error(dpy) != 0) return 0;
+
+    memset(out, 0, sizeof(*out));
+    out->id = w;
+    out->x = x;
+    out->y = y;
+    out->w = attrs.width;
+    out->h = attrs.height;
+    unsigned long count = 0;
+    unsigned char *data = window_property(dpy, w, atoms->net_wm_name, atoms->utf8, &count);
+    if (data == NULL) data = window_property(dpy, w, atoms->wm_name, AnyPropertyType, &count);
+    if (data != NULL) {
+        copy_text(out->title, data, count);
+        X.Free(data);
+    }
+    /* WM_CLASS is "instance\0class\0": the class is the app's name. */
+    data = window_property(dpy, w, atoms->wm_class, XA_STRING, &count);
+    if (data != NULL) {
+        size_t instance = strnlen((const char *)data, count);
+        if (instance + 1 < count) copy_text(out->app, data + instance + 1, strnlen((const char *)data + instance + 1, count - instance - 1));
+        X.Free(data);
+    }
+    data = window_property(dpy, w, atoms->net_wm_pid, XA_CARDINAL, &count);
+    if (data != NULL) {
+        out->pid = *(long *)data; /* format 32 properties are longs */
+        X.Free(data);
+    }
+    return 1;
+}
+
+static jbyteArray text_bytes(JNIEnv *env, const char *text) {
+    jsize length = (jsize)strlen(text);
+    jbyteArray bytes = (*env)->NewByteArray(env, length);
+    if (bytes != NULL && length > 0) (*env)->SetByteArrayRegion(env, bytes, 0, length, (const jbyte *)text);
+    return bytes;
+}
+
+EXPORT JNIEXPORT jint JNICALL Java_dev_nucleusframework_screencapture_internal_NativeScreenCapture_nativeListWindows(
+    JNIEnv *env, jclass cls, jobject sink, jobjectArray message) {
+    (void)cls;
+    pthread_once(&g_x11_once, load_x11);
+    if (!X.loaded || X.InternAtom == NULL || X.GetWindowProperty == NULL || X.QueryTree == NULL) {
+        set_message(env, message, "libX11 is not available");
+        return ST_UNSUPPORTED;
+    }
+    jclass sink_class = (*env)->GetObjectClass(env, sink);
+    jmethodID add = (*env)->GetMethodID(env, sink_class, "add", "(J[B[BJIIII)V");
+    (*env)->DeleteLocalRef(env, sink_class);
+    if (add == NULL) {
+        nucleus_jni_clear_exception(env);
+        set_message(env, message, "WindowCollector.add not found");
+        return ST_FAILED;
+    }
+    ListedWindow *listed = (ListedWindow *)calloc(MAX_LISTED_WINDOWS, sizeof(ListedWindow));
+    if (listed == NULL) return ST_FAILED;
+
+    Display *dpy = x_session_open();
+    if (dpy == NULL) {
+        free(listed);
+        set_message(env, message, "Cannot open X display '%s'", getenv("DISPLAY") != NULL ? getenv("DISPLAY") : "");
+        return ST_UNSUPPORTED;
+    }
+    Window root = DefaultRootWindow(dpy);
+    Atoms atoms = {
+        X.InternAtom(dpy, "_NET_WM_NAME", False), X.InternAtom(dpy, "UTF8_STRING", False),
+        XA_WM_NAME, XA_WM_CLASS, X.InternAtom(dpy, "_NET_WM_PID", False),
+    };
+    /* EWMH client windows, bottom to top; without a window manager, the root's children. */
+    unsigned long count = 0;
+    int from_tree = 0;
+    unsigned char *clients = window_property(dpy, root, X.InternAtom(dpy, "_NET_CLIENT_LIST_STACKING", False),
+                                             XA_WINDOW, &count);
+    Window *windows = (Window *)clients;
+    Window *children = NULL;
+    if (windows == NULL) {
+        Window root_return, parent;
+        unsigned int n = 0;
+        if (X.QueryTree(dpy, root, &root_return, &parent, &children, &n) && x_take_error(dpy) == 0) {
+            windows = children;
+            count = n;
+            from_tree = 1;
+        }
+    }
+    int listed_count = 0;
+    for (unsigned long i = count; i-- > 0 && listed_count < MAX_LISTED_WINDOWS;) {
+        if (describe_window(dpy, root, windows[i], from_tree, &atoms, &listed[listed_count])) listed_count++;
+    }
+    if (clients != NULL) X.Free(clients);
+    if (children != NULL) X.Free(children);
+    x_session_close(dpy);
+
+    /* Java is called with the X11 lock released. */
+    int status = ST_OK;
+    for (int i = 0; i < listed_count; i++) {
+        ListedWindow *w = &listed[i];
+        jbyteArray title = text_bytes(env, w->title);
+        jbyteArray app = title != NULL ? text_bytes(env, w->app) : NULL;
+        if (title == NULL || app == NULL) {
+            if (title != NULL) (*env)->DeleteLocalRef(env, title);
+            status = ST_FAILED; /* OutOfMemoryError pending: let it propagate */
+            break;
+        }
+        (*env)->CallVoidMethod(env, sink, add, (jlong)w->id, title, app, (jlong)w->pid, w->x, w->y, w->w, w->h);
+        (*env)->DeleteLocalRef(env, title);
+        (*env)->DeleteLocalRef(env, app);
+        if (nucleus_jni_clear_exception(env)) {
+            set_message(env, message, "WindowCollector.add threw");
+            status = ST_FAILED;
+            break;
+        }
+    }
+    free(listed);
     return status;
 }
 

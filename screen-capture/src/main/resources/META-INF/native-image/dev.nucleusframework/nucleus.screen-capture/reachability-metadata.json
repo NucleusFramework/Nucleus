@@ -22,6 +22,25 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.screencapture.internal.WindowCollector",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "add",
+                    "parameterTypes": [
+                        "long",
+                        "byte[]",
+                        "byte[]",
+                        "long",
+                        "int",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.screencapture.internal.NativeScreenCapture",
             "jniAccessible": true
         },

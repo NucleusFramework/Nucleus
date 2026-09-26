@@ -269,6 +269,12 @@ public final class Harness {
 
     static void windowChecks(long deadWindow) {
         int[] res = new int[3]; String[] m = new String[1];
+        // Without a window manager the list comes from XQueryTree: the test window must be in it,
+        // at its place, and the dead one must not.
+        WindowCollector wc = new WindowCollector();
+        check(NativeScreenCapture.nativeListWindows(wc, m) == 0, "window list " + m[0]);
+        check(wc.list.stream().anyMatch(v -> v.id == wid && v.x == wx && v.y == wy && v.w == ww && v.h == wh), "window listed at its geometry: " + wc.list);
+        check(wc.list.stream().noneMatch(v -> v.id == deadWindow), "dead window not listed");
         int[] px = NativeScreenCapture.nativeCaptureWindow(wid, false, res, m);
         check(px != null && res[0] == 0 && res[1] == ww && res[2] == wh, "window capture size " + res[1] + "x" + res[2] + " st " + res[0] + " " + m[0]);
         if (px != null) {
@@ -383,6 +389,7 @@ public final class Harness {
         int[] res = new int[3];
         check(NativeScreenCapture.nativeCaptureDisplay("screen", 0, 0, 0, 0, false, res, m) == null && res[0] == 1, "capture -> UNSUPPORTED " + res[0]);
         check(NativeScreenCapture.nativeCaptureWindow(1234, false, res, m) == null && res[0] == 1, "window -> UNSUPPORTED " + res[0]);
+        check(NativeScreenCapture.nativeListWindows(new WindowCollector(), m) == 1, "window list -> UNSUPPORTED: " + m[0]);
     }
 
     // X server killed while captures run: must not exit the JVM.

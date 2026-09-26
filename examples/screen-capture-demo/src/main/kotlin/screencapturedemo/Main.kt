@@ -34,6 +34,7 @@ import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.screencapture.CaptureRegion
+import dev.nucleusframework.screencapture.CaptureWindow
 import dev.nucleusframework.screencapture.ScreenCapture
 import dev.nucleusframework.screencapture.ScreenCaptureException
 import dev.nucleusframework.screencapture.ScreenImage
@@ -58,19 +59,19 @@ fun main(args: Array<String>) =
         NucleusDecoratedWindowTheme(isDark = true) {
             DecoratedWindow(
                 onCloseRequest = ::exitApplication,
-                title = "Screen Capture Demo",
+                title = WINDOW_TITLE,
                 // Self-test: nothing else may cover the pattern (the cover window, shown later, goes above).
                 alwaysOnTop = selfTest,
                 state = rememberWindowState(size = DpSize(760.dp, 620.dp), position = WindowPosition(120.dp, 120.dp)),
             ) {
-                TitleBar { BasicText("Screen Capture Demo", style = TextStyle(color = Color.White)) }
+                TitleBar { BasicText(WINDOW_TITLE, style = TextStyle(color = Color.White)) }
                 val window = LocalTaoWindow.current
                 if (window != null && selfTest) {
                     LaunchedEffect(window) {
                         val test =
                             SelfTest(
                                 window = window,
-                                windowId = windowIdOf(window) ?: awaitMacWindowId(),
+                                windowId = withContext(Dispatchers.IO) { awaitWindowId(window) },
                                 showCover = { visible -> withContext(Dispatchers.Main) { coverVisible = visible } },
                                 setMinimized = { minimized ->
                                     withContext(Dispatchers.Main) { window.setMinimized(minimized) }
@@ -97,24 +98,31 @@ fun main(args: Array<String>) =
         }
     }
 
-/** The id [ScreenCapture.captureWindow] takes for a Tao window; `0` where it has none, `null` on macOS. */
-private fun windowIdOf(window: TaoWindow): Long? =
+private const val WINDOW_TITLE = "Screen Capture Demo"
+
+/**
+ * The id [ScreenCapture.captureWindow] takes for a Tao window; `0` where it has none. Blocking.
+ *
+ * macOS: Tao does not expose the NSWindow's CGWindowID yet, so the window is found in
+ * [ScreenCapture.windows] by pid and title.
+ */
+private fun windowIdOf(window: TaoWindow): Long =
     when (Platform.Current) {
         Platform.Windows -> window.nativeHandle
         Platform.Linux -> window.x11WindowId ?: 0L
-        Platform.MacOS -> null
+        Platform.MacOS ->
+            ScreenCapture
+                .windows()
+                .firstOrNull { it.pid == ProcessHandle.current().pid() && it.title == WINDOW_TITLE }
+                ?.id ?: 0L
         else -> 0L
     }
 
-/**
- * macOS: Tao does not expose the NSWindow's CGWindowID yet; the E2E script looks it up by pid and
- * title and writes it to SCREEN_CAPTURE_DEMO_WINDOW_ID_FILE.
- */
-private suspend fun awaitMacWindowId(): Long {
-    val file = System.getenv("SCREEN_CAPTURE_DEMO_WINDOW_ID_FILE")?.let(::File) ?: return 0L
-    repeat(300) {
-        val id = runCatching { file.readText().trim().toLongOrNull() }.getOrNull()
-        if (id != null) return id
+/** [windowIdOf], waiting for the window to reach the screen. */
+private suspend fun awaitWindowId(window: TaoWindow): Long {
+    repeat(50) {
+        val id = runCatching { windowIdOf(window) }.getOrDefault(0L)
+        if (id != 0L) return id
         kotlinx.coroutines.delay(100)
     }
     return 0L
@@ -125,6 +133,7 @@ private fun DemoContent(window: TaoWindow?) {
     val scope = rememberCoroutineScope()
     var preview by remember { mutableStateOf<ImageBitmap?>(null) }
     var last by remember { mutableStateOf<ScreenImage?>(null) }
+    var windows by remember { mutableStateOf<List<CaptureWindow>>(emptyList()) }
     var status by remember {
         mutableStateOf("backend=${ScreenCapture.backend} permission=${ScreenCapture.permissionStatus()}")
     }
@@ -167,9 +176,22 @@ private fun DemoContent(window: TaoWindow?) {
                     capture("region") { ScreenCapture.captureDisplay(primary, CaptureRegion(0, 0, 400, 300)) }
                 }
             }
-            val id = window?.let(::windowIdOf) ?: 0L
-            if (id != 0L && ScreenCapture.isWindowCaptureSupported) {
-                DemoButton("This window") { capture("window") { ScreenCapture.captureWindow(id) } }
+            if (window != null && ScreenCapture.isWindowCaptureSupported) {
+                DemoButton("This window") { capture("window") { ScreenCapture.captureWindow(windowIdOf(window)) } }
+                DemoButton("List windows") {
+                    scope.launch {
+                        windows =
+                            withContext(
+                                Dispatchers.IO,
+                            ) { runCatching { ScreenCapture.windows() } }.getOrDefault(emptyList())
+                    }
+                }
+            }
+            for (target in windows.take(12)) {
+                val label = listOf(target.appName, target.title).filter { it.isNotEmpty() }.joinToString(" — ")
+                DemoButton(label.take(40).ifEmpty { "#${target.id}" }) {
+                    capture(label) { ScreenCapture.captureWindow(target.id) }
+                }
             }
             last?.let { image ->
                 DemoButton("Save PNG") {

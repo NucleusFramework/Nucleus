@@ -1,6 +1,8 @@
 package dev.nucleusframework.screencapture.internal
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import dev.nucleusframework.screencapture.CaptureRegion
+import dev.nucleusframework.screencapture.CaptureWindow
 
 /**
  * JNI bridge, one library per platform with the same symbols.
@@ -42,6 +44,13 @@ internal object NativeScreenCapture {
     @JvmStatic
     external fun nativeListDisplays(
         sink: DisplayCollector,
+        message: Array<String?>,
+    ): Int
+
+    /** Reports every capturable top-level window to [sink], front to back; returns a status code. */
+    @JvmStatic
+    external fun nativeListWindows(
+        sink: WindowCollector,
         message: Array<String?>,
     ): Int
 
@@ -104,6 +113,35 @@ internal class DisplayCollector {
         isPrimary: Boolean,
     ) {
         displays += RawDisplay(id, name, x, y, width, height, widthPx, heightPx, scaleFactor, isPrimary)
+    }
+}
+
+/** Receives [NativeScreenCapture.nativeListWindows] records; called from native code. */
+internal class WindowCollector {
+    val windows = mutableListOf<CaptureWindow>()
+
+    // Titles arrive as UTF-8 bytes: JNI's NewStringUTF takes modified UTF-8, which an emoji
+    // in a title is not, and X11 titles are not always valid UTF-8 at all.
+    @Suppress("LongParameterList")
+    fun add(
+        id: Long,
+        title: ByteArray,
+        appName: ByteArray,
+        pid: Long,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+    ) {
+        if (width <= 0 || height <= 0) return
+        windows +=
+            CaptureWindow(
+                id = id,
+                title = title.toString(Charsets.UTF_8),
+                appName = appName.toString(Charsets.UTF_8),
+                pid = pid,
+                bounds = CaptureRegion(x, y, width, height),
+            )
     }
 }
 
