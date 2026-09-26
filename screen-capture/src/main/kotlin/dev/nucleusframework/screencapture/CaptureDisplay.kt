@@ -12,7 +12,9 @@ package dev.nucleusframework.screencapture
  *   space on macOS (origin at the primary display's top-left). `null` on Wayland, where the
  *   compositor does not expose it.
  * @property widthPx width of a full capture of this display, in physical pixels; `0` while
- *   unknown (Wayland, before the first capture).
+ *   unknown (Wayland, before the first capture). On macOS these are the backing store's
+ *   pixels: in a scaled display mode ("looks like 1710 × 1112" at 2x) a capture is
+ *   3420 × 2224 even when the panel itself has fewer pixels.
  * @property heightPx height of a full capture of this display, in physical pixels; `0` while
  *   unknown.
  * @property scaleFactor physical pixels per [bounds] unit on macOS, the display's DPI scale

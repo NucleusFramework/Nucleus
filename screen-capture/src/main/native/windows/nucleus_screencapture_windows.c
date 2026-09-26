@@ -90,6 +90,13 @@ static void set_result(JNIEnv *env, jintArray result, int status, int width, int
     (*env)->SetIntArrayRegion(env, result, 0, 3, values);
 }
 
+/* The captured source's scale (dpi / 96), in the result's fourth slot as thousandths. */
+static void set_scale(JNIEnv *env, jintArray result, UINT dpi) {
+    if (result == NULL || (*env)->GetArrayLength(env, result) < 4 || dpi == 0) return;
+    jint value = (jint)((dpi * 1000 + 48) / 96);
+    (*env)->SetIntArrayRegion(env, result, 3, 1, &value);
+}
+
 static void set_message(JNIEnv *env, jobjectArray message, const char *text) {
     if (message == NULL || text == NULL) return;
     jstring s = (*env)->NewStringUTF(env, text);
@@ -557,6 +564,11 @@ Java_dev_nucleusframework_screencapture_internal_NativeScreenCapture_nativeCaptu
             fail(env, result, message, STATUS_FAILED, "PrintWindow and BitBlt failed");
         }
         surface_close(&surface);
+    }
+    if (pixels != NULL && g_get_dpi_for_monitor != NULL) {
+        UINT dx = 0, dy = 0;
+        HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if (SUCCEEDED(g_get_dpi_for_monitor(monitor, 0 /* MDT_EFFECTIVE_DPI */, &dx, &dy))) set_scale(env, result, dx);
     }
     leave_physical_pixels(old);
     return pixels;

@@ -70,7 +70,7 @@ fun main(args: Array<String>) =
                         val test =
                             SelfTest(
                                 window = window,
-                                windowId = windowIdOf(window),
+                                windowId = windowIdOf(window) ?: awaitMacWindowId(),
                                 showCover = { visible -> withContext(Dispatchers.Main) { coverVisible = visible } },
                                 setMinimized = { minimized ->
                                     withContext(Dispatchers.Main) { window.setMinimized(minimized) }
@@ -97,13 +97,28 @@ fun main(args: Array<String>) =
         }
     }
 
-/** The id [ScreenCapture.captureWindow] takes for a Tao window; `0` where the demo has none. */
-private fun windowIdOf(window: TaoWindow): Long =
+/** The id [ScreenCapture.captureWindow] takes for a Tao window; `0` where it has none, `null` on macOS. */
+private fun windowIdOf(window: TaoWindow): Long? =
     when (Platform.Current) {
         Platform.Windows -> window.nativeHandle
         Platform.Linux -> window.x11WindowId ?: 0L
+        Platform.MacOS -> null
         else -> 0L
     }
+
+/**
+ * macOS: Tao does not expose the NSWindow's CGWindowID yet; the E2E script looks it up by pid and
+ * title and writes it to SCREEN_CAPTURE_DEMO_WINDOW_ID_FILE.
+ */
+private suspend fun awaitMacWindowId(): Long {
+    val file = System.getenv("SCREEN_CAPTURE_DEMO_WINDOW_ID_FILE")?.let(::File) ?: return 0L
+    repeat(300) {
+        val id = runCatching { file.readText().trim().toLongOrNull() }.getOrNull()
+        if (id != null) return id
+        kotlinx.coroutines.delay(100)
+    }
+    return 0L
+}
 
 @Composable
 private fun DemoContent(window: TaoWindow?) {

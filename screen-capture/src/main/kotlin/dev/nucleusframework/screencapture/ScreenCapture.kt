@@ -143,7 +143,9 @@ public object ScreenCapture {
     /**
      * Captures a top-level window, including the parts other windows cover, when the platform
      * can: an `HWND` on Windows, a `CGWindowID` (`NSWindow.windowNumber`) on macOS, an XID on
-     * X11. Not available on Wayland ([isWindowCaptureSupported]).
+     * X11. Not available on Wayland ([isWindowCaptureSupported]). The image's
+     * [ScreenImage.scaleFactor] is the window's backing scale on macOS, its monitor's DPI scale on
+     * Windows, and `1` on X11.
      *
      * @throws ScreenCaptureException see [ScreenCaptureException.failure].
      */
@@ -157,7 +159,7 @@ public object ScreenCapture {
         }
         val call = NativeCall("capture window $windowId")
         val pixels = NativeScreenCapture.nativeCaptureWindow(windowId, includeCursor, call.result, call.message)
-        return call.image(pixels, 1f)
+        return call.image(pixels, call.reportedScale(1f))
     }
 
     /** Whether the app may capture the screen, without prompting. */

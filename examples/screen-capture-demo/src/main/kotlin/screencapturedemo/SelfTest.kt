@@ -141,6 +141,12 @@ internal class SelfTest(
         val image: ScreenImage
         val ms = measureTimeMillis { image = ScreenCapture.captureWindow(windowId) }
         log("INFO window capture ${image.width}x${image.height} in ${ms}ms")
+        if (Platform.Current != Platform.Linux) {
+            val displayScale = displayUnderWindow(ScreenCapture.displays()).scaleFactor
+            check("window scale", kotlin.math.abs(image.scaleFactor - displayScale) < 0.01f) {
+                "${image.scaleFactor} vs $displayScale"
+            }
+        }
         expectPattern("window", image)
         saveSample("window", image)
     }
@@ -183,7 +189,10 @@ internal class SelfTest(
                 val shot = ScreenCapture.captureDisplay(display, shifted)
                 val expected = (-dx) to (-dy)
                 if (dx > 0 || dy > 0) continue // the marker is cut; checked through the full image below
-                if (TargetPattern.find(shot) != listOf(expected)) misaligned++
+                if (TargetPattern.find(shot) != listOf(expected)) {
+                    misaligned++
+                    log("INFO shifted dx=$dx dy=$dy $shifted expected=$expected found=${TargetPattern.find(shot)}")
+                }
             }
         }
         check("shifted regions aligned", misaligned == 0) { "misaligned=$misaligned" }
@@ -226,7 +235,7 @@ internal class SelfTest(
                 TargetPattern.find(screen).isEmpty(),
             ) { "${TargetPattern.find(screen)}" }
             val image = ScreenCapture.captureWindow(windowId)
-            if (Platform.Current == Platform.Windows) {
+            if (Platform.Current == Platform.Windows || Platform.Current == Platform.MacOS) {
                 expectPattern("occluded window", image)
             } else {
                 log("INFO occluded window found=${TargetPattern.find(image)}")
