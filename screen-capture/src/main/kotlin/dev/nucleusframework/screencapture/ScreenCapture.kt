@@ -5,12 +5,17 @@ import dev.nucleusframework.screencapture.internal.DisplayCollector
 import dev.nucleusframework.screencapture.internal.NativeCall
 import dev.nucleusframework.screencapture.internal.NativeScreenCapture
 import dev.nucleusframework.screencapture.internal.RawDisplay
+import dev.nucleusframework.screencapture.internal.WindowCollector
 import dev.nucleusframework.screencapture.internal.clip
 import dev.nucleusframework.screencapture.internal.permissionOf
 import java.util.logging.Level
 import java.util.logging.Logger
 
-/** The mechanism [ScreenCapture] captures with on this machine. */
+/**
+ * The mechanism [ScreenCapture] captures with on this machine.
+ *
+ * Later versions may add values: keep an `else` branch in a `when` over it.
+ */
 public enum class CaptureBackend {
     /** Windows GDI, rendered in a per-monitor DPI context (physical pixels). */
     Gdi,
@@ -68,13 +73,12 @@ public object ScreenCapture {
     private val logger = Logger.getLogger(ScreenCapture::class.java.name)
     private const val PORTAL_DISPLAY_ID = "portal"
     private const val PORTAL_TIMEOUT_MS = 60_000
-    private const val LINUX_BACKEND_PROPERTY = "nucleus.screencapture.linuxBackend"
 
     @Volatile
     private var portalImageSize: Pair<Int, Int>? = null
 
     /** The backend captures go through; [CaptureBackend.Unavailable] when there is none. */
-    public val backend: CaptureBackend by lazy { resolveBackend() }
+    public val backend: CaptureBackend by lazy { resolveBackend(logger) }
 
     /** `true` when [backend] is not [CaptureBackend.Unavailable]. */
     public val isSupported: Boolean get() = backend != CaptureBackend.Unavailable
@@ -102,6 +106,22 @@ public object ScreenCapture {
         return collector.displays
             .map(RawDisplay::toDisplay)
             .sortedByDescending { it.isPrimary }
+    }
+
+    /**
+     * The top-level windows [captureWindow] can capture, front to back: visible, not
+     * minimized, not on another virtual desktop. The app's own windows are included.
+     *
+     * Empty where window capture is not available ([isWindowCaptureSupported]).
+     *
+     * @throws ScreenCaptureException when the backend cannot enumerate them.
+     */
+    public fun windows(): List<CaptureWindow> {
+        if (!isWindowCaptureSupported) return emptyList()
+        val collector = WindowCollector()
+        val call = NativeCall("list windows")
+        call.check(NativeScreenCapture.nativeListWindows(collector, call.message))
+        return collector.windows
     }
 
     /** The primary display, or `null` when none is reported. */
@@ -183,48 +203,6 @@ public object ScreenCapture {
             else -> permissionStatus()
         }
 
-    private fun resolveBackend(): CaptureBackend {
-        if (Platform.Current == Platform.Unknown) return CaptureBackend.Unavailable
-        val loaded =
-            try {
-                NativeScreenCapture.isLoaded
-            } catch (e: LinkageError) {
-                logger.log(Level.WARNING, "Screen capture native library failed to load", e)
-                false
-            }
-        if (!loaded) {
-            logger.warning("Screen capture native library is not available on ${Platform.Current}")
-            return CaptureBackend.Unavailable
-        }
-        if (Platform.Current == Platform.Linux && useLinuxPortal()) return CaptureBackend.XdgDesktopPortal
-        return when (NativeScreenCapture.nativeBackend()) {
-            NativeScreenCapture.BACKEND_GDI -> CaptureBackend.Gdi
-            NativeScreenCapture.BACKEND_SCREEN_CAPTURE_KIT -> CaptureBackend.ScreenCaptureKit
-            NativeScreenCapture.BACKEND_CORE_GRAPHICS -> CaptureBackend.CoreGraphics
-            NativeScreenCapture.BACKEND_X11 -> CaptureBackend.X11
-            // Linux without an X server may still have a portal.
-            else ->
-                if (Platform.Current ==
-                    Platform.Linux
-                ) {
-                    CaptureBackend.XdgDesktopPortal
-                } else {
-                    CaptureBackend.Unavailable
-                }
-        }
-    }
-
-    /**
-     * On a Wayland session the X server is XWayland, whose root window does not hold the
-     * native Wayland windows — only the portal sees the real desktop.
-     */
-    private fun useLinuxPortal(): Boolean =
-        when (System.getProperty(LINUX_BACKEND_PROPERTY)?.lowercase()) {
-            "x11" -> false
-            "portal" -> true
-            else -> Platform.isWayland
-        }
-
     private fun portalDisplay(): CaptureDisplay {
         val size = portalImageSize
         return CaptureDisplay(
@@ -252,6 +230,50 @@ public object ScreenCapture {
         }
     }
 }
+
+private const val LINUX_BACKEND_PROPERTY = "nucleus.screencapture.linuxBackend"
+
+private fun resolveBackend(logger: Logger): CaptureBackend {
+    if (Platform.Current == Platform.Unknown) return CaptureBackend.Unavailable
+    val loaded =
+        try {
+            NativeScreenCapture.isLoaded
+        } catch (e: LinkageError) {
+            logger.log(Level.WARNING, "Screen capture native library failed to load", e)
+            false
+        }
+    if (!loaded) {
+        logger.warning("Screen capture native library is not available on ${Platform.Current}")
+        return CaptureBackend.Unavailable
+    }
+    if (Platform.Current == Platform.Linux && useLinuxPortal()) return CaptureBackend.XdgDesktopPortal
+    return when (NativeScreenCapture.nativeBackend()) {
+        NativeScreenCapture.BACKEND_GDI -> CaptureBackend.Gdi
+        NativeScreenCapture.BACKEND_SCREEN_CAPTURE_KIT -> CaptureBackend.ScreenCaptureKit
+        NativeScreenCapture.BACKEND_CORE_GRAPHICS -> CaptureBackend.CoreGraphics
+        NativeScreenCapture.BACKEND_X11 -> CaptureBackend.X11
+        // Linux without an X server may still have a portal.
+        else ->
+            if (Platform.Current ==
+                Platform.Linux
+            ) {
+                CaptureBackend.XdgDesktopPortal
+            } else {
+                CaptureBackend.Unavailable
+            }
+    }
+}
+
+/**
+ * On a Wayland session the X server is XWayland, whose root window does not hold the
+ * native Wayland windows — only the portal sees the real desktop.
+ */
+private fun useLinuxPortal(): Boolean =
+    when (System.getProperty(LINUX_BACKEND_PROPERTY)?.lowercase()) {
+        "x11" -> false
+        "portal" -> true
+        else -> Platform.isWayland
+    }
 
 private fun RawDisplay.toDisplay(): CaptureDisplay =
     CaptureDisplay(

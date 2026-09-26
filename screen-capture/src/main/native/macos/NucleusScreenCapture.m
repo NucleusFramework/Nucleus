@@ -619,6 +619,74 @@ Java_dev_nucleusframework_screencapture_internal_NativeScreenCapture_nativeCaptu
     }
 }
 
+// UTF-8 bytes for WindowCollector.add: NewStringUTF takes modified UTF-8, which an emoji is not.
+static jbyteArray utf8Bytes(JNIEnv *env, NSString *text) {
+    NSData *data = [text ?: @"" dataUsingEncoding:NSUTF8StringEncoding] ?: [NSData data];
+    jbyteArray bytes = (*env)->NewByteArray(env, (jsize)data.length);
+    if (bytes != NULL && data.length > 0) {
+        (*env)->SetByteArrayRegion(env, bytes, 0, (jsize)data.length, (const jbyte *)data.bytes);
+    }
+    return bytes;
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_screencapture_internal_NativeScreenCapture_nativeListWindows(
+    JNIEnv *env, jclass clazz, jobject sink, jobjectArray message) {
+    (void)clazz;
+    @autoreleasepool {
+        jclass sinkClass = (*env)->GetObjectClass(env, sink);
+        jmethodID add = (*env)->GetMethodID(env, sinkClass, "add", "(J[B[BJIIII)V");
+        (*env)->DeleteLocalRef(env, sinkClass);
+        if (add == NULL) {
+            nucleus_jni_clear_exception(env);
+            setMessage(env, message, @"WindowCollector.add not found");
+            return STATUS_FAILED;
+        }
+        // Front to back. Not deprecated, unlike the window images; titles need Screen Recording.
+        CFArrayRef list = CGWindowListCopyWindowInfo(
+            kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID);
+        if (list == NULL) {
+            setMessage(env, message, @"CGWindowListCopyWindowInfo returned nothing");
+            return STATUS_FAILED;
+        }
+        NSArray *windows = CFBridgingRelease(list);
+        // App windows, floating panels included; the Dock, the menu bar and above are not.
+        CGWindowLevel dockLevel = CGWindowLevelForKey(kCGDockWindowLevelKey);
+        for (NSDictionary *window in windows) {
+            NSInteger layer = [window[(__bridge NSString *)kCGWindowLayer] integerValue];
+            if (layer < 0 || layer >= dockLevel) continue;
+            NSNumber *alpha = window[(__bridge NSString *)kCGWindowAlpha];
+            if (alpha != nil && alpha.doubleValue <= 0) continue;
+            CGRect bounds;
+            NSDictionary *boundsDict = window[(__bridge NSString *)kCGWindowBounds];
+            if (boundsDict == nil ||
+                !CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)boundsDict, &bounds) ||
+                bounds.size.width < 1 || bounds.size.height < 1) {
+                continue;
+            }
+            jbyteArray title = utf8Bytes(env, window[(__bridge NSString *)kCGWindowName]);
+            jbyteArray owner = title != NULL ? utf8Bytes(env, window[(__bridge NSString *)kCGWindowOwnerName]) : NULL;
+            if (title == NULL || owner == NULL) {
+                if (title != NULL) (*env)->DeleteLocalRef(env, title);
+                return STATUS_FAILED; // OutOfMemoryError pending: let it propagate
+            }
+            (*env)->CallVoidMethod(
+                env, sink, add,
+                (jlong)[window[(__bridge NSString *)kCGWindowNumber] longLongValue], title, owner,
+                (jlong)[window[(__bridge NSString *)kCGWindowOwnerPID] longLongValue],
+                (jint)lround(bounds.origin.x), (jint)lround(bounds.origin.y),
+                (jint)lround(bounds.size.width), (jint)lround(bounds.size.height));
+            (*env)->DeleteLocalRef(env, title);
+            (*env)->DeleteLocalRef(env, owner);
+            if (nucleus_jni_clear_exception(env)) {
+                setMessage(env, message, @"WindowCollector.add threw");
+                return STATUS_FAILED;
+            }
+        }
+        return STATUS_OK;
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Permission
 // ---------------------------------------------------------------------------------------------

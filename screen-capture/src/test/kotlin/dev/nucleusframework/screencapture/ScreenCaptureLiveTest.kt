@@ -53,6 +53,21 @@ class ScreenCaptureLiveTest {
     }
 
     @Test
+    fun `listed windows are distinct and capturable`() {
+        assumeCapturable()
+        val windows = ScreenCapture.windows()
+        assertEquals(windows.size, windows.map { it.id }.toSet().size, "duplicate ids: $windows")
+        // The first few only: a window may close between the listing and its capture.
+        val captured =
+            windows.take(5).count { window ->
+                runCatching { ScreenCapture.captureWindow(window.id) }
+                    .onSuccess { assertTrue(it.width > 0 && it.height > 0, "$window -> $it") }
+                    .isSuccess
+            }
+        assertTrue(windows.isEmpty() || captured > 0, "none of ${windows.take(5)} could be captured")
+    }
+
+    @Test
     fun `full capture has the display's pixel size`() {
         assumeCapturable()
         for (display in ScreenCapture.displays()) {

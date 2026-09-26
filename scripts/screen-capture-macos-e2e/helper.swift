@@ -1,18 +1,10 @@
 // Helper of screen-capture-macos-e2e.sh.
-//   helper windowid <pid> <title>   CGWindowID of the on-screen window of <pid> (0: any) named <title>
 //   helper park                     cursor to the centre of the main display
 //   helper hung <file>              opens a window, writes its CGWindowID to <file>, never pumps again
 import AppKit
 
 let args = CommandLine.arguments
 switch args.count > 1 ? args[1] : "" {
-case "windowid":
-    let pid = Int32(args[2])!
-    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-    for w in list where (pid == 0 || (w[kCGWindowOwnerPID as String] as? Int32) == pid) && (w[kCGWindowName as String] as? String) == args[3] {
-        print(w[kCGWindowNumber as String] as! Int); exit(0)
-    }
-    exit(1)
 case "park":
     let b = CGDisplayBounds(CGMainDisplayID())
     // A real motion event: a warp alone leaves a cursor hidden by setHiddenUntilMouseMoves hidden.

@@ -66,6 +66,17 @@ public final class dev/nucleusframework/screencapture/CaptureRegion {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class dev/nucleusframework/screencapture/CaptureWindow {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAppName ()Ljava/lang/String;
+	public final fun getBounds ()Ldev/nucleusframework/screencapture/CaptureRegion;
+	public final fun getId ()J
+	public final fun getPid ()J
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class dev/nucleusframework/screencapture/ScreenCapture {
 	public static final field INSTANCE Ldev/nucleusframework/screencapture/ScreenCapture;
 	public final fun captureDisplay (Ldev/nucleusframework/screencapture/CaptureDisplay;Ldev/nucleusframework/screencapture/CaptureRegion;Z)Ldev/nucleusframework/screencapture/ScreenImage;
@@ -79,6 +90,7 @@ public final class dev/nucleusframework/screencapture/ScreenCapture {
 	public final fun permissionStatus ()Ldev/nucleusframework/screencapture/CapturePermission;
 	public final fun primaryDisplay ()Ldev/nucleusframework/screencapture/CaptureDisplay;
 	public final fun requestPermission ()Ldev/nucleusframework/screencapture/CapturePermission;
+	public final fun windows ()Ljava/util/List;
 }
 
 public final class dev/nucleusframework/screencapture/ScreenCaptureException : java/lang/RuntimeException {

@@ -4,6 +4,7 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.screencapture.CaptureDisplay
 import dev.nucleusframework.screencapture.CaptureFailure
 import dev.nucleusframework.screencapture.CaptureRegion
+import dev.nucleusframework.screencapture.CaptureWindow
 import dev.nucleusframework.screencapture.ScreenCapture
 import dev.nucleusframework.screencapture.ScreenCaptureException
 import dev.nucleusframework.screencapture.ScreenImage
@@ -149,6 +150,26 @@ internal class SelfTest(
         }
         expectPattern("window", image)
         saveSample("window", image)
+        checkWindowList(image)
+    }
+
+    /** This window is listed, with its id, pid and a size matching its capture. */
+    private fun checkWindowList(capture: ScreenImage) {
+        val windows: List<CaptureWindow>
+        val ms = measureTimeMillis { windows = ScreenCapture.windows() }
+        log("INFO windows() listed ${windows.size} in ${ms}ms")
+        val own = windows.firstOrNull { it.id == windowId }
+        check("window list has this window", own != null) { "id=$windowId in ${windows.take(5)}" }
+        if (own == null) return
+        log("INFO window list entry $own")
+        check("window list title", own.title == "Screen Capture Demo") { own.title }
+        check("window list pid", own.pid == 0L || own.pid == ProcessHandle.current().pid()) { "${own.pid}" }
+        val scale = if (Platform.Current == Platform.MacOS) capture.scaleFactor else 1f
+        check(
+            "window list size matches the capture",
+            kotlin.math.abs(own.bounds.width * scale - capture.width) <= scale &&
+                kotlin.math.abs(own.bounds.height * scale - capture.height) <= scale,
+        ) { "${own.bounds} x$scale vs ${capture.width}x${capture.height}" }
     }
 
     private fun displayUnderWindow(displays: List<CaptureDisplay>): CaptureDisplay =
@@ -234,6 +255,7 @@ internal class SelfTest(
                 "cover hides the pattern on screen",
                 TargetPattern.find(screen).isEmpty(),
             ) { "${TargetPattern.find(screen)}" }
+            check("occluded window is listed", ScreenCapture.windows().any { it.id == windowId })
             val image = ScreenCapture.captureWindow(windowId)
             if (Platform.Current == Platform.Windows || Platform.Current == Platform.MacOS) {
                 expectPattern("occluded window", image)
@@ -251,6 +273,7 @@ internal class SelfTest(
         setMinimized(true)
         delay(1000)
         try {
+            check("minimized window is not listed", ScreenCapture.windows().none { it.id == windowId })
             val error = runCatching { ScreenCapture.captureWindow(windowId) }.exceptionOrNull()
             check(
                 "minimized window is not capturable",
@@ -307,6 +330,8 @@ internal class SelfTest(
         val hung =
             System.getenv("SCREEN_CAPTURE_DEMO_HUNG_HWND")?.toLongOrNull()
                 ?: return log("SKIP hung window: not provided")
+        val listMs = measureTimeMillis { check("hung window is listed", ScreenCapture.windows().any { it.id == hung }) }
+        check("window list returns in time with a hung window", listMs < 1000) { "${listMs}ms" }
         repeat(3) { attempt ->
             var outcome = ""
             val ms =
@@ -423,6 +448,10 @@ internal class SelfTest(
             repeat(tortureIterations / 2) {
                 runCatching { ScreenCapture.captureWindow(random.nextLong() or 0x7000_0000_0000_0000L) }
                 if (ScreenCapture.displays().size != displays.size) errors += "display count changed"
+                runCatching { ScreenCapture.windows() }.onFailure {
+                    errors +=
+                        "windows() ${it::class.simpleName} ${it.message}"
+                }
             }
         }
         pool.shutdown()
