@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.window.BasicTitleBar
+import dev.nucleusframework.window.DecoratedWindowScope
 import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.TitleBarLayoutPolicy
 import dev.nucleusframework.window.WindowScaffold
@@ -131,6 +132,11 @@ public fun ApplicationScope.Tab(
  *
  * @param strip the chrome of one window's tab strip; [TabStrip] by default.
  *   Composed inside the window's title bar.
+ * @param titleBar the title bar of each window, handed the strip to place in
+ *   it — the hook for an app whose windows wear a title bar of their own
+ *   (a gradient, fullscreen controls, the platform order of the window
+ *   buttons). [DefaultTabTitleBar] by default: a [BasicTitleBar] giving the
+ *   strip all the width between the platform controls.
  * @param dragGhost what a tab being dragged out of its strip looks like under
  *   the pointer: composed in a borderless window covering
  *   [TabDragGhost.screenRectPx], the size the tab had in its strip, laid out
@@ -172,6 +178,8 @@ public fun ApplicationScope.TabWindows(
     workspace: TabWorkspace,
     compositionLocalContext: CompositionLocalContext? = null,
     strip: @Composable @UiComposable TabStripScope.() -> Unit = { TabStrip() },
+    titleBar: @Composable @UiComposable TaoDecoratedWindowScope.(strip: @Composable () -> Unit) -> Unit =
+        { DefaultTabTitleBar(it) },
     dragGhost: @Composable @UiComposable TaoDecoratedWindowScope.(TabDragGhost) -> Unit = { TabDragGhostCard(it) },
     windowContentWrapper: @Composable @UiComposable TaoDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit =
         { it() },
@@ -228,6 +236,7 @@ public fun ApplicationScope.TabWindows(
                 group,
                 compositionLocalContext,
                 strip,
+                titleBar,
                 windowContentWrapper,
                 windowBodyWrapper,
             )
@@ -243,6 +252,7 @@ private fun ApplicationScope.TabWindow(
     group: TabWindowGroup,
     compositionLocalContext: CompositionLocalContext?,
     strip: @Composable TabStripScope.() -> Unit,
+    titleBar: @Composable TaoDecoratedWindowScope.(strip: @Composable () -> Unit) -> Unit,
     windowContentWrapper: @Composable TaoDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit,
     windowBodyWrapper: @Composable TaoDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit,
 ) {
@@ -279,14 +289,7 @@ private fun ApplicationScope.TabWindow(
         windowContentWrapper {
             with(windowScope) {
                 WindowScaffold(
-                    titleBar = {
-                        // FillCenter hands its single centre child exactly the
-                        // width left between the platform controls, which is
-                        // where a tab strip belongs: a strip, not a title.
-                        BasicTitleBar(layoutPolicy = TitleBarLayoutPolicy.FillCenter) {
-                            Box(Modifier.fillMaxWidth()) { strip(stripScope) }
-                        }
-                    },
+                    titleBar = { windowScope.titleBar { strip(stripScope) } },
                 ) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {
                         // The app's window-level chrome sits here, under the
@@ -336,6 +339,22 @@ private fun TabBody(
         } else {
             body()
         }
+    }
+}
+
+/**
+ * The stock title bar of a tab window: a [BasicTitleBar] whose centre is the
+ * strip. `FillCenter` hands its single centre child exactly the width left
+ * between the platform controls, which is where a tab strip belongs: a strip,
+ * not a title. The default of [TabWindows]' `titleBar`, and what an app's own
+ * title bar is measured against.
+ */
+@Suppress("FunctionNaming")
+@Composable
+@ExperimentalNucleusApi
+public fun DecoratedWindowScope.DefaultTabTitleBar(strip: @Composable () -> Unit) {
+    BasicTitleBar(layoutPolicy = TitleBarLayoutPolicy.FillCenter) {
+        Box(Modifier.fillMaxWidth()) { strip() }
     }
 }
 
