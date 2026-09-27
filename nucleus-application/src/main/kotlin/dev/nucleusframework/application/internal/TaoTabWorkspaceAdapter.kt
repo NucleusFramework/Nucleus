@@ -18,6 +18,7 @@ import dev.nucleusframework.window.tao.TabScope
 import dev.nucleusframework.window.tao.TabStripScope
 import dev.nucleusframework.window.tao.TabWorkspace
 import dev.nucleusframework.window.tao.Tab as TaoTab
+import dev.nucleusframework.window.tao.TabDragGhostWindow as TaoTabDragGhostWindow
 import dev.nucleusframework.window.tao.TabWindows as TaoTabWindows
 
 /**
@@ -77,6 +78,22 @@ internal object TaoTabWorkspaceAdapter {
                 },
                 onLastWindowClosed = onLastWindowClosed,
             )
+        }
+    }
+
+    @Composable
+    @ComposableOpenTarget(-1)
+    fun TabDragGhostWindow(
+        scope: TaoNucleusApplicationScope,
+        workspace: TabWorkspace,
+        nativeContextMenu: Boolean,
+        content: @Composable @UiComposable NucleusDecoratedWindowScope.(TabDragGhost) -> Unit,
+    ) {
+        val outerLocals = currentCompositionLocalContext
+        with(scope.taoScope) {
+            TaoTabDragGhostWindow(workspace = workspace, compositionLocalContext = outerLocals) { ghost ->
+                bindNucleusContent(outerLocals, ghost.layoutDirection, nativeContextMenu) { content(ghost) }
+            }
         }
     }
 

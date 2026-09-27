@@ -24,6 +24,7 @@ public final class dev/nucleusframework/application/ComposableSingletons$TabKt {
 	public final fun getLambda$-848945442$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
 	public final fun getLambda$1050919581$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
 	public final fun getLambda$1361492192$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$1470358096$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
 	public final fun getLambda$964616105$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
 }
 
@@ -204,6 +205,7 @@ public final class dev/nucleusframework/application/SingleInstanceRestoreBusKt {
 public final class dev/nucleusframework/application/TabKt {
 	public static final fun Tab (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 	public static final fun Tab (Ldev/nucleusframework/window/tao/TabWorkspace;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TabDragGhostWindow (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;ZLkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
 	public static final fun TabWindows (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;ZLkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
 	public static final fun TabWindows (Ldev/nucleusframework/window/tao/TabWorkspace;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;ZLkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
 }

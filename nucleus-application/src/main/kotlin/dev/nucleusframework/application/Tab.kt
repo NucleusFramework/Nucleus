@@ -202,3 +202,32 @@ public fun Tab(
         content = content,
     )
 }
+
+/**
+ * The window a tab dragged out of its strip travels in, for an app that opens
+ * the windows of [workspace] itself (binding each with
+ * `dev.nucleusframework.window.tao.BindTabGroupWindow`) rather than through
+ * [TabWindows]. Compose it once, next to those windows; it shows only while a
+ * tab is being dragged, with [content] drawn in the ghost's own scene and the
+ * same Nucleus locals a window gets. Never composed on native Wayland, where
+ * the compositor draws the drag icon.
+ */
+@Suppress("FunctionNaming")
+@Composable
+@ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
+public fun NucleusApplicationScope.TabDragGhostWindow(
+    workspace: TabWorkspace,
+    nativeContextMenu: Boolean = true,
+    content: @Composable @UiComposable NucleusDecoratedWindowScope.(TabDragGhost) -> Unit = { TabDragGhostCard(it) },
+) {
+    when (this) {
+        is TaoNucleusApplicationScope ->
+            TaoTabWorkspaceAdapter.TabDragGhostWindow(
+                scope = this,
+                workspace = workspace,
+                nativeContextMenu = nativeContextMenu,
+                content = content,
+            )
+    }
+}
