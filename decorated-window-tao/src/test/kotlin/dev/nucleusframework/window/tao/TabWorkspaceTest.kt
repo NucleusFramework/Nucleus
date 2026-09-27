@@ -901,6 +901,40 @@ class TabWorkspaceTest {
     }
 
     @Test
+    fun `a tear-off never takes the id of a restored window`() {
+        // Last session tore two windows off; their ids come back with the snapshot, while the
+        // new process counts its own tear-offs from zero again.
+        val snapshot =
+            TabLayoutSnapshot(
+                listOf(
+                    TabGroupSnapshot("group-0", listOf("a", "b"), "a", null, TabWorkspace.DefaultWindowSize),
+                    TabGroupSnapshot("group-1", listOf("x"), "x", null, TabWorkspace.DefaultWindowSize),
+                ),
+            )
+        val workspace = TabWorkspace()
+        workspace.register("a", "Alpha", groupId = null)
+        workspace.register("b", "Beta", groupId = null)
+        workspace.restore(snapshot)
+
+        val torn = assertNotNull(workspace.tearOff("b", Rect(0f, 0f, 800f, 600f), scaleFactor = 1f))
+
+        assertTrue(torn.id !in setOf("group-0", "group-1"), "restored id reused: ${torn.id}")
+        assertEquals(listOf("a"), requireNotNull(workspace.group("group-0")).ids)
+        // "group-1" is still waiting for its tab: it must not have been handed to the tear-off.
+        workspace.register("x", "Xray", groupId = null)
+        assertEquals(listOf("x"), requireNotNull(workspace.group("group-1")).ids)
+        assertEquals(listOf("b"), torn.ids)
+        assertEquals(
+            workspace.groups.size,
+            workspace.groups
+                .map { it.id }
+                .toSet()
+                .size,
+            "duplicate group ids",
+        )
+    }
+
+    @Test
     fun `a restore rebuilds strip order whatever order the tabs are declared in`() {
         val workspace = TabWorkspace()
         listOf("a", "b", "c").forEach { workspace.register(it, it, groupId = "one") }
