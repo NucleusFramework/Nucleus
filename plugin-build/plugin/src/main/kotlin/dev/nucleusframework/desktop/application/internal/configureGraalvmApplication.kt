@@ -1558,7 +1558,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             into(appBundleDir.map { it.dir("MacOS/lib") })
         }
 
-    // fontconfig.bfc: SunFontManager/FontConfiguration needs it at startup, otherwise
+    // fontconfig: SunFontManager/FontConfiguration needs it at startup, otherwise
     // FontConfiguration.getVersion() throws "Fontconfig head is null" the first time AWT font code
     // runs (e.g. Font.createFont / BufferedImage.createGraphics).
     //
@@ -1567,17 +1567,20 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     // even when it is Developer ID signed, notarized and stapled. Contents/Resources/ is the
     // sanctioned place for data files; at runtime GraalVmInitializer points the JDK at it via the
     // `sun.awt.fontconfig` system property, since FontConfiguration otherwise only scans
-    // <java.home>/lib. Windows/Linux keep the lib/ layout (no Gatekeeper, see copyFontConfig).
+    // <java.home>/lib. That property is always parsed as text properties, so ship the JDK's
+    // fontconfig.properties.src (renamed) instead of the binary fontconfig.bfc, which would load
+    // as an empty config. Windows/Linux keep the lib/ layout (no Gatekeeper, see copyFontConfig).
     val copyGraalvmFontConfig =
         tasks.register<Copy>(
             taskNameAction = "copy",
             taskNameObject = "graalvmFontConfig",
         ) {
-            description = "Copy fontconfig.bfc into .app bundle Resources for AWT font init"
+            description = "Copy fontconfig.properties into .app bundle Resources for AWT font init"
             dependsOn(nativeImageCompile, cleanAppBundle)
             doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
             from(graalvmHome.map { "$it/lib" }) {
-                include("fontconfig.bfc")
+                include("fontconfig.properties.src")
+                rename { "fontconfig.properties" }
             }
             into(appBundleDir.map { it.dir("Resources") })
         }
