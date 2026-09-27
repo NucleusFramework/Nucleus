@@ -214,7 +214,9 @@ public fun ApplicationScope.DecoratedWindow(
     val windowExceptionHandlerFactory = LocalWindowExceptionHandlerFactory.current
 
     state.inflateToMinimumSize(minimumSize)
-    state.applyMacOsInitialMaximizedSize()
+    // The size the window restores to: a window created maximized is still
+    // built at its floating size, which is the frame macOS returns it to.
+    val creationSize = state.applyMacOsInitialMaximizedSize()
 
     // Compose Desktop wrap-content: an unspecified axis is measured from
     // content and applied via setInnerSize (#532). Creating the native
@@ -257,8 +259,8 @@ public fun ApplicationScope.DecoratedWindow(
                     onCloseRequest = { latestOnClose() },
                     title = title,
                     icon = icon,
-                    width = state.size.width.toWindowCreationDp(DEFAULT_WINDOW_WIDTH_DP),
-                    height = state.size.height.toWindowCreationDp(DEFAULT_WINDOW_HEIGHT_DP),
+                    width = creationSize.width.toWindowCreationDp(DEFAULT_WINDOW_WIDTH_DP),
+                    height = creationSize.height.toWindowCreationDp(DEFAULT_WINDOW_HEIGHT_DP),
                     minimumSize = minimumSize,
                     visible = false,
                     resizable = resizable,
@@ -636,10 +638,16 @@ public fun ApplicationScope.DecoratedWindow(
  *
  * The native work area is reported in physical pixels, but [WindowState.size]
  * is public Compose API and must stay in dp / macOS points.
+ *
+ * Returns the size [WindowState.size] held before, which the native window is
+ * created at: tao keeps the creation frame as the one a maximized window is
+ * restored to (`standard_frame`), so creating it at the work area would make
+ * "restore" a screen-sized window pushed down by the title bar.
  */
 @Composable
-private fun WindowState.applyMacOsInitialMaximizedSize() {
+private fun WindowState.applyMacOsInitialMaximizedSize(): DpSize =
     remember(this) {
+        val requested = size
         if (
             Platform.Current == Platform.MacOS &&
             placement == WindowPlacement.Maximized &&
@@ -655,8 +663,8 @@ private fun WindowState.applyMacOsInitialMaximizedSize() {
                 }
             }
         }
+        requested
     }
-}
 
 /**
  * How long [applyAlignedPosition] keeps retrying while the native window is
