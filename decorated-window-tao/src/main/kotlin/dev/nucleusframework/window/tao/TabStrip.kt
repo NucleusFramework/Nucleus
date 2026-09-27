@@ -403,6 +403,9 @@ public fun Modifier.tabSlot(
     index: Int,
 ): Modifier =
     onPositionChanged { coordinates ->
+        // A tab that has just left the group (closing, moved away) may still be drawn for a frame:
+        // it has no slot any more.
+        if (index < 0) return@onPositionChanged
         val slots = group.slotsInWindowPx.toMutableList()
         while (slots.size <= index) slots += Rect.Zero
         slots[index] = coordinates.boundsInWindow()
