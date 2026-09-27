@@ -974,6 +974,8 @@ public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public final fun getDraggedTab ()Ldev/nucleusframework/window/tao/TabEntry;
 	public final fun getDropPreview ()Ldev/nucleusframework/window/tao/TabDropTarget;
 	public final fun getGroups ()Ljava/util/List;
+	public final fun getLinkedWorkspaces ()Ljava/util/List;
+	public final fun getOnForeignDrop ()Lkotlin/jvm/functions/Function3;
 	public final fun getTabs ()Ljava/util/Collection;
 	public final fun group (Ljava/lang/String;)Ldev/nucleusframework/window/tao/TabWindowGroup;
 	public final fun groupOf (Ldev/nucleusframework/window/tao/TaoWindow;)Ldev/nucleusframework/window/tao/TabWindowGroup;
@@ -983,6 +985,8 @@ public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public final fun restore (Ldev/nucleusframework/window/tao/TabLayoutSnapshot;)V
 	public final fun select (Ljava/lang/String;)V
 	public final fun selectedTab (Ldev/nucleusframework/window/tao/TabWindowGroup;)Ldev/nucleusframework/window/tao/TabEntry;
+	public final fun setLinkedWorkspaces (Ljava/util/List;)V
+	public final fun setOnForeignDrop (Lkotlin/jvm/functions/Function3;)V
 	public final fun snapshot ()Ldev/nucleusframework/window/tao/TabLayoutSnapshot;
 	public final fun tab (Ljava/lang/String;)Ldev/nucleusframework/window/tao/TabEntry;
 	public final fun tabsOf (Ldev/nucleusframework/window/tao/TabWindowGroup;)Ljava/util/List;

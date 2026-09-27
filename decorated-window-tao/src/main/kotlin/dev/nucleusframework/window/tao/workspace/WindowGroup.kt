@@ -93,6 +93,9 @@ internal class WindowGroup(
         window.onDestroyed(windowHooks.destroyed)
         hooks[window] = windowHooks
         memberList += window
+        // A window opens on top of the others: it ranks as just focused
+        // across workspaces until one of them really is.
+        lastFocus[window] = ++focusClock
         if (window.isFocused) noteFocus(window)
         onJoined(window)
     }
@@ -113,6 +116,17 @@ internal class WindowGroup(
         if (window !in memberList) return
         recency -= window
         recency.add(0, window)
+        lastFocus[window] = ++focusClock
+    }
+
+    internal companion object {
+        // Focus order across every group of the process: what orders windows
+        // of different workspaces, which each only rank their own.
+        private var focusClock = 0L
+        private val lastFocus = java.util.WeakHashMap<TaoWindow, Long>()
+
+        /** When [window] last joined a group or was focused in one, on one clock for all of them; 0 if never. */
+        fun focusStamp(window: TaoWindow?): Long = window?.let { lastFocus[it] } ?: 0L
     }
 
     /** Makes [window] the [owner] regardless of focus; `null` returns to the focus-driven choice. */

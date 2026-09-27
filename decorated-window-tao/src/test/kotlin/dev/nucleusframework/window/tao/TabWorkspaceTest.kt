@@ -617,6 +617,86 @@ class TabWorkspaceTest {
         assertNull(workspace.dropPreview)
     }
 
+    /** Two workspaces, one window each: "a" and "b" on the left in [first], "x" on the right in [second]. */
+    private fun linkedPair(): Triple<TabWorkspace, TabWorkspace, TabWindowGroup> {
+        val first = TabWorkspace()
+        first.register("a", "Alpha", groupId = "left")
+        first.register("b", "Beta", groupId = "left")
+        first.attachWindow(requireNotNull(first.group("left")), firstWindow)
+        first.publishStrip(requireNotNull(first.group("left")), FirstWindowFrame, tabCount = 2)
+        val second = TabWorkspace()
+        second.register("x", "Xray", groupId = "right")
+        val right = requireNotNull(second.group("right"))
+        second.attachWindow(right, secondWindow)
+        second.publishStrip(right, SecondWindowFrame, tabCount = 1)
+        first.linkedWorkspaces = listOf(second)
+        return Triple(first, second, right)
+    }
+
+    @Test
+    fun `a tab dropped on a linked workspace's strip is handed to the app`() {
+        val (first, second, right) = linkedPair()
+        val drops = mutableListOf<Triple<String, TabWorkspace, TabDropTarget>>()
+        first.onForeignDrop = { tab, into, target -> drops += Triple(tab.id, into, target) }
+
+        val session = assertNotNull(first.beginDrag("b", stripOrigin(firstWindow, FirstWindowFrame), Offset(110f, 20f)))
+        session.update(Offset(1020f, 20f))
+        assertEquals(TabDropTarget(right, 0), first.dropPreview, "the other workspace's strip is a target")
+        assertNotNull(first.dragGhost, "the ghost follows the pointer over it")
+        session.end(Offset(1020f, 20f))
+
+        assertEquals(listOf(Triple("b", second, TabDropTarget(right, 0))), drops)
+        assertEquals(listOf("a", "b"), first.group("left")?.ids, "the app moves the tab, not the workspace")
+        assertEquals(listOf("x"), right.ids)
+        assertEquals(1, first.groups.size, "no window torn off")
+    }
+
+    @Test
+    fun `where strips of linked workspaces overlap the front window takes the drop`() {
+        val first = TabWorkspace()
+        first.register("a", "Alpha", groupId = "left")
+        first.register("b", "Beta", groupId = "left")
+        val left = requireNotNull(first.group("left"))
+        first.attachWindow(left, firstWindow)
+        first.publishStrip(left, FirstWindowFrame, tabCount = 2)
+        val second = TabWorkspace()
+        second.register("x", "Xray", groupId = "over")
+        val over = requireNotNull(second.group("over"))
+        val thirdWindow = TaoWindow(handle = 3L)
+        // Opened after, exactly over the first window.
+        second.attachWindow(over, thirdWindow)
+        second.publishStrip(over, FirstWindowFrame, tabCount = 1)
+        first.linkedWorkspaces = listOf(second)
+        first.onForeignDrop = { _, _, _ -> }
+
+        val onTheStrip = Offset(250f, 20f)
+        assertEquals(
+            over,
+            first.dropTargetIncludingLinked(null, onTheStrip, exclude = null)?.group,
+            "the window opened on top",
+        )
+
+        first.noteWindowFocus(firstWindow)
+        assertEquals(
+            left,
+            first.dropTargetIncludingLinked(null, onTheStrip, exclude = null)?.group,
+            "focus brought it back up",
+        )
+    }
+
+    @Test
+    fun `without a foreign-drop handler a linked strip is no target`() {
+        val (first, _, right) = linkedPair()
+
+        val session = assertNotNull(first.beginDrag("b", stripOrigin(firstWindow, FirstWindowFrame), Offset(110f, 20f)))
+        session.update(Offset(1020f, 20f))
+        assertNull(first.dropPreview)
+        session.end(Offset(1020f, 20f))
+
+        assertEquals(2, first.groups.size, "torn off, as over empty space")
+        assertEquals(listOf("x"), right.ids)
+    }
+
     @Test
     fun `dragging one of several tabs into empty space tears off a window under the pointer`() {
         val workspace = TabWorkspace()

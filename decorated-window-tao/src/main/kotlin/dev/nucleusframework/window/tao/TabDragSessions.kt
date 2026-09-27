@@ -115,7 +115,12 @@ private class TabWindowDragSession(
         // strip reaches another's, before the pointer is over it — the same
         // rule as for a tab carried under a ghost.
         workspace.dropPreview =
-            workspace.dropTargetAt(stripScreenRectPx(topLeft), pointer, exclude = entry, excludeGroup = entry.group)
+            workspace.dropTargetIncludingLinked(
+                stripScreenRectPx(topLeft),
+                pointer,
+                exclude = entry,
+                excludeGroup = entry.group,
+            )
         workspace.dragPointerScreenPx = pointer
     }
 
@@ -136,7 +141,7 @@ private class TabWindowDragSession(
         update(pointerScreenPx)
         val target = workspace.dropPreview
         cancel()
-        if (target != null) workspace.move(entry.id, target.group, target.index)
+        if (target != null) workspace.dropOn(entry, target)
     }
 }
 
@@ -172,7 +177,7 @@ private class TabTearOffDragSession(
         // reaches it, so the drop reads while the card is still below the
         // strip rather than over it.
         val card = ghostRectPx()
-        val target = workspace.dropTargetAt(card, pointer, exclude = entry)
+        val target = workspace.dropTargetIncludingLinked(card, pointer, exclude = entry)
         workspace.dropPreview = target
         workspace.dragPointerScreenPx = pointer
         // Over its own strip the tab has not left: the strip holds it under the
@@ -190,7 +195,7 @@ private class TabTearOffDragSession(
         if (!isLive) return
         pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
         val drop = pointer
-        val target = workspace.dropTargetAt(ghostRectPx(), drop, exclude = entry)
+        val target = workspace.dropTargetIncludingLinked(ghostRectPx(), drop, exclude = entry)
         val group = entry.group
         // Read before the release clears the drag: the slide home starts with
         // the speed the pointer had, so a flick carries through.
@@ -202,7 +207,7 @@ private class TabTearOffDragSession(
                 // place and applies the reorder itself, so nothing jumps.
                 workspace.pendingReorder = TabReorderSettle(entry, group, target.index, speed)
             } else {
-                workspace.move(entry.id, target.group, target.index)
+                workspace.dropOn(entry, target)
             }
             return
         }
