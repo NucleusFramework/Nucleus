@@ -57,6 +57,8 @@ NucleusUpdater {
     allowDowngrade = false                 // Allow installing older versions
     allowPrerelease = false                // Auto-set to true if currentVersion contains "-"
     executableType = null                  // Force format (deb, rpm, dmg...), auto-detected if null
+    allowLaunchOverrides = false           // Installed app honours NUCLEUS_UPDATER_FEED_URL / _SIMULATE (see below)
+    simulation = null                      // Play an UpdateSimulation instead of contacting the provider
 }
 ```
 
@@ -231,6 +233,112 @@ fun UpdateBanner() {
             }
         }
     }
+}
+```
+
+## Testing updates without publishing a release
+
+Three levels, from the cheapest to the most faithful. None of them needs a code change beyond
+the opt-in of the third.
+
+| I want to…                                   | Use                                                          | What runs for real                          |
+|----------------------------------------------|--------------------------------------------------------------|---------------------------------------------|
+| build and review the update UI               | **simulation**: `./gradlew run -Pnucleus.updater.simulate=update` | nothing leaves the machine; install skipped |
+| check + download against my next build       | **feed redirect** from `./gradlew run`                      | manifest, selection, download, SHA-512      |
+| update an installed copy to my next build    | **feed redirect** of the installed app + `serveUpdateFeed`  | everything, installer and restart included  |
+
+### 1. Simulation — the update UI from `./gradlew run`
+
+```bash
+./gradlew run -Pnucleus.updater.simulate=update           # an update is available and downloads
+./gradlew run -Pnucleus.updater.simulate=download-error   # … or: up-to-date, check-error, checksum-error
+./gradlew run -Pnucleus.updater.simulate=3.0.0 -Pnucleus.updater.simulate.duration=20 -Pnucleus.updater.simulate.size=250000000
+./gradlew run -Pnucleus.updater.simulate.justUpdatedFrom=1.2.0   # the "what's new" launch
+```
+
+Every `NucleusUpdater` of the app then plays the scripted update: `isUpdateSupported()` is `true`,
+`checkForUpdates()` offers the next minor version (or `.version`), `downloadUpdate()` reports
+progress over `.duration` seconds (`.differential=true` reports a delta), and
+`installAndRestart()` logs what it would install and **returns** — the app keeps running.
+Failures surface as the real exceptions (`NetworkException`, `ChecksumException`).
+
+In code, for a UI test or a debug menu:
+
+```kotlin
+NucleusUpdater {
+    provider = GitHubProvider("myorg", "myapp")
+    simulation = UpdateSimulation(UpdateSimulation.Scenario.DOWNLOAD_ERROR, downloadDuration = 3.seconds)
+}
+```
+
+`updater.simulation` is non-null while a simulation plays — handy to badge the UI.
+
+### 2. Feed redirect — electron-updater's `dev-app-update.yml`, without the file
+
+`nucleus.updater.feedUrl` (system property) or `NUCLEUS_UPDATER_FEED_URL` (environment variable)
+replaces the configured provider with a **local directory** (`LocalFileProvider` — a path or a
+`file:` URL), an `https` server, or plain `http` to a **loopback** host:
+
+```bash
+./gradlew packageNsis                         # after bumping packageVersion (any auto-updatable format)
+./gradlew run -Pnucleus.updater.feedUrl=build/compose/binaries/main/nsis
+```
+
+The packaging output of any auto-updatable format is a complete feed — the plugin writes the
+`latest*.yml` manifest next to the artifact even when no `publish` provider is configured. An
+unpackaged run (`run`, an IDE) checks and downloads for real; the install is skipped, since there
+is no installed app to replace (this is also what `installAndRestart` does in any unpackaged run).
+
+### 3. Updating an installed app — the whole path
+
+An installed app honours the redirect (and a launch-time simulation) **only when it opts in**,
+since whoever sets the variable would otherwise choose what it installs:
+
+```kotlin
+NucleusUpdater {
+    provider = GitHubProvider("myorg", "myapp")
+    allowLaunchOverrides = BuildConfig.isInternal   // or true, if the switch is part of how you test releases
+}
+```
+
+Then, with the current version installed:
+
+```bash
+./gradlew serveUpdateFeed                     # bumped packageVersion: packages it, serves http://127.0.0.1:8421
+NUCLEUS_UPDATER_FEED_URL=http://127.0.0.1:8421  "C:\Users\me\AppData\Local\Programs\MyApp\MyApp.exe"
+```
+
+`serveUpdateFeed` serves the merged manifests of every auto-updatable format of the current OS,
+the artifacts, block maps and signatures, with byte ranges (differential downloads work as in
+production). `-Pnucleus.updater.serve.throttle=2m` (bytes per second, `k`/`m` suffixes) and
+`-Pnucleus.updater.serve.latency=500` slow it down, `-Pnucleus.updater.serve.port` moves it,
+`-Pnucleus.updater.serve.timeout=<seconds>` stops it on its own. Pointing the app at the directory
+instead (`NUCLEUS_UPDATER_FEED_URL=build/compose/binaries/main/nsis`) needs no server, but always
+downloads the whole artifact.
+
+`./gradlew runDistributable -Pnucleus.updater.…` forwards the same switches as environment
+variables. Ignored switches (an installed app without the opt-in, a remote `http` URL) are logged
+as warnings, as is every redirect and simulation that applies.
+
+### Automated tests: `updater-testing`
+
+`dev.nucleusframework:nucleus.updater-testing` ships `UpdateFeedServer`, the loopback release host
+the Nucleus updater is tortured against: it publishes artifacts with a generated manifest, serves
+ranges, records every request, and misbehaves on demand.
+
+```kotlin
+UpdateFeedServer().use { feed ->
+    feed.publish("2.0.0", File("build/compose/binaries/main/nsis/myapp-2.0.0-win-x64-nsis.exe"))
+    feed.fault(FeedFault.Throttle(bytesPerSecond = 1_000_000))            // a slow link
+    feed.fault(FeedFault.Truncate(afterBytes = 4096), path = "*.exe", times = 1) // one dropped transfer
+    // FeedFault.Status(503), Delay(2.seconds), Corrupt(offset), IgnoreRange
+
+    val updater = NucleusUpdater {
+        currentVersion = "1.0.0"
+        executableType = "nsis"
+        provider = GenericProvider(feed.baseUrl)
+    }
+    // drive checkForUpdates() / downloadUpdate() and assert on feed.requests
 }
 ```
 

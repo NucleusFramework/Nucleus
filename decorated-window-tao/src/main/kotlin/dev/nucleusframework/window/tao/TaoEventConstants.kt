@@ -169,5 +169,7 @@ public object TaoMouseButton {
     public const val LEFT: Int = 0
     public const val RIGHT: Int = 1
     public const val MIDDLE: Int = 2
-    public const val OTHER: Int = 3
+    public const val BACK: Int = 3
+    public const val FORWARD: Int = 4
+    public const val OTHER: Int = 5
 }

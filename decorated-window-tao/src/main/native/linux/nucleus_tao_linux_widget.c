@@ -988,16 +988,18 @@ typedef struct {
     double        delta_y;
 } gdk_event_scroll_t;
 
-/* Map GTK's native button code (1 = LEFT, 2 = MIDDLE, 3 = RIGHT) to
- * Tao's AWT-style encoding (`TaoMouseButton.LEFT = 0`, `RIGHT = 1`,
- * `MIDDLE = 2`). Anything else stays a passthrough — Compose's
- * `mapButton` falls back to `Primary` for unknown codes. */
+/* Map GTK's native button code (1 = LEFT, 2 = MIDDLE, 3 = RIGHT,
+ * 8 = BACK, 9 = FORWARD) to Tao's AWT-style encoding
+ * (`TaoMouseButton.LEFT = 0` … `FORWARD = 4`, `OTHER = 5`) — the same
+ * codes `events.rs` `mouse_button_code` sends for the main surface. */
 static int gtk_button_to_tao(unsigned int gtk_button) {
     switch (gtk_button) {
         case 1: return 0; /* LEFT */
         case 2: return 2; /* MIDDLE */
         case 3: return 1; /* RIGHT */
-        default: return (int) gtk_button;
+        case 8: return 3; /* BACK */
+        case 9: return 4; /* FORWARD */
+        default: return 5; /* OTHER */
     }
 }
 

@@ -23,17 +23,23 @@ import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.updater.NucleusUpdater
 import dev.nucleusframework.updater.UpdateResult
+import dev.nucleusframework.updater.exception.UpdateException
 import dev.nucleusframework.updater.provider.GenericProvider
+import dev.nucleusframework.updater.provider.GitHubProvider
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import dev.nucleusframework.window.TitleBar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.flow.onEach
 import java.io.File
 import java.time.LocalTime
 import kotlin.time.Duration.Companion.seconds
 
 private val feed: String? = System.getenv("HOT_UPDATE_DEMO_FEED")
+
+// Keeps the updater when a redirect is requested but refused, so the E2E sees the refusal.
+private val redirectRequested = System.getenv("NUCLEUS_UPDATER_FEED_URL") != null
 
 // The E2E samples the screen at the window: keep it above whatever else is open there.
 private val topmost = System.getenv("HOT_UPDATE_DEMO_TOPMOST") == "1"
@@ -52,7 +58,16 @@ private fun log(message: String) {
 
 fun main(args: Array<String>) =
     nucleusApplication(args, enableSingleInstance = !multiInstance) {
-        val updater = remember { feed?.let { url -> NucleusUpdater { provider = GenericProvider(url) } } }
+        // HOT_UPDATE_DEMO_FEED configures the feed in code; without it the app ships a production
+        // provider that the dev-testing E2E (scripts/updater-dev-testing-e2e.ps1) redirects at launch
+        // with NUCLEUS_UPDATER_FEED_URL, or replaces with NUCLEUS_UPDATER_SIMULATE.
+        val updater =
+            remember {
+                NucleusUpdater {
+                    provider = feed?.let(::GenericProvider) ?: GitHubProvider("NucleusFramework", "hot-update-demo-e2e")
+                    allowLaunchOverrides = System.getenv("HOT_UPDATE_DEMO_ALLOW_OVERRIDES") != "0"
+                }.takeIf { feed != null || it.feedOverride != null || it.simulation != null || redirectRequested }
+            }
         val version = updater?.currentVersion ?: "dev"
         var status by remember { mutableStateOf(if (updater == null) "No update feed" else "Checking…") }
 
@@ -67,6 +82,11 @@ fun main(args: Array<String>) =
                 "started version=$version args=${args.toList()} command=$command " +
                     "java.home=${System.getProperty("java.home")}",
             )
+            updater?.let {
+                log(
+                    "updater feedOverride=${it.feedOverride} simulation=${it.simulation} supported=${it.isUpdateSupported()}",
+                )
+            }
             updater?.consumeUpdateEvent()?.let { log("updated from ${it.previousVersion} to ${it.newVersion}") }
             if (updater == null || !checksForUpdates) return@LaunchedEffect
             // Poll, so that a chained E2E can publish the next version once this one is running.
@@ -78,10 +98,25 @@ fun main(args: Array<String>) =
                 result = updater.checkForUpdates()
             }
             status = "Downloading ${result.info.version}…"
-            val file = updater.downloadUpdate(result.info).last().file ?: return@LaunchedEffect
+            var reports = 0
+            val last =
+                try {
+                    updater.downloadUpdate(result.info).onEach { reports++ }.last()
+                } catch (e: UpdateException) {
+                    status = "Download failed"
+                    log("download failed: $e")
+                    return@LaunchedEffect
+                }
+            val file = last.file ?: return@LaunchedEffect
+            log(
+                "downloaded ${file.name} bytes=${last.bytesDownloaded} differential=${last.isDifferential} reports=$reports",
+            )
             status = "Installing ${result.info.version}…"
             log("installAndRestart ${file.name}")
             updater.installAndRestart(file, relaunchArguments = args.toList())
+            // Returns at once for a hot update (the handoff follows), a simulated one and an unpackaged
+            // run (both skip the install).
+            log("installAndRestart returned")
         }
 
         // Another instance installed an update: restart onto it, keeping this instance's document.

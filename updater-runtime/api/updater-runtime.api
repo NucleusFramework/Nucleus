@@ -25,7 +25,9 @@ public final class dev/nucleusframework/updater/NucleusUpdater {
 	public final fun consumeUpdateEvent ()Ldev/nucleusframework/updater/UpdateEvent;
 	public final fun downloadUpdate (Ldev/nucleusframework/updater/UpdateInfo;)Lkotlinx/coroutines/flow/Flow;
 	public final fun getCurrentVersion ()Ljava/lang/String;
+	public final fun getFeedOverride ()Ljava/lang/String;
 	public final fun getPendingRestartVersion ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getSimulation ()Ldev/nucleusframework/updater/UpdateSimulation;
 	public final fun installAndQuit (Ljava/io/File;)V
 	public final fun installAndRestart (Ljava/io/File;)V
 	public final fun installAndRestart (Ljava/io/File;Ljava/util/List;)V
@@ -134,12 +136,43 @@ public final class dev/nucleusframework/updater/UpdateResult$NotAvailable : dev/
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class dev/nucleusframework/updater/UpdateSimulation {
+	public static final field Companion Ldev/nucleusframework/updater/UpdateSimulation$Companion;
+	public fun <init> ()V
+	public synthetic fun <init> (Ldev/nucleusframework/updater/UpdateSimulation$Scenario;Ljava/lang/String;JJJZLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ldev/nucleusframework/updater/UpdateSimulation$Scenario;Ljava/lang/String;JJJZLjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getCheckDuration-UwyO8pc ()J
+	public final fun getDownloadDuration-UwyO8pc ()J
+	public final fun getDownloadSize ()J
+	public final fun getJustUpdatedFrom ()Ljava/lang/String;
+	public final fun getScenario ()Ldev/nucleusframework/updater/UpdateSimulation$Scenario;
+	public final fun getVersion ()Ljava/lang/String;
+	public final fun isDifferential ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/UpdateSimulation$Companion {
+	public final fun fromSettings ()Ldev/nucleusframework/updater/UpdateSimulation;
+}
+
+public final class dev/nucleusframework/updater/UpdateSimulation$Scenario : java/lang/Enum {
+	public static final field CHECKSUM_ERROR Ldev/nucleusframework/updater/UpdateSimulation$Scenario;
+	public static final field CHECK_ERROR Ldev/nucleusframework/updater/UpdateSimulation$Scenario;
+	public static final field DOWNLOAD_ERROR Ldev/nucleusframework/updater/UpdateSimulation$Scenario;
+	public static final field UPDATE_AVAILABLE Ldev/nucleusframework/updater/UpdateSimulation$Scenario;
+	public static final field UP_TO_DATE Ldev/nucleusframework/updater/UpdateSimulation$Scenario;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/updater/UpdateSimulation$Scenario;
+	public static fun values ()[Ldev/nucleusframework/updater/UpdateSimulation$Scenario;
+}
+
 public final class dev/nucleusframework/updater/UpdaterConfig {
 	public static final field Companion Ldev/nucleusframework/updater/UpdaterConfig$Companion;
 	public static final field DEV_VERSION Ljava/lang/String;
 	public field provider Ldev/nucleusframework/updater/provider/UpdateProvider;
 	public fun <init> ()V
 	public final fun getAllowDowngrade ()Z
+	public final fun getAllowLaunchOverrides ()Z
 	public final fun getAllowPrerelease ()Z
 	public final fun getCacheDir ()Ljava/io/File;
 	public final fun getChannel ()Ljava/lang/String;
@@ -148,7 +181,9 @@ public final class dev/nucleusframework/updater/UpdaterConfig {
 	public final fun getExecutableType ()Ljava/lang/String;
 	public final fun getHttpClient ()Ljava/net/http/HttpClient;
 	public final fun getProvider ()Ldev/nucleusframework/updater/provider/UpdateProvider;
+	public final fun getSimulation ()Ldev/nucleusframework/updater/UpdateSimulation;
 	public final fun setAllowDowngrade (Z)V
+	public final fun setAllowLaunchOverrides (Z)V
 	public final fun setAllowPrerelease (Z)V
 	public final fun setCacheDir (Ljava/io/File;)V
 	public final fun setChannel (Ljava/lang/String;)V
@@ -157,6 +192,7 @@ public final class dev/nucleusframework/updater/UpdaterConfig {
 	public final fun setExecutableType (Ljava/lang/String;)V
 	public final fun setHttpClient (Ljava/net/http/HttpClient;)V
 	public final fun setProvider (Ldev/nucleusframework/updater/provider/UpdateProvider;)V
+	public final fun setSimulation (Ldev/nucleusframework/updater/UpdateSimulation;)V
 }
 
 public final class dev/nucleusframework/updater/UpdaterConfig$Companion {
@@ -236,6 +272,16 @@ public final class dev/nucleusframework/updater/provider/GitHubProvider : dev/nu
 	public final fun getOwner ()Ljava/lang/String;
 	public final fun getRepo ()Ljava/lang/String;
 	public final fun getToken ()Ljava/lang/String;
+	public fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
+	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/provider/LocalFileProvider : dev/nucleusframework/updater/provider/UpdateProvider {
+	public fun <init> (Ljava/io/File;)V
+	public fun authHeaders ()Ljava/util/Map;
+	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
+	public final fun getDirectory ()Ljava/io/File;
+	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
 	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
 }

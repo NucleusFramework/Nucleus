@@ -821,6 +821,8 @@ internal class TaoPopupSceneLayerLinux(
         when (code) {
             TaoMouseButton.RIGHT -> PointerButton.Secondary
             TaoMouseButton.MIDDLE -> PointerButton.Tertiary
+            TaoMouseButton.BACK -> PointerButton.Back
+            TaoMouseButton.FORWARD -> PointerButton.Forward
             else -> PointerButton.Primary
         }
 

@@ -23,13 +23,18 @@ internal object UpdateYmlGenerator {
 
     /**
      * Generates the auto-update YML file if it does not already exist.
-     * When electron-builder natively generates the file (e.g. for NSIS), this is a no-op.
+     * When electron-builder natively generates the file (e.g. for NSIS with a publish provider),
+     * this is a no-op.
+     *
+     * @param artifactExtension when set, only files with this extension are listed — the output
+     *   directory also holds build leftovers (`nucleus-installer.nsh`, …) that are no artifact.
      */
     fun generateIfMissing(
         outputDir: File,
         ymlFilename: String,
         version: String,
         logger: Logger,
+        artifactExtension: String? = null,
     ) {
         val ymlFile = File(outputDir, ymlFilename)
         if (ymlFile.exists()) {
@@ -37,11 +42,13 @@ internal object UpdateYmlGenerator {
             return
         }
 
-        val installerFiles = outputDir.listFiles { f ->
+        val candidates = outputDir.listFiles { f ->
             f.isFile &&
                 !f.name.startsWith(".") &&
-                f.extension.lowercase() !in SKIP_EXTENSIONS
+                f.extension.lowercase() !in SKIP_EXTENSIONS &&
+                (artifactExtension == null || f.extension.equals(artifactExtension, ignoreCase = true))
         }?.sortedBy { it.name } ?: emptyList()
+        val installerFiles = currentArtifacts(candidates, version)
 
         if (installerFiles.isEmpty()) {
             logger.warn("No installer files found in ${outputDir.absolutePath}, skipping update YML generation")
@@ -80,6 +87,24 @@ internal object UpdateYmlGenerator {
         ymlFile.writeText(content)
         logger.lifecycle("Generated auto-update metadata: ${ymlFile.name}")
     }
+
+    /**
+     * The artifacts of this packaging run among [candidates]. electron-builder does not clean its
+     * output directory, so the installer of a previous version is still there after a version bump;
+     * listed first, it would be what every client downloads as the new version. The artifacts whose
+     * name carries [version] are kept, or, for an artifact name without a version, the newest one.
+     */
+    internal fun currentArtifacts(
+        candidates: List<File>,
+        version: String,
+    ): List<File> {
+        val versioned = candidates.filter { VERSION_BOUNDARY.replace("{v}", Regex.escape(version)).toRegex().containsMatchIn(it.name) }
+        if (versioned.isNotEmpty()) return versioned
+        return listOfNotNull(candidates.maxByOrNull { it.lastModified() })
+    }
+
+    /** [version] as a whole component of a file name: `1.1.0` must not match in `11.1.0` or `1.1.0.1`. */
+    private const val VERSION_BOUNDARY = """(?<![\w.]){v}(?![\w]|\.\d)"""
 
     private fun sha512Base64(file: File): String {
         val digest = MessageDigest.getInstance("SHA-512")
