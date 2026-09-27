@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.ui.UiComposable
 import dev.nucleusframework.application.internal.TaoSatelliteWorkspaceAdapter
+import dev.nucleusframework.window.ControlButtonsDirection
 import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.DefaultSatelliteHeader
 import dev.nucleusframework.window.tao.DockSide
@@ -59,6 +60,8 @@ import dev.nucleusframework.window.tao.SatelliteWorkspace
  * @param floatingCaption composed in the strip of the floating title bar left
  *   to the compositor's window move, where the window is placed by the
  *   compositor; see [dev.nucleusframework.window.tao.Satellite].
+ * @param controlButtonsDirection the side of the floating window's controls;
+ *   see [dev.nucleusframework.window.tao.Satellite].
  * @param nativeContextMenu whether text fields in the floating window get the
  *   native context menu, as for [SatelliteWindow].
  */
@@ -80,6 +83,7 @@ public fun NucleusApplicationScope.Satellite(
     nativeContextMenu: Boolean = true,
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
     floatingCaption: @Composable @UiComposable SatelliteScope.() -> Unit = {},
+    controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
     when (this) {
@@ -99,6 +103,7 @@ public fun NucleusApplicationScope.Satellite(
                 nativeContextMenu = nativeContextMenu,
                 header = header,
                 floatingCaption = floatingCaption,
+                controlButtonsDirection = controlButtonsDirection,
                 content = content,
             )
     }
@@ -126,6 +131,7 @@ public fun Satellite(
     nativeContextMenu: Boolean = true,
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
     floatingCaption: @Composable @UiComposable SatelliteScope.() -> Unit = {},
+    controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.Satellite(
@@ -142,6 +148,7 @@ public fun Satellite(
         nativeContextMenu = nativeContextMenu,
         header = header,
         floatingCaption = floatingCaption,
+        controlButtonsDirection = controlButtonsDirection,
         content = content,
     )
 }

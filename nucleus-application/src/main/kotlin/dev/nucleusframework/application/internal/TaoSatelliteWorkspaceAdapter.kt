@@ -5,6 +5,7 @@ import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.internal.TaoSatelliteWindowAdapter.NucleusSatelliteScene
+import dev.nucleusframework.window.ControlButtonsDirection
 import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.SatellitePlacement
 import dev.nucleusframework.window.tao.SatelliteScope
@@ -35,6 +36,7 @@ internal object TaoSatelliteWorkspaceAdapter {
         nativeContextMenu: Boolean,
         header: @Composable SatelliteScope.() -> Unit,
         floatingCaption: @Composable SatelliteScope.() -> Unit,
+        controlButtonsDirection: ControlButtonsDirection,
         content: @Composable SatelliteScope.() -> Unit,
     ) {
         val outerLocals = currentCompositionLocalContext
@@ -57,6 +59,7 @@ internal object TaoSatelliteWorkspaceAdapter {
                 },
                 header = header,
                 floatingCaption = floatingCaption,
+                controlButtonsDirection = controlButtonsDirection,
                 content = content,
             )
         }

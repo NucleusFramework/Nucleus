@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.nucleusframework.window.BasicTitleBar
+import dev.nucleusframework.window.ControlButtonsDirection
 import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.TitleBarLayoutPolicy
 import dev.nucleusframework.window.WindowScaffold
@@ -214,6 +215,11 @@ internal class SatelliteScopeImpl(
  *   [Modifier.satelliteDragHandle]: a press in it moves the window, so what
  *   belongs here is the affordance that says so, not a control. Not composed
  *   at all on the platforms where the whole bar drags the satellite.
+ * @param controlButtonsDirection the side of the floating window's controls
+ *   (the traffic lights on macOS), as for [BasicTitleBar]: [ControlButtonsDirection.Auto]
+ *   follows the content's layout direction, [ControlButtonsDirection.SystemNative]
+ *   the OS — what an RTL app on an LTR system passes to keep its satellites'
+ *   controls where its main window has them.
  * @param content the satellite's body.
  */
 @Suppress("LongParameterList", "FunctionNaming")
@@ -239,6 +245,7 @@ public fun ApplicationScope.Satellite(
         { it() },
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
     floatingCaption: @Composable @UiComposable SatelliteScope.() -> Unit = {},
+    controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
     val entry =
@@ -329,6 +336,7 @@ public fun ApplicationScope.Satellite(
         floatingContentWrapper {
             with(windowScope) {
                 WindowScaffold(
+                    controlButtonsDirection = controlButtonsDirection,
                     titleBar = {
                         // The whole bar is the drag handle, not just the strip
                         // the header draws: the bar is taller than the header,
@@ -343,6 +351,7 @@ public fun ApplicationScope.Satellite(
                         // not a centred title.
                         BasicTitleBar(
                             modifier = if (workspaceDrag) Modifier.satelliteDragHandle(scope) else Modifier,
+                            controlButtonsDirection = controlButtonsDirection,
                             layoutPolicy = TitleBarLayoutPolicy.FillCenter,
                             nativeWindowDrag = !workspaceDrag,
                         ) {
