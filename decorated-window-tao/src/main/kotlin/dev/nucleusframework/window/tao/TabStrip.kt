@@ -114,6 +114,8 @@ internal class TabStripScopeImpl(
  *   `dragGhost` in [TabWindows] draws this with the same composable —
  *   [TabGhostCard]'s shape, a tab and a modifier — so the tab lands as it
  *   travelled.
+ * @param gripCursor the pointer icon over a tab and while one is carried;
+ *   [TabGripCursor.None] keeps the strip's own pointer.
  * @param trailing chrome placed right after the last tab — a new-tab button,
  *   typically. It sits inside the strip, so the strip stays a single drop
  *   target and a tab released over it is appended.
@@ -127,6 +129,7 @@ public fun TabStripScope.TabStrip(
     tabLeading: (@Composable TabStripScope.(TabEntry) -> Unit)? = null,
     tabTrailing: (@Composable TabStripScope.(TabEntry) -> Unit)? = null,
     dropGhostCard: @Composable TabStripScope.(TabDropGhost) -> Unit = { TabDropGhostCard(it) },
+    gripCursor: TabGripCursor = TabGripCursor.Default,
     trailing: @Composable TabStripScope.() -> Unit = {},
 ) {
     val entries = tabs
@@ -165,6 +168,7 @@ public fun TabStripScope.TabStrip(
                     closing = closing,
                     leading = tabLeading,
                     trailing = tabTrailing,
+                    gripCursor = gripCursor,
                     slotModifier = Modifier.weight(1f, fill = false).fillMaxHeight(),
                 )
             }
@@ -403,6 +407,9 @@ public fun Modifier.tabSlot(
     index: Int,
 ): Modifier =
     onPositionChanged { coordinates ->
+        // A tab that has just left the group (closing, moved away) may still be drawn for a frame:
+        // it has no slot any more.
+        if (index < 0) return@onPositionChanged
         val slots = group.slotsInWindowPx.toMutableList()
         while (slots.size <= index) slots += Rect.Zero
         slots[index] = coordinates.boundsInWindow()

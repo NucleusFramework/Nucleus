@@ -34,7 +34,6 @@ import dev.nucleusframework.window.DecoratedWindowScope
 import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.TitleBarLayoutPolicy
 import dev.nucleusframework.window.WindowScaffold
-import dev.nucleusframework.window.tao.workspace.DragGhostWindow
 import dev.nucleusframework.window.tao.workspace.RelocatedContentHost
 
 /**
@@ -187,18 +186,7 @@ public fun ApplicationScope.TabWindows(
         { it() },
     onLastWindowClosed: () -> Unit = {},
 ) {
-    val ghost = workspace.dragGhost
-    if (ghost != null) {
-        DragGhostWindow(
-            screenRectPx = ghost.screenRectPx,
-            scaleFactor = ghost.scaleFactor,
-            title = ghost.tab.title,
-            compositionLocalContext = compositionLocalContext,
-            layoutDirection = ghost.layoutDirection,
-        ) {
-            dragGhost(ghost)
-        }
-    }
+    TabDragGhostWindow(workspace, compositionLocalContext, dragGhost)
     val currentOnLastClosed = rememberUpdatedState(onLastWindowClosed)
 
     // The groups to compose, mirrored out of the workspace by an effect rather
@@ -263,11 +251,7 @@ private fun ApplicationScope.TabWindow(
         )
     // A restore moves a window that is already open; a user drag does not go
     // through the group, so nothing here fights the pointer.
-    LaunchedEffect(group.placementRevision) {
-        if (group.placementRevision == 0) return@LaunchedEffect
-        group.position?.let { state.position = WindowPosition.Absolute(it.x, it.y) }
-        state.size = group.size
-    }
+    TabGroupWindowPlacement(group, state)
     val selected = workspace.selectedTab(group)
     DecoratedWindow(
         // Closing a window closes the tabs it holds — the group goes with its
@@ -278,13 +262,7 @@ private fun ApplicationScope.TabWindow(
         compositionLocalContext = compositionLocalContext,
     ) {
         val windowScope: TaoDecoratedWindowScope = this
-        val window = windowScope.window
-        DisposableEffect(workspace, group, window) {
-            // A system quit must not close the tabs: the workspace is the session (TaoWindow.closesOnQuit).
-            window.closesOnQuit = false
-            workspace.attachWindow(group, window)
-            onDispose { workspace.detachWindow(group) }
-        }
+        BindTabGroupWindow(workspace, group, windowScope.window)
         val stripScope = remember(workspace, group) { TabStripScopeImpl(workspace, group) }
         windowContentWrapper {
             with(windowScope) {
