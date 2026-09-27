@@ -295,6 +295,86 @@ public class TabWorkspace(
     /** The group with [id], if any. */
     public fun group(id: String): TabWindowGroup? = groupList.firstOrNull { it.id == id }
 
+    /**
+     * Other workspaces whose strips also take this workspace's tab drags — an
+     * app keeping one workspace per set of windows (a virtual desktop, a
+     * project) still lets a tab be dragged from one set to another. Their
+     * strips are tried after this workspace's own, and only for a pointer drag
+     * (not on native Wayland's drag-and-drop path).
+     *
+     * A tab released on one of them is not moved by the workspace, which
+     * cannot declare it in the other: [onForeignDrop] is called instead, and
+     * the app moves its declaration there.
+     */
+    public var linkedWorkspaces: List<TabWorkspace> by mutableStateOf(emptyList())
+
+    /**
+     * Called when a tab of this workspace is released on a strip of one of
+     * [linkedWorkspaces]: [target] is the group there and the index it would
+     * take. The workspace leaves the tab where it was; the app closes it here
+     * and declares it in [into]. `null`: such a drop tears the tab off, as a
+     * drop outside every strip does.
+     */
+    public var onForeignDrop: ((tab: TabEntry, into: TabWorkspace, target: TabDropTarget) -> Unit)? = null
+
+    /** `true` when [group] is one of this workspace's own. */
+    internal fun owns(group: TabWindowGroup): Boolean = group in groupList
+
+    /**
+     * [dropTargetAt] over this workspace's strips, then over those of
+     * [linkedWorkspaces] when the app handles such drops: the target and the
+     * workspace it belongs to.
+     */
+    internal fun dropTargetIncludingLinked(
+        draggedScreenRectPx: Rect?,
+        screenPx: Offset,
+        exclude: TabEntry?,
+        excludeGroup: TabWindowGroup? = null,
+    ): TabDropTarget? {
+        val own = dropTargetAt(draggedScreenRectPx, screenPx, exclude, excludeGroup)
+        if (onForeignDrop == null) return own
+        val candidates =
+            listOfNotNull(own?.let { this to it }) +
+                linkedWorkspaces
+                    .filter { it !== this }
+                    .mapNotNull { other -> other.dropTargetAt(draggedScreenRectPx, screenPx)?.let { other to it } }
+        // Where strips of several workspaces answer, the same rule as within
+        // one: a strip under the pointer beats one the card only reaches, then
+        // the window focused most recently — across workspaces, on the one
+        // clock their windows share.
+        return candidates
+            .maxWithOrNull(
+                compareBy<Pair<TabWorkspace, TabDropTarget>> { (workspace, target) ->
+                    workspace.stripContains(target.group, screenPx)
+                }.thenBy { (_, target) -> WindowGroup.focusStamp(target.group.window) },
+            )?.second
+    }
+
+    /** Whether [group]'s strip, in this workspace, is under [screenPx]. */
+    private fun stripContains(
+        group: TabWindowGroup,
+        screenPx: Offset,
+    ): Boolean =
+        stripHosts[group.window]
+            ?.layoutScreenRectPx()
+            ?.contains(screenPx) == true
+
+    /**
+     * Applies a drop on [target]: a move within this workspace, or the app's
+     * [onForeignDrop] for a strip of a linked one.
+     */
+    internal fun dropOn(
+        entry: TabEntry,
+        target: TabDropTarget,
+    ) {
+        if (owns(target.group)) {
+            move(entry.id, target.group, target.index)
+            return
+        }
+        val into = linkedWorkspaces.firstOrNull { it.owns(target.group) } ?: return
+        onForeignDrop?.invoke(entry, into, target)
+    }
+
     /** The group whose window is [window], if any. */
     public fun groupOf(window: TaoWindow?): TabWindowGroup? =
         window?.let { groupList.firstOrNull { group -> group.window === it } }
@@ -681,7 +761,7 @@ public class TabWorkspace(
     /**
      * Where the tab being dragged would land if released now, or `null` when
      * releasing would tear it into a window of its own. Strips highlight the
-     * insertion point.
+     * insertion point. Its group can be one of [linkedWorkspaces]'.
      */
     public var dropPreview: TabDropTarget? by mutableStateOf(null)
         internal set

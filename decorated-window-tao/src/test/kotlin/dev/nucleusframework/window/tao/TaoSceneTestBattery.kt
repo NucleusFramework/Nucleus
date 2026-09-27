@@ -1210,6 +1210,15 @@ public object TaoSceneTestBattery {
         run("TabWorkspaceTest: dropping the only tab of a window on another strip merges and closes it") {
             TabWorkspaceTest().`dropping the only tab of a window on another strip merges and closes it`()
         }
+        run("TabWorkspaceTest: a tab dropped on a linked workspace's strip is handed to the app") {
+            TabWorkspaceTest().`a tab dropped on a linked workspace's strip is handed to the app`()
+        }
+        run("TabWorkspaceTest: where strips of linked workspaces overlap the front window takes the drop") {
+            TabWorkspaceTest().`where strips of linked workspaces overlap the front window takes the drop`()
+        }
+        run("TabWorkspaceTest: without a foreign-drop handler a linked strip is no target") {
+            TabWorkspaceTest().`without a foreign-drop handler a linked strip is no target`()
+        }
         run("TabWorkspaceTest: a teleporting pointer lands on the strip it was released over") {
             TabWorkspaceTest().`a teleporting pointer lands on the strip it was released over`()
         }
