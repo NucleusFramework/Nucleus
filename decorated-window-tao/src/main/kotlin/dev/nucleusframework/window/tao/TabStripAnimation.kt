@@ -261,6 +261,7 @@ internal fun TabStripItem(
     leading: (@Composable TabStripScope.(TabEntry) -> Unit)?,
     trailing: (@Composable TabStripScope.(TabEntry) -> Unit)?,
     slotModifier: Modifier,
+    gripCursor: TabGripCursor = TabGripCursor.Default,
 ) {
     val workspace = scope.workspace
     val group = scope.group
@@ -316,7 +317,7 @@ internal fun TabStripItem(
                     // (the one that lands while the previous is winding down)
                     // would take the window with it.
                     .noWindowDrag()
-                    .tabStripGripFor(workspace, entry, motion),
+                    .tabStripGripFor(workspace, entry, motion, gripCursor),
         ) {
             val offset = motion.offsetOf(entry.id)
             TabItem(

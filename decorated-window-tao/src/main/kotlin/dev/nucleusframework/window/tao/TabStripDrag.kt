@@ -8,12 +8,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onPlaced
 import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.workspace.ScreenDrag
 import dev.nucleusframework.window.tao.workspace.TransferDragGesture
+import dev.nucleusframework.window.tao.workspace.gripIcon
 import dev.nucleusframework.window.tao.workspace.screenDragHandle
 import dev.nucleusframework.window.tao.workspace.transferDragHandle
 
@@ -58,6 +58,7 @@ internal fun Modifier.tabStripGripFor(
     workspace: TabWorkspace,
     tab: TabEntry,
     motion: TabStripMotion,
+    cursor: TabGripCursor = TabGripCursor.Default,
 ): Modifier =
     composed {
         val window = LocalTaoWindow.current ?: return@composed Modifier
@@ -65,12 +66,14 @@ internal fun Modifier.tabStripGripFor(
             screenDragHandle(
                 key = tab,
                 isDragging = { workspace.draggedTab === tab },
+                idleIcon = cursor.idle,
+                draggingIcon = cursor.dragging,
                 beginTransfer = { host -> workspace.beginTransferDrag(tab.id, host) },
             ) { host, pointerScreenPx ->
                 workspace.beginDrag(tab.id, TabDragOrigin.Strip(host), pointerScreenPx)?.asScreenDrag()
             }
         } else {
-            tabStripLocalDragHandle(workspace, tab, motion)
+            tabStripLocalDragHandle(workspace, tab, motion, cursor)
         }
     }
 
@@ -91,6 +94,7 @@ internal fun Modifier.tabStripLocalDragHandle(
     workspace: TabWorkspace,
     tab: TabEntry,
     motion: TabStripMotion,
+    cursor: TabGripCursor = TabGripCursor.Default,
 ): Modifier =
     composed {
         val window = LocalTaoWindow.current ?: return@composed Modifier
@@ -100,9 +104,8 @@ internal fun Modifier.tabStripLocalDragHandle(
                 TabStripTransferGesture(workspace, motion, tab) { coordinates }
             }
         Modifier
-            .pointerHoverIcon(
-                if (workspace.draggedTab === tab) TaoPointerIcons.Grabbing else TaoPointerIcons.Grab,
-            ).onPlaced { coordinates = it }
+            .gripIcon(if (workspace.draggedTab === tab) cursor.dragging else cursor.idle)
+            .onPlaced { coordinates = it }
             .transferDragHandle(
                 key = tab,
                 window = window,

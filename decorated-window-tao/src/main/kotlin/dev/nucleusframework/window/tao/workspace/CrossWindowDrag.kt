@@ -119,8 +119,8 @@ internal interface ScreenDrag {
 internal fun Modifier.screenDragHandle(
     key: Any?,
     isDragging: () -> Boolean,
-    idleIcon: PointerIcon = TaoPointerIcons.Grab,
-    draggingIcon: PointerIcon = TaoPointerIcons.Grabbing,
+    idleIcon: PointerIcon? = TaoPointerIcons.Grab,
+    draggingIcon: PointerIcon? = TaoPointerIcons.Grabbing,
     beginTransfer: (window: TaoWindow) -> TransferDrag?,
     begin: (window: TaoWindow, pointerScreenPx: Offset) -> ScreenDrag?,
 ): Modifier =
@@ -129,14 +129,14 @@ internal fun Modifier.screenDragHandle(
         if (!window.canPlaceOnScreen) {
             val currentBeginTransfer by rememberUpdatedState(beginTransfer)
             return@composed Modifier
-                .pointerHoverIcon(if (isDragging()) draggingIcon else idleIcon)
+                .gripIcon(if (isDragging()) draggingIcon else idleIcon)
                 .transferDragHandle(key, window, begin = { currentBeginTransfer(window) })
         }
         val containerSize = LocalWindowInfo.current.containerSize
         var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
         val currentBegin by rememberUpdatedState(begin)
         Modifier
-            .pointerHoverIcon(if (isDragging()) draggingIcon else idleIcon)
+            .gripIcon(if (isDragging()) draggingIcon else idleIcon)
             .onPlaced { coordinates = it }
             .pointerInput(key, window, containerSize) {
                 /** Pointer position in this element → physical screen pixels. */
@@ -177,3 +177,6 @@ internal fun Modifier.screenDragHandle(
                 }
             }
     }
+
+/** The grip's pointer icon; `null` leaves whatever the pointer shows around it. */
+internal fun Modifier.gripIcon(icon: PointerIcon?): Modifier = if (icon == null) this else pointerHoverIcon(icon)

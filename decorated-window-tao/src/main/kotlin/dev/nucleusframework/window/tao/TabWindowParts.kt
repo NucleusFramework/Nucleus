@@ -9,11 +9,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.window.WindowPosition
@@ -153,11 +155,32 @@ public fun Modifier.tabStripGrip(
     drag: TabStripDrag,
     tab: TabEntry,
     index: Int,
+    cursor: TabGripCursor = TabGripCursor.Default,
 ): Modifier =
     tabSlot(scope.group, index)
         .onPlaced { drag.motion.placed(tab.id, it.boundsInWindow()) }
         .noWindowDrag()
-        .tabStripGripFor(scope.workspace, tab, drag.motion)
+        .tabStripGripFor(scope.workspace, tab, drag.motion, cursor)
+
+/**
+ * The pointer icon a tab grip shows: [idle] over it, [dragging] while the tab is carried. `null`
+ * leaves the pointer as it is around the strip — a plain arrow over the tabs.
+ */
+@Immutable
+@ExperimentalNucleusApi
+public class TabGripCursor(
+    public val idle: PointerIcon?,
+    public val dragging: PointerIcon?,
+) {
+    /** The two stock cursors. */
+    public companion object {
+        /** An open hand over a tab, a closed one while it is carried. */
+        public val Default: TabGripCursor = TabGripCursor(TaoPointerIcons.Grab, TaoPointerIcons.Grabbing)
+
+        /** No icon of its own: the tabs keep the strip's pointer. */
+        public val None: TabGripCursor = TabGripCursor(null, null)
+    }
+}
 
 /** Draws [tab] where the strip's motion puts it: carried, pushed aside, sliding home. */
 @ExperimentalNucleusApi
