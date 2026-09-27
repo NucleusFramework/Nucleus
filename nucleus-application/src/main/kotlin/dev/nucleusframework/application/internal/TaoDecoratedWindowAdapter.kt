@@ -190,21 +190,9 @@ internal object TaoDecoratedWindowAdapter {
     }
 }
 
-/**
- * The Nucleus locals of a window scene, composed around [content]: the bridged
- * outer locals, this window as [LocalNucleusWindow], single-instance restore,
- * text-selection accessibility and the native context menu.
- *
- * Shared with [TaoTabWorkspaceAdapter], whose windows are opened by the tab
- * workspace rather than by this adapter but are decorated windows all the same.
- */
+/** This window's [NucleusDecoratedWindowScope]: the Tao scope plus its [NucleusWindow]. */
 @Composable
-internal fun TaoDecoratedWindowScope.bindNucleusContent(
-    outerLocals: androidx.compose.runtime.CompositionLocalContext,
-    parentLayoutDirection: androidx.compose.ui.unit.LayoutDirection,
-    nativeContextMenu: Boolean,
-    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
-) {
+internal fun TaoDecoratedWindowScope.rememberNucleusScope(): NucleusDecoratedWindowScope {
     val taoScope: TaoDecoratedWindowScope = this
     val decoratedState =
         remember(taoScope) {
@@ -214,10 +202,29 @@ internal fun TaoDecoratedWindowScope.bindNucleusContent(
         remember(taoScope.window) {
             TaoNucleusWindow(taoScope.window, decoratedState)
         }
-    val nucleusScope =
-        remember(taoScope, nucleusWindow) {
-            TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
-        }
+    return remember(taoScope, nucleusWindow) {
+        TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
+    }
+}
+
+/**
+ * The Nucleus locals of a window scene, composed around [content]: the bridged
+ * outer locals, this window as [LocalNucleusWindow], single-instance restore,
+ * text-selection accessibility and the native context menu.
+ *
+ * Shared with [TaoTabWorkspaceAdapter], whose windows are opened by the tab
+ * workspace rather than by this adapter but are decorated windows all the same.
+ */
+
+@Composable
+internal fun TaoDecoratedWindowScope.bindNucleusContent(
+    outerLocals: androidx.compose.runtime.CompositionLocalContext,
+    parentLayoutDirection: androidx.compose.ui.unit.LayoutDirection,
+    nativeContextMenu: Boolean,
+    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+) {
+    val nucleusScope = rememberNucleusScope()
+    val nucleusWindow = nucleusScope.nucleusWindow
     ObserveSingleInstanceRestore(nucleusWindow)
     ObserveIdleGc(nucleusWindow)
     // outerLocals were captured in the OUTER composition and cross the

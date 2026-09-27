@@ -228,10 +228,11 @@ public final class dev/nucleusframework/window/tao/ComposableSingletons$TabStrip
 public final class dev/nucleusframework/window/tao/ComposableSingletons$TabWindowsKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/ComposableSingletons$TabWindowsKt;
 	public fun <init> ()V
-	public final fun getLambda$-1983168099$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$-2134295700$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$-51230148$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$-889290047$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-140057250$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-1501838323$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-2070093395$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-335910787$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$1026698370$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
 }
 
 public final class dev/nucleusframework/window/tao/D3D11TestTextureProducer : java/lang/AutoCloseable {
@@ -591,6 +592,7 @@ public final class dev/nucleusframework/window/tao/SatellitePlacement$Docked : d
 public final class dev/nucleusframework/window/tao/SatellitePlacement$Floating : dev/nucleusframework/window/tao/SatellitePlacement {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/SatellitePlacement$Floating$Companion;
+	public fun <init> ()V
 	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowPositioner;JLandroidx/compose/ui/unit/DpRect;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowPositioner;JLandroidx/compose/ui/unit/DpRect;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ldev/nucleusframework/window/tao/WindowPositioner;
@@ -649,6 +651,7 @@ public final class dev/nucleusframework/window/tao/SatelliteWindowKt {
 
 public final class dev/nucleusframework/window/tao/SatelliteWindowState {
 	public static final field $stable I
+	public fun <init> ()V
 	public synthetic fun <init> (JLdev/nucleusframework/window/tao/WindowPositioner;Landroidx/compose/ui/unit/DpRect;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (JLdev/nucleusframework/window/tao/WindowPositioner;Landroidx/compose/ui/unit/DpRect;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getAnchorRect ()Landroidx/compose/ui/unit/DpRect;
@@ -815,6 +818,7 @@ public final class dev/nucleusframework/window/tao/TabGroupSnapshot {
 public final class dev/nucleusframework/window/tao/TabHoverPreview {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/TabHoverPreview$Companion;
+	public fun <init> ()V
 	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getContent ()Lkotlin/jvm/functions/Function3;
@@ -908,13 +912,15 @@ public final class dev/nucleusframework/window/tao/TabWindowGroup {
 }
 
 public final class dev/nucleusframework/window/tao/TabWindowsKt {
+	public static final fun DefaultTabTitleBar (Ldev/nucleusframework/window/DecoratedWindowScope;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;I)V
 	public static final fun Tab (Ldev/nucleusframework/window/tao/ApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
-	public static final fun TabWindows (Ldev/nucleusframework/window/tao/ApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TabWindows (Ldev/nucleusframework/window/tao/ApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/TabWorkspace$Companion;
+	public fun <init> ()V
 	public synthetic fun <init> (JZILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (JZLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun beginDrag-0AR0LA0 (Ljava/lang/String;Ldev/nucleusframework/window/tao/TabDragOrigin;J)Ldev/nucleusframework/window/tao/TabDragSession;
@@ -1512,6 +1518,7 @@ public final class dev/nucleusframework/window/tao/WindowExceptionHandlerFactory
 
 public final class dev/nucleusframework/window/tao/WindowPositioner {
 	public static final field $stable I
+	public fun <init> ()V
 	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowAnchor;Ldev/nucleusframework/window/tao/WindowAnchor;JLdev/nucleusframework/window/tao/WindowConstraintAdjustment;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowAnchor;Ldev/nucleusframework/window/tao/WindowAnchor;JLdev/nucleusframework/window/tao/WindowConstraintAdjustment;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ldev/nucleusframework/window/tao/WindowAnchor;

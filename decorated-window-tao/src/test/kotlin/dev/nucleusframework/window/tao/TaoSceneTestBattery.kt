@@ -1240,6 +1240,9 @@ public object TaoSceneTestBattery {
         run("TabWorkspaceTest: snapshot and restore round trip including a tab declared later") {
             TabWorkspaceTest().`snapshot and restore round trip including a tab declared later`()
         }
+        run("TabWorkspaceTest: a tear-off never takes the id of a restored window") {
+            TabWorkspaceTest().`a tear-off never takes the id of a restored window`()
+        }
         run("TabWorkspaceTest: a restore rebuilds strip order whatever order the tabs are declared in") {
             TabWorkspaceTest().`a restore rebuilds strip order whatever order the tabs are declared in`()
         }

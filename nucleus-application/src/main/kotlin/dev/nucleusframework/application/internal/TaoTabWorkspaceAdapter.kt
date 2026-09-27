@@ -35,6 +35,7 @@ internal object TaoTabWorkspaceAdapter {
         scope: TaoNucleusApplicationScope,
         workspace: TabWorkspace,
         strip: @Composable @UiComposable TabStripScope.() -> Unit,
+        titleBar: @Composable @UiComposable NucleusDecoratedWindowScope.(strip: @Composable () -> Unit) -> Unit,
         dragGhost: @Composable @UiComposable NucleusDecoratedWindowScope.(TabDragGhost) -> Unit,
         nativeContextMenu: Boolean,
         windowWrapper: @Composable @UiComposable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit,
@@ -51,6 +52,9 @@ internal object TaoTabWorkspaceAdapter {
                 workspace = workspace,
                 compositionLocalContext = outerLocals,
                 strip = strip,
+                // Inside the window's content, where bindNucleusContent has
+                // already run: only the Nucleus scope is needed as receiver.
+                titleBar = { tabStrip -> rememberNucleusScope().titleBar(tabStrip) },
                 // The ghost is a window of its own: it gets the Nucleus locals
                 // a tab window gets, laid out in the direction of the strip the
                 // tab came from — not the app's `windowWrapper`, which dresses

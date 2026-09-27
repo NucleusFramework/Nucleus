@@ -12,6 +12,7 @@ import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.ui.UiComposable
 import dev.nucleusframework.application.internal.TaoTabWorkspaceAdapter
 import dev.nucleusframework.window.ExperimentalNucleusApi
+import dev.nucleusframework.window.tao.DefaultTabTitleBar
 import dev.nucleusframework.window.tao.TabDragGhost
 import dev.nucleusframework.window.tao.TabDragGhostCard
 import dev.nucleusframework.window.tao.TabScope
@@ -43,6 +44,10 @@ import dev.nucleusframework.window.tao.TabWorkspace
  *
  * @param strip the chrome of one window's tab strip; [TabStrip] by default.
  *   Composed inside that window's title bar.
+ * @param titleBar the title bar of each window, handed the strip to place in
+ *   it — a `JewelTitleBar` with the app's gradient, say.
+ *   `DefaultTabTitleBar` by default: a `BasicTitleBar` giving the strip all the
+ *   width between the platform controls.
  * @param dragGhost what a tab being dragged out of its strip looks like under
  *   the pointer — a borderless window the size the tab had in its strip, laid
  *   out in that strip's direction. [TabDragGhostCard] by default; an app
@@ -74,6 +79,8 @@ import dev.nucleusframework.window.tao.TabWorkspace
 public fun NucleusApplicationScope.TabWindows(
     workspace: TabWorkspace,
     strip: @Composable @UiComposable TabStripScope.() -> Unit = { TabStrip() },
+    titleBar: @Composable @UiComposable NucleusDecoratedWindowScope.(strip: @Composable () -> Unit) -> Unit =
+        { DefaultTabTitleBar(it) },
     dragGhost: @Composable @UiComposable NucleusDecoratedWindowScope.(TabDragGhost) -> Unit = { TabDragGhostCard(it) },
     nativeContextMenu: Boolean = true,
     windowWrapper: @Composable @UiComposable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit =
@@ -88,6 +95,7 @@ public fun NucleusApplicationScope.TabWindows(
                 scope = this,
                 workspace = workspace,
                 strip = strip,
+                titleBar = titleBar,
                 dragGhost = dragGhost,
                 nativeContextMenu = nativeContextMenu,
                 windowWrapper = windowWrapper,
@@ -108,6 +116,8 @@ public fun NucleusApplicationScope.TabWindows(
 public fun TabWindows(
     workspace: TabWorkspace,
     strip: @Composable @UiComposable TabStripScope.() -> Unit = { TabStrip() },
+    titleBar: @Composable @UiComposable NucleusDecoratedWindowScope.(strip: @Composable () -> Unit) -> Unit =
+        { DefaultTabTitleBar(it) },
     dragGhost: @Composable @UiComposable NucleusDecoratedWindowScope.(TabDragGhost) -> Unit = { TabDragGhostCard(it) },
     nativeContextMenu: Boolean = true,
     windowWrapper: @Composable @UiComposable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit =
@@ -119,6 +129,7 @@ public fun TabWindows(
     LocalNucleusApplicationScope.current.TabWindows(
         workspace = workspace,
         strip = strip,
+        titleBar = titleBar,
         dragGhost = dragGhost,
         nativeContextMenu = nativeContextMenu,
         windowWrapper = windowWrapper,

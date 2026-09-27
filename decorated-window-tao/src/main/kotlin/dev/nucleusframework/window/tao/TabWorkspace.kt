@@ -502,7 +502,18 @@ public class TabWorkspace(
         }
     }
 
-    private fun nextGroupId(): String = "group-${nextGroupId++}"
+    /**
+     * A fresh group id. The counter restarts with the process while a [restore] brings back the
+     * ids a previous one handed out, so an id already taken — by a group, or by a restored group
+     * still waiting for its tabs — is skipped.
+     */
+    private fun nextGroupId(): String {
+        var id: String
+        do {
+            id = "group-${nextGroupId++}"
+        } while (group(id) != null || pendingRestore.any { it.id == id })
+        return id
+    }
 
     // ── Drag and drop ────────────────────────────────────────────────────
 
