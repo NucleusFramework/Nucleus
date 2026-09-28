@@ -12,6 +12,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
@@ -29,6 +30,7 @@ import dev.nucleusframework.window.tao.TaoFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoKeyLocation
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoMonitors
+import dev.nucleusframework.window.tao.TaoMouseButton
 import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
@@ -328,6 +330,11 @@ internal class TaoComposeSceneHost(
     // Release in [onPointerButton] and [onFocusChanged] must release this
     // button, not whichever button the new event carries.
     private var pressedButtonCode: Int = 0
+
+    // #736: a left press with Control held is AppKit's secondary click (AWT
+    // does the same). Latched at the press so the matching release names the
+    // same button whatever the modifiers are by then.
+    private var controlClick: Boolean = false
 
     // Set the first time we see a CursorMoved from Tao. Until then, any
     // button event is dropped — a real user click cannot occur without the
@@ -1295,9 +1302,11 @@ internal class TaoComposeSceneHost(
         // fling must not race an open pan session).
         if (pressed) scrollRouter.finishPan()
         interruptRotation()
-        val composeButton = mapButton(buttonCode)
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        if (buttonCode == TaoMouseButton.LEFT && pressed) controlClick = currentKeyboardModifiers.isCtrlPressed
+        val code = if (buttonCode == TaoMouseButton.LEFT && controlClick) TaoMouseButton.RIGHT else buttonCode
+        val composeButton = mapButton(code)
         if (pressed && isPressed) {
             // Stale "still-down" state — close it out before opening a new
             // interaction so Compose hit-tests this Press fresh. Release the
@@ -1315,7 +1324,7 @@ internal class TaoComposeSceneHost(
             return
         }
         isPressed = pressed
-        if (pressed) pressedButtonCode = buttonCode
+        if (pressed) pressedButtonCode = code
         if (pressed) nativePointerDispatchedThisEvent = false
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,

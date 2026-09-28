@@ -121,7 +121,11 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
 - (BOOL)nucleusRegionHitTestEnabled;
 @end
 
-@implementation NucleusTaoPopupContent
+@implementation NucleusTaoPopupContent {
+    /* #736: a left press with Control held is AppKit's secondary click.
+     * Latched at the press so the drag and the release name the same button. */
+    BOOL _controlClick;
+}
 
 - (BOOL)wantsUpdateLayer { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
@@ -269,10 +273,14 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
     }
 }
 
-- (void)mouseDown:(NSEvent *)event       { [self maybeBecomeKey:event]; [self dispatchPointer:event type:EVT_PTR_DOWN button:1]; }
-- (void)mouseUp:(NSEvent *)event         { [self dispatchPointer:event type:EVT_PTR_UP   button:1]; }
+- (void)mouseDown:(NSEvent *)event {
+    [self maybeBecomeKey:event];
+    _controlClick = (event.modifierFlags & NSEventModifierFlagControl) != 0;
+    [self dispatchPointer:event type:EVT_PTR_DOWN button:_controlClick ? 2 : 1];
+}
+- (void)mouseUp:(NSEvent *)event         { [self dispatchPointer:event type:EVT_PTR_UP   button:_controlClick ? 2 : 1]; }
 - (void)mouseMoved:(NSEvent *)event      { [self dispatchPointer:event type:EVT_PTR_MOVE button:0]; }
-- (void)mouseDragged:(NSEvent *)event    { [self dispatchPointer:event type:EVT_PTR_MOVE button:1]; }
+- (void)mouseDragged:(NSEvent *)event    { [self dispatchPointer:event type:EVT_PTR_MOVE button:_controlClick ? 2 : 1]; }
 - (void)rightMouseDown:(NSEvent *)event  { [self maybeBecomeKey:event]; [self dispatchPointer:event type:EVT_PTR_DOWN button:2]; }
 - (void)rightMouseUp:(NSEvent *)event    { [self dispatchPointer:event type:EVT_PTR_UP   button:2]; }
 
