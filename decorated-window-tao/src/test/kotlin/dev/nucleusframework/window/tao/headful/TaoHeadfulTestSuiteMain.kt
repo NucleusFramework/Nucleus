@@ -375,6 +375,7 @@ public object TaoHeadfulTestSuiteMain {
             TrackpadScaleHeadfulCases.all() +
             LinuxTrackpadPinchHeadfulCases.all() +
             MacOsTrackpadScaleHeadfulCases.all() +
+            MacOsControlClickHeadfulCases.all() +
             MacOsTrackpadGestureMonkeyHeadfulCases.all() +
             ChromeReviewHeadfulCases.all() +
             ChromeCoverageHeadfulCases.all() +
