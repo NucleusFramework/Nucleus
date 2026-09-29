@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.kotlin) apply false
     alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.androidApplication) apply false
+    alias(libs.plugins.androidKotlinMultiplatformLibrary) apply false
     alias(libs.plugins.vanniktechMavenPublish) apply false
     alias(libs.plugins.graalvmNative) apply false
     // Freezes public ABI for every published library module: `apiCheck` fails on
@@ -158,6 +159,18 @@ subprojects {
 
         tasks.withType<Detekt>().configureEach {
             jvmTarget.set("25")
+        }
+
+        // On Kotlin Multiplatform the plain `detekt` task has no sources: `check` must run the
+        // per-source-set analyses itself, or nothing is analyzed at all.
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            tasks.named("check") {
+                dependsOn(
+                    tasks.withType<Detekt>().matching {
+                        it.name.endsWith("SourceSet") && !it.name.startsWith("detektBaseline")
+                    },
+                )
+            }
         }
     }
 }

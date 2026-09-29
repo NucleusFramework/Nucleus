@@ -1,0 +1,22 @@
+[package]
+name = "nucleus_speech"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "nucleus_speech"
+crate-type = ["cdylib"]
+
+[dependencies]
+jni = "0.21"
+# Not published on crates.io: pinned to a commit of the robius monorepo.
+# Windows: SAPI dictation. macOS: SFSpeechRecognizer + AVAudioEngine (Swift bridge, built by its build.rs).
+robius-speech = { git = "https://github.com/project-robius/robius", rev = "71966dc2194307e27d3f9eedc9138614624b4265" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = "symbols"
+# Unwinding stays on: robius-speech catches panics at its native callback boundaries.

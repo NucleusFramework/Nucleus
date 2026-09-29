@@ -1,0 +1,130 @@
+public final class dev/nucleusframework/speech/Dictation {
+	public fun <init> (Ljava/lang/String;II)V
+	public synthetic fun <init> (Ljava/lang/String;IIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun applied ()V
+	public final fun interrupt ()V
+	public final fun isInterrupted ()Z
+	public final fun settle (Ljava/lang/String;II)Ldev/nucleusframework/speech/Replacement;
+	public static synthetic fun settle$default (Ldev/nucleusframework/speech/Dictation;Ljava/lang/String;IIILjava/lang/Object;)Ldev/nucleusframework/speech/Replacement;
+	public final fun transcript (Ljava/lang/String;Z)Ldev/nucleusframework/speech/Replacement;
+}
+
+public final class dev/nucleusframework/speech/Replacement {
+	public fun <init> (IILjava/lang/String;Z)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun copy (IILjava/lang/String;Z)Ldev/nucleusframework/speech/Replacement;
+	public static synthetic fun copy$default (Ldev/nucleusframework/speech/Replacement;IILjava/lang/String;ZILjava/lang/Object;)Ldev/nucleusframework/speech/Replacement;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContinues ()Z
+	public final fun getEnd ()I
+	public final fun getStart ()I
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/speech/SpeechErrorKind : java/lang/Enum {
+	public static final field Audio Ldev/nucleusframework/speech/SpeechErrorKind;
+	public static final field Busy Ldev/nucleusframework/speech/SpeechErrorKind;
+	public static final field Language Ldev/nucleusframework/speech/SpeechErrorKind;
+	public static final field Other Ldev/nucleusframework/speech/SpeechErrorKind;
+	public static final field PermissionDenied Ldev/nucleusframework/speech/SpeechErrorKind;
+	public static final field Unavailable Ldev/nucleusframework/speech/SpeechErrorKind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/speech/SpeechErrorKind;
+	public static fun values ()[Ldev/nucleusframework/speech/SpeechErrorKind;
+}
+
+public abstract interface class dev/nucleusframework/speech/SpeechEvent {
+}
+
+public final class dev/nucleusframework/speech/SpeechEvent$AudioLevel : dev/nucleusframework/speech/SpeechEvent {
+	public fun <init> (F)V
+	public final fun component1 ()F
+	public final fun copy (F)Ldev/nucleusframework/speech/SpeechEvent$AudioLevel;
+	public static synthetic fun copy$default (Ldev/nucleusframework/speech/SpeechEvent$AudioLevel;FILjava/lang/Object;)Ldev/nucleusframework/speech/SpeechEvent$AudioLevel;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLevel ()F
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/speech/SpeechEvent$Error : dev/nucleusframework/speech/SpeechEvent {
+	public fun <init> (Ldev/nucleusframework/speech/SpeechErrorKind;Ljava/lang/String;)V
+	public final fun component1 ()Ldev/nucleusframework/speech/SpeechErrorKind;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ldev/nucleusframework/speech/SpeechErrorKind;Ljava/lang/String;)Ldev/nucleusframework/speech/SpeechEvent$Error;
+	public static synthetic fun copy$default (Ldev/nucleusframework/speech/SpeechEvent$Error;Ldev/nucleusframework/speech/SpeechErrorKind;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/speech/SpeechEvent$Error;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKind ()Ldev/nucleusframework/speech/SpeechErrorKind;
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/speech/SpeechEvent$Started : dev/nucleusframework/speech/SpeechEvent {
+	public static final field INSTANCE Ldev/nucleusframework/speech/SpeechEvent$Started;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/speech/SpeechEvent$Stopped : dev/nucleusframework/speech/SpeechEvent {
+	public static final field INSTANCE Ldev/nucleusframework/speech/SpeechEvent$Stopped;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/speech/SpeechEvent$Transcript : dev/nucleusframework/speech/SpeechEvent {
+	public fun <init> (Ljava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Ldev/nucleusframework/speech/SpeechEvent$Transcript;
+	public static synthetic fun copy$default (Ldev/nucleusframework/speech/SpeechEvent$Transcript;Ljava/lang/String;ZILjava/lang/Object;)Ldev/nucleusframework/speech/SpeechEvent$Transcript;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isFinal ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/speech/SpeechException : java/lang/Exception {
+	public fun <init> (Ldev/nucleusframework/speech/SpeechErrorKind;Ljava/lang/String;)V
+	public final fun getKind ()Ldev/nucleusframework/speech/SpeechErrorKind;
+}
+
+public final class dev/nucleusframework/speech/SpeechRecognition {
+	public static final field INSTANCE Ldev/nucleusframework/speech/SpeechRecognition;
+	public final fun cancelAll ()V
+	public final fun getEngineName ()Ljava/lang/String;
+	public final fun isSupported ()Z
+	public final fun start (Ldev/nucleusframework/speech/SpeechRecognitionOptions;Lkotlin/jvm/functions/Function1;)Ldev/nucleusframework/speech/SpeechSession;
+	public static synthetic fun start$default (Ldev/nucleusframework/speech/SpeechRecognition;Ldev/nucleusframework/speech/SpeechRecognitionOptions;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ldev/nucleusframework/speech/SpeechSession;
+}
+
+public final class dev/nucleusframework/speech/SpeechRecognitionOptions {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Ldev/nucleusframework/speech/SpeechRecognitionOptions;
+	public static synthetic fun copy$default (Ldev/nucleusframework/speech/SpeechRecognitionOptions;Ljava/lang/String;ZILjava/lang/Object;)Ldev/nucleusframework/speech/SpeechRecognitionOptions;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLocale ()Ljava/lang/String;
+	public final fun getPreferOnDevice ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/speech/SpeechSession : java/lang/AutoCloseable {
+	public final fun cancel ()V
+	public fun close ()V
+	public final fun isActive ()Z
+	public final fun stop ()V
+}
+

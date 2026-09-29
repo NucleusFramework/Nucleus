@@ -120,6 +120,11 @@ jobs:
         shell: cmd
         run: call fs-watcher\src\main\native\windows\build.bat
 
+      - name: Build speech-recognition Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call speech-recognition\src\main\native\windows\build.bat
+
       - name: Build decorated-window-tao Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -144,6 +149,7 @@ jobs:
             "media-control/nucleus_media_control_windows.dll"
             "spellcheck/nucleus_spellcheck.dll"
             "fs-watcher/nucleus_fs_watcher.dll"
+            "speech-recognition/nucleus_speech.dll"
             "decorated-window-tao/nucleus_tao.dll"
             "decorated-window-tao/nucleus_tao_windows_deco.dll"
             "decorated-window-tao/nucleus_tao_gl.dll"
@@ -263,6 +269,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash fs-watcher/src/main/native/macos/build.sh
 
+      - name: Build speech-recognition macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash speech-recognition/src/main/native/macos/build.sh
+
       - name: Build decorated-window-tao macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/macos/build.sh
@@ -290,6 +300,7 @@ jobs:
             "media-control/libnucleus_media_control_macos.dylib"
             "spellcheck/libnucleus_spellcheck.dylib"
             "fs-watcher/libnucleus_fs_watcher.dylib"
+            "speech-recognition/libnucleus_speech.dylib"
             "decorated-window-tao/libnucleus_tao.dylib"
             "decorated-window-tao/libnucleus_tao_metal.dylib"
             "decorated-window-tao/libnucleus_tao_dnd.dylib"

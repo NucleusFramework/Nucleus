@@ -63,6 +63,7 @@ composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "hot
 lighthouse = { id = "io.github.dev-vikas-soni.lighthouse", version.ref = "lighthouse" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 androidApplication = { id = "com.android.application", version.ref = "agp" }
+androidKotlinMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 kotlinxSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 
 [libraries]

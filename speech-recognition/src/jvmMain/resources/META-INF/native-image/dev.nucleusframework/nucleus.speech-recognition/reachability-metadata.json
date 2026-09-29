@@ -1,0 +1,19 @@
+{
+  "reflection": [
+    {
+      "type": "dev.nucleusframework.speech.NativeSpeechBridge",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "onNativeEvent",
+          "parameterTypes": [
+            "long",
+            "int",
+            "java.lang.String",
+            "float"
+          ]
+        }
+      ]
+    }
+  ]
+}

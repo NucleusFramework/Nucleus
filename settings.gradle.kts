@@ -71,6 +71,7 @@ include(":scheduler")
 include(":scheduler-testing")
 include(":updater-testing")
 include(":fs-watcher")
+include(":speech-recognition")
 
 // Demo / sample applications (consolidated under examples/)
 include(":examples:nucleus-demo")
