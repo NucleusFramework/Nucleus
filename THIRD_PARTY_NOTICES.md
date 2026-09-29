@@ -120,3 +120,9 @@ are listed for transparency, not as a redistribution notice.
 `decorated-window-tao/src/main/native/Cargo.lock`; regenerate a per-crate license inventory with
 `cargo license` or `cargo about` from `decorated-window-tao/src/main/native/`. Sections 2 and 3
 above cover the crates Nucleus has forked and therefore redistributes as source.
+
+`libnucleus_location` (`nucleus.location`) likewise statically links its crate tree (`jni`,
+`windows`, `objc2` / `objc2-core-location`, `zbus`, …), all MIT and/or Apache-2.0; the list is
+`location/src/main/native/Cargo.lock`. Its design follows
+[robius-location](https://github.com/project-robius/robius/tree/main/crates/location) (MIT), from
+which no source is copied.

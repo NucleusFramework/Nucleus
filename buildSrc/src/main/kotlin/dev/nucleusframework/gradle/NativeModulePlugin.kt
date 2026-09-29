@@ -2,6 +2,7 @@ package dev.nucleusframework.gradle
 
 import org.apache.tools.ant.taskdefs.condition.Os
 import org.gradle.api.DefaultTask
+import org.gradle.api.NamedDomainObjectCollection
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
@@ -20,6 +21,7 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.TaskProvider
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.kotlin.dsl.create
 import org.gradle.kotlin.dsl.getByType
 import org.gradle.kotlin.dsl.named
@@ -29,7 +31,8 @@ import java.io.File
 
 /**
  * Owns the build wiring shared by every module that compiles a JNI bridge into
- * `src/main/resources/nucleus/native/<arch>/`.
+ * `src/main/resources/nucleus/native/<arch>/`, for Kotlin/JVM modules and for the `jvm()`
+ * target of Kotlin Multiplatform ones.
  *
  * ```kotlin
  * plugins { id("nucleus.native-module") }
@@ -171,8 +174,10 @@ open class NativeModuleExtension(
         project.plugins.withType<JavaPlugin>().configureEach {
             project.tasks.named<Task>(JavaPlugin.PROCESS_RESOURCES_TASK_NAME).configure { dependsOn(task) }
         }
+        // Kotlin Multiplatform: the JVM target's resources, see [kmpJvmResources].
+        kmpJvmResources.configureEach { dependsOn(task) }
         // Registered by the publishing plugin, which may not be applied yet.
-        project.tasks.matching { it.name == "sourcesJar" }.configureEach { dependsOn(task) }
+        project.tasks.matching { it.name == "sourcesJar" || it.name == KMP_JVM_SOURCES_JAR }.configureEach { dependsOn(task) }
         nativeLibrariesManifest.configure { dependsOn(task) }
 
         return task
@@ -202,7 +207,23 @@ open class NativeModuleExtension(
                 .named(SourceSet.MAIN_SOURCE_SET_NAME)
                 .configure { resources.srcDir(manifest) }
         }
+        kmpJvmResources.configureEach { from(manifest) }
         manifest
+    }
+
+    /**
+     * The JVM target's `processResources` of a Kotlin Multiplatform module, matched by name so
+     * buildSrc needs no Kotlin Gradle plugin on its classpath. The libraries stay under
+     * `src/main/resources/nucleus/native` — the path every CI workflow caches, uploads and
+     * verifies — and are copied into the JVM target only: `src/main/resources` is not a source
+     * set of a multiplatform module, so no other target ever sees them.
+     */
+    private val kmpJvmResources: NamedDomainObjectCollection<ProcessResources> by lazy {
+        project.tasks.withType<ProcessResources>().matching { it.name == KMP_JVM_PROCESS_RESOURCES }.also { tasks ->
+            project.pluginManager.withPlugin(KMP_PLUGIN_ID) {
+                tasks.configureEach { from(project.layout.projectDirectory.dir(RESOURCE_ROOT_PATH)) }
+            }
+        }
     }
 
     /**
@@ -301,7 +322,13 @@ enum class NativeTarget(
         }
 }
 
-private const val NATIVE_RESOURCE_PATH = "src/main/resources/nucleus/native"
+private const val RESOURCE_ROOT_PATH = "src/main/resources"
+private const val NATIVE_RESOURCE_PATH = "$RESOURCE_ROOT_PATH/nucleus/native"
+
+// A multiplatform module's JVM target must be declared as `jvm()` for these names to match.
+private const val KMP_PLUGIN_ID = "org.jetbrains.kotlin.multiplatform"
+private const val KMP_JVM_PROCESS_RESOURCES = "jvmProcessResources"
+private const val KMP_JVM_SOURCES_JAR = "jvmSourcesJar"
 
 /**
  * Writes `META-INF/nucleus/native-libraries/<manifestName>`: one `nucleus/native/<arch>/<file>`
