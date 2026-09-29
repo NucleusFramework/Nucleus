@@ -53,6 +53,11 @@ jobs:
         shell: cmd
         run: call system-color\src\main\native\windows\build.bat
 
+      - name: Build screen-capture Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call screen-capture\src\main\native\windows\build.bat
+
       - name: Build energy-manager Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -132,6 +137,7 @@ jobs:
             "darkmode-detector/nucleus_windows_theme.dll"
             "native-ssl/nucleus_ssl.dll"
             "system-color/nucleus_systemcolor.dll"
+            "screen-capture/nucleus_screencapture.dll"
             "energy-manager/nucleus_energy_manager.dll"
             "taskbar-progress/nucleus_taskbar_progress.dll"
             "notification-windows/nucleus_notification_windows.dll"
@@ -203,6 +209,10 @@ jobs:
       - name: Build system-color macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash system-color/src/main/native/macos/build.sh
+
+      - name: Build screen-capture macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash screen-capture/src/main/native/macos/build.sh
 
       - name: Build energy-manager macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
@@ -277,6 +287,7 @@ jobs:
             "darkmode-detector/libnucleus_darkmode.dylib"
             "native-ssl/libnucleus_ssl.dylib"
             "system-color/libnucleus_systemcolor.dylib"
+            "screen-capture/libnucleus_screencapture.dylib"
             "energy-manager/libnucleus_energy_manager.dylib"
             "taskbar-progress/libnucleus_taskbar_progress.dylib"
             "notification-macos/libnucleus_notification.dylib"
@@ -358,7 +369,7 @@ jobs:
 
       - name: Install build dependencies
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libx11-dev libglib2.0-dev libgtk-3-dev
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libx11-dev libxrandr-dev libxfixes-dev libxcomposite-dev libglib2.0-dev libgtk-3-dev
 
       - name: Build darkmode-detector Linux native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
@@ -375,6 +386,10 @@ jobs:
       - name: Build system-color Linux native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash system-color/src/main/native/linux/build.sh
+
+      - name: Build screen-capture Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash screen-capture/src/main/native/linux/build.sh
 
       - name: Build energy-manager Linux native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
@@ -434,6 +449,7 @@ jobs:
             "linux-hidpi/libnucleus_linux_hidpi_jni.so"
             "spellcheck/libnucleus_spellcheck.so"
             "system-color/libnucleus_systemcolor.so"
+            "screen-capture/libnucleus_screencapture.so"
             "energy-manager/libnucleus_energy_manager.so"
             "notification-linux/libnucleus_notification_linux.so"
             "launcher-linux/libnucleus_launcher_linux.so"
