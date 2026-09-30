@@ -162,6 +162,15 @@ public class NucleusUpdater(
                 ) ?: return null
 
             val plannedBytes = DeltaPlan.downloadSize(resolved.download.operations)
+            if (plannedBytes * PERCENT_MAX >= targetFile.size * MAX_DIFFERENTIAL_PERCENT) {
+                // Nearly everything changed: many ranged requests would save next to nothing over
+                // one streamed full download.
+                logger.info(
+                    "Differential update of ${targetFile.fileName} would fetch $plannedBytes of " +
+                        "${targetFile.size} bytes; downloading the full artifact instead",
+                )
+                return null
+            }
             logger.info(
                 "Differential update of ${targetFile.fileName}: fetching $plannedBytes " +
                     "of ${targetFile.size} bytes",
@@ -451,6 +460,9 @@ public class NucleusUpdater(
     public companion object {
         private const val HTTP_OK = 200
         private const val PERCENT_MAX = 100.0
+
+        /** A differential download fetching at least this share of the artifact is not worth it. */
+        private const val MAX_DIFFERENTIAL_PERCENT = 90.0
 
         private val logger: Logger = Logger.getLogger(NucleusUpdater::class.java.name)
 
