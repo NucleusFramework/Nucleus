@@ -35,13 +35,20 @@ internal class DeltaResolver(
     private val authHeaders: Map<String, String>,
     private val cache: UpdateCache,
     private val appImagePath: () -> String? = { System.getenv(APPIMAGE_ENV) },
+    private val seededInstaller: () -> File? = { SeededInstaller.locate() },
+    /**
+     * The block map URL of the artifact the *installed* version was published as, or `null` when
+     * it cannot be derived. Only needed to diff against the [SeededInstaller], which has no block
+     * map of its own.
+     */
+    private val previousBlockMapUrl: (UpdateFile) -> String? = { null },
 ) {
     fun resolve(
         target: UpdateFile,
         blockMapUrl: String,
         destination: File,
     ): ResolvedDelta? {
-        val oldFile = resolveOldArtifact(target) ?: return null
+        val oldFile = resolveOldArtifact(target) ?: return resolveFromSeededInstaller(target, blockMapUrl, destination)
         return if (embedsBlockMap(target)) {
             resolveEmbedded(target, oldFile, destination)
         } else {
@@ -78,6 +85,28 @@ internal class DeltaResolver(
         val newMapGzip = fetch(blockMapUrl)
         val plan = DeltaPlan.compute(BlockMapCodec.parseGzip(oldMapGzip), BlockMapCodec.parseGzip(newMapGzip))
         return ResolvedDelta(deltaDownload(target, oldFile, destination, plan, trailer = null), newMapGzip)
+    }
+
+    /**
+     * The first update of an NSIS install, before anything is cached: diff against the installer
+     * electron-builder seeded under `%LOCALAPPDATA%`. Its block map is the one published with the
+     * installed release, so this only works while the release host still serves it; otherwise the
+     * update is a full download, like any other first update.
+     */
+    private fun resolveFromSeededInstaller(
+        target: UpdateFile,
+        blockMapUrl: String,
+        destination: File,
+    ): ResolvedDelta? {
+        if (target.fileName.substringAfterLast('.', "").lowercase() != NSIS_EXTENSION || embedsBlockMap(target)) {
+            return null
+        }
+        val installer = seededInstaller() ?: return null
+        val oldMapUrl = previousBlockMapUrl(target)?.takeIf { it != blockMapUrl } ?: return null
+        val oldMap = BlockMapCodec.parseGzip(fetch(oldMapUrl))
+        val newMapGzip = fetch(blockMapUrl)
+        val plan = DeltaPlan.compute(oldMap, BlockMapCodec.parseGzip(newMapGzip))
+        return ResolvedDelta(deltaDownload(target, installer, destination, plan, trailer = null), newMapGzip)
     }
 
     private fun deltaDownload(
@@ -132,6 +161,7 @@ internal class DeltaResolver(
         private const val HTTP_OK = 200
         private const val APPIMAGE_ENV = "APPIMAGE"
         private const val APPIMAGE_EXTENSION = "appimage"
+        private const val NSIS_EXTENSION = "exe"
 
         /**
          * Formats that carry their block map appended to the artifact. Everything else publishes a

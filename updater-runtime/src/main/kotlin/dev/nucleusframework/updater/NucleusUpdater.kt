@@ -17,6 +17,7 @@ import dev.nucleusframework.updater.internal.delta.BlockMapCodec
 import dev.nucleusframework.updater.internal.delta.DeltaPlan
 import dev.nucleusframework.updater.internal.delta.DeltaResolver
 import dev.nucleusframework.updater.internal.delta.DifferentialDownloader
+import dev.nucleusframework.updater.internal.delta.SeededInstaller
 import dev.nucleusframework.updater.internal.delta.UpdateCache
 import dev.nucleusframework.updater.internal.delta.readAtMost
 import kotlinx.coroutines.Dispatchers
@@ -95,7 +96,7 @@ public class NucleusUpdater(
 
             try {
                 val outcome =
-                    downloadDifferentially(targetFile, tempFile)
+                    downloadDifferentially(targetFile, info.version, tempFile)
                         ?: downloadFully(targetFile, tempFile)
 
                 // Rename to final file (the staging directory is fresh, so the name is free)
@@ -149,11 +150,18 @@ public class NucleusUpdater(
      */
     private suspend fun FlowCollector<DownloadProgress>.downloadDifferentially(
         targetFile: UpdateFile,
+        newVersion: String,
         tempFile: File,
     ): DownloadOutcome? {
         if (!config.differentialDownload) return null
         return try {
-            val resolver = DeltaResolver(httpClient, config.provider.authHeaders(), cache)
+            val resolver =
+                DeltaResolver(
+                    httpClient = httpClient,
+                    authHeaders = config.provider.authHeaders(),
+                    cache = cache,
+                    previousBlockMapUrl = { target -> previousBlockMapUrl(target, newVersion) },
+                )
             val resolved =
                 resolver.resolve(
                     target = targetFile,
@@ -193,6 +201,17 @@ public class NucleusUpdater(
             tempFile.delete()
             null
         }
+    }
+
+    /** Where the installed release published the artifact [target] replaces, for its block map. */
+    private fun previousBlockMapUrl(
+        target: UpdateFile,
+        newVersion: String,
+    ): String? {
+        val installedVersion = config.currentVersion
+        val previousName =
+            SeededInstaller.previousArtifactName(target.fileName, newVersion, installedVersion) ?: return null
+        return config.provider.getBlockMapUrl(config.provider.getDownloadUrl(previousName, installedVersion))
     }
 
     private suspend fun FlowCollector<DownloadProgress>.downloadFully(
