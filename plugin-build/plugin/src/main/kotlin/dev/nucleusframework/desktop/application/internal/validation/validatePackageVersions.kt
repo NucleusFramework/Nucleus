@@ -9,6 +9,7 @@ import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.JvmApplicationContext
 import dev.nucleusframework.desktop.application.internal.packageBuildVersionFor
 import dev.nucleusframework.desktop.application.internal.packageVersionFor
+import dev.nucleusframework.desktop.application.internal.withoutSemVerSuffix
 import dev.nucleusframework.internal.utils.OS
 import org.gradle.api.GradleException
 
@@ -35,8 +36,11 @@ internal fun JvmApplicationContext.validatePackageVersions() {
         if (packageVersion == null) {
             errors.addError(targetFormat, "no version was specified")
         } else {
+            // Every checked format is built by electron-builder, which converts a SemVer
+            // pre-release or build suffix to the packaging system's own form (or drops it), so
+            // only the release part has to satisfy the format's rules.
             versionChecker?.apply {
-                if (!isValid(packageVersion)) {
+                if (!isValid(packageVersion.withoutSemVerSuffix())) {
                     errors.addError(
                         targetFormat,
                         "'$packageVersion' is not a valid version",
