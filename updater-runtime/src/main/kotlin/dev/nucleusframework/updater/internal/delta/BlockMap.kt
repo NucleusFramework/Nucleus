@@ -3,8 +3,10 @@ package dev.nucleusframework.updater.internal.delta
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.io.RandomAccessFile
 import java.util.zip.GZIPInputStream
 import java.util.zip.Inflater
@@ -60,23 +62,40 @@ internal object BlockMapCodec {
     /** Size of the big-endian length header that terminates an embedded block map. */
     const val EMBEDDED_HEADER_SIZE = 4
 
-    /** Sanity bound on a block map payload, so a bogus length header cannot trigger a huge read. */
-    private const val MAX_PAYLOAD_SIZE = 64 * 1024 * 1024
+    /**
+     * Sanity bound on a compressed block map, whether fetched, read from an artifact's tail or
+     * declared as `blockMapSize` in the manifest. Real ones are a few MB at most (about 35 bytes of
+     * JSON per ~16 KiB block, before compression).
+     */
+    const val MAX_PAYLOAD_SIZE = 64 * 1024 * 1024
+
+    /**
+     * Sanity bound on a block map once inflated, so a hostile or corrupt payload cannot expand into
+     * an [OutOfMemoryError] — an [Error], which would escape the fall back to a full download.
+     */
+    private const val MAX_DECOMPRESSED_SIZE = 128L * 1024 * 1024
 
     private val json = Json { ignoreUnknownKeys = true }
 
     fun parseGzip(bytes: ByteArray): BlockMap =
         decode(
-            runCatching { GZIPInputStream(bytes.inputStream()).use { it.readBytes() } }
-                .getOrElse { throw DeltaUnavailableException("Block map is not valid gzip", it) },
+            runCatching {
+                GZIPInputStream(bytes.inputStream()).use { readAtMost(it, MAX_DECOMPRESSED_SIZE) }
+            }.getOrElse {
+                throw it as? DeltaUnavailableException ?: DeltaUnavailableException("Block map is not valid gzip", it)
+            },
         )
 
     fun parseDeflateRaw(bytes: ByteArray): BlockMap {
         val inflater = Inflater(true)
         val inflated =
             try {
-                runCatching { InflaterInputStream(bytes.inputStream(), inflater).use { it.readBytes() } }
-                    .getOrElse { throw DeltaUnavailableException("Block map is not valid raw deflate", it) }
+                runCatching {
+                    InflaterInputStream(bytes.inputStream(), inflater).use { readAtMost(it, MAX_DECOMPRESSED_SIZE) }
+                }.getOrElse {
+                    throw it as? DeltaUnavailableException
+                        ?: DeltaUnavailableException("Block map is not valid raw deflate", it)
+                }
             } finally {
                 inflater.end()
             }
@@ -126,14 +145,42 @@ internal object BlockMapCodec {
         }.also(::validate)
 
     private fun validate(map: BlockMap) {
-        if (map.files.isEmpty()) throw DeltaUnavailableException("Block map declares no files")
-        map.files.forEach { entry ->
-            if (entry.checksums.size != entry.sizes.size) {
-                throw DeltaUnavailableException(
-                    "Block map entry '${entry.name}' has ${entry.checksums.size} checksums " +
-                        "but ${entry.sizes.size} sizes",
-                )
+        val problem =
+            if (map.files.isEmpty()) {
+                "Block map declares no files"
+            } else {
+                map.files.firstNotNullOfOrNull(::problemWith)
             }
-        }
+        if (problem != null) throw DeltaUnavailableException(problem)
     }
+
+    private fun problemWith(entry: BlockMapFile): String? =
+        when {
+            entry.checksums.size != entry.sizes.size ->
+                "Block map entry '${entry.name}' has ${entry.checksums.size} checksums but ${entry.sizes.size} sizes"
+            entry.offset < 0 || entry.sizes.any { it <= 0 } ->
+                "Block map entry '${entry.name}' declares a negative offset or a non-positive block size"
+            else -> null
+        }
+}
+
+/**
+ * Reads [input] to the end, failing with [DeltaUnavailableException] instead of buffering more than
+ * [maxBytes]: the length of a response or an inflated stream is decided by the server, not by us.
+ */
+internal fun readAtMost(
+    input: InputStream,
+    maxBytes: Long,
+): ByteArray {
+    val out = ByteArrayOutputStream()
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0L
+    while (true) {
+        val read = input.read(buffer)
+        if (read == -1) break
+        total += read
+        if (total > maxBytes) throw DeltaUnavailableException("Block map data exceeds $maxBytes bytes")
+        out.write(buffer, 0, read)
+    }
+    return out.toByteArray()
 }

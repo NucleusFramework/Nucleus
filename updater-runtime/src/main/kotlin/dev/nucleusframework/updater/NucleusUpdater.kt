@@ -13,10 +13,12 @@ import dev.nucleusframework.updater.internal.PlatformInfo
 import dev.nucleusframework.updater.internal.PlatformInstaller
 import dev.nucleusframework.updater.internal.UpdateMarker
 import dev.nucleusframework.updater.internal.YamlParser
+import dev.nucleusframework.updater.internal.delta.BlockMapCodec
 import dev.nucleusframework.updater.internal.delta.DeltaPlan
 import dev.nucleusframework.updater.internal.delta.DeltaResolver
 import dev.nucleusframework.updater.internal.delta.DifferentialDownloader
 import dev.nucleusframework.updater.internal.delta.UpdateCache
+import dev.nucleusframework.updater.internal.delta.readAtMost
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -249,8 +251,14 @@ public class NucleusUpdater(
         try {
             val requestBuilder = HttpRequest.newBuilder().uri(URI.create(url)).GET()
             applyAuthHeaders(requestBuilder)
-            val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray())
-            response.body()?.takeIf { response.statusCode() == HTTP_OK && it.isNotEmpty() }
+            val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofInputStream())
+            response.body().use { body ->
+                if (response.statusCode() == HTTP_OK) {
+                    readAtMost(body, BlockMapCodec.MAX_PAYLOAD_SIZE.toLong()).takeIf { it.isNotEmpty() }
+                } else {
+                    null
+                }
+            }
         } catch (
             @Suppress("TooGenericExceptionCaught") e: Exception,
         ) {
