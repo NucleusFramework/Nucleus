@@ -72,8 +72,16 @@ class DifferentialTortureTest {
     }
 
     @Test
-    fun `a ranged response cut part-way falls back to a full download`() {
+    fun `a ranged response cut part-way is retried`() {
         feed.fault(FeedFault.Truncate(afterBytes = 100), path = ARTIFACT, times = 1)
+        val progress = download("1.0.0")
+        assertTrue(progress.last().isDifferential)
+        assertArtifactIsV2(progress)
+    }
+
+    @Test
+    fun `a ranged response cut part-way on every attempt falls back to a full download`() {
+        feed.fault(FeedFault.Truncate(afterBytes = 100), path = ARTIFACT, times = RANGE_ATTEMPTS)
         val progress = download("1.0.0")
         assertFalse(progress.last().isDifferential)
         assertArtifactIsV2(progress)
@@ -97,8 +105,16 @@ class DifferentialTortureTest {
     }
 
     @Test
-    fun `a failing range request falls back to a full download`() {
+    fun `a failing range request is retried`() {
         feed.fault(FeedFault.Status(500), path = ARTIFACT, times = 1)
+        val progress = download("1.0.0")
+        assertTrue(progress.last().isDifferential)
+        assertArtifactIsV2(progress)
+    }
+
+    @Test
+    fun `a range request failing on every attempt falls back to a full download`() {
+        feed.fault(FeedFault.Status(500), path = ARTIFACT, times = RANGE_ATTEMPTS)
         val progress = download("1.0.0")
         assertFalse(progress.last().isDifferential)
         assertArtifactIsV2(progress)
@@ -148,5 +164,8 @@ class DifferentialTortureTest {
 
     private companion object {
         const val ARTIFACT = "MyApp-2.0.0.zip"
+
+        /** How often the downloader tries one range before giving up on the delta. */
+        const val RANGE_ATTEMPTS = 3
     }
 }
