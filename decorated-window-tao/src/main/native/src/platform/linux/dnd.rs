@@ -66,6 +66,8 @@ use tao::platform::unix::WindowExtUnix;
 
 use crate::state::{JAVA_VM, WINDOWS};
 
+use super::drag_data::{DragDataState, DropPosition, ReceivedData};
+
 // ── Drop-effect constants (must match Kotlin DROP_EFFECT_*) ────────────────
 
 const DROP_EFFECT_NONE: jint = 0;
@@ -315,6 +317,31 @@ fn dispatch_motion(
     res.and_then(|v| v.i()).unwrap_or(DROP_EFFECT_NONE)
 }
 
+fn dispatch_files(handle: u64, callback: &GlobalRef, files: &[String]) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let _ = env.with_local_frame(
+        files.len() as i32 + 6,
+        |env| -> Result<(), jni::errors::Error> {
+            if let Some(arr) = build_string_array(env, files) {
+                let _ = env.call_method(
+                    callback.as_obj(),
+                    "onDragFiles",
+                    "(J[Ljava/lang/String;)V",
+                    &[JValue::Long(handle as jlong), JValue::Object(&arr)],
+                );
+            }
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        },
+    );
+}
+
 fn dispatch_leave(handle: u64, callback: &GlobalRef) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(mut env) = vm.attach_current_thread_permanently() else {
@@ -411,44 +438,17 @@ fn build_string_array<'a>(
 
 // ── URI ↔ path encoding ────────────────────────────────────────────────────
 
-/// Decodes a `file://` URI to a filesystem path. Non-file schemes are
-/// returned verbatim so the receiver can still inspect them.
 fn uri_to_path(uri: &str) -> String {
-    let rest = match uri.strip_prefix("file://") {
-        Some(r) => r,
-        None => return uri.to_string(),
+    let Ok((path, host)) = glib::filename_from_uri(uri) else {
+        return uri.to_owned();
     };
-    percent_decode(rest)
-}
-
-/// Minimal RFC 3986 percent-decoding for `%XX` sequences in
-/// `text/uri-list` payloads. UTF-8 paths with diacritics decode correctly
-/// because we accumulate bytes and let `String::from_utf8_lossy` reassemble.
-fn percent_decode(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(hi), Some(lo)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
-                out.push((hi << 4) | lo);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i]);
-        i += 1;
+    if host
+        .as_deref()
+        .is_some_and(|host| !host.is_empty() && !host.eq_ignore_ascii_case("localhost"))
+    {
+        return uri.to_owned();
     }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn hex_val(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
+    path.to_string_lossy().into_owned()
 }
 
 fn percent_encode_path(input: &str) -> String {
@@ -487,6 +487,9 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
 
     let accepting = Rc::new(Cell::new(false));
     let entered = Rc::new(Cell::new(false));
+    let active_context = Rc::new(RefCell::new(None::<gtk::gdk::DragContext>));
+    let drag_data = Rc::new(RefCell::new(DragDataState::default()));
+    let last_motion = Rc::new(Cell::new((0, 0, 0)));
     let pending_leave: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
 
     // ── drag-motion ─────────────────────────────────────────────────────
@@ -495,11 +498,24 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     let ent_motion = Rc::clone(&entered);
     let pending_motion = Rc::clone(&pending_leave);
     let widget_motion = widget.clone();
-    let motion_id = widget.connect_drag_motion(move |_w, ctx, x, y, time| {
+    let context_motion = Rc::clone(&active_context);
+    let data_motion = Rc::clone(&drag_data);
+    let position_motion = Rc::clone(&last_motion);
+    let motion_id = widget.connect_drag_motion(move |w, ctx, x, y, time| {
         // Cancel any deferred leave — a fresh motion proves we never left.
         if let Some(src) = pending_motion.borrow_mut().take() {
             src.remove();
         }
+
+        if context_motion.borrow().as_ref() != Some(ctx) {
+            if ent_motion.replace(false) {
+                dispatch_leave(handle, &cb_motion);
+            }
+            *context_motion.borrow_mut() = Some(ctx.clone());
+            *data_motion.borrow_mut() = DragDataState::default();
+            dispatch_files(handle, &cb_motion, &[]);
+        }
+        position_motion.set((x, y, time));
 
         let has_files = ctx
             .list_targets()
@@ -515,6 +531,11 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
             "onDragEnter"
         };
         let effect = dispatch_motion(handle, &cb_motion, method, px, py, has_files);
+        let request_preview = has_files && data_motion.borrow_mut().request_preview();
+        if request_preview {
+            let target = gtk::gdk::Atom::intern("text/uri-list");
+            w.drag_get_data(ctx, &target, time);
+        }
         let action = map_effect_to_action(effect);
         if effect == DROP_EFFECT_NONE {
             ctx.drag_status(DragAction::empty(), time);
@@ -532,6 +553,8 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     let acc_leave = Rc::clone(&accepting);
     let ent_leave = Rc::clone(&entered);
     let pending_leave_for_cb = Rc::clone(&pending_leave);
+    let context_leave = Rc::clone(&active_context);
+    let data_leave = Rc::clone(&drag_data);
     let leave_id = widget.connect_drag_leave(move |_w, _ctx, _time| {
         // GTK 3 fires drag-leave between every pair of drag-motion events
         // when the cursor crosses any internal widget boundary — we *cannot*
@@ -545,12 +568,16 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
         let ent = Rc::clone(&ent_leave);
         let cb = cb_leave.clone();
         let slot = Rc::clone(&pending_leave_for_cb);
+        let context = Rc::clone(&context_leave);
+        let data = Rc::clone(&data_leave);
         let id = glib::timeout_add_local_once(
             std::time::Duration::from_millis(LEAVE_DEBOUNCE_MS as u64),
             move || {
                 slot.borrow_mut().take();
                 acc.set(false);
                 ent.set(false);
+                context.borrow_mut().take();
+                *data.borrow_mut() = DragDataState::default();
                 dispatch_leave(handle, &cb);
             },
         );
@@ -559,7 +586,9 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
 
     // ── drag-drop ───────────────────────────────────────────────────────
     let pending_drop = Rc::clone(&pending_leave);
-    let drop_id = widget.connect_drag_drop(move |w, ctx, _x, _y, time| {
+    let data_drop = Rc::clone(&drag_data);
+    let context_drop = Rc::clone(&active_context);
+    let drop_id = widget.connect_drag_drop(move |w, ctx, x, y, time| {
         if let Some(src) = pending_drop.borrow_mut().take() {
             src.remove();
         }
@@ -569,7 +598,16 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
         // `ctx.list_targets()` ourselves with name comparisons.
         let target = w.drag_dest_find_target(ctx, None);
         if let Some(target) = target {
-            w.drag_get_data(ctx, &target, time);
+            if context_drop.borrow().as_ref() != Some(ctx) {
+                *context_drop.borrow_mut() = Some(ctx.clone());
+                *data_drop.borrow_mut() = DragDataState::default();
+            }
+            let request_drop = data_drop
+                .borrow_mut()
+                .request_drop(DropPosition { x, y, time });
+            if request_drop {
+                w.drag_get_data(ctx, &target, time);
+            }
             true
         } else {
             ctx.drag_status(DragAction::empty(), time);
@@ -580,21 +618,72 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     // ── drag-data-received ──────────────────────────────────────────────
     let cb_received = callback.clone();
     let ent_received = Rc::clone(&entered);
+    let acc_received = Rc::clone(&accepting);
+    let context_received = Rc::clone(&active_context);
+    let data_received = Rc::clone(&drag_data);
+    let position_received = Rc::clone(&last_motion);
+    let pending_received = Rc::clone(&pending_leave);
     let widget_received = widget.clone();
     let received_id =
-        widget.connect_drag_data_received(move |_w, ctx, x, y, data, _info, time| {
-            let mut paths: Vec<String> = Vec::new();
-            let uris = data.uris();
-            if !uris.is_empty() {
-                paths.extend(uris.iter().map(|u| uri_to_path(u.as_str())));
-            } else if let Some(text) = data.text() {
-                paths.push(text.to_string());
+        widget.connect_drag_data_received(move |w, ctx, _x, _y, data, _info, _time| {
+            if context_received.borrow().as_ref() != Some(ctx) {
+                return;
             }
-            let (px, py) = translate_to_content_phys(&widget_received, x, y);
-            let effect = dispatch_drop(handle, &cb_received, px, py, &paths);
-            let success = effect != DROP_EFFECT_NONE;
-            ctx.drag_finish(success, false, time);
-            ent_received.set(false);
+            let received = data_received.borrow_mut().receive();
+            if let ReceivedData::RequestDrop(position) = received {
+                if let Some(target) = w.drag_dest_find_target(ctx, None) {
+                    w.drag_get_data(ctx, &target, position.time);
+                } else {
+                    ctx.drag_finish(false, false, position.time);
+                    ent_received.set(false);
+                    acc_received.set(false);
+                    context_received.borrow_mut().take();
+                    *data_received.borrow_mut() = DragDataState::default();
+                    dispatch_leave(handle, &cb_received);
+                }
+                return;
+            }
+            let mut paths: Vec<String> = Vec::new();
+            if data.length() >= 0 {
+                let uris = data.uris();
+                if !uris.is_empty() {
+                    paths.extend(uris.iter().map(|uri| uri_to_path(uri.as_str())));
+                } else if let Some(text) = data.text() {
+                    paths.push(text.to_string());
+                }
+            }
+            match received {
+                ReceivedData::Preview => {
+                    if !ent_received.get() {
+                        return;
+                    }
+                    dispatch_files(handle, &cb_received, &paths);
+                    if pending_received.borrow().is_some() {
+                        return;
+                    }
+                    let (x, y, time) = position_received.get();
+                    let (px, py) = translate_to_content_phys(&widget_received, x, y);
+                    let effect = dispatch_motion(handle, &cb_received, "onDragOver", px, py, true);
+                    acc_received.set(effect != DROP_EFFECT_NONE);
+                    let action = if effect == DROP_EFFECT_NONE {
+                        DragAction::empty()
+                    } else {
+                        map_effect_to_action(effect)
+                    };
+                    ctx.drag_status(action, time);
+                }
+                ReceivedData::Drop(position) => {
+                    let (px, py) =
+                        translate_to_content_phys(&widget_received, position.x, position.y);
+                    let effect = dispatch_drop(handle, &cb_received, px, py, &paths);
+                    ctx.drag_finish(effect != DROP_EFFECT_NONE, false, position.time);
+                    ent_received.set(false);
+                    acc_received.set(false);
+                    context_received.borrow_mut().take();
+                    *data_received.borrow_mut() = DragDataState::default();
+                }
+                ReceivedData::Ignore | ReceivedData::RequestDrop(_) => {}
+            }
         });
 
     let registration = Registration {

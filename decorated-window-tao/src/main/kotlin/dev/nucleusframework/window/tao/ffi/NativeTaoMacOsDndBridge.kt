@@ -32,6 +32,11 @@ internal object NativeTaoMacOsDndBridge {
      *   - [DROP_EFFECT_COPY] — accept as a copy
      */
     interface Callback {
+        fun onDragFiles(
+            nsView: Long,
+            files: Array<String>?,
+        )
+
         @Suppress("FunctionParameterNaming")
         fun onDragEnter(
             nsView: Long,
