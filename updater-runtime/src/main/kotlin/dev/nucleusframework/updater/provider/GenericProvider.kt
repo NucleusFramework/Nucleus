@@ -56,6 +56,24 @@ private fun requireSecureBaseUrl(baseUrl: String) {
     }
 }
 
-// URI.getHost() keeps the brackets of an IPv6 literal: `http://[::1]:8080` has host `[::1]`.
 private fun isLoopbackHost(host: String?): Boolean =
-    host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]" || host?.startsWith("127.") == true
+    host != null &&
+        // URI.getHost() keeps the brackets of an IPv6 literal.
+        (host.equals("localhost", ignoreCase = true) || host == "[::1]" || isIpv4LoopbackLiteral(host))
+
+private const val IPV4_OCTETS = 4
+private const val MAX_OCTET_DIGITS = 3
+private const val MAX_OCTET = 255
+
+/**
+ * Whether [host] is a dotted-quad IPv4 literal in `127.0.0.0/8`. Checked syntactically and never
+ * resolved: `127.updates.example.com` is a remote name that merely starts with `127.`.
+ */
+private fun isIpv4LoopbackLiteral(host: String): Boolean {
+    val octets = host.split('.')
+    return octets.size == IPV4_OCTETS &&
+        octets[0] == "127" &&
+        octets.all { octet ->
+            octet.length in 1..MAX_OCTET_DIGITS && octet.all { it in '0'..'9' } && octet.toInt() <= MAX_OCTET
+        }
+}
