@@ -115,6 +115,80 @@ class DeltaResolverTest {
         assertTrue("nothing may be requested", server.requests.isEmpty())
     }
 
+    @Test
+    fun `the first NSIS update diffs against the seeded installer`() {
+        val seeded = File(tmp.newFolder("myapp-updater"), "installer.exe").apply { writeBytes(DeltaFixtures.v1()) }
+        val target = publishInstaller()
+        server.put("/MyApp-1.0.0.exe.blockmap", DeltaFixtures.blockMapGzip("v1"))
+
+        val resolved =
+            seededResolver(seeded, previousBlockMapUrl = "${server.baseUrl}/MyApp-1.0.0.exe.blockmap")
+                .resolve(target, blockMapUrl(target), destination())
+
+        assertNotNull("the seeded installer must be usable as the delta basis", resolved)
+        assertEquals(DeltaFixtures.EXPECTED_DELTA_BYTES, DeltaPlan.downloadSize(resolved!!.download.operations))
+        assertNotNull("the new block map is kept for the cache", resolved.blockMapGzip)
+        runBlocking { DifferentialDownloader(httpClient).download(resolved.download) { _, _ -> } }
+        assertTrue(DeltaFixtures.v2().contentEquals(resolved.download.target.readBytes()))
+    }
+
+    @Test
+    fun `a seeded installer whose release is no longer hosted cannot serve a delta`() {
+        val seeded = File(tmp.newFolder("myapp-updater"), "installer.exe").apply { writeBytes(DeltaFixtures.v1()) }
+        val target = publishInstaller()
+
+        assertThrows(DeltaUnavailableException::class.java) {
+            seededResolver(seeded, previousBlockMapUrl = "${server.baseUrl}/MyApp-1.0.0.exe.blockmap")
+                .resolve(target, blockMapUrl(target), destination())
+        }
+    }
+
+    @Test
+    fun `the seeded installer is only a basis for installer updates`() {
+        var looked = false
+        val resolver =
+            DeltaResolver(
+                httpClient,
+                authHeaders = emptyMap(),
+                cache = cache,
+                appImagePath = { null },
+                seededInstaller = {
+                    looked = true
+                    null
+                },
+                previousBlockMapUrl = { "${server.baseUrl}/unused" },
+            )
+        val zip =
+            UpdateFile(url = "${server.baseUrl}/MyApp-2.0.0.zip", sha512 = "x", size = 10, fileName = "MyApp-2.0.0.zip")
+
+        assertNull(resolver.resolve(zip, blockMapUrl(zip), destination()))
+        assertTrue("nothing may be looked up or requested", !looked && server.requests.isEmpty())
+    }
+
+    private fun publishInstaller(): UpdateFile {
+        val bytes = DeltaFixtures.v2()
+        server.put("/MyApp-2.0.0.exe", bytes)
+        server.put("/MyApp-2.0.0.exe.blockmap", DeltaFixtures.blockMapGzip("v2"))
+        return UpdateFile(
+            url = "${server.baseUrl}/MyApp-2.0.0.exe",
+            sha512 = DeltaFixtures.sha512Base64(bytes),
+            size = bytes.size.toLong(),
+            fileName = "MyApp-2.0.0.exe",
+        )
+    }
+
+    private fun seededResolver(
+        seeded: File,
+        previousBlockMapUrl: String,
+    ) = DeltaResolver(
+        httpClient,
+        authHeaders = emptyMap(),
+        cache = cache,
+        appImagePath = { null },
+        seededInstaller = { seeded },
+        previousBlockMapUrl = { previousBlockMapUrl },
+    )
+
     private fun resolver(appImagePath: () -> String?) =
         DeltaResolver(httpClient, authHeaders = emptyMap(), cache = cache, appImagePath = appImagePath)
 
