@@ -1,17 +1,22 @@
 package dev.nucleusframework.updater.internal.delta
 
+import dev.nucleusframework.updater.internal.ChecksumVerifier
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
-import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.security.DigestOutputStream
-import java.security.MessageDigest
-import java.util.Base64
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.time.Duration
 
 /** Everything needed to assemble one artifact from an older copy of it plus ranged requests. */
 internal class DeltaDownload(
@@ -33,34 +38,66 @@ internal class DeltaDownload(
  * Assembles a new artifact from an old one on disk plus HTTP range requests for the parts that
  * actually changed, then validates the result against the manifest SHA-512.
  *
- * Any inconsistency — a server that ignores `Range`, a short response, an old file that no longer
- * matches its block map, a final digest mismatch — raises [DeltaUnavailableException] so the caller
- * falls back to a full download. The digest is computed while writing, so a corrupt result is never
- * handed to the installer.
+ * Every operation's place in the new artifact is fixed by the plan, so operations are written by
+ * position and need not run in order: copies from the old file run alongside up to
+ * [MAX_CONCURRENT_RANGES] range requests, which an HTTP/2 client multiplexes over one connection.
+ * Many small ranges are then bound by bandwidth rather than by one round trip each. Ranges are single
+ * `bytes=a-b` requests; the multipart/byteranges form is not used, since GitHub and S3 do not serve it.
+ *
+ * A range that fails transiently (an I/O error, HTTP 429 or 5xx) is retried with backoff, honouring
+ * `Retry-After`; an expired redirect target is re-resolved through the original URL. Any other
+ * inconsistency — a server that ignores `Range`, a short response, an old file that no longer matches
+ * its block map, a final digest mismatch — raises [DeltaUnavailableException] so the caller falls
+ * back to a full download. The assembled file is checked against the manifest SHA-512 before it is
+ * handed back, so a corrupt result never reaches the installer.
  */
 internal class DifferentialDownloader(
     private val httpClient: HttpClient,
     private val authHeaders: Map<String, String> = emptyMap(),
 ) {
+    /** An operation and its offset in the new artifact. */
+    private class Placed(
+        val operation: Operation,
+        val position: Long,
+    )
+
+    /**
+     * Where range requests go: the original URL until a response reveals where it redirects, then
+     * that target, so later ranges skip the redirect round trip.
+     */
+    private class RangeSource(
+        val originalUri: URI,
+    ) {
+        @Volatile
+        var uri: URI = originalUri
+
+        /** Re-resolutions left for expired redirect targets, shared by all workers. */
+        @Volatile
+        var reResolutionsLeft: Int = MAX_RE_RESOLUTIONS
+    }
+
     /**
      * Writes [DeltaDownload.target] and returns the number of bytes actually transferred.
      * [onProgress] receives `(transferred, totalToTransfer)` — network bytes only, so the reported
      * progress reflects the download the user is waiting for rather than the size of the artifact.
+     * It is always called from the caller's coroutine, never from a worker, so it may emit into a Flow.
      */
     suspend fun download(
         request: DeltaDownload,
         onProgress: suspend (Long, Long) -> Unit,
     ): Long {
         verifyPlanCoversArtifact(request)
-        val digest = MessageDigest.getInstance(SHA_512)
         val transferred =
             try {
-                assemble(request, digest, onProgress)
-            } catch (e: IOException) {
+                assemble(request, onProgress)
+            } catch (
+                @Suppress("TooGenericExceptionCaught") e: Exception,
+            ) {
+                // Never leave a partly assembled file behind, whatever interrupted the assembly.
                 request.target.delete()
-                throw DeltaUnavailableException("Differential download failed", e)
+                throw if (e is IOException) DeltaUnavailableException("Differential download failed", e) else e
             }
-        verifyAssembled(request, digest)
+        verifyAssembled(request)
         return transferred
     }
 
@@ -73,8 +110,8 @@ internal class DifferentialDownloader(
         start: Long,
         endInclusive: Long,
     ): ByteArray {
-        val response =
-            httpClient.send(rangeRequest(url, start, endInclusive), HttpResponse.BodyHandlers.ofInputStream())
+        val request = rangeRequest(URI.create(url), authHeaders, start, endInclusive)
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
         if (response.statusCode() != HTTP_PARTIAL_CONTENT) {
             response.body().close()
             throw DeltaUnavailableException("Server answered HTTP ${response.statusCode()} for a range on $url")
@@ -96,130 +133,290 @@ internal class DifferentialDownloader(
         }
     }
 
-    private fun verifyAssembled(
-        request: DeltaDownload,
-        digest: MessageDigest,
-    ) {
-        val actual = Base64.getEncoder().encodeToString(digest.digest())
-        if (actual != request.expectedSha512 || request.target.length() != request.expectedSize) {
-            request.target.delete()
+    private fun verifyAssembled(request: DeltaDownload) {
+        val target = request.target
+        if (target.length() != request.expectedSize || !ChecksumVerifier.verify(target, request.expectedSha512)) {
+            target.delete()
             throw DeltaUnavailableException("Assembled artifact does not match the manifest")
         }
     }
 
     private suspend fun assemble(
         request: DeltaDownload,
-        digest: MessageDigest,
-        onProgress: suspend (Long, Long) -> Unit,
-    ): Long =
-        RandomAccessFile(request.oldFile, "r").use { old ->
-            DigestOutputStream(request.target.outputStream().buffered(), digest).use { out ->
-                runOperations(request, old, out, onProgress)
-            }
-        }
-
-    private suspend fun runOperations(
-        request: DeltaDownload,
-        old: RandomAccessFile,
-        out: OutputStream,
         onProgress: suspend (Long, Long) -> Unit,
     ): Long {
+        val copies = mutableListOf<Placed>()
+        val downloads = mutableListOf<Placed>()
+        var position = 0L
+        for (operation in request.operations) {
+            val placed = Placed(operation, position)
+            when (operation.kind) {
+                OperationKind.COPY -> copies += placed
+                OperationKind.DOWNLOAD -> downloads += placed
+            }
+            position += operation.length
+        }
         val total = DeltaPlan.downloadSize(request.operations)
         var transferred = 0L
-        var rangeRequests = 0
-        for (operation in request.operations) {
-            when (operation.kind) {
-                OperationKind.COPY -> copyFromOldFile(old, operation, out)
-                OperationKind.DOWNLOAD -> {
-                    throttle(rangeRequests++)
-                    downloadRange(request.url, operation, out) { chunk ->
-                        transferred += chunk
-                        onProgress(transferred, total)
+
+        RandomAccessFile(request.target, "rw").use { target ->
+            target.setLength(0)
+            target.setLength(request.expectedSize)
+            val output = target.channel
+
+            coroutineScope {
+                val progress = Channel<Long>(Channel.UNLIMITED)
+                launch(Dispatchers.IO) { copyFromOldFile(request.oldFile, copies, output) }
+                launch(Dispatchers.IO) {
+                    try {
+                        downloadRanges(RangeSource(URI.create(request.url)), downloads, output, progress)
+                    } finally {
+                        progress.close()
                     }
                 }
+                for (bytes in progress) {
+                    transferred += bytes
+                    onProgress(transferred, total)
+                }
             }
+
+            request.trailer?.let { writeFully(output, it, it.size, position) }
         }
-        request.trailer?.let(out::write)
         return transferred
     }
 
-    /** Mirrors electron-updater: a brief pause so a long run of ranged requests avoids rate limits. */
-    private suspend fun throttle(rangeRequests: Int) {
-        if (rangeRequests > 0 && rangeRequests % RANGE_REQUEST_PAUSE_EVERY == 0) {
-            delay(RANGE_REQUEST_PAUSE_MS)
-        }
-    }
-
     private fun copyFromOldFile(
-        old: RandomAccessFile,
-        operation: Operation,
-        out: OutputStream,
+        oldFile: File,
+        copies: List<Placed>,
+        output: FileChannel,
     ) {
-        if (operation.end > old.length()) {
-            throw DeltaUnavailableException(
-                "Cached artifact is shorter (${old.length()}) than its block map claims (${operation.end})",
-            )
-        }
-        old.seek(operation.start)
-        val buffer = ByteArray(BUFFER_SIZE)
-        var remaining = operation.length
-        while (remaining > 0) {
-            val read = old.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
-            if (read <= 0) throw DeltaUnavailableException("Unexpected end of the cached artifact")
-            out.write(buffer, 0, read)
-            remaining -= read
-        }
-    }
-
-    private suspend fun downloadRange(
-        url: String,
-        operation: Operation,
-        out: OutputStream,
-        onChunk: suspend (Int) -> Unit,
-    ) {
-        val request = rangeRequest(url, operation.start, operation.end - 1)
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
-        if (response.statusCode() != HTTP_PARTIAL_CONTENT) {
-            response.body().close()
-            throw DeltaUnavailableException(
-                "Server answered HTTP ${response.statusCode()} instead of $HTTP_PARTIAL_CONTENT: " +
-                    "range requests are not supported",
-            )
-        }
-
-        var remaining = operation.length
-        val buffer = ByteArray(BUFFER_SIZE)
-        response.body().use { input ->
-            while (remaining > 0) {
-                val read = input.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
-                if (read <= 0) throw DeltaUnavailableException("Range response ended $remaining bytes early")
-                out.write(buffer, 0, read)
-                remaining -= read
-                onChunk(read)
+        if (copies.isEmpty()) return
+        RandomAccessFile(oldFile, "r").use { old ->
+            val buffer = ByteArray(BUFFER_SIZE)
+            for (placed in copies) {
+                val operation = placed.operation
+                if (operation.end > old.length()) {
+                    throw DeltaUnavailableException(
+                        "Cached artifact is shorter (${old.length()}) than its block map claims (${operation.end})",
+                    )
+                }
+                old.seek(operation.start)
+                var copied = 0L
+                while (copied < operation.length) {
+                    val read = old.read(buffer, 0, minOf(operation.length - copied, buffer.size.toLong()).toInt())
+                    if (read <= 0) throw DeltaUnavailableException("Unexpected end of the cached artifact")
+                    writeFully(output, buffer, read, placed.position + copied)
+                    copied += read
+                }
             }
         }
     }
 
+    private suspend fun downloadRanges(
+        source: RangeSource,
+        downloads: List<Placed>,
+        output: FileChannel,
+        progress: SendChannel<Long>,
+    ) {
+        if (downloads.isEmpty()) return
+        // The first range runs alone so it resolves any redirect once; the rest then go straight to
+        // the resolved URI instead of each negotiating the redirect.
+        downloadRange(source, downloads.first(), output, progress)
+        val queue = Channel<Placed>(Channel.UNLIMITED)
+        downloads.drop(1).forEach { queue.trySend(it) }
+        queue.close()
+        coroutineScope {
+            repeat(minOf(MAX_CONCURRENT_RANGES, downloads.size - 1)) {
+                launch { for (placed in queue) downloadRange(source, placed, output, progress) }
+            }
+        }
+    }
+
+    /** Outcome of one attempt at a range that did not complete. */
+    private class Retry(
+        val reason: String,
+        val retryAfterMs: Long?,
+    )
+
+    /** Downloads one range into place, retrying transient failures. */
+    private suspend fun downloadRange(
+        source: RangeSource,
+        placed: Placed,
+        output: FileChannel,
+        progress: SendChannel<Long>,
+    ) {
+        // Bytes of this range already reported: a retry rewrites the range from its start, so only
+        // bytes beyond this are reported again and progress never moves backwards.
+        var reported = 0L
+        var attempt = 1
+        while (true) {
+            val retry =
+                (
+                    try {
+                        attemptRange(source, placed, output) { received ->
+                            if (received > reported) {
+                                progress.send(received - reported)
+                                reported = received
+                            }
+                        }
+                    } catch (e: IOException) {
+                        Retry(e.message ?: e.javaClass.simpleName, retryAfterMs = null)
+                    }
+                ) ?: return
+            if (attempt >= MAX_ATTEMPTS) {
+                throw DeltaUnavailableException(
+                    "${describe(placed.operation)} failed after $attempt attempts: ${retry.reason}",
+                )
+            }
+            delay(retry.retryAfterMs ?: (BASE_RETRY_DELAY_MS shl (attempt - 1)))
+            attempt++
+        }
+    }
+
+    /** One attempt at a range; returns `null` once it is written, or why it should be retried. */
+    private suspend fun attemptRange(
+        source: RangeSource,
+        placed: Placed,
+        output: FileChannel,
+        onReceived: suspend (Long) -> Unit,
+    ): Retry? {
+        val operation = placed.operation
+        val uri = source.uri
+        // Credentials are meant for the original host: forwarding e.g. a GitHub token to the
+        // pre-signed CDN URL a redirect resolved to gets the request rejected.
+        val headers = if (uri.host == source.originalUri.host) authHeaders else emptyMap()
+        val response =
+            httpClient.send(
+                rangeRequest(uri, headers, operation.start, operation.end - 1),
+                HttpResponse.BodyHandlers.ofInputStream(),
+            )
+        if (response.statusCode() != HTTP_PARTIAL_CONTENT) {
+            response.body().close()
+            return retryFor(source, uri, response, operation)
+        }
+
+        var received = 0L
+        response.body().use { input ->
+            val buffer = ByteArray(BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read == -1) break
+                if (received + read > operation.length) {
+                    throw DeltaUnavailableException(
+                        "${describe(operation)} returned more than ${operation.length} bytes",
+                    )
+                }
+                writeFully(output, buffer, read, placed.position + received)
+                received += read
+                onReceived(received)
+            }
+        }
+        if (received != operation.length) {
+            throw IOException("${describe(operation)} ended after $received of ${operation.length} bytes")
+        }
+        source.uri = response.uri()
+        return null
+    }
+
+    /** Classifies a response other than 206: a retry for transient failures, otherwise a failed delta. */
+    private fun retryFor(
+        source: RangeSource,
+        uri: URI,
+        response: HttpResponse<*>,
+        operation: Operation,
+    ): Retry {
+        val status = response.statusCode()
+        return when {
+            status == HTTP_OK ->
+                throw DeltaUnavailableException(
+                    "Server answered HTTP $HTTP_OK instead of $HTTP_PARTIAL_CONTENT: range requests are not supported",
+                )
+
+            // A redirect target that starts refusing is most likely an expired pre-signed CDN URL:
+            // go back through the original URL for a fresh one.
+            (status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN) &&
+                uri != source.originalUri &&
+                source.reResolutionsLeft > 0 -> {
+                synchronized(source) {
+                    if (source.uri == uri) {
+                        source.reResolutionsLeft--
+                        source.uri = source.originalUri
+                    }
+                }
+                Retry("HTTP $status from $uri", retryAfterMs = 0)
+            }
+
+            status == HTTP_TOO_MANY_REQUESTS || status >= HTTP_SERVER_ERROR ->
+                Retry("HTTP $status from $uri", retryAfterMs(response))
+
+            else -> throw DeltaUnavailableException("HTTP $status downloading ${describe(operation)} from $uri")
+        }
+    }
+
+    /** `Retry-After` in seconds, capped; `null` when absent or an HTTP date, so backoff applies. */
+    private fun retryAfterMs(response: HttpResponse<*>): Long? =
+        response
+            .headers()
+            .firstValue("Retry-After")
+            .orElse(null)
+            ?.trim()
+            ?.toLongOrNull()
+            ?.coerceIn(0, MAX_RETRY_AFTER_SECONDS)
+            ?.times(MILLIS_PER_SECOND)
+
+    /** Positional write of `bytes[0, length)`; positional writes are safe from concurrent threads. */
+    private fun writeFully(
+        output: FileChannel,
+        bytes: ByteArray,
+        length: Int,
+        position: Long,
+    ) {
+        val buffer = ByteBuffer.wrap(bytes, 0, length)
+        var offset = position
+        while (buffer.hasRemaining()) {
+            offset += output.write(buffer, offset)
+        }
+    }
+
+    private fun describe(operation: Operation): String = "Range ${operation.start}-${operation.end - 1}"
+
     private fun rangeRequest(
-        url: String,
+        uri: URI,
+        headers: Map<String, String>,
         start: Long,
         endInclusive: Long,
     ): HttpRequest {
         val builder =
             HttpRequest
                 .newBuilder()
-                .uri(URI.create(url))
+                .uri(uri)
+                .timeout(RESPONSE_TIMEOUT)
                 .header("Range", "bytes=$start-$endInclusive")
                 .GET()
-        authHeaders.forEach { (key, value) -> builder.header(key, value) }
+        headers.forEach { (key, value) -> builder.header(key, value) }
         return builder.build()
     }
 
     private companion object {
-        const val SHA_512 = "SHA-512"
+        const val HTTP_OK = 200
         const val HTTP_PARTIAL_CONTENT = 206
+        const val HTTP_UNAUTHORIZED = 401
+        const val HTTP_FORBIDDEN = 403
+        const val HTTP_TOO_MANY_REQUESTS = 429
+        const val HTTP_SERVER_ERROR = 500
         const val BUFFER_SIZE = 64 * 1024
-        const val RANGE_REQUEST_PAUSE_EVERY = 100
-        const val RANGE_REQUEST_PAUSE_MS = 1000L
+        const val MAX_CONCURRENT_RANGES = 6
+        const val MAX_ATTEMPTS = 3
+        const val BASE_RETRY_DELAY_MS = 500L
+        const val MAX_RETRY_AFTER_SECONDS = 10L
+        const val MILLIS_PER_SECOND = 1000L
+        const val MAX_RE_RESOLUTIONS = 3
+
+        /**
+         * Time allowed for a range response's headers to arrive. It does not bound reading the body,
+         * so large ranges are unaffected; it stops a server that accepts the connection but never
+         * answers from hanging the update.
+         */
+        val RESPONSE_TIMEOUT: Duration = Duration.ofSeconds(30)
     }
 }
