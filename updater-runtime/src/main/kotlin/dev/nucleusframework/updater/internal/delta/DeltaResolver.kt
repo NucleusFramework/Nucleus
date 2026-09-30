@@ -35,13 +35,20 @@ internal class DeltaResolver(
     private val authHeaders: Map<String, String>,
     private val cache: UpdateCache,
     private val appImagePath: () -> String? = { System.getenv(APPIMAGE_ENV) },
+    private val seededInstaller: () -> File? = { SeededInstaller.locate() },
+    /**
+     * The block map URL of the artifact the *installed* version was published as, or `null` when
+     * it cannot be derived. Only needed to diff against the [SeededInstaller], which has no block
+     * map of its own.
+     */
+    private val previousBlockMapUrl: (UpdateFile) -> String? = { null },
 ) {
     fun resolve(
         target: UpdateFile,
         blockMapUrl: String,
         destination: File,
     ): ResolvedDelta? {
-        val oldFile = resolveOldArtifact(target) ?: return null
+        val oldFile = resolveOldArtifact(target) ?: return resolveFromSeededInstaller(target, blockMapUrl, destination)
         return if (embedsBlockMap(target)) {
             resolveEmbedded(target, oldFile, destination)
         } else {
@@ -54,8 +61,11 @@ internal class DeltaResolver(
         oldFile: File,
         destination: File,
     ): ResolvedDelta {
-        val trailerSize = target.blockMapSize!! + BlockMapCodec.EMBEDDED_HEADER_SIZE
-        if (trailerSize <= 0 || trailerSize >= target.size) {
+        // The manifest is remote input: bound the tail before requesting it, so a bogus size can
+        // neither run past the artifact nor pull most of it into memory.
+        val blockMapSize = target.blockMapSize!!
+        val trailerSize = blockMapSize + BlockMapCodec.EMBEDDED_HEADER_SIZE
+        if (blockMapSize <= 0 || blockMapSize > BlockMapCodec.MAX_PAYLOAD_SIZE || trailerSize >= target.size) {
             throw DeltaUnavailableException("Manifest declares an implausible blockMapSize for ${target.fileName}")
         }
         val downloader = DifferentialDownloader(httpClient, authHeaders)
@@ -77,6 +87,28 @@ internal class DeltaResolver(
         return ResolvedDelta(deltaDownload(target, oldFile, destination, plan, trailer = null), newMapGzip)
     }
 
+    /**
+     * The first update of an NSIS install, before anything is cached: diff against the installer
+     * electron-builder seeded under `%LOCALAPPDATA%`. Its block map is the one published with the
+     * installed release, so this only works while the release host still serves it; otherwise the
+     * update is a full download, like any other first update.
+     */
+    private fun resolveFromSeededInstaller(
+        target: UpdateFile,
+        blockMapUrl: String,
+        destination: File,
+    ): ResolvedDelta? {
+        if (target.fileName.substringAfterLast('.', "").lowercase() != NSIS_EXTENSION || embedsBlockMap(target)) {
+            return null
+        }
+        val installer = seededInstaller() ?: return null
+        val oldMapUrl = previousBlockMapUrl(target)?.takeIf { it != blockMapUrl } ?: return null
+        val oldMap = BlockMapCodec.parseGzip(fetch(oldMapUrl))
+        val newMapGzip = fetch(blockMapUrl)
+        val plan = DeltaPlan.compute(oldMap, BlockMapCodec.parseGzip(newMapGzip))
+        return ResolvedDelta(deltaDownload(target, installer, destination, plan, trailer = null), newMapGzip)
+    }
+
     private fun deltaDownload(
         target: UpdateFile,
         oldFile: File,
@@ -87,7 +119,7 @@ internal class DeltaResolver(
         url = target.url,
         oldFile = oldFile,
         target = destination,
-        operations = plan,
+        operations = DeltaPlan.coalesce(plan),
         expectedSize = target.size,
         expectedSha512 = target.sha512,
         trailer = trailer,
@@ -111,22 +143,25 @@ internal class DeltaResolver(
         return cache.artifact.takeIf { it.isFile && it.length() > 0 }
     }
 
-    /** Downloads a small resource (a block map) fully into memory. */
+    /** Downloads a small resource (a block map) into memory, refusing more than a block map's worth. */
     private fun fetch(url: String): ByteArray {
         val builder = HttpRequest.newBuilder().uri(URI.create(url)).GET()
         authHeaders.forEach { (key, value) -> builder.header(key, value) }
-        val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray())
+        val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
         if (response.statusCode() != HTTP_OK) {
+            response.body().close()
             throw DeltaUnavailableException("HTTP ${response.statusCode()} for $url")
         }
-        if (response.body().isEmpty()) throw DeltaUnavailableException("Empty block map at $url")
-        return response.body()
+        val body = response.body().use { readAtMost(it, BlockMapCodec.MAX_PAYLOAD_SIZE.toLong()) }
+        if (body.isEmpty()) throw DeltaUnavailableException("Empty block map at $url")
+        return body
     }
 
     internal companion object {
         private const val HTTP_OK = 200
         private const val APPIMAGE_ENV = "APPIMAGE"
         private const val APPIMAGE_EXTENSION = "appimage"
+        private const val NSIS_EXTENSION = "exe"
 
         /**
          * Formats that carry their block map appended to the artifact. Everything else publishes a

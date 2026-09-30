@@ -2,12 +2,15 @@ package dev.nucleusframework.updater.delta
 
 import dev.nucleusframework.updater.internal.delta.BlockMapCodec
 import dev.nucleusframework.updater.internal.delta.DeltaUnavailableException
+import dev.nucleusframework.updater.internal.delta.readAtMost
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPOutputStream
 
 /** Reads block maps a real electron-builder produced, in both shapes it emits. */
 class BlockMapCodecTest {
@@ -82,4 +85,38 @@ class BlockMapCodecTest {
             BlockMapCodec.parseGzip("not a block map".toByteArray())
         }
     }
+
+    @Test
+    fun `a block map that inflates past the size bound is rejected instead of buffered`() {
+        // 160 MiB of zeros compresses to a few hundred KiB: a small download that would otherwise
+        // expand into memory until the JVM runs out, escaping the full-download fallback.
+        val bomb = gzip { out -> ByteArray(1024 * 1024).let { zeros -> repeat(160) { out.write(zeros) } } }
+        assertTrue("the payload itself must be small", bomb.size < 1024 * 1024)
+
+        val error = assertThrows(DeltaUnavailableException::class.java) { BlockMapCodec.parseGzip(bomb) }
+        // Rejected by the bound while inflating, not afterwards as invalid JSON once in memory.
+        assertTrue(error.message, error.message.orEmpty().contains("exceeds"))
+    }
+
+    @Test
+    fun `a block map with a non-positive block size is rejected`() {
+        for ((checksums, sizes) in listOf("a" to "0", "a" to "-16384", "a\", \"b" to "16384, 0")) {
+            val json =
+                """{"version":"2","files":[{"name":"file","offset":0,""" +
+                    """"checksums":["$checksums"],"sizes":[$sizes]}]}"""
+
+            assertThrows(sizes, DeltaUnavailableException::class.java) {
+                BlockMapCodec.parseGzip(gzip { it.write(json.toByteArray()) })
+            }
+        }
+    }
+
+    @Test
+    fun `reads are cut off at the bound`() {
+        assertEquals(4, readAtMost(ByteArray(4).inputStream(), maxBytes = 4).size)
+        assertThrows(DeltaUnavailableException::class.java) { readAtMost(ByteArray(5).inputStream(), maxBytes = 4) }
+    }
+
+    private fun gzip(write: (GZIPOutputStream) -> Unit): ByteArray =
+        ByteArrayOutputStream().also { out -> GZIPOutputStream(out).use(write) }.toByteArray()
 }

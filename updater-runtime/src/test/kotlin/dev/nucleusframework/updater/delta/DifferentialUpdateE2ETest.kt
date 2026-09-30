@@ -5,10 +5,13 @@ import dev.nucleusframework.updater.DownloadProgress
 import dev.nucleusframework.updater.NucleusUpdater
 import dev.nucleusframework.updater.UpdateResult
 import dev.nucleusframework.updater.exception.ChecksumException
+import dev.nucleusframework.updater.internal.delta.BlockMap
+import dev.nucleusframework.updater.internal.delta.BlockMapCodec
 import dev.nucleusframework.updater.internal.delta.UpdateCache
 import dev.nucleusframework.updater.provider.UpdateProvider
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,7 +21,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.zip.GZIPOutputStream
 
 /**
  * Drives the whole update path — manifest, block maps, ranged requests, checksum, cache — against a
@@ -118,6 +123,37 @@ class DifferentialUpdateE2ETest {
         assertEquals(DeltaFixtures.V2_SIZE.toLong(), progress.bytesDownloaded)
         assertArtifactIs(DeltaFixtures.v2(), progress)
     }
+
+    @Test
+    fun `a delta that would fetch nearly the whole artifact becomes a single full download`() {
+        // The cached artifact shares only its first block with 2.0.0, so a delta would fetch ~96%.
+        val v1Map = BlockMapCodec.parseGzip(DeltaFixtures.blockMapGzip("v1"))
+        val entry = v1Map.files.single()
+        val checksums = entry.checksums.mapIndexed { i, sum -> if (i == 0) sum else "old-$i" }
+        val mostlyDifferent = v1Map.copy(files = listOf(entry.copy(checksums = checksums)))
+        primeCache(
+            fileName = "MyApp-1.0.0.zip",
+            artifact = DeltaFixtures.v1(),
+            blockMapGzip = gzipJson(mostlyDifferent),
+        )
+        publish(version = "2.0.0", fileName = "MyApp-2.0.0.zip", artifact = DeltaFixtures.v2())
+        server.resetCounters()
+
+        val progress = download(currentVersion = "1.0.0")
+
+        assertFalse("a delta this large is not worth its requests", progress.isDifferential)
+        assertArtifactIs(DeltaFixtures.v2(), progress)
+        assertTrue(
+            "no ranged request may be issued: ${server.requests}",
+            server.requests.none { it.contains("bytes=") },
+        )
+    }
+
+    private fun gzipJson(map: BlockMap): ByteArray =
+        ByteArrayOutputStream()
+            .also { out ->
+                GZIPOutputStream(out).use { it.write(Json.encodeToString(BlockMap.serializer(), map).toByteArray()) }
+            }.toByteArray()
 
     @Test
     fun `a release that publishes no block map falls back to a full download`() {
