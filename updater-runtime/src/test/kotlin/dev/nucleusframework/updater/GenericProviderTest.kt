@@ -65,4 +65,13 @@ class GenericProviderTest {
             provider.getBlockMapUrl("https://cdn.example.com/App.zip"),
         )
     }
+
+    @Test
+    fun `default block map url keeps a query string after the extension`() {
+        val provider = GenericProvider("https://cdn.example.com")
+        assertEquals(
+            "https://cdn.example.com/App.zip.blockmap?X-Amz-Signature=abc&X-Amz-Expires=300",
+            provider.getBlockMapUrl("https://cdn.example.com/App.zip?X-Amz-Signature=abc&X-Amz-Expires=300"),
+        )
+    }
 }

@@ -19,13 +19,21 @@ public interface UpdateProvider {
     /**
      * Returns the URL of the block map that describes [fileUrl], used to compute a differential
      * download. electron-builder publishes it as `<artifact>.blockmap` next to the artifact, which
-     * the default implementation reproduces.
+     * the default implementation reproduces: `.blockmap` is appended to the URL's path, before any
+     * query string, as electron-updater does.
      *
      * Override this when artifacts are not addressed by a plain path — for instance behind a
      * signed-URL gateway, where the query string must be re-signed for the block map too. A block
      * map that cannot be fetched is not an error: the updater falls back to a full download.
      */
-    public fun getBlockMapUrl(fileUrl: String): String = "$fileUrl.blockmap"
+    public fun getBlockMapUrl(fileUrl: String): String {
+        val queryStart = fileUrl.indexOf('?')
+        return if (queryStart < 0) {
+            "$fileUrl.blockmap"
+        } else {
+            fileUrl.substring(0, queryStart) + ".blockmap" + fileUrl.substring(queryStart)
+        }
+    }
 
     /**
      * Returns the URL of the metadata (YAML) file for the given [channel] and [platform],
