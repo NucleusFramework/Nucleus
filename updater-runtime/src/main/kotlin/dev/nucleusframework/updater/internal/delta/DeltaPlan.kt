@@ -25,7 +25,8 @@ internal data class Operation(
  *
  * Blocks of the new artifact whose digest also appears in the old one are copied from disk;
  * everything else is downloaded. Adjacent operations of the same kind are merged so that a run of
- * changed blocks becomes a single ranged request instead of one request per block.
+ * changed blocks becomes a single ranged request instead of one request per block. [coalesce]
+ * goes further than electron-updater and also bridges small unchanged gaps between downloads.
  */
 internal object DeltaPlan {
     fun compute(
@@ -69,6 +70,48 @@ internal object DeltaPlan {
     /** Total number of bytes the plan will fetch over the network. */
     fun downloadSize(operations: List<Operation>): Long =
         operations.filter { it.kind == OperationKind.DOWNLOAD }.sumOf { it.length }
+
+    /** Largest run of copied bytes [coalesce] replaces with downloaded bytes. */
+    const val MAX_COALESCE_GAP: Long = 256L * 1024
+
+    /**
+     * Merges two downloads separated only by copies totalling at most [maxGap] bytes into one
+     * download, fetching the gap from the server instead of copying it from disk. Every ranged
+     * request costs a round trip, which outweighs transferring a small gap, so a plan with many
+     * scattered changes needs far fewer requests for a little extra volume.
+     *
+     * The merge is exact: download offsets index the new artifact, so the copies between two
+     * downloads fill `[first.end, next.start)` of it, and fetching that range yields the same bytes.
+     * A gap whose copies do not add up to that span is left alone.
+     */
+    fun coalesce(
+        operations: List<Operation>,
+        maxGap: Long = MAX_COALESCE_GAP,
+    ): List<Operation> {
+        val merged = ArrayList<Operation>(operations.size)
+        var index = 0
+        while (index < operations.size) {
+            val operation = operations[index]
+            val last = merged.lastOrNull()
+            if (operation.kind == OperationKind.COPY && last?.kind == OperationKind.DOWNLOAD) {
+                var next = index
+                var gap = 0L
+                while (next < operations.size && operations[next].kind == OperationKind.COPY) {
+                    gap += operations[next].length
+                    next++
+                }
+                val following = operations.getOrNull(next)
+                if (following?.kind == OperationKind.DOWNLOAD && gap <= maxGap && following.start == last.end + gap) {
+                    merged[merged.lastIndex] = last.copy(end = following.end)
+                    index = next + 1
+                    continue
+                }
+            }
+            merged += operation
+            index++
+        }
+        return merged
+    }
 
     private fun addOrExtend(
         operations: MutableList<Operation>,

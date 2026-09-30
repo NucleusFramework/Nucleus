@@ -90,7 +90,7 @@ internal class DeltaResolver(
         url = target.url,
         oldFile = oldFile,
         target = destination,
-        operations = plan,
+        operations = DeltaPlan.coalesce(plan),
         expectedSize = target.size,
         expectedSha512 = target.sha512,
         trailer = trailer,
