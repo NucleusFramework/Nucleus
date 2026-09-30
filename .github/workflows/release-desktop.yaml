@@ -186,6 +186,7 @@ jobs:
           sparse-checkout: |
             .github/actions
             examples/nucleus-demo/packaging/macos
+            plugin-build/plugin/src/main/resources/nucleus/electron-builder
           fetch-depth: 1
 
       - name: Setup Node.js

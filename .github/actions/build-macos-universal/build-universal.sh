@@ -301,6 +301,38 @@ ZIP_OUT="$OUTPUT_DIR/${UNIVERSAL_PREFIX}.zip"
 echo "==> Creating ZIP: $ZIP_OUT"
 ditto -c -k --keepParent "$UNIVERSAL_APP" "$ZIP_OUT"
 
+# ── Generate blockmap for differential updates ────────────────────────────
+# The universal ZIP is built with ditto, so electron-builder never sees it and emits no
+# .blockmap sidecar; without one, universal installs can only update with full downloads.
+# Generate it with electron-builder's own block map builder (the one it uses for its
+# sidecars), installed from the plugin's pinned lock file (npm ci --ignore-scripts,
+# integrity-checked). The sidecar leaves the ZIP untouched, so the sha512 and size later
+# written to latest-mac.yml stay correct; the ZIP is never stapled, so the map stays valid.
+#
+# The block map is an optimization — updaters fall back to full downloads without it — so a
+# failure here (no Node.js, a registry hiccup) warns instead of failing the signed release.
+generate_blockmap() {
+  local toolchain_dir workdir
+  toolchain_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../plugin-build/plugin/src/main/resources/nucleus/electron-builder" 2>/dev/null && pwd)" || return 1
+  workdir="$WORK/electron-builder-toolchain"
+  mkdir -p "$workdir" || return 1
+  cp "$toolchain_dir/package.json" "$toolchain_dir/package-lock.json" "$workdir/" || return 1
+  (cd "$workdir" && npm ci --ignore-scripts --no-audit --no-fund --silent) >&2 || return 1
+  (cd "$workdir" && node -e '
+    require("app-builder-lib/out/targets/blockmap/blockmap")
+      .buildBlockMap(process.argv[1], "gzip", process.argv[2])
+      .catch((e) => { console.error(e); process.exit(1) })
+  ' "$ZIP_OUT" "$ZIP_OUT.blockmap") || return 1
+}
+
+echo "==> Generating blockmap: $ZIP_OUT.blockmap"
+if generate_blockmap; then
+  echo "==> Blockmap written: $ZIP_OUT.blockmap"
+else
+  echo "::warning::Blockmap generation failed for $ZIP_OUT; universal updates will use full downloads"
+  rm -f "$ZIP_OUT.blockmap"
+fi
+
 # ── Read packaging metadata from build artifacts ─────────────────────────
 METADATA_FILE="$(find "$ARM64_PATH" -name 'packaging-metadata.json' -type f | head -1)"
 if [[ -z "$METADATA_FILE" ]]; then
