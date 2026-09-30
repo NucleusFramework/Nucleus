@@ -166,6 +166,21 @@ abstract class AbstractNotarizationTask
                 tool = MacUtils.xcrun,
                 args = listOf("stapler", "staple", packageFile.absolutePath),
             )
+            deleteStaleBlockMap(packageFile)
+        }
+
+        /**
+         * Stapling rewrites the artifact, so a block map generated before it no longer describes
+         * the published bytes. Publishing it anyway makes every differential update of this file
+         * fail and fall back to a full download, after fetching the useless map and caching it as
+         * the basis for the next update. Without it, updaters go straight to a full download;
+         * [updateMetadataFiles] drops the matching `blockMapSize` from the manifest.
+         */
+        private fun deleteStaleBlockMap(packageFile: File) {
+            val blockMap = File(packageFile.parentFile, "${packageFile.name}.blockmap")
+            if (blockMap.delete()) {
+                logger.lifecycle("Deleted ${blockMap.name}: stapling invalidated it")
+            }
         }
 
         private fun updateMetadataFiles(packageFile: File) {
