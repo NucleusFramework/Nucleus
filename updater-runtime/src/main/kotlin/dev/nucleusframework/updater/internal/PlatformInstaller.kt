@@ -179,59 +179,19 @@ internal object PlatformInstaller {
         // to a password-prompting install and log why (no silent fallback without a reason).
         val helper = resolveUpdateHelper(launcher)
         val signatureFile = File("${packageFile.absolutePath}.asc")
-        val installCmd =
-            when {
-                helper != null && signatureFile.isFile ->
-                    "pkexec \"${helper.absolutePath}\" \"\$PKG_FILE\""
-                extension == "deb" -> {
-                    logLinuxInstallFallback(helper, signatureFile)
-                    "pkexec dpkg -i \"\$PKG_FILE\""
-                }
-                extension == "rpm" -> {
-                    logLinuxInstallFallback(helper, signatureFile)
-                    "pkexec rpm -U \"\$PKG_FILE\""
-                }
-                else -> error("Unsupported package format: $extension")
-            }
-
-        val relaunchCmd =
-            if (restart) {
-                "\n# Relaunch the application\nnohup \"\$APP_LAUNCHER\" > /dev/null 2>&1 &\n"
-            } else {
-                ""
-            }
+        val silentHelper = helper?.takeIf { signatureFile.isFile }
+        if (silentHelper == null) logLinuxInstallFallback(helper, signatureFile)
 
         val script = File(createUpdateWorkDir(), "nucleus-update.sh")
         script.writeText(
-            """
-            |#!/usr/bin/env bash
-            |
-            |# Ignore SIGHUP to survive parent process exit
-            |trap '' HUP
-            |
-            |PKG_FILE="${packageFile.absolutePath}"
-            |APP_PID=$pid
-            |APP_LAUNCHER="$launcher"
-            |
-            |# Wait for the app process to fully exit
-            |while kill -0 "${'$'}APP_PID" 2>/dev/null; do
-            |    sleep 0.5
-            |done
-            |
-            |sleep 1
-            |
-            |# Install the package. Silent path uses the signature-verifying helper;
-            |# otherwise pkexec dpkg/rpm shows an authentication dialog.
-            |# Do not use set -e: dpkg/rpm may return non-zero on warnings,
-            |# which would prevent the application from relaunching.
-            |$installCmd
-            |
-            |# Clean up the package file and its detached signature
-            |rm -f "${'$'}PKG_FILE" "${'$'}PKG_FILE.asc"
-            |$relaunchCmd
-            |# Clean up this script
-            |rm -f "${'$'}{0}"
-            """.trimMargin(),
+            buildLinuxPackageUpdateScript(
+                packageFile = packageFile.absolutePath,
+                extension = extension,
+                launcher = launcher,
+                helper = silentHelper?.absolutePath,
+                appPid = pid,
+                restart = restart,
+            ),
         )
         script.setExecutable(true)
 
