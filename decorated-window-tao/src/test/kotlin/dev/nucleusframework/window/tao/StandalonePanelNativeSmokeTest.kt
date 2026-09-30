@@ -85,6 +85,11 @@ class StandalonePanelNativeSmokeTest {
  * inbound callbacks.
  */
 private class NoOpInboundDnDCallback : NativeTaoWindowsDndBridge.Callback {
+    override fun onDragFiles(
+        hwnd: Long,
+        files: Array<String>?,
+    ) = Unit
+
     override fun onDragEnter(
         hwnd: Long,
         x: Int,

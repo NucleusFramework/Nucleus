@@ -68,6 +68,7 @@ static jmethodID g_method_on_enter      = NULL; /* (JIIIZ)I  hwnd, x, y, keyStat
 static jmethodID g_method_on_over       = NULL; /* (JIIIZ)I */
 static jmethodID g_method_on_leave      = NULL; /* (J)V */
 static jmethodID g_method_on_drop       = NULL; /* (JIII[Ljava/lang/String;)I  hwnd, x, y, keyState, files → effect */
+static jmethodID g_method_on_files      = NULL;
 
 #define DROPEFFECT_NONE_LOCAL 0
 #define DROPEFFECT_COPY_LOCAL 1
@@ -120,7 +121,7 @@ static jobjectArray extract_files(JNIEnv *env, IDataObject *pDataObj) {
     if (IDataObject_GetData(pDataObj, &fmt, &stg) != S_OK) return NULL;
 
     jobjectArray result = NULL;
-    HDROP hdrop = (HDROP)GlobalLock(stg.hGlobal);
+    HDROP hdrop = (HDROP)stg.hGlobal;
     if (hdrop) {
         UINT count = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
         jclass strClass = (*env)->FindClass(env, "java/lang/String");
@@ -143,7 +144,6 @@ static jobjectArray extract_files(JNIEnv *env, IDataObject *pDataObj) {
             }
         }
         if (strClass) (*env)->DeleteLocalRef(env, strClass);
-        GlobalUnlock(stg.hGlobal);
     }
     ReleaseStgMedium(&stg);
     return result;
@@ -212,6 +212,14 @@ static HRESULT STDMETHODCALLTYPE NDT_DragEnter(
 
     jint x, y;
     to_client(t->hwnd, pt, &x, &y);
+
+    jobjectArray files = extract_files(env, pDataObj);
+    if (g_method_on_files) {
+        (*env)->CallVoidMethod(env, t->callbackRef, g_method_on_files,
+                              (jlong)(intptr_t)t->hwnd, files);
+        nucleus_jni_clear_exception(env);
+    }
+    if (files) (*env)->DeleteLocalRef(env, files);
 
     jint effect = DROPEFFECT_COPY_LOCAL;
     if (g_method_on_enter) {
@@ -332,7 +340,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 
 /* Resolves the Kotlin callback class & method IDs. Idempotent. */
 static BOOL ensure_callback_methods(JNIEnv *env, jobject callback) {
-    if (g_callback_class && g_method_on_enter && g_method_on_over &&
+    if (g_callback_class && g_method_on_files && g_method_on_enter && g_method_on_over &&
         g_method_on_leave && g_method_on_drop) return TRUE;
 
     jclass local = (*env)->GetObjectClass(env, callback);
@@ -342,12 +350,14 @@ static BOOL ensure_callback_methods(JNIEnv *env, jobject callback) {
     if (!g_callback_class) return FALSE;
 
     g_method_on_enter = (*env)->GetMethodID(env, g_callback_class, "onDragEnter", "(JIIIZ)I");
+    g_method_on_files = (*env)->GetMethodID(env, g_callback_class, "onDragFiles",
+        "(J[Ljava/lang/String;)V");
     g_method_on_over  = (*env)->GetMethodID(env, g_callback_class, "onDragOver",  "(JIIIZ)I");
     g_method_on_leave = (*env)->GetMethodID(env, g_callback_class, "onDragLeave", "(J)V");
     g_method_on_drop  = (*env)->GetMethodID(env, g_callback_class, "onDrop",
         "(JIII[Ljava/lang/String;)I");
 
-    return g_method_on_enter && g_method_on_over && g_method_on_leave && g_method_on_drop;
+    return g_method_on_files && g_method_on_enter && g_method_on_over && g_method_on_leave && g_method_on_drop;
 }
 
 /*

@@ -1165,6 +1165,15 @@ internal class TaoComposeSceneHostLinux(
     private inner class InboundDnDCallback : dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.Callback {
         private fun node() = window.inboundDragAndDropNode?.invoke()
 
+        private var hoverFiles: Array<String>? = null
+
+        override fun onDragFiles(
+            handle: Long,
+            files: Array<String>?,
+        ) {
+            hoverFiles = files
+        }
+
         // Linux keeps neither the macOS/Windows diagnostic logging nor their
         // `if (!hasFiles) return NONE` guard, so its overrides delegate straight
         // to the shared helper. Folding those in via TaoSceneDnD would change
@@ -1177,7 +1186,7 @@ internal class TaoComposeSceneHostLinux(
             hasFiles: Boolean,
         ): Int =
             if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragEnter(node(), x, y)
+                    .onDragEnter(node = node(), x = x, y = y, files = hoverFiles)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
@@ -1192,16 +1201,18 @@ internal class TaoComposeSceneHostLinux(
             hasFiles: Boolean,
         ): Int =
             if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragOver(node(), x, y)
+                    .onDragOver(node = node(), x = x, y = y, files = hoverFiles)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
 
-        override fun onDragLeave(handle: Long) =
+        override fun onDragLeave(handle: Long) {
+            hoverFiles = null
             dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                .onDragLeave(node())
+                .onDragLeave(node = node())
+        }
 
         override fun onDrop(
             handle: Long,
@@ -1209,14 +1220,16 @@ internal class TaoComposeSceneHostLinux(
             y: Int,
             modState: Int,
             files: Array<String>?,
-        ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDrop(node(), x, y, files)
+        ): Int {
+            hoverFiles = null
+            return if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                    .onDrop(node = node(), x = x, y = y, files = files)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
+        }
     }
 
     // ── Touch & trackpad gestures (Linux) ─────────────────────────────────

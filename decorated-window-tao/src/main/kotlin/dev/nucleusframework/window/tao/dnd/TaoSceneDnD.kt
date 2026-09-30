@@ -93,9 +93,12 @@ internal object TaoSceneDnD {
         node: ComposeSceneDragAndDropNode?,
         x: Int,
         y: Int,
+        files: Array<String>? = null,
     ): Boolean {
-        if (node == null) return false
-        val ev = makeDragEvent(x, y, null)
+        if (node == null) {
+            return false
+        }
+        val ev = makeDragEvent(xPx = x, yPx = y, files = files)
         val accepted = node.acceptDragAndDropTransfer(ev)
         if (accepted) {
             node.onStarted(ev)
@@ -116,9 +119,12 @@ internal object TaoSceneDnD {
         node: ComposeSceneDragAndDropNode?,
         x: Int,
         y: Int,
+        files: Array<String>? = null,
     ): Boolean {
-        if (node == null) return false
-        val ev = makeDragEvent(x, y, null)
+        if (node == null) {
+            return false
+        }
+        val ev = makeDragEvent(xPx = x, yPx = y, files = files)
         node.onMoved(ev)
         return node.hasEligibleDropTarget
     }

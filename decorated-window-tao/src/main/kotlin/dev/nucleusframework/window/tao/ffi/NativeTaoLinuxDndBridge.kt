@@ -33,6 +33,11 @@ internal object NativeTaoLinuxDndBridge {
     val isLoaded: Boolean get() = loaded
 
     interface Callback {
+        fun onDragFiles(
+            handle: Long,
+            files: Array<String>?,
+        )
+
         @Suppress("FunctionParameterNaming")
         fun onDragEnter(
             handle: Long,
