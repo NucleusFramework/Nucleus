@@ -54,8 +54,11 @@ internal class DeltaResolver(
         oldFile: File,
         destination: File,
     ): ResolvedDelta {
-        val trailerSize = target.blockMapSize!! + BlockMapCodec.EMBEDDED_HEADER_SIZE
-        if (trailerSize <= 0 || trailerSize >= target.size) {
+        // The manifest is remote input: bound the tail before requesting it, so a bogus size can
+        // neither run past the artifact nor pull most of it into memory.
+        val blockMapSize = target.blockMapSize!!
+        val trailerSize = blockMapSize + BlockMapCodec.EMBEDDED_HEADER_SIZE
+        if (blockMapSize <= 0 || blockMapSize > BlockMapCodec.MAX_PAYLOAD_SIZE || trailerSize >= target.size) {
             throw DeltaUnavailableException("Manifest declares an implausible blockMapSize for ${target.fileName}")
         }
         val downloader = DifferentialDownloader(httpClient, authHeaders)
@@ -111,16 +114,18 @@ internal class DeltaResolver(
         return cache.artifact.takeIf { it.isFile && it.length() > 0 }
     }
 
-    /** Downloads a small resource (a block map) fully into memory. */
+    /** Downloads a small resource (a block map) into memory, refusing more than a block map's worth. */
     private fun fetch(url: String): ByteArray {
         val builder = HttpRequest.newBuilder().uri(URI.create(url)).GET()
         authHeaders.forEach { (key, value) -> builder.header(key, value) }
-        val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray())
+        val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
         if (response.statusCode() != HTTP_OK) {
+            response.body().close()
             throw DeltaUnavailableException("HTTP ${response.statusCode()} for $url")
         }
-        if (response.body().isEmpty()) throw DeltaUnavailableException("Empty block map at $url")
-        return response.body()
+        val body = response.body().use { readAtMost(it, BlockMapCodec.MAX_PAYLOAD_SIZE.toLong()) }
+        if (body.isEmpty()) throw DeltaUnavailableException("Empty block map at $url")
+        return body
     }
 
     internal companion object {

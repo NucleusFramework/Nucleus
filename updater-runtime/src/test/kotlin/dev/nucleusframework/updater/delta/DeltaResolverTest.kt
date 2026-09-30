@@ -3,6 +3,7 @@ package dev.nucleusframework.updater.delta
 import dev.nucleusframework.updater.UpdateFile
 import dev.nucleusframework.updater.internal.delta.DeltaPlan
 import dev.nucleusframework.updater.internal.delta.DeltaResolver
+import dev.nucleusframework.updater.internal.delta.DeltaUnavailableException
 import dev.nucleusframework.updater.internal.delta.DifferentialDownloader
 import dev.nucleusframework.updater.internal.delta.UpdateCache
 import kotlinx.coroutines.runBlocking
@@ -10,6 +11,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -91,6 +93,26 @@ class DeltaResolverTest {
                 .resolve(target, blockMapUrl(target), destination())
 
         assertNull(resolved)
+    }
+
+    @Test
+    fun `an implausible blockMapSize is refused before anything is requested`() {
+        val running = appImage(DeltaFixtures.v1(), "v1", "MyApp-1.0.0.AppImage")
+        // Smaller than the artifact, so the old bound let it through — and the tail read would then
+        // have pulled 100 MiB into memory.
+        val target =
+            UpdateFile(
+                url = "${server.baseUrl}/MyApp-2.0.0.AppImage",
+                sha512 = "unused",
+                size = 200L * 1024 * 1024,
+                blockMapSize = 100L * 1024 * 1024,
+                fileName = "MyApp-2.0.0.AppImage",
+            )
+
+        assertThrows(DeltaUnavailableException::class.java) {
+            resolver { running.absolutePath }.resolve(target, blockMapUrl(target), destination())
+        }
+        assertTrue("nothing may be requested", server.requests.isEmpty())
     }
 
     private fun resolver(appImagePath: () -> String?) =

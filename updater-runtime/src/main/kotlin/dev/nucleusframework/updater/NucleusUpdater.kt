@@ -20,6 +20,7 @@ import dev.nucleusframework.updater.internal.UpdateMarker
 import dev.nucleusframework.updater.internal.UpdaterSettings
 import dev.nucleusframework.updater.internal.WindowsHotUpdate
 import dev.nucleusframework.updater.internal.YamlParser
+import dev.nucleusframework.updater.internal.delta.BlockMapCodec
 import dev.nucleusframework.updater.internal.delta.DeltaPlan
 import dev.nucleusframework.updater.internal.delta.DeltaResolver
 import dev.nucleusframework.updater.internal.delta.DifferentialDownloader
@@ -313,7 +314,7 @@ public class NucleusUpdater(
 
     /** Downloads a block map, or returns `null` when the release does not publish one. */
     private fun fetchBlockMap(url: String): ByteArray? =
-        fetcher.readBytesOrNull(url).also {
+        fetcher.readBytesOrNull(url, BlockMapCodec.MAX_PAYLOAD_SIZE.toLong()).also {
             if (it == null) logger.log(Level.FINE, "No block map at $url; the next update will be a full download")
         }
 

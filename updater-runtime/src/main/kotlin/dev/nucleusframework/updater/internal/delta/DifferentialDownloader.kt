@@ -64,21 +64,27 @@ internal class DifferentialDownloader(
         return transferred
     }
 
-    /** Fetches `[start, endInclusive]` of [url] into memory, for reading an artifact's own tail. */
+    /**
+     * Fetches `[start, endInclusive]` of [url] into memory, for reading an artifact's own tail.
+     * Reads at most the requested length, however much the server sends.
+     */
     fun readRange(
         url: String,
         start: Long,
         endInclusive: Long,
     ): ByteArray {
-        val response = httpClient.send(rangeRequest(url, start, endInclusive), HttpResponse.BodyHandlers.ofByteArray())
+        val response =
+            httpClient.send(rangeRequest(url, start, endInclusive), HttpResponse.BodyHandlers.ofInputStream())
         if (response.statusCode() != HTTP_PARTIAL_CONTENT) {
+            response.body().close()
             throw DeltaUnavailableException("Server answered HTTP ${response.statusCode()} for a range on $url")
         }
         val expected = endInclusive - start + 1
-        if (response.body().size.toLong() != expected) {
-            throw DeltaUnavailableException("Range response returned ${response.body().size} of $expected bytes")
+        val body = response.body().use { readAtMost(it, expected) }
+        if (body.size.toLong() != expected) {
+            throw DeltaUnavailableException("Range response returned ${body.size} of $expected bytes")
         }
-        return response.body()
+        return body
     }
 
     private fun verifyPlanCoversArtifact(request: DeltaDownload) {
