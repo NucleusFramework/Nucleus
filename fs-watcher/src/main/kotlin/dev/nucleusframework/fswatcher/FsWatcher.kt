@@ -26,9 +26,24 @@ public sealed interface FsWatchBackendStrategy {
 private const val DEFAULT_DEBOUNCE_WINDOW_MILLIS = 150L
 private val DEFAULT_DEBOUNCE_WINDOW: Duration = Duration.ofMillis(DEFAULT_DEBOUNCE_WINDOW_MILLIS)
 
+/**
+ * How backend events reach [FsWatcher.events].
+ *
+ * Renames differ between the two modes: [Raw] never pairs them, so a rename arrives as
+ * [FsWatchEvent.Removed] for the old path plus [FsWatchEvent.Created] for the new one, while
+ * [Debounced] pairs the two halves into a single [FsWatchEvent.Moved] whenever the backend lets
+ * it (inotify rename cookies on Linux, file ids on macOS and Windows) and falls back to the same
+ * `Removed` + `Created` shape otherwise.
+ */
 public sealed interface FsWatchDeliveryMode {
+    /**
+     * Every backend event as it comes, without pairing or coalescing. On macOS that includes the
+     * historical flags FSEvents attaches to a path (a rename of a long-existing file may carry a
+     * `Created` for it); [Debounced] straightens those out before delivery.
+     */
     public data object Raw : FsWatchDeliveryMode
 
+    /** Events coalesced per path over [window]; the default. */
     public data class Debounced(
         val window: Duration = DEFAULT_DEBOUNCE_WINDOW,
     ) : FsWatchDeliveryMode {
@@ -92,8 +107,12 @@ public interface FsWatcher : AutoCloseable {
      *
      * [path] needs no canonicalization: delivered [FsWatchEvent] paths are rooted at the spelling
      * passed here, whatever form the platform backend reports internally. Registering the same
-     * directory under two spellings does yield two independent registrations and two native
-     * watches, so pick one form per root if that matters.
+     * directory under two spellings does yield two independent registrations, so pick one form
+     * per root if that matters.
+     *
+     * Every registration of one [FsWatcher] shares its single native watcher — one inotify
+     * instance, one FSEvents stream, one directory-changes loop — so the OS resources consumed
+     * scale with the number of watchers, not with the number of roots.
      *
      * @throws FsWatchException if the root cannot be watched.
      */

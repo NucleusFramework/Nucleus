@@ -120,6 +120,15 @@ internal class TaoSceneBundle(
             }
 
     /**
+     * Painted over the scene at the end of every [render], on the same canvas
+     * and in the same coordinates the scene drew in. This is where the dialog
+     * scrims of native popup layers land — the owner window paints every
+     * layer's scrim, each layer paints the scrims of the layers above it
+     * (Compose Desktop's `onRenderOverlay`). `null` paints nothing.
+     */
+    var renderOverlay: ((Canvas) -> Unit)? = null
+
+    /**
      * Recomposes, lays out, and draws one frame into [canvas] — the drop-in
      * replacement for the pre-1.12 `scene.render(canvas.asComposeCanvas(), nanoTime)`.
      * [nanoTime] is fed to the recomposer's frame clock, so `withFrameNanos`
@@ -134,6 +143,7 @@ internal class TaoSceneBundle(
             with(renderingScope) {
                 scene.render(frameRecomposer, canvas.asComposeCanvas(), nanoTime)
             }
+            renderOverlay?.invoke(canvas)
             edtGuard.afterFrame()
             swallowed = false
         }
@@ -144,6 +154,26 @@ internal class TaoSceneBundle(
         // the recomposer is gone: the next frame would be identical, so this
         // would be a repaint spin rather than a retry.
         if (swallowed && isRecomposerAlive) requestFrame()
+    }
+
+    /**
+     * Recomposes and re-lays-out the scene now, without drawing.
+     *
+     * For the one case where a Compose state write has to reach the node tree
+     * *between* two things that happen in the same turn, rather than on the
+     * next frame: a press that dismisses a popup, which the scene then receives
+     * (see `TaoComposeSceneHostLinux.onPointerButton`). Two frame rolls, because
+     * the first one composes the nodes and only the second runs the effects they
+     * launched — a `pointerInput` handler awaits from a coroutine, so a node
+     * composed but not yet started would let the press through untouched.
+     */
+    fun composeAndLayoutNow() {
+        exceptionHandler.catchExceptions {
+            val nanoTime = System.nanoTime()
+            frameRecomposer.performFrame(nanoTime)
+            frameRecomposer.performFrame(nanoTime)
+            scene.measureAndLayout()
+        }
     }
 
     @Suppress("TooGenericExceptionCaught")

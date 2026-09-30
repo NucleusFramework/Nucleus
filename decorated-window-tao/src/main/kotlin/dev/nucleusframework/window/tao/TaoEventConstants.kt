@@ -18,6 +18,12 @@ public object TaoCursorIcon {
     public const val NS_RESIZE: Int = 10
     public const val NESW_RESIZE: Int = 11
     public const val NWSE_RESIZE: Int = 12
+
+    /** Open hand: this can be picked up and dragged. */
+    public const val GRAB: Int = 13
+
+    /** Closed hand: it is being dragged. */
+    public const val GRABBING: Int = 14
 }
 
 /** Mirrors the event constants in `nucleus_tao` (`lib.rs`). */
@@ -79,6 +85,9 @@ public object TaoEventCode {
      * VSync while active so border-drag frames don't block on VBlank.
      */
     public const val SIZE_MOVE: Int = 25
+
+    /** macOS requested application termination; route it through each window's close callback. */
+    internal const val QUIT_REQUESTED: Int = 26
 }
 
 /** Trackpad gesture kind reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */
@@ -160,5 +169,7 @@ public object TaoMouseButton {
     public const val LEFT: Int = 0
     public const val RIGHT: Int = 1
     public const val MIDDLE: Int = 2
-    public const val OTHER: Int = 3
+    public const val BACK: Int = 3
+    public const val FORWARD: Int = 4
+    public const val OTHER: Int = 5
 }

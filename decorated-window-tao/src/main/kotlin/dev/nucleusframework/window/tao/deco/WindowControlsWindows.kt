@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.DecoratedWindowState
@@ -64,8 +63,9 @@ import dev.nucleusframework.window.resolveWindowControl
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.onPositionChanged
 
-// Mirrors `decorated-window-awt/WindowsWindowControlArea.kt` so the visual
+// Mirrors the legacy AWT backend's `WindowsWindowControlArea` so the visual
 // output is identical between the AWT-based backend and the Tao backend.
 
 private val WINDOWS_BUTTON_WIDTH = 46.dp
@@ -98,7 +98,7 @@ internal fun WindowControlsWindows(
     isFullscreen: Boolean = false,
     onExitFullscreen: (() -> Unit)? = null,
 ) {
-    // Match decorated-window-jni's WindowsWindowControlArea: LTR renders
+    // Match the legacy AWT backend's window controls: LTR renders
     // Minimize/Maximize/Close, RTL mirrors it to Close/Maximize/Minimize.
     CompositionLocalProvider(LocalLayoutDirection provides LocalControlButtonsDirection.current) {
         Row(modifier = modifier.fillMaxHeight()) {
@@ -136,7 +136,7 @@ internal fun WindowsWindowControl(
     // button leaves the composition.
     val positionModifier =
         if (window != null) {
-            Modifier.onGloballyPositioned { coordinates ->
+            Modifier.onPositionChanged { coordinates ->
                 CaptionButtonHitZones.publish(window, type, coordinates.boundsInWindow())
             }
         } else {
@@ -163,7 +163,7 @@ internal fun WindowsWindowControl(
 /**
  * Icon artwork per control, in the four active/inactive x light/dark variants
  * `decorated-window-core`'s `WindowsWindowControlArea` uses. Exit-fullscreen
- * has its own set (the "collapse" glyph), matching decorated-window-jni.
+ * has its own set (the "collapse" glyph), matching the legacy AWT backend.
  */
 private fun windowsControlIcon(
     type: WindowControlType,

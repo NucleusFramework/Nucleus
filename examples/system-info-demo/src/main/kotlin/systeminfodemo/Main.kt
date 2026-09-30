@@ -5,7 +5,6 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.aotTraining
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.window.jewel.JewelDecoratedWindow
@@ -17,7 +16,7 @@ import kotlin.time.Duration.Companion.seconds
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun main() =
-    nucleusApplication(backend = NucleusBackend.Tao) {
+    nucleusApplication {
         aotTraining(duration = 45.seconds)
 
         val (theme, styling) = buildIslandsTheme()

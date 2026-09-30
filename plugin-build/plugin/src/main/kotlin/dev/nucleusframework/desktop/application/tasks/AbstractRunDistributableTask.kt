@@ -11,6 +11,7 @@ import dev.nucleusframework.internal.utils.currentOS
 import dev.nucleusframework.internal.utils.executableName
 import dev.nucleusframework.internal.utils.ioFile
 import org.gradle.api.file.Directory
+import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
@@ -36,6 +37,10 @@ abstract class AbstractRunDistributableTask
 
         @get:Input
         internal val packageName: Provider<String> = createApplicationImage.flatMap { it.packageName }
+
+        /** Extra environment for the app, e.g. the updater test switches (`-Pnucleus.updater.*`). */
+        @get:Input
+        val environment: MapProperty<String, String> = objects.mapProperty(String::class.java, String::class.java)
 
         @TaskAction
         fun run() {
@@ -66,6 +71,7 @@ abstract class AbstractRunDistributableTask
                 .exec { spec ->
                     spec.workingDir(workingDir)
                     spec.executable(workingDir.resolve(executable).absolutePath)
+                    spec.environment(environment.get())
                 }.assertNormalExitValue()
         }
     }

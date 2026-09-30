@@ -2,7 +2,6 @@ package schedulerdemo
 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.WindowPosition
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import dev.nucleusframework.scheduler.DesktopBootReceiver
@@ -39,7 +38,7 @@ fun main(args: Array<String>) {
         DesktopBootReceiver.handle(args = args, registry = buildRegistry())
     }
 
-    nucleusApplication(args = args, backend = NucleusBackend.Awt) {
+    nucleusApplication(args = args) {
         val textStyle = JewelTheme.createDefaultTextStyle()
         val editorStyle = JewelTheme.createEditorTextStyle()
         val isDark = isSystemInDarkMode()

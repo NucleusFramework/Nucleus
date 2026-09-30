@@ -124,7 +124,7 @@ fun ActionsTab(
             }
         }
 
-        SectionTitle("Placement (via WindowState)")
+        SectionTitle("Placement (via WindowState v2)")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionButton(
                 label = "Floating" + if (placement == WindowPlacement.Floating) " ✓" else "",

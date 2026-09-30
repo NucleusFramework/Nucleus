@@ -1,5 +1,6 @@
 package dev.nucleusframework.globalhotkey.linux
 
+import dev.nucleusframework.core.runtime.NucleusUiThread
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.globalhotkey.GlobalHotKeyManager
 import dev.nucleusframework.globalhotkey.HotKeyModifier
@@ -14,6 +15,7 @@ class NativeLinuxHotKeyBridgeTest {
     @AfterTest
     fun tearDown() {
         GlobalHotKeyManager.shutdown()
+        NucleusUiThread.setExecutor(null)
     }
 
     @Test
@@ -23,6 +25,8 @@ class NativeLinuxHotKeyBridgeTest {
             assertTrue(GlobalHotKeyManager.lastError != null)
             return
         }
+        // Run posted callbacks inline so the native-callback assertions stay synchronous.
+        NucleusUiThread.setExecutor { it.run() }
         val fired = AtomicInteger(0)
         val handle =
             GlobalHotKeyManager.register(

@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <ServiceManagement/ServiceManagement.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 // ============================================================================
 // Globals
@@ -50,9 +51,7 @@ static void releaseEnv(BOOL didAttach) {
 }
 
 static void clearException(JNIEnv *env) {
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 }
 
 static jstring toJString(JNIEnv *env, NSString *str) {

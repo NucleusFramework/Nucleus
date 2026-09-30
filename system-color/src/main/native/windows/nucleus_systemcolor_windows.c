@@ -9,6 +9,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 
 /* ------------------------------------------------------------------ */
@@ -121,9 +122,7 @@ static void notifyAccentColorChanged(int r, int g, int b) {
         }
     }
 
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
     if (didAttach) {
         (*g_jvm)->DetachCurrentThread(g_jvm);
     }
@@ -153,9 +152,7 @@ static void notifyHighContrastChanged(BOOL isHigh) {
         }
     }
 
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
     if (didAttach) {
         (*g_jvm)->DetachCurrentThread(g_jvm);
     }

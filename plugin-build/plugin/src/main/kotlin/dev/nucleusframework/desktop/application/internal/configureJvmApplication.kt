@@ -10,7 +10,10 @@ package dev.nucleusframework.desktop.application.internal
 import dev.nucleusframework.desktop.application.dsl.AotCacheCompatibility
 import dev.nucleusframework.desktop.application.dsl.AotCacheSettings
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
+import dev.nucleusframework.desktop.application.dsl.PkgSettings
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
+import dev.nucleusframework.desktop.application.internal.transforms.configureLcdTextDefaultTransform
 import dev.nucleusframework.desktop.application.internal.validation.validateMacBundleName
 import dev.nucleusframework.desktop.application.internal.validation.validatePackageVersions
 import dev.nucleusframework.desktop.application.tasks.AbstractCheckNativeDistributionRuntime
@@ -27,6 +30,7 @@ import dev.nucleusframework.desktop.application.tasks.AbstractPatchMacJvmTask
 import dev.nucleusframework.desktop.application.tasks.AbstractProguardTask
 import dev.nucleusframework.desktop.application.tasks.AbstractRunAppXTask
 import dev.nucleusframework.desktop.application.tasks.AbstractRunDistributableTask
+import dev.nucleusframework.desktop.application.tasks.AbstractServeUpdateFeedTask
 import dev.nucleusframework.desktop.application.tasks.AbstractStripNativeLibsFromJarsTask
 import dev.nucleusframework.desktop.application.tasks.AbstractSuggestModulesTask
 import dev.nucleusframework.desktop.tasks.AbstractJarsFlattenTask
@@ -78,6 +82,9 @@ internal const val NUCLEUS_TASK_GROUP = "nucleus"
 // todo: file associations
 // todo: use workers
 internal fun JvmApplicationContext.configureJvmApplication() {
+    applyNucleusOptimization(app)
+    applyNucleusOptimizationJdk(project, app)
+
     if (app.isDefaultConfigurationEnabled) {
         configureDefaultApp()
     }
@@ -85,6 +92,10 @@ internal fun JvmApplicationContext.configureJvmApplication() {
     if (app.nativeDistributions.cleanupNativeLibs) {
         registerCleanNativeLibsTransform(project)
     }
+
+    // LCD / ClearType text on Windows (#875): patch Compose's hardcoded
+    // grayscale PlatformDefault at build time — see LcdTextDefaultTransform.
+    configureLcdTextDefaultTransform(project)
 
     validatePackageVersions()
     validateMacBundleName()
@@ -146,6 +157,8 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
                 val taskId = appxSettings.startupTaskId ?: "SlackStartup"
                 startupTaskId.set(taskId)
             }
+            // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
+            idleGc.set(project.provider { app.optIdleGc })
             outputDir.set(appTmpDir.dir("app-properties"))
         }
 
@@ -277,6 +290,7 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
             modules.set(provider { app.nativeDistributions.modules })
             includeAllModules.set(provider { app.nativeDistributions.includeAllModules })
             javaRuntimePropertiesFile.set(checkRuntime.flatMap { it.javaRuntimePropertiesFile })
+            stripJreFonts.set(provider { app.nativeDistributions.stripJreFonts })
             destinationDir.set(appTmpDir.dir("runtime"))
         }
 
@@ -325,8 +339,8 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     val allEbFormats =
         app.nativeDistributions.targetFormats
             .filter { it.backend == PackagingBackend.ELECTRON_BUILDER }
-    val nonStoreFormats = allEbFormats.filter { !it.isStoreFormat }
-    val storeFormats = allEbFormats.filter { it.isStoreFormat }
+    val nonStoreFormats = allEbFormats.filter { !app.nativeDistributions.isSandboxed(it) }
+    val storeFormats = allEbFormats.filter { app.nativeDistributions.isSandboxed(it) }
 
     // Strip native libs from JARs for the sandboxed pipeline (store formats only).
     val stripNativeLibsFromJars =
@@ -375,6 +389,14 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         }
     }
 
+    val flattenJars =
+        tasks.register<AbstractJarsFlattenTask>(
+            taskNameAction = "flatten",
+            taskNameObject = "Jars",
+        ) {
+            configureFlattenJars(this, runProguard)
+        }
+
     // === Non-sandboxed pipeline (direct distribution formats: DMG, ZIP, NSIS, etc.) ===
 
     val createDistributable =
@@ -390,6 +412,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 checkRuntime = commonTasks.checkRuntime,
                 unpackDefaultResources = commonTasks.unpackDefaultResources,
                 runProguard = runProguard,
+                flattenJars = flattenJars,
                 patchCaCertificates = commonTasks.patchCaCertificates,
                 sandboxed = false,
             )
@@ -453,7 +476,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
             packageFormat
         }
 
-    // === Sandboxed pipeline (store formats: PKG, AppX, Flatpak) ===
+    // === Sandboxed pipeline (store formats: App Store PKG, AppX, Flatpak) ===
 
     val storeNotarizeTasks = mutableListOf<TaskProvider<AbstractNotarizationTask>>()
 
@@ -474,6 +497,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                         checkRuntime = commonTasks.checkRuntime,
                         unpackDefaultResources = commonTasks.unpackDefaultResources,
                         runProguard = runProguard,
+                        flattenJars = flattenJars,
                         stripNativeLibs = stripNativeLibsFromJars,
                         patchCaCertificates = commonTasks.patchCaCertificates,
                         sandboxed = true,
@@ -555,6 +579,8 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     val mergeUpdateYml: TaskProvider<AbstractMergeUpdateYmlTask>? =
         registerUpdateYmlMergeIfNeeded(nonStoreFormats, nonStorePackageFormats)
 
+    registerServeUpdateFeedIfNeeded(nonStoreFormats, nonStorePackageFormats)
+
     val notarizeForCurrentOS =
         if (allNotarizeTasks.isNotEmpty()) {
             tasks.register<DefaultTask>(
@@ -591,14 +617,6 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         }
     }
 
-    val flattenJars =
-        tasks.register<AbstractJarsFlattenTask>(
-            taskNameAction = "flatten",
-            taskNameObject = "Jars",
-        ) {
-            configureFlattenJars(this, runProguard)
-        }
-
     val packageUberJarForCurrentOS =
         tasks.register<Jar>(
             taskNameAction = "package",
@@ -613,7 +631,9 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
             taskNameAction = "run",
             taskNameObject = "distributable",
             args = listOf(createDistributable),
-        )
+        ) {
+            environment.putAll(UpdaterLaunchSettings.environment(project.providers))
+        }
     if (generateAotCache != null) {
         runDistributable.dependsOn(generateAotCache)
     }
@@ -653,7 +673,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     val patchMacJvmTask: TaskProvider<AbstractPatchMacJvmTask>? =
         if (currentOS == OS.MacOS && app.nativeDistributions.macOS.macOsSdkVersion != null) {
             registerPatchMacJvmTask(
-                javaHome = app.javaHome,
+                javaHome = app.javaHomeProvider,
                 minVersion = app.nativeDistributions.macOS.minimumSystemVersion ?: "10.13",
                 sdkVersion = app.nativeDistributions.macOS.macOsSdkVersion!!,
             )
@@ -687,6 +707,35 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
 private fun AbstractGenerateAotCacheTask.applyAotCacheSettings(settings: AotCacheSettings) {
     adapterCaching.set(settings.compatibility == AotCacheCompatibility.NATIVE)
     extraTrainingJvmArgs.set(settings.extraTrainingJvmArgs.toList())
+}
+
+/**
+ * Registers `serveUpdateFeed`, which packages the auto-updatable formats of the current OS and
+ * serves them over loopback HTTP, so an installed copy of the app can update to this build with
+ * nothing published. Returns null when no auto-updatable format targets the current OS.
+ */
+private fun JvmApplicationContext.registerServeUpdateFeedIfNeeded(
+    nonStoreFormats: List<TargetFormat>,
+    nonStorePackageFormats: List<TaskProvider<AbstractElectronBuilderPackageTask>>,
+): TaskProvider<AbstractServeUpdateFeedTask>? {
+    val updatableTasks =
+        nonStoreFormats.zip(nonStorePackageFormats)
+            .filter { (format, _) -> format.isCompatibleWithCurrentOS && format.producesUpdateManifest }
+            .map { (_, task) -> task }
+    if (updatableTasks.isEmpty()) return null
+
+    return tasks.register<AbstractServeUpdateFeedTask>(
+        taskNameAction = "serve",
+        taskNameObject = "updateFeed",
+    ) {
+        dependsOn(updatableTasks)
+        perFormatOutputDirs.from(updatableTasks.map { provider -> provider.flatMap { it.destinationDir } })
+        val providers = project.providers
+        UpdaterLaunchSettings.serveSetting(providers, "port")?.toIntOrNull()?.let(port::set)
+        UpdaterLaunchSettings.serveSetting(providers, "throttle")?.let(UpdaterLaunchSettings::parseByteRate)?.let(throttleBytesPerSecond::set)
+        UpdaterLaunchSettings.serveSetting(providers, "latency")?.toLongOrNull()?.let(latencyMillis::set)
+        UpdaterLaunchSettings.serveSetting(providers, "timeout")?.toLongOrNull()?.let(timeoutSeconds::set)
+    }
 }
 
 private fun JvmApplicationContext.registerUpdateYmlMergeIfNeeded(
@@ -752,7 +801,11 @@ private fun JvmApplicationContext.configureProguardTask(
         dontobfuscate.set(settings.obfuscate.map { !it })
         dontoptimize.set(settings.optimize.map { !it })
 
-        joinOutputJars.set(settings.joinOutputJars)
+        joinOutputJars.set(
+            settings.joinOutputJars.map { enabled ->
+                enabled || app.optSingleJar
+            },
+        )
 
         dependsOn(unpackDefaultResources)
         defaultComposeRulesFile.set(unpackDefaultResources.flatMap { it.resources.defaultComposeProguardRules })
@@ -793,6 +846,7 @@ private fun JvmApplicationContext.configurePackageTask(
     checkRuntime: TaskProvider<AbstractCheckNativeDistributionRuntime>? = null,
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
     runProguard: Provider<AbstractProguardTask>? = null,
+    flattenJars: TaskProvider<AbstractJarsFlattenTask>? = null,
     stripNativeLibs: TaskProvider<AbstractStripNativeLibsFromJarsTask>? = null,
     patchCaCertificates: TaskProvider<AbstractPatchCaCertificatesTask>? = null,
     sandboxed: Boolean = false,
@@ -855,9 +909,10 @@ private fun JvmApplicationContext.configurePackageTask(
             val strippedOutputDir = stripNativeLibs.flatMap { it.outputDir }
             packageTask.files.from(
                 strippedOutputDir.map { dir ->
-                    dir.asFileTree.matching { it.exclude(".main-jar-name") }
+                    dir.asFileTree.matching { it.exclude(".main-jar-name", ".classpath-order") }
                 },
             )
+            packageTask.classpathOrderFile.set(strippedOutputDir.map { it.file(".classpath-order") })
             val strippedMainJarName = stripNativeLibs.flatMap { it.mainJarName }
             packageTask.launcherMainJar.fileProvider(
                 strippedOutputDir.zip(strippedMainJarName) { dir, mainJarName ->
@@ -882,6 +937,14 @@ private fun JvmApplicationContext.configurePackageTask(
             packageTask.mangleJarFilesNames.set(false)
             packageTask.packageFromUberJar.set(runProguard.flatMap { it.joinOutputJars })
         }
+        app.optSingleJar && flattenJars != null -> {
+            packageTask.dependsOn(flattenJars)
+            val flattened = flattenJars.flatMap { it.flattenedJar }
+            packageTask.files.from(flattened)
+            packageTask.launcherMainJar.set(flattened)
+            packageTask.mangleJarFilesNames.set(false)
+            packageTask.packageFromUberJar.set(true)
+        }
         else -> {
             packageTask.useAppRuntimeFiles { (runtimeJars, mainJar) ->
                 files.from(runtimeJars)
@@ -892,6 +955,7 @@ private fun JvmApplicationContext.configurePackageTask(
 
     packageTask.launcherMainClass.set(app.mainClass)
     packageTask.sandboxingEnabled.set(sandboxed)
+    packageTask.nucleusNativeDir.set(nucleusNativeDir(currentOS, targetArch))
     packageTask.launcherJvmArgs.set(
         provider {
             val executableTypeArg = "-D$APP_EXECUTABLE_TYPE=${packageTask.targetFormat.executableTypeValue}"
@@ -930,6 +994,7 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
     )
 
     packageTask.packageName.set(packageNameProvider)
+    packageTask.runtimeAppId.set(resolvedAppIdProvider())
     packageTask.executableName.set(
         project.provider {
             val dist = app.nativeDistributions
@@ -964,6 +1029,7 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         packageTask.startupWMClass.set(startupWMClass)
     }
     packageTask.customNodePath.set(NucleusProperties.electronBuilderNodePath(project.providers))
+    packageTask.configureNodeJs(project, app.nativeDistributions.nodejs)
     packageTask.publishMode.set(NucleusProperties.electronBuilderPublishMode(project.providers))
     packageTask.appxStoreLogo.set(app.nativeDistributions.windows.appx.storeLogo)
     packageTask.appxSquare44x44Logo.set(app.nativeDistributions.windows.appx.square44x44Logo)
@@ -980,9 +1046,16 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         val mac = app.nativeDistributions.macOS
         packageTask.nonValidatedMacSigningSettings = mac.signing
         packageTask.nonValidatedMacBundleID.set(mac.bundleID)
-        // PKG is always treated as App Store — ignore the deprecated user setting for store formats.
-        packageTask.macAppStore.set(packageTask.targetFormat.isStoreFormat)
-        val sandboxed = packageTask.targetFormat.isStoreFormat
+        // A PKG is sandboxed (App Store) or not (Developer ID) by DSL choice; AppX/Flatpak always are.
+        val sandboxed = app.nativeDistributions.isSandboxed(packageTask.targetFormat)
+        packageTask.macAppStore.set(sandboxed)
+        // Only the PKG task reads the install scripts. Wiring them everywhere would make a typo in
+        // the path fail packageDmg / packageZip too, since Gradle checks every @InputFile exists.
+        if (packageTask.targetFormat == TargetFormat.Pkg) {
+            validatePkgScripts(mac.pkg)
+            packageTask.macPkgPreInstall.set(mac.pkg.preInstall)
+            packageTask.macPkgPostInstall.set(mac.pkg.postInstall)
+        }
         val defaultAppEntitlements =
             if (sandboxed) {
                 unpackDefaultResources.get { defaultSandboxEntitlements }
@@ -1000,6 +1073,12 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         )
         packageTask.macRuntimeEntitlementsFile.set(
             mac.runtimeEntitlementsFile.orElse(defaultRuntimeEntitlements),
+        )
+        packageTask.macAppExtensions.set(mac.appExtensions.extensions)
+        packageTask.macAppExtensionFiles.from(
+            mac.appExtensions.extensions.flatMap {
+                listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
+            },
         )
     }
 }
@@ -1028,6 +1107,20 @@ internal fun JvmApplicationContext.configureCommonNotarizationSettings(notarizat
 private fun <T : Any> TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>.get(
     fn: AbstractUnpackDefaultApplicationResourcesTask.DefaultResourcesProvider.() -> Provider<T>,
 ) = flatMap { fn(it.resources) }
+
+/**
+ * Fails at configuration time on a PKG channel contradiction, rather than after minutes of
+ * packaging: the Mac App Store rejects installer packages carrying install scripts (error 90254).
+ * File-level checks (existence, shebang) stay in `MacPkgScripts` at execution time.
+ */
+internal fun validatePkgScripts(pkg: PkgSettings) {
+    if (pkg.appStore && pkg.hasScripts) {
+        error(
+            "macOS { pkg { preInstall / postInstall } } requires pkg { appStore = false }: " +
+                "the Mac App Store rejects installer packages that carry install scripts (error 90254).",
+        )
+    }
+}
 
 internal fun JvmApplicationContext.configurePlatformSettings(
     packageTask: AbstractJPackageTask,
@@ -1066,10 +1159,10 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                         }
                     },
                 )
-                // The jpackage task always builds a RawAppImage, so targetFormat.isStoreFormat
-                // is always false. Use the sandboxed flag instead: sandboxed distributable feeds
-                // store formats (PKG) and must pass --mac-app-store to jpackage so it searches
-                // for the correct certificate type ("3rd Party Mac Developer Application").
+                // The jpackage task always builds a RawAppImage, so the format says nothing about
+                // the channel. Use the sandboxed flag instead: the sandboxed distributable feeds
+                // the store formats (App Store PKG) and must pass --mac-app-store to jpackage so it
+                // searches for the correct certificate type ("3rd Party Mac Developer Application").
                 packageTask.macAppStore.set(sandboxed)
                 packageTask.macAppCategory.set(mac.appCategory)
                 packageTask.macMinimumSystemVersion.set(mac.minimumSystemVersion)
@@ -1103,6 +1196,12 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                 packageTask.urlProtocols.set(app.nativeDistributions.protocols)
                 packageTask.macLayeredIcons.set(mac.layeredIconDir)
                 packageTask.macLaunchAgents.set(mac.launchAgents.agents)
+                packageTask.macAppExtensions.set(mac.appExtensions.extensions)
+                packageTask.macAppExtensionFiles.from(
+                    mac.appExtensions.extensions.flatMap {
+                        listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
+                    },
+                )
             }
         }
     }
@@ -1117,11 +1216,9 @@ private fun JvmApplicationContext.configureRunTask(
     exec.dependsOn(prepareAppResources)
 
     exec.mainClass.set(app.mainClass)
-    exec.executable(javaExecutable(app.javaHome))
     if (currentOS == OS.MacOS) {
         val sdkVersion = app.nativeDistributions.macOS.macOsSdkVersion
         if (sdkVersion != null && patchMacJvmTask != null) {
-            val javaHome = app.javaHome
             exec.dependsOn(patchMacJvmTask)
             // Route the fork through a vtool-patched copy of the JDK so AppKit
             // gates Liquid Glass on. `javaLauncher` is finalized before
@@ -1140,12 +1237,14 @@ private fun JvmApplicationContext.configureRunTask(
                 .asFile
             val patchedJavaHomeFile = patchedBinFile.parentFile.parentFile
             exec.javaLauncher.set(
-                ExternalJavaLauncher(
-                    javaBinary = patchedBinFile,
-                    javaHome = patchedJavaHomeFile,
-                    objects = project.objects,
-                    metadataJavaHome = java.io.File(javaHome),
-                ),
+                app.javaHomeProvider.map { home ->
+                    ExternalJavaLauncher(
+                        javaBinary = patchedBinFile,
+                        javaHome = patchedJavaHomeFile,
+                        objects = project.objects,
+                        metadataJavaHome = java.io.File(home),
+                    )
+                },
             )
             // `executable` isn't Provider-aware in Gradle 9, but it isn't
             // finalized before `doFirst` either — align it with the launcher
@@ -1153,7 +1252,11 @@ private fun JvmApplicationContext.configureRunTask(
             exec.doFirst {
                 (it as JavaExec).executable(patchedBinFile.absolutePath)
             }
+        } else {
+            configureRunJavaHome(exec)
         }
+    } else {
+        configureRunJavaHome(exec)
     }
     exec.jvmArgs =
         arrayListOf<String>().apply {
@@ -1163,6 +1266,8 @@ private fun JvmApplicationContext.configureRunTask(
             app.garbageCollector?.let { addAll(it.jvmArgs) }
             add("-D$APP_EXECUTABLE_TYPE=$EXECUTABLE_TYPE_DEV")
             add("-D$APP_ID=${resolvedAppIdProvider().get()}")
+            // ./gradlew run -Pnucleus.updater.simulate=update / -Pnucleus.updater.feedUrl=<dir or url>
+            UpdaterLaunchSettings.systemProperties(project.providers).forEach { (key, value) -> add("-D$key=$value") }
 
             if (currentOS == OS.MacOS) {
                 val dockName =
@@ -1290,8 +1395,24 @@ private fun sandboxingJvmArgs(resourcesPath: String): List<String> =
  * tasks of all build types since inputs (javaHome, SDK/min version) are
  * identical at the project level.
  */
+private fun JvmApplicationContext.configureRunJavaHome(exec: JavaExec) {
+    if (app.javaHomeOverride != null) {
+        exec.javaLauncher.set(
+            app.javaHomeProvider.map { home ->
+                ExternalJavaLauncher(
+                    javaBinary = java.io.File(javaExecutable(home)),
+                    javaHome = java.io.File(home),
+                    objects = project.objects,
+                )
+            },
+        )
+    } else {
+        exec.executable(javaExecutable(app.javaHome))
+    }
+}
+
 private fun JvmApplicationContext.registerPatchMacJvmTask(
-    javaHome: String,
+    javaHome: Provider<String>,
     minVersion: String,
     sdkVersion: String,
 ): TaskProvider<AbstractPatchMacJvmTask> {

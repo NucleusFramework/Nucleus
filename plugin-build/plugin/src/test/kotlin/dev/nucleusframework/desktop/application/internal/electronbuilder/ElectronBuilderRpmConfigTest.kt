@@ -37,6 +37,9 @@ class ElectronBuilderRpmConfigTest {
         return yaml.toString()
     }
 
+    /** [path] as the generator writes it inside a double-quoted YAML string (Windows backslashes escaped). */
+    private fun yamlQuoted(path: String): String = "\"${path.replace("\\", "\\\\")}\""
+
     @Test
     fun `rpm config passes --rpm-auto-add-directories to fpm`() {
         val yaml = renderLinux(distributions(), TargetFormat.Rpm)
@@ -78,7 +81,7 @@ class ElectronBuilderRpmConfigTest {
 
         assertTrue(yaml, yaml.contains("fpm:"))
         assertTrue(yaml, yaml.contains("--before-install"))
-        assertTrue(yaml, yaml.contains(beforeInstall.absolutePath))
+        assertTrue(yaml, yaml.contains(yamlQuoted(beforeInstall.absolutePath)))
         assertFalse(yaml, yaml.contains("--rpm-auto-add-directories"))
     }
 
@@ -95,6 +98,6 @@ class ElectronBuilderRpmConfigTest {
 
         assertTrue(yaml, yaml.contains("--rpm-auto-add-directories"))
         assertTrue(yaml, yaml.contains("--before-remove"))
-        assertTrue(yaml, yaml.contains(beforeRemove.absolutePath))
+        assertTrue(yaml, yaml.contains(yamlQuoted(beforeRemove.absolutePath)))
     }
 }

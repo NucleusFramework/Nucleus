@@ -73,7 +73,7 @@ java {
 }
 
 // === Sandbox runtime shim jar + embedding ===
-val sandboxShimJar by tasks.registering(Jar::class) {
+val sandboxShimJar = tasks.register<Jar>("sandboxShimJar") {
     archiveFileName.set("nucleus-sandbox-shim.jar")
     // Nest under nucleus/sandbox/ so processResources places it at that path inside the
     // plugin JAR, resolvable via getResourceAsStream("/nucleus/sandbox/nucleus-sandbox-shim.jar").

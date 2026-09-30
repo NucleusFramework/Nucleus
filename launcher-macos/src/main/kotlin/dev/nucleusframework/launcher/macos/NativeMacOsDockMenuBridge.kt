@@ -1,7 +1,7 @@
 package dev.nucleusframework.launcher.macos
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
-import javax.swing.SwingUtilities
+import dev.nucleusframework.core.runtime.NucleusUiThread
 
 private const val LIBRARY_NAME = "nucleus_launcher_macos"
 
@@ -25,6 +25,6 @@ internal object NativeMacOsDockMenuBridge {
     @JvmStatic
     fun onMenuItemClicked(itemId: Int) {
         val listener = MacOsDockMenu.listener ?: return
-        SwingUtilities.invokeLater { listener.onItemClicked(itemId) }
+        NucleusUiThread.post { listener.onItemClicked(itemId) }
     }
 }

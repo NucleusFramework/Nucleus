@@ -1,5 +1,6 @@
 package dev.nucleusframework.notification.common.internal
 
+import dev.nucleusframework.core.runtime.NucleusUiThread
 import dev.nucleusframework.notification.ActionOption
 import dev.nucleusframework.notification.CategoryOption
 import dev.nucleusframework.notification.DeliveredNotification
@@ -31,37 +32,46 @@ internal class MacOsDispatcher private constructor() : PlatformDispatcher {
     // Cache category registrations: button-titles-signature -> categoryId
     private val categoryCache = ConcurrentHashMap<String, String>()
 
-    private val delegate =
+    // Visible for tests: the delegate the macOS notification center calls back into.
+    internal val delegate =
         object : NotificationCenterDelegate {
             override fun willPresent(notification: DeliveredNotification): Set<PresentationOption> =
                 setOf(PresentationOption.BANNER, PresentationOption.SOUND)
 
             override fun didReceive(response: NotificationResponse) {
-                val id = response.notification.identifier
-                val actionId = response.actionIdentifier
-                val callbacks =
-                    when (actionId) {
-                        NotificationAction.DISMISS_ACTION_IDENTIFIER -> CallbackRegistry.remove(id)
-                        else -> CallbackRegistry.get(id)
-                    }
-                callbacks ?: return
-
-                try {
-                    when {
-                        actionId == NotificationAction.DEFAULT_ACTION_IDENTIFIER ->
-                            callbacks.onActivated?.invoke()
-                        actionId == NotificationAction.DISMISS_ACTION_IDENTIFIER ->
-                            callbacks.onDismissed?.invoke(DismissReason.USER_DISMISSED)
-                        actionId.startsWith("btn_") ->
-                            callbacks.buttonCallbacks[actionId]?.invoke()
-                    }
-                } catch (
-                    @Suppress("TooGenericExceptionCaught") e: RuntimeException,
-                ) {
-                    logger.log(Level.WARNING, "Error in notification callback", e)
-                }
+                // `NotificationCenter` dispatches delegate callbacks on its own
+                // worker pool ("NucleusNotificationCallback-N"), so without this
+                // the DSL callbacks would run off the UI thread on macOS while
+                // the Linux and Windows bridges deliver them on it (issue #310).
+                NucleusUiThread.post { deliver(response) }
             }
         }
+
+    private fun deliver(response: NotificationResponse) {
+        val id = response.notification.identifier
+        val actionId = response.actionIdentifier
+        val callbacks =
+            when (actionId) {
+                NotificationAction.DISMISS_ACTION_IDENTIFIER -> CallbackRegistry.remove(id)
+                else -> CallbackRegistry.get(id)
+            }
+        callbacks ?: return
+
+        try {
+            when {
+                actionId == NotificationAction.DEFAULT_ACTION_IDENTIFIER ->
+                    callbacks.onActivated?.invoke()
+                actionId == NotificationAction.DISMISS_ACTION_IDENTIFIER ->
+                    callbacks.onDismissed?.invoke(DismissReason.USER_DISMISSED)
+                actionId.startsWith("btn_") ->
+                    callbacks.buttonCallbacks[actionId]?.invoke()
+            }
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: RuntimeException,
+        ) {
+            logger.log(Level.WARNING, "Error in notification callback", e)
+        }
+    }
 
     companion object {
         fun createIfAvailable(): MacOsDispatcher? =
@@ -141,7 +151,8 @@ internal class MacOsDispatcher private constructor() : PlatformDispatcher {
         NotificationCenter.add(request) { error ->
             if (error != null) {
                 CallbackRegistry.remove(identifier)
-                notification.onFailed?.invoke()
+                // Same worker pool as the delegate callbacks above.
+                notification.onFailed?.let { onFailed -> NucleusUiThread.post(onFailed) }
             }
         }
 

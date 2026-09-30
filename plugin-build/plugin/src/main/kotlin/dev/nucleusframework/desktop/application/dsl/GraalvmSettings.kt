@@ -100,8 +100,9 @@ abstract class GraalvmSettings
         // Garbage collector baked into the image (`--gc=`). Unlike the JVM, the collector is fixed
         // at build time. Leave unset to keep native-image's default (Serial GC, the right fit for a
         // desktop app's small heap). [NativeImageGarbageCollector.G1] is for heaps that outgrow it,
-        // and is Oracle GraalVM + Linux only — elsewhere it degrades to a warning instead of
-        // failing the build. [maxHeapSizePercent] follows the selected collector: it is baked as
+        // requires Oracle GraalVM — plus, outside Linux, GraalVM 25.4 or newer. An unsupported
+        // combination degrades to a warning instead of failing the build.
+        // [maxHeapSizePercent] follows the selected collector: it is baked as
         // `-R:MaximumHeapSizePercent` under Serial/Epsilon and as `-R:MaxRAMPercentage` under G1,
         // which does not know the former option.
         val garbageCollector: Property<NativeImageGarbageCollector> = objects.nullableProperty()
@@ -202,7 +203,7 @@ abstract class GraalvmSettings
  * [distribution] still declares intent in that case, since it also gates the Oracle-only
  * tasks (`runWithPgoInstrument`).
  *
- * "latest" versions ("25", "25i3") are sticky once downloaded; delete the corresponding
+ * "latest" versions ("25", "25i4") are sticky once downloaded; delete the corresponding
  * directory under [installDir] to pick up a newer build.
  */
 abstract class GraalvmToolchainSettings
@@ -227,7 +228,7 @@ abstract class GraalvmToolchainSettings
 
         /**
          * Explicit GraalVM version, overriding [channel]: an innovation release
-         * (`"25i3"`), a feature version tracking the latest CPU (`"25"`), or a pinned
+         * (`"25i4"`), a feature version tracking the latest CPU (`"25"`), or a pinned
          * patch release (`"25.0.1"`).
          */
         val version: Property<String> = objects.nullableProperty()

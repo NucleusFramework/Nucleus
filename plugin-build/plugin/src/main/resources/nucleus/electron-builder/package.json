@@ -5,6 +5,6 @@
   "description": "Pinned electron-builder toolchain used by the Nucleus Gradle plugin.",
   "license": "MIT",
   "dependencies": {
-    "electron-builder": "26.15.5"
+    "electron-builder": "26.16.1"
   }
 }

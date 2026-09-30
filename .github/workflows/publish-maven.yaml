@@ -8,11 +8,19 @@ on:
 jobs:
   validate-release-ref:
     runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+      is-dev: ${{ steps.tag.outputs.is-dev }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Classify release tag
+        id: tag
+        uses: ./.github/actions/release-tag-info
 
       - name: Validate release ref
         uses: ./.github/actions/validate-release-ref
@@ -23,7 +31,7 @@ jobs:
     uses: ./.github/workflows/build-natives.yaml
 
   publish:
-    needs: build-natives
+    needs: [validate-release-ref, build-natives]
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repo
@@ -48,14 +56,6 @@ jobs:
             "native-ssl/src/main/resources/nucleus/native/darwin-x64/libnucleus_ssl.dylib"
             "native-ssl/src/main/resources/nucleus/native/win32-x64/nucleus_ssl.dll"
             "native-ssl/src/main/resources/nucleus/native/win32-aarch64/nucleus_ssl.dll"
-            "decorated-window-jbr/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos.dylib"
-            "decorated-window-jbr/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos_jni.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos_jni.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_jni.so"
-            "decorated-window-jni/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_jni.so"
-            "decorated-window-jni/src/main/resources/nucleus/native/win32-x64/nucleus_windows_decoration.dll"
-            "decorated-window-jni/src/main/resources/nucleus/native/win32-aarch64/nucleus_windows_decoration.dll"
             "linux-hidpi/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_hidpi_jni.so"
             "linux-hidpi/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_hidpi_jni.so"
             "spellcheck/src/main/resources/nucleus/native/linux-x64/libnucleus_spellcheck.so"
@@ -146,10 +146,6 @@ jobs:
             "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_native_view.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_native_view.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libEGL.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libEGL.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libGLESv2.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libGLESv2.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao.dylib"
             "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao.dylib"
             "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_metal.dylib"
@@ -201,7 +197,11 @@ jobs:
           curl -s https://api.ipify.org; echo
           curl -s https://api64.ipify.org; echo
 
+      # Dev builds (`v2.6.0-dev-<timestamp>`) publish straight from the tag: the whole
+      # point is a throwaway version a downstream app can consume today. Every other tag
+      # is a real release and still has to pass preMerge.
       - name: Run pre-merge checks
+        if: needs.validate-release-ref.outputs.is-dev != 'true'
         run: ./gradlew preMerge --continue
 
       - name: Publish to Maven Central

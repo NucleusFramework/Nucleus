@@ -8,6 +8,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <dbus/dbus.h>
 #include <stdlib.h>
 #include <string.h>
@@ -211,7 +212,7 @@ static void notify_accent_color_changed(double r, double g, double b) {
         }
     }
 
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     if (didAttach) (*g_jvm)->DetachCurrentThread(g_jvm);
 }
 
@@ -238,7 +239,7 @@ static void notify_high_contrast_changed(int isHigh) {
         }
     }
 
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     if (didAttach) (*g_jvm)->DetachCurrentThread(g_jvm);
 }
 

@@ -36,6 +36,7 @@ public enum class ExecutableType {
 public object ExecutableRuntime {
     public const val TYPE_PROPERTY: String = "nucleus.executable.type"
     private const val TYPE_MARKER_FILE: String = ".nucleus-executable-type"
+    private const val APP_SANDBOX_CONTAINER_ID_ENV: String = "APP_SANDBOX_CONTAINER_ID"
 
     @JvmStatic
     public fun type(): ExecutableType {
@@ -104,6 +105,26 @@ public object ExecutableRuntime {
     @JvmStatic
     public val isGraalVmNativeImage: Boolean =
         System.getProperty("org.graalvm.nativeimage.imagecode") != null
+
+    /**
+     * Whether the process runs inside an OS application sandbox: the macOS App Sandbox, an AppX
+     * container or a Flatpak.
+     *
+     * The App Sandbox is detected through the `APP_SANDBOX_CONTAINER_ID` environment variable the
+     * sandbox runtime sets in every sandboxed process, whatever the installer format. Prefer this
+     * over [isPkg] to gate features the sandbox forbids: a PKG built with
+     * `macOS { pkg { appStore = false } }` installs an ordinary, unsandboxed app.
+     */
+    @JvmStatic
+    public fun isSandboxed(): Boolean = isSandboxed(type(), System.getenv(APP_SANDBOX_CONTAINER_ID_ENV))
+
+    internal fun isSandboxed(
+        type: ExecutableType,
+        appSandboxContainerId: String?,
+    ): Boolean =
+        !appSandboxContainerId.isNullOrEmpty() ||
+            type == ExecutableType.APPX ||
+            type == ExecutableType.FLATPAK
 
     public fun parseType(rawValue: String?): ExecutableType =
         when (rawValue?.trim()?.lowercase()) {

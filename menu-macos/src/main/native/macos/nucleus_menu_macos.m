@@ -11,6 +11,7 @@
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 // ============================================================================
 // JNI function name macro
@@ -147,7 +148,7 @@ static void releaseEnv(BOOL didAttach) {
 }
 
 static void clearException(JNIEnv *env) {
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static NSString *toNSString(JNIEnv *env, jstring jstr) {

@@ -115,6 +115,11 @@ internal object UpdateYmlPublish {
      *
      * Returns an empty list when no manifests are found (e.g. only non-updatable formats ran).
      */
+    /** Deletes the update manifests in [outputDir], so a new packaging run cannot inherit stale ones. */
+    fun deleteManifests(outputDir: File) {
+        outputDir.listFiles()?.filter { it.isFile && UPDATE_YML_NAME.matches(it.name) }?.forEach(File::delete)
+    }
+
     fun discoverAndMerge(outputDirs: List<File>): List<MergedManifest> {
         val byName = LinkedHashMap<String, MutableList<String>>()
         for (dir in outputDirs) {

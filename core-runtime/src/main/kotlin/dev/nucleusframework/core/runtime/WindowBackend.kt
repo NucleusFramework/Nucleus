@@ -20,7 +20,7 @@ package dev.nucleusframework.core.runtime
  * ```
  */
 public enum class WindowBackend {
-    /** AWT-bound backend (`decorated-window-jbr` / `decorated-window-jni`, or a non-Nucleus AWT app). */
+    /** AWT-bound windowing — a plain Compose Desktop / Swing app that does not use `nucleusApplication`. */
     Awt,
 
     /** No-AWT backend (`decorated-window-tao`), driven by a native event loop. */

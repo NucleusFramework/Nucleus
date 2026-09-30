@@ -31,21 +31,17 @@ inputs:
     required: false
     default: 'false'
   graalvm-version:
-    description: 'GraalVM toolchain version, used only as a cache-key component. Keep in sync with the graalvm { toolchain { } } DSL (e.g. 25i3, 25).'
+    description: 'GraalVM toolchain version, used only as a cache-key component. Keep in sync with the graalvm { toolchain { } } DSL (e.g. 25i4, 25).'
     required: false
-    default: '25i3'
+    default: '25i4'
   graalvm-distribution:
     description: 'GraalVM distribution, used only as a cache-key component. Keep in sync with graalvm { toolchain { distribution } } (community or oracle). Changing it must not restore a cache holding the other distribution.'
     required: false
     default: 'community'
-  setup-node:
-    description: 'Setup Node.js'
-    required: false
-    default: 'true'
   node-version:
-    description: 'Node.js version'
+    description: 'Node.js line the Nucleus plugin provisions, used only as a cache-key component. Keep in sync with the nativeDistributions { nodejs { version } } DSL.'
     required: false
-    default: '24'
+    default: '22'
 
 outputs:
   java-home:
@@ -62,8 +58,7 @@ runs:
     # Temurin, matching the rest of the workflows. jpackage bundles this JDK into
     # the distributed app. In GraalVM mode the native image is built entirely by
     # the plugin-provisioned GraalVM, so the Gradle JDK contributes nothing to
-    # that output. decorated-window-jbr needs no JBR here — the JBR API comes
-    # from the org.jetbrains.runtime:jbr-api Maven artifact.
+    # that output.
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:
@@ -155,8 +150,12 @@ runs:
       uses: gradle/actions/setup-gradle@v5
 
     # ── Node.js ─────────────────────────────────────────────────────────
-    - name: Setup Node.js
-      if: inputs.setup-node == 'true'
-      uses: actions/setup-node@v6
+    # No actions/setup-node: the Nucleus plugin downloads the Node.js it runs
+    # electron-builder with and caches it under ~/.gradle/nucleus/nodejs, so CI
+    # packages with the same toolchain a developer machine does. Only the cache
+    # is CI's business.
+    - name: Cache Node.js toolchain
+      uses: actions/cache@v4
       with:
-        node-version: ${{ inputs.node-version }}
+        path: ~/.gradle/nucleus/nodejs
+        key: nodejs-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.node-version }}

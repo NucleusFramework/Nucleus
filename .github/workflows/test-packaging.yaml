@@ -28,7 +28,6 @@ jobs:
           - name: Windows ARM64
             os: windows-11-arm
             arch: arm64
-            node-version: '22' # npm 11 (Node 24) has ECOMPROMISED bugs on Windows ARM64
           - name: macOS ARM64
             os: macos-latest
             arch: arm64
@@ -47,8 +46,6 @@ jobs:
           flatpak: 'true'
           snap: 'true'
           setup-gradle: 'true'
-          setup-node: 'true'
-          node-version: ${{ matrix.node-version || '24' }}
 
       - name: Download native artifacts
         uses: actions/download-artifact@v4

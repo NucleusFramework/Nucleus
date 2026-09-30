@@ -68,7 +68,7 @@ internal object ClipboardHeadfulCases {
     private fun gtkClipboardReadsForeignSelection(): TaoWindowTestCase =
         clipboardCase(
             name = "#582 GTK clipboard reads a selection owned by another process",
-            skip = { linuxWithNativeClipboard() ?: requireTool("wl-copy") },
+            skip = { clipboardSkipReason("wl-copy") },
         ) { focusWindow ->
             val text = "nucleus-582-foreign$PROBE_SUFFIX"
             publishExternally(text.toByteArray(), "text/plain;charset=utf-8")
@@ -83,7 +83,7 @@ internal object ClipboardHeadfulCases {
     private fun gtkClipboardPublishesToTheDesktop(): TaoWindowTestCase =
         clipboardCase(
             name = "#582 GTK clipboard publishes the app's selection to the desktop",
-            skip = { linuxWithNativeClipboard() ?: requireTool("wl-paste") },
+            skip = { clipboardSkipReason("wl-paste") },
         ) { focusWindow ->
             focusWindow()
 
@@ -111,7 +111,7 @@ internal object ClipboardHeadfulCases {
     private fun gtkClipboardReadsForeignImage(): TaoWindowTestCase =
         clipboardCase(
             name = "#582 GTK clipboard reads an image published by another process",
-            skip = { linuxWithNativeClipboard() ?: requireTool("wl-copy") },
+            skip = { clipboardSkipReason("wl-copy") },
         ) { focusWindow ->
             publishExternally(probePng(), "image/png")
             focusWindow()
@@ -126,7 +126,7 @@ internal object ClipboardHeadfulCases {
     private fun gtkClipboardPublishesAnImage(): TaoWindowTestCase =
         clipboardCase(
             name = "#582 GTK clipboard publishes an image to the desktop",
-            skip = { linuxWithNativeClipboard() ?: requireTool("wl-paste") },
+            skip = { clipboardSkipReason("wl-paste") },
         ) { focusWindow ->
             focusWindow()
 
@@ -148,7 +148,7 @@ internal object ClipboardHeadfulCases {
     private fun gtkClipboardRoundTripsAFileList(): TaoWindowTestCase =
         clipboardCase(
             name = "#582 GTK clipboard round-trips a file list",
-            skip = { linuxWithNativeClipboard() ?: requireTool("wl-copy") },
+            skip = { clipboardSkipReason("wl-copy") },
         ) { focusWindow ->
             val file = withContext(Dispatchers.IO) { File.createTempFile("nucleus-582-", ".txt") }
             file.deleteOnExit()
@@ -331,6 +331,27 @@ internal object ClipboardHeadfulCases {
                 output
             }
         }.getOrNull()
+
+    /**
+     * Why this case cannot run here: no GTK clipboard, no [tool], or a peer
+     * that would not share a selection with the app.
+     *
+     * `wl-copy` / `wl-paste` own the *Wayland* selection, so they only speak
+     * to the app when the app is on Wayland too. Forcing the window backend
+     * onto XWayland (`NUCLEUS_TAO_LINUX_RENDERER=x11`) inside a Wayland
+     * session — which is how the X11 leg is run on a developer machine —
+     * leaves the two on different selections, and the case can only time out.
+     * The environment is read rather than the window's own surface kind: the
+     * skip is evaluated before any window exists.
+     */
+    private fun clipboardSkipReason(tool: String): String? {
+        linuxWithNativeClipboard()?.let { return it }
+        val forcedX11 = System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
+        if (forcedX11 && !System.getenv("WAYLAND_DISPLAY").isNullOrBlank()) {
+            return "app forced onto XWayland: $tool owns the Wayland selection"
+        }
+        return requireTool(tool)
+    }
 
     /** Runs at case-selection time, outside any coroutine, so it stays blocking. */
     private fun requireTool(name: String): String? =

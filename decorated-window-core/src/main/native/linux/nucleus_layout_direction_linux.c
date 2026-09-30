@@ -12,6 +12,7 @@
  * Linked libraries: -ldl -lpthread
  */
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <locale.h>
 #include <stdlib.h>
 #include <string.h>
@@ -237,9 +238,7 @@ static void notify_button_layout(const char *layout) {
         }
     }
 
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 
     if (didAttach) {
         (*g_jvm)->DetachCurrentThread(g_jvm);

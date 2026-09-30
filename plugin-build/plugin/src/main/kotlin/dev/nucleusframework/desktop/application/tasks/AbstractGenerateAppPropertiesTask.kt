@@ -1,5 +1,6 @@
 package dev.nucleusframework.desktop.application.tasks
 
+import dev.nucleusframework.desktop.application.internal.NUCLEUS_IDLE_GC_RESOURCE_KEY
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
@@ -43,6 +44,10 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
     @get:Optional
     abstract val startupTaskId: Property<String>
 
+    @get:Input
+    @get:Optional
+    abstract val idleGc: Property<Boolean>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -60,6 +65,7 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
         appAumid.orNull?.let { props["app.aumid"] = it }
         startupWmClass.orNull?.let { props["startup.wm.class"] = it }
         startupTaskId.orNull?.let { props["startup.task.id"] = it }
+        if (idleGc.getOrElse(false)) props[NUCLEUS_IDLE_GC_RESOURCE_KEY] = "true"
 
         // Use the OutputStream overload (not Writer): it escapes any non-Latin1
         // character (e.g. Hebrew app names) as \uXXXX, so the file round-trips

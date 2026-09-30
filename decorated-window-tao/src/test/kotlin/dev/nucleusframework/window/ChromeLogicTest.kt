@@ -112,6 +112,48 @@ class ChromeLogicTest {
     }
 
     @Test
+    fun `resolveWindowControl hides minimize when the window is not minimizable`() {
+        val idle = DecoratedWindowState.of(resizable = true)
+        val pinned = TaoWindow(handle = 0L, isMinimizable = false)
+        assertNull(
+            resolveWindowControl(WindowControlSlot.Minimize, pinned, idle, isFullscreen = false, null),
+        )
+        val regular = TaoWindow(handle = 0L)
+        assertEquals(
+            WindowControlType.Minimize,
+            resolveWindowControl(WindowControlSlot.Minimize, regular, idle, isFullscreen = false, null)?.type,
+        )
+    }
+
+    @Test
+    fun `resolveWindowControl hides maximize when the window is resizable but not maximizable`() {
+        val idle = DecoratedWindowState.of(resizable = true)
+        val palette = TaoWindow(handle = 0L, isResizable = true, isMaximizable = false)
+        assertNull(
+            resolveWindowControl(WindowControlSlot.Maximize, palette, idle, isFullscreen = false, null),
+        )
+        val stillFullscreen =
+            resolveWindowControl(
+                WindowControlSlot.Maximize,
+                palette,
+                idle,
+                isFullscreen = true,
+            ) { }
+        assertEquals(WindowControlType.ExitFullscreen, stillFullscreen?.type)
+        val regular = TaoWindow(handle = 0L)
+        assertEquals(
+            WindowControlType.Maximize,
+            resolveWindowControl(WindowControlSlot.Maximize, regular, idle, isFullscreen = false, null)?.type,
+        )
+        // A window the WM maximized anyway must still offer Restore.
+        val maximized = DecoratedWindowState.of(resizable = true).copy(maximized = true)
+        assertEquals(
+            WindowControlType.Restore,
+            resolveWindowControl(WindowControlSlot.Maximize, palette, maximized, isFullscreen = false, null)?.type,
+        )
+    }
+
+    @Test
     fun `titleBarPadding matches the host platform chrome contract`() {
         val regular = titleBarPadding(40.dp, isFullscreen = false, controlIsRtl = false, linuxControlsOnRight = true)
         val fullscreen = titleBarPadding(40.dp, isFullscreen = true, controlIsRtl = true, linuxControlsOnRight = false)

@@ -52,6 +52,14 @@ inputs:
     description: 'Path to runtime embedded.provisionprofile for sandboxed app runtime'
     required: false
     default: ''
+  electron-builder-toolchain-dir:
+    description: 'Directory holding the package.json / package-lock.json of the pinned electron-builder toolchain embedded in the Nucleus plugin'
+    required: false
+    default: 'plugin-build/plugin/src/main/resources/nucleus/electron-builder'
+  node-version:
+    description: 'Node.js line to provision (a major like 22, or a pinned x.y.z). Keep in sync with the nativeDistributions { nodejs { version } } default.'
+    required: false
+    default: '22'
 
 outputs:
   zip:
@@ -101,6 +109,22 @@ runs:
         else
           echo "==> No sandboxed ZIPs found (App Store PKG will use electron-builder fallback)"
         fi
+
+    # Same cache entry as setup-nucleus: the provisioning script uses the
+    # plugin's install layout, so a Node.js downloaded by either is reused.
+    - name: Cache Node.js toolchain
+      uses: actions/cache@v4
+      with:
+        path: ~/.gradle/nucleus/nodejs
+        key: nodejs-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.node-version }}
+
+    - name: Provision Node.js and electron-builder
+      shell: bash
+      env:
+        NODE_LINE: ${{ inputs.node-version }}
+        TOOLCHAIN_DIR: ${{ inputs.electron-builder-toolchain-dir }}
+        TOOL_DIR: ${{ runner.temp }}/electron-builder-tool
+      run: bash "${{ github.action_path }}/provision-electron-builder.sh"
 
     - name: Build universal binary
       id: build

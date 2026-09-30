@@ -67,16 +67,18 @@ import kotlin.math.max
  * trackpad issues (#652 sign, #653 magnitude, #654 Pan vs Scroll) side by
  * side, each with the expected behaviour written next to it:
  *
- *  - **Inspector**: every `Scroll` / `PanStart` / `PanMove` / `PanEnd`
- *    reaching Compose at the root, with the gap since the previous event,
+ *  - **Inspector**: every `Scroll` / `PanStart` / `PanMove` / `PanEnd` /
+ *    `ScaleStart` / `ScaleChange` / `ScaleEnd` reaching Compose at the root,
+ *    with the gap since the previous event,
  *    counters, and one summary per gesture (steps, distance in wheel units,
  *    how long after the last move the `PanEnd` arrived — ~150 ms means the
  *    grace timer closed it, ~0 ms means AppKit's momentum tail did).
  *  - **Sign & magnitude**: a vertical column and a horizontal row; fingers
  *    up / left must make the offsets grow, one wheel notch must move exactly
  *    `10 dp`.
- *  - **Map canvas**: pans on Pan events, zooms on Scroll — the MapLibre use
- *    case. A trackpad swipe that zooms means #654 is back.
+ *  - **Map canvas**: pans on Pan events, zooms on Scale (pinch, #660) and
+ *    Scroll (wheel). A trackpad swipe that zooms means #654 is back; a
+ *    pinch that arrives as two Touch contacts means #660 is back.
  *  - **Popup**: a scrollable `DropdownMenu`; inline in the main window, an
  *    NSPanel in the window opened with native popup layers.
  *  - **NativeView**: a WKWebView with a long page and its own HUD (scrollY,
@@ -212,6 +214,9 @@ private class PointerLog {
     var panStarts by mutableIntStateOf(0)
     var panMoves by mutableIntStateOf(0)
     var panEnds by mutableIntStateOf(0)
+    var scaleStarts by mutableIntStateOf(0)
+    var scaleChanges by mutableIntStateOf(0)
+    var scaleEnds by mutableIntStateOf(0)
     var scrolls by mutableIntStateOf(0)
 
     private var gestureIndex = 0
@@ -265,6 +270,18 @@ private class PointerLog {
                 if (gestures.size > MAX_GESTURES) gestures.removeAt(gestures.lastIndex)
                 add(gap, "PanEnd    (+$endAfter ms after the last move)")
             }
+            PointerEventType.ScaleStart -> {
+                scaleStarts++
+                add(gap, "ScaleStart")
+            }
+            PointerEventType.ScaleChange -> {
+                scaleChanges++
+                add(gap, "ScaleChange  ×${"%.4f".format(change.scaleFactor)}")
+            }
+            PointerEventType.ScaleEnd -> {
+                scaleEnds++
+                add(gap, "ScaleEnd")
+            }
             PointerEventType.Scroll -> {
                 scrolls++
                 add(
@@ -283,6 +300,9 @@ private class PointerLog {
         panStarts = 0
         panMoves = 0
         panEnds = 0
+        scaleStarts = 0
+        scaleChanges = 0
+        scaleEnds = 0
         scrolls = 0
         lastEventMs = 0L
     }
@@ -306,9 +326,13 @@ private fun InspectorPanel(
             "PanStart ${log.panStarts}   PanMove ${log.panMoves}   PanEnd ${log.panEnds}   Scroll ${log.scrolls}",
             bold = true,
         )
+        Mono(
+            "ScaleStart ${log.scaleStarts}   ScaleChange ${log.scaleChanges}   ScaleEnd ${log.scaleEnds}",
+            bold = true,
+        )
         Text(
-            "Trackpad ⇒ PanStart, PanMove…, ONE PanEnd (end ≈0 ms: momentum closed it, ≈150 ms: grace timer). " +
-                "Wheel ⇒ Scroll only.",
+            "Trackpad swipe ⇒ PanStart, PanMove…, ONE PanEnd (end ≈0 ms: momentum closed it, ≈150 ms: grace timer). " +
+                "Pinch ⇒ ScaleStart, ScaleChange…, ScaleEnd. Wheel ⇒ Scroll only.",
             style = MaterialTheme.typography.bodySmall,
         )
         Mono("#   steps  Σ units (x, y)     dur     gap     end", bold = true)
@@ -397,9 +421,12 @@ private fun SignAndMagnitudePanel(
 private fun MapCanvasPanel(modifier: Modifier = Modifier) {
     var offset by remember { mutableStateOf(Offset.Zero) }
     var zoom by remember { mutableFloatStateOf(1f) }
-    Panel("Map canvas — #654: trackpad pans, wheel zooms", modifier) {
+    Panel("Map canvas — #654 pan / #660 pinch", modifier) {
         Mono("offset=${offset.fmt()} px   zoom=${"%.2f".format(zoom)}", bold = true)
-        Text("Two fingers move the grid (never zoom); a wheel notch zooms.", style = MaterialTheme.typography.bodySmall)
+        Text(
+            "Two fingers pan the grid; pinch zooms (Scale events); a wheel notch zooms.",
+            style = MaterialTheme.typography.bodySmall,
+        )
         Canvas(
             modifier =
                 Modifier
@@ -420,6 +447,13 @@ private fun MapCanvasPanel(modifier: Modifier = Modifier) {
                                         change.consume()
                                     }
                                     PointerEventType.PanStart, PointerEventType.PanEnd -> change.consume()
+                                    PointerEventType.ScaleStart, PointerEventType.ScaleEnd -> change.consume()
+                                    PointerEventType.ScaleChange -> {
+                                        if (change.scaleFactor != 1f) {
+                                            zoom = (zoom * change.scaleFactor).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                                        }
+                                        change.consume()
+                                    }
                                     PointerEventType.Scroll -> {
                                         zoom =
                                             (zoom * (1f - change.scrollDelta.y * ZOOM_PER_NOTCH)).coerceIn(

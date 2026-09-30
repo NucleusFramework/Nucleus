@@ -21,9 +21,32 @@ pub static APP_CLASS: Lazy<AppClass> = Lazy::new(|| unsafe {
     ClassDecl::new(CStr::from_bytes_with_nul(b"TaoApp\0").unwrap(), superclass).unwrap();
 
   decl.add_method(sel!(sendEvent:), send_event as extern "C" fn(_, _, _));
+  decl.add_method(sel!(terminate:), terminate as extern "C" fn(_, _, _));
 
   AppClass(decl.register())
 });
+
+extern "C" {
+  // Nucleus: defined in the nucleus_tao crate (platform/macos/main_thread.rs).
+  fn nucleus_tao_post_quit_requested() -> bool;
+}
+
+// Nucleus: every system quit — Dock → Quit, the app menu's Quit item, an
+// AppleScript `quit`, logout / restart / shutdown — lands here. Like
+// Electron's `-[ElectronApplication terminate:]`, it only *asks* the app to
+// quit (each window's close request, see `TaoApplication.requestQuit`) and
+// returns, so the quit Apple event is answered "OK" and loginwindow waits for
+// the process to exit instead of aborting the logout at once. Once the event
+// loop is gone (the fatal-error dialog after it) the real terminate runs.
+extern "C" fn terminate(this: &NSApplication, _sel: Sel, sender: *mut objc2::runtime::AnyObject) {
+  if unsafe { nucleus_tao_post_quit_requested() } {
+    return;
+  }
+  unsafe {
+    let superclass = util::superclass(this);
+    let _: () = msg_send![super(this, superclass), terminate: sender];
+  }
+}
 
 // Normally, holding Cmd + any key never sends us a `keyUp` event for that key.
 // Overriding `sendEvent:` like this fixes that. (https://stackoverflow.com/a/15294196)

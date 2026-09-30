@@ -100,6 +100,13 @@ internal object TaoSceneDnD {
         if (accepted) {
             node.onStarted(ev)
             node.onEntered(ev)
+            // The entry event carries a position, and only `onMoved` makes the
+            // root resolve the target under it. Without this, the target the
+            // pointer entered on is not entered until the next motion event —
+            // so its highlight lags a frame, and a platform that delivers
+            // enter → drop with no motion in between (or a drop right after a
+            // re-entry) finds no target and refuses perfectly good files.
+            node.onMoved(ev)
         }
         return accepted
     }

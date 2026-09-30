@@ -14,6 +14,7 @@ private const val LIBRARY_NAME = "nucleus_tao_windows_native_view"
  * HWNDs instead of NSViews. All entry points must run on the Tao
  * main UI thread (= the thread that owns the parent HWND).
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoWindowsNativeViewBridge {
     val isLoaded: Boolean = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoWindowsNativeViewBridge::class.java)
 
@@ -87,4 +88,65 @@ internal object NativeTaoWindowsNativeViewBridge {
         dx: Float,
         dy: Float,
     )
+
+    /**
+     * Hands Win32 keyboard focus back to [parentHwnd] when a descendant (an
+     * embedded child) holds it, and returns whether it did. Called after a
+     * press Compose kept, so the keyboard follows the click.
+     */
+    @JvmStatic
+    external fun nativeClaimKeyboardForCompose(parentHwnd: Long): Boolean
+
+    /**
+     * The mouse buttons this thread's queue holds down, as a mask: bit 0
+     * left, bit 1 right, bit 2 middle. The truth behind a release a child
+     * HWND captured and Compose never saw.
+     */
+    @JvmStatic
+    external fun nativeQueryPointerButtons(): Int
+
+    /**
+     * Takes the mouse capture back from an embedded child of [parentHwnd],
+     * and returns whether it had one. A child that captures on a forwarded
+     * press would otherwise keep every later mouse message, leaving the whole
+     * Compose window unable to see the pointer.
+     */
+    @JvmStatic
+    external fun nativeReleaseChildCapture(parentHwnd: Long): Boolean
+
+    /**
+     * The pointer's position in [parentHwnd]'s client pixels, packed as
+     * `(x shl 32) or (y and 0xffffffff)`, or [Long.MIN_VALUE] when it cannot
+     * be read. Tao reports a button without one, and the move that would
+     * have carried it may never have reached the window.
+     */
+    @JvmStatic
+    external fun nativeCursorPosInClient(parentHwnd: Long): Long
+
+    // ── Diagnostics for the headful suite ─────────────────────────────
+
+    /**
+     * A single-line `EDIT` control created as a hidden top-level window,
+     * for a headful case to embed through `NativeView` (whose attach
+     * turns it into a child of the Tao HWND). 0 on failure. Destroy with
+     * [nativeDiagDestroyWindow].
+     */
+    @JvmStatic
+    external fun nativeDiagCreateEdit(): Long
+
+    /** `DestroyWindow` on a control from [nativeDiagCreateEdit]. */
+    @JvmStatic
+    external fun nativeDiagDestroyWindow(hwnd: Long)
+
+    /** The HWND holding Win32 keyboard focus on this thread's queue (`GetFocus`), or 0. */
+    @JvmStatic
+    external fun nativeDiagFocusedHwnd(): Long
+
+    /** The text of a control from [nativeDiagCreateEdit], or null. */
+    @JvmStatic
+    external fun nativeDiagWindowText(hwnd: Long): String?
+
+    /** A child's rect in its parent's client px, top-left origin, as `[x, y, w, h]`, or null. */
+    @JvmStatic
+    external fun nativeDiagWindowFrame(hwnd: Long): IntArray?
 }

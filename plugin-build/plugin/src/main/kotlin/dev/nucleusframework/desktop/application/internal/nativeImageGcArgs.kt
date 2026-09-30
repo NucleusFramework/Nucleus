@@ -15,23 +15,32 @@ internal data class NativeImageGcResolution(
 
 /**
  * Drops a garbage collector the current toolchain or platform cannot build with, so a project
- * pinning `--gc=G1` still builds on GraalVM CE, macOS and Windows (with a warning) instead of
- * failing on an unknown native-image option.
+ * pinning `--gc=G1` still builds on GraalVM CE, or on a macOS / Windows toolchain older than the
+ * release that first shipped it (with a warning), instead of failing native-image.
+ *
+ * @param graalvmVersion the toolchain's `GRAALVM_VERSION` ([graalvmVersionOf]). An unreadable
+ *   version is treated as too old off Linux, since the build would fail rather than warn.
  */
 internal fun resolveNativeImageGc(
     requested: NativeImageGarbageCollector?,
     isOracleGraalvm: Boolean,
     isLinux: Boolean,
+    graalvmVersion: String?,
     graalvmHome: String,
 ): NativeImageGcResolution {
     if (requested == null) return NativeImageGcResolution(gc = null, warning = null)
 
+    val minimum = requested.nonLinuxMinVersion
     val unsupportedReason =
         when {
             requested.isOracleOnly && !isOracleGraalvm ->
                 "${requested.flag} requires Oracle GraalVM (current toolchain: $graalvmHome)"
-            requested.isLinuxOnly && !isLinux ->
-                "${requested.flag} is only supported on Linux"
+            minimum != null && !isLinux && graalvmVersion == null ->
+                "${requested.flag} requires GraalVM $minimum or newer outside Linux, and the " +
+                    "version of $graalvmHome could not be read"
+            minimum != null && !isLinux && !isAtLeastVersion(graalvmVersion!!, minimum) ->
+                "${requested.flag} requires GraalVM $minimum or newer outside Linux " +
+                    "(current toolchain: $graalvmVersion)"
             else -> return NativeImageGcResolution(gc = requested, warning = null)
         }
 
@@ -41,6 +50,25 @@ internal fun resolveNativeImageGc(
             "Garbage collector ${requested.name} ignored — $unsupportedReason. " +
                 "Falling back to the Serial GC.",
     )
+}
+
+/**
+ * Compares two dotted GraalVM versions component by component, a missing component counting as 0
+ * (`"25.4" >= "25.4"`, `"25.3.4.1" < "25.4"`). Non-numeric components compare as 0, so an
+ * unexpected qualifier never promotes a toolchain past the minimum.
+ */
+private fun isAtLeastVersion(
+    version: String,
+    minimum: String,
+): Boolean {
+    val actual = version.split('.')
+    val required = minimum.split('.')
+    for (i in 0 until maxOf(actual.size, required.size)) {
+        val a = actual.getOrNull(i)?.toIntOrNull() ?: 0
+        val r = required.getOrNull(i)?.toIntOrNull() ?: 0
+        if (a != r) return a > r
+    }
+    return true
 }
 
 /**

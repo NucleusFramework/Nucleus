@@ -32,6 +32,22 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     var includeAllModules: Boolean = false
 
+    /**
+     * Omits the JRE's bundled fonts (`lib/fonts` from `java.desktop`) from the runtime image.
+     *
+     * Compose ships its own fonts, so the JDK copies are unused weight in the distributable.
+     * JetBrains Runtime bundles about 9 MB of them; many other JREs bundle none, and then this
+     * changes nothing. Set to `false` to keep the fonts, for an app that renders text through
+     * AWT or Swing.
+     *
+     * ```kotlin
+     * nativeDistributions {
+     *     stripJreFonts = false
+     * }
+     * ```
+     */
+    var stripJreFonts: Boolean = true
+
     /** Strip native libraries for non-target platforms from dependency JARs to reduce package size. */
     var cleanupNativeLibs: Boolean = false
 
@@ -58,11 +74,22 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         }
 
     /**
-     * Whether any of the configured target formats require sandboxing
-     * (store formats like PKG, AppX, Flatpak) AND are compatible with the current OS.
+     * Whether [format] is built through the sandboxed (store) pipeline: AppX and Flatpak always
+     * are, PKG only when it targets the Mac App Store (`macOS { pkg { appStore } }`, the default).
+     * A Developer ID PKG shares the non-sandboxed pipeline with DMG.
+     */
+    internal fun isSandboxed(format: TargetFormat): Boolean =
+        when (format) {
+            TargetFormat.Pkg -> macOS.pkg.appStore
+            else -> format.isAlwaysSandboxed
+        }
+
+    /**
+     * Whether any of the configured target formats require sandboxing (see [isSandboxed])
+     * AND are compatible with the current OS.
      */
     internal val hasStoreFormats: Boolean
-        get() = targetFormats.any { it.isStoreFormat && it.isCompatibleWithCurrentOS }
+        get() = targetFormats.any { isSandboxed(it) && it.isCompatibleWithCurrentOS }
 
     val linux: LinuxPlatformSettings = objects.newInstance(LinuxPlatformSettings::class.java)
 
@@ -119,6 +146,16 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     fun publish(fn: Action<PublishSettings>) {
         fn.execute(publish)
+    }
+
+    // --- Node.js used to run electron-builder ---
+
+    /** Node.js acquisition for the electron-builder pipeline. See [NodeJsSettings]. */
+    val nodejs: NodeJsSettings = objects.newInstance(NodeJsSettings::class.java)
+
+    /** Configures [nodejs]. */
+    fun nodejs(fn: Action<NodeJsSettings>) {
+        fn.execute(nodejs)
     }
 
     // --- Compression level for archive formats ---

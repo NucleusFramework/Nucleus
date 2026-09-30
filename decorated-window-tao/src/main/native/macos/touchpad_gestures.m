@@ -6,9 +6,8 @@
 // (`WindowEvent` only exposes `TouchpadPressure`), so we intercept them
 // before AppKit dispatches them down the responder chain.
 //
-// The Rust side then synthesizes two `ComposeScenePointer` Touch points on the
-// JVM side so that `detectTransformGestures` reacts to pinch-zoom and rotate
-// uniformly across platforms — see TOUCH_PLAN.md, Phase 3.
+// The JVM side forwards magnify as Compose Scale events (#660) and still
+// synthesises two Touch points for rotate (Compose has no rotation event).
 //
 // Threading: the monitor block runs on the AppKit main thread (where Tao's
 // event loop already lives), so the callback fires on the same thread that

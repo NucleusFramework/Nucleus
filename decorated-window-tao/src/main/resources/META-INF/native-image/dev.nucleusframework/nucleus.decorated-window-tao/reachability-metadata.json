@@ -262,6 +262,10 @@
                         "int",
                         "int"
                     ]
+                },
+                {
+                    "name": "nativeFontSmoothingPixelGeometry",
+                    "parameterTypes": []
                 }
             ]
         },
@@ -446,6 +450,13 @@
             "jniAccessible": true,
             "methods": [
                 { "name": "onEvent", "parameterTypes": ["int","int","int","int","int"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge$ToplevelDrawCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onToplevelDraw", "parameterTypes": [] }
             ]
         },
         {

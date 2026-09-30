@@ -121,7 +121,7 @@ public object GlobalHotKeyManager {
      * @param description user-readable description of what the shortcut does (e.g. "Play/Pause").
      *                    Shown in the system shortcut dialog on Linux/Wayland (portal backend); ignored
      *                    on other platforms. When null, the key combination is used as a fallback.
-     * @param listener callback invoked when the hotkey is pressed.
+     * @param listener callback invoked when the hotkey is pressed, on the host UI thread.
      * @return a registration handle for [unregister], or -1 on failure.
      */
     public fun register(
@@ -144,7 +144,7 @@ public object GlobalHotKeyManager {
      * Register a media key as a global hotkey.
      *
      * @param mediaKey the media key to register.
-     * @param listener callback invoked when the key is pressed.
+     * @param listener callback invoked when the key is pressed, on the host UI thread.
      * @return a registration handle for [unregister], or -1 on failure.
      */
     public fun register(

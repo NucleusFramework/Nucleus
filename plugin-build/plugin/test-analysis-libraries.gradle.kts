@@ -1,4 +1,4 @@
-val testAnalysisLibraries: Configuration by configurations.creating {
+val testAnalysisLibraries: Configuration = configurations.create("testAnalysisLibraries") {
     isCanBeResolved = true
     isCanBeConsumed = false
     isTransitive = false
@@ -71,7 +71,7 @@ dependencies {
     testAnalysisLibraries("org.jctools:jctools-core:2.1.2")
 }
 
-val testZayitLibraries: Configuration by configurations.creating {
+val testZayitLibraries: Configuration = configurations.create("testZayitLibraries") {
     isCanBeResolved = true
     isCanBeConsumed = false
     isTransitive = false
@@ -102,7 +102,38 @@ dependencies {
     testZayitLibraries("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
 }
 
-val testOracleRepo: Configuration by configurations.creating {
+// Real ui-text-desktop jars for LcdTextDefaultTransformTest — the LCD patch is
+// bytecode surgery, so the regression test must run against the actual
+// artifact shapes users resolve: the Compose version the plugin ships with AND
+// the version the main repo's consumers/examples use (parsed from the root
+// version catalog; a bump there is exactly when the class layout may drift).
+val testLcdPatchLibraries: Configuration = configurations.create("testLcdPatchLibraries") {
+    isCanBeResolved = true
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
+val testLcdPatchLibrariesConsumer: Configuration = configurations.create("testLcdPatchLibrariesConsumer") {
+    isCanBeResolved = true
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
+val lcdPluginComposeVersion = project.findProperty("compose.version")?.toString() ?: "1.10.0"
+val lcdConsumerComposeVersion =
+    rootDir
+        .resolve("../gradle/libs.versions.toml")
+        .takeIf { it.isFile }
+        ?.readLines()
+        ?.firstNotNullOfOrNull { Regex("""^compose\s*=\s*"([^"]+)"""").find(it)?.groupValues?.get(1) }
+        ?: lcdPluginComposeVersion
+
+dependencies {
+    testLcdPatchLibraries("org.jetbrains.compose.ui:ui-text-desktop:$lcdPluginComposeVersion")
+    testLcdPatchLibrariesConsumer("org.jetbrains.compose.ui:ui-text-desktop:$lcdConsumerComposeVersion")
+}
+
+val testOracleRepo: Configuration = configurations.create("testOracleRepo") {
     isCanBeResolved = true
     isCanBeConsumed = false
     isTransitive = false
@@ -115,6 +146,13 @@ dependencies {
 tasks.withType<Test> {
     maxHeapSize = "1g"
     systemProperty("test.analysis.libraries", testAnalysisLibraries.asPath)
+    systemProperty(
+        "test.lcd.uitext.jars",
+        (testLcdPatchLibraries.files + testLcdPatchLibrariesConsumer.files)
+            .map { it.absolutePath }
+            .distinct()
+            .joinToString(java.io.File.pathSeparator),
+    )
     systemProperty("test.oracle.repo.zip", testOracleRepo.singleFile.absolutePath)
     systemProperty("test.zayit.libraries", testZayitLibraries.asPath)
     val zayitMetadataDir =

@@ -1,0 +1,64 @@
+name: Release tag info
+description: Classifies the pushed tag into a release channel and derives the version the build will publish
+
+outputs:
+  version:
+    description: Maven version the publish tasks will derive from the tag (tag name without the leading `v`)
+    value: ${{ steps.classify.outputs.version }}
+  channel:
+    description: '`dev` for a `v<version>-dev-<id>` tag, `release` for anything else'
+    value: ${{ steps.classify.outputs.channel }}
+  is-dev:
+    description: '`true` when the tag is a dev tag (publish without running preMerge)'
+    value: ${{ steps.classify.outputs.is-dev }}
+
+runs:
+  using: composite
+  steps:
+    - name: Classify tag
+      id: classify
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [[ "${GITHUB_REF_TYPE:-}" != "tag" ]]; then
+          echo "::error::release-tag-info only runs on tag refs (got '${GITHUB_REF_TYPE:-none}')."
+          exit 1
+        fi
+
+        tag="${GITHUB_REF_NAME}"
+
+        # Every publish task derives its version with `GITHUB_REF.removePrefix("refs/tags/v")`,
+        # so a tag that is not `v<semver>` would publish a version literally named
+        # `refs/tags/<tag>`. Fail here rather than on Maven Central, where it is permanent.
+        if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+          echo "::error::Tag '$tag' is not a publishable version tag (expected v<major>.<minor>.<patch>[-qualifier])."
+          exit 1
+        fi
+
+        version="${tag#v}"
+
+        # Dev channel: `v2.6.0-dev-202609200830`. Cut from any branch, published without
+        # preMerge — the usual Kotlin-ecosystem `-dev-` build.
+        if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-dev([.-][0-9A-Za-z]+)*$ ]]; then
+          channel=dev
+          is_dev=true
+        else
+          channel=release
+          is_dev=false
+        fi
+
+        echo "Tag '$tag' → version '$version', channel '$channel'."
+        {
+          echo "version=$version"
+          echo "channel=$channel"
+          echo "is-dev=$is_dev"
+        } >> "$GITHUB_OUTPUT"
+
+        {
+          echo "### Publishing \`$version\` (\`$channel\` channel)"
+          if [[ "$is_dev" == "true" ]]; then
+            echo ""
+            echo "Dev tag: \`preMerge\` is skipped."
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"

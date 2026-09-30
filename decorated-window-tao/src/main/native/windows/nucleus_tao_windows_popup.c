@@ -31,6 +31,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 #include <dwmapi.h>
 #include <timeapi.h>
@@ -155,7 +156,7 @@ static JNIEnv *attachThread(void) {
 static jclass globalRefNamedClass(JNIEnv *env, const char *name) {
     jclass local = (*env)->FindClass(env, name);
     if (!local) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return NULL;
     }
     jclass global = (*env)->NewGlobalRef(env, local);
@@ -178,7 +179,7 @@ static void ensureEventCallbackCache(JNIEnv *env, jobject sample) {
         sOnPointerMethod = m1; sOnScrollMethod = m2; sOnKeyMethod = m3;
         InterlockedOr(&sCacheInitedBits, 1);
     } else {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, global);
     }
 }
@@ -195,7 +196,7 @@ static void ensureOutsideCallbackCache(JNIEnv *env, jobject sample) {
         sOutsideClass = global; sOnOutsideClickMethod = m;
         InterlockedOr(&sCacheInitedBits, 2);
     } else {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, global);
     }
 }
@@ -269,7 +270,7 @@ static void dispatchPointer(PopupState *p, int type, int button, LPARAM lParam) 
     int y = (short)HIWORD(lParam);
     (*env)->CallVoidMethod(env, p->eventCb, sOnPointerMethod,
         (jint)type, (jfloat)x, (jfloat)y, (jint)button, (jint)modifierMask());
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static void dispatchScroll(PopupState *p, int xLocal, int yLocal,
@@ -279,7 +280,7 @@ static void dispatchScroll(PopupState *p, int xLocal, int yLocal,
     if (!env) return;
     (*env)->CallVoidMethod(env, p->eventCb, sOnScrollMethod,
         (jfloat)xLocal, (jfloat)yLocal, (jfloat)dx, (jfloat)dy);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static void fireOutsideClick(PopupState *p, int button) {
@@ -288,7 +289,7 @@ static void fireOutsideClick(PopupState *p, int button) {
     if (!env) return;
     (*env)->CallVoidMethod(env, p->outsideListener, sOnOutsideClickMethod,
         (jint)1 /* press */, (jint)button);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* WH_MOUSE hook proc: observes every mouse message scheduled for
@@ -581,7 +582,7 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         if (envK) {
             (*envK)->CallVoidMethod(envK, p->eventCb, sOnKeyMethod,
                 (jint)type, (jint)vk, (jint)codePoint, (jint)mods);
-            if ((*envK)->ExceptionCheck(envK)) (*envK)->ExceptionClear(envK);
+            nucleus_jni_clear_exception(envK);
         }
         return 0;
     }

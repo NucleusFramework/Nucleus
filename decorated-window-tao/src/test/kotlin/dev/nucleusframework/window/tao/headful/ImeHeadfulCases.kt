@@ -1,6 +1,11 @@
 package dev.nucleusframework.window.tao.headful
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,7 +39,150 @@ internal object ImeHeadfulCases {
         listOf(
             kotoeriNihongoCommitsWithoutNewline(),
             textInputClientAnswersAndEmptyCorporateCommit(),
+            caretRectDiesWithTheFocusedField(),
+            noCaretRectBeforeAnyField(),
         )
+
+    /**
+     * Before any field is focused the client must already answer
+     * `NSZeroRect`. Tao's own `firstRectForCharacterRange:` hands back the
+     * window corner with a *top-down* y read as a Cocoa (bottom-up)
+     * coordinate, which parks the input-source indicator in the bottom-left
+     * corner of an app that has never shown a text field — so the overrides
+     * are installed with the window, not with the first session.
+     */
+    private fun noCaretRectBeforeAnyField(): TaoWindowTestCase =
+        TaoWindowTestCase(
+            name = "macOS publishes no caret rect before any text field",
+            timeoutMillis = CASE_TIMEOUT_MILLIS,
+            skip = { macOsOnly() },
+            paintDefaultBackground = false,
+            size = DpSize(480.dp, 360.dp),
+            content = { Box(Modifier.fillMaxSize()) },
+        ) {
+            awaitUntil("window mapped") { bounds() != null }
+            settle(FOCUS_SETTLE_MILLIS)
+            check(MacOsTextInputClientProbe.imeRect(window.handle) == null) {
+                "a window that never showed a text field must answer NSZeroRect, got " +
+                    "${MacOsTextInputClientProbe.imeRect(window.handle)}"
+            }
+        }
+
+    /**
+     * A destroyed text field must take its insertion point with it. macOS
+     * anchors the input-source indicator — the badge raised by a Caps Lock
+     * bound to keyboard-layout switching, and the one this machine's
+     * US/Hebrew pair shows — to `firstRectForCharacterRange:`, so a caret
+     * rect that outlives its field leaves the badge floating over the spot
+     * the field used to occupy.
+     *
+     * The session teardown both deactivates the input context and drops the
+     * rect. Dropping the rect is the half this case locks: `interpretKeyEvents:`
+     * re-activates the context on the next keystroke whatever we do, so the
+     * rect is what has to be gone.
+     */
+    @Suppress("LongMethod") // one field lifecycle, walked end to end
+    private fun caretRectDiesWithTheFocusedField(): TaoWindowTestCase {
+        val fieldsVisible = mutableStateOf(true)
+        val secondField = FocusRequester()
+        val focused = AtomicBoolean(false)
+        return TaoWindowTestCase(
+            name = "macOS caret rect is dropped with the focused field",
+            timeoutMillis = CASE_TIMEOUT_MILLIS,
+            skip = { macOsOnly() },
+            paintDefaultBackground = false,
+            size = DpSize(480.dp, 360.dp),
+            content = {
+                if (fieldsVisible.value) {
+                    twoImeFields(secondField, focused)
+                } else {
+                    Box(Modifier.fillMaxSize())
+                }
+            },
+        ) {
+            val handle = window.handle
+            awaitUntil("window mapped") { bounds() != null }
+            awaitUntil("first field focused") { focused.get() }
+            awaitUntil("caret rect published") { MacOsTextInputClientProbe.imeRect(handle) != null }
+            val firstRect = MacOsTextInputClientProbe.imeRect(handle)
+
+            // Focus moves field-to-field: the incoming session activates
+            // before the outgoing one is torn down, so the teardown must not
+            // take the caret the new field just published with it.
+            secondField.requestFocus()
+            awaitUntil("caret rect follows the newly focused field") {
+                val rect = MacOsTextInputClientProbe.imeRect(handle)
+                rect != null && rect != firstRect
+            }
+
+            fieldsVisible.value = false
+            awaitUntil("caret rect dropped with the fields") {
+                MacOsTextInputClientProbe.imeRect(handle) == null
+            }
+
+            // The keystroke that re-activates the input context must not
+            // bring the dead caret back with it.
+            check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = true)) {
+                "keyDown was not delivered"
+            }
+            check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = false)) {
+                "keyUp was not delivered"
+            }
+            settle(POST_TYPE_SETTLE_MILLIS)
+            check(MacOsTextInputClientProbe.imeRect(handle) == null) {
+                "a keystroke after the fields are gone republished a caret rect: " +
+                    "${MacOsTextInputClientProbe.imeRect(handle)}"
+            }
+
+            // …and a field composed again gets its caret published back.
+            focused.set(false)
+            fieldsVisible.value = true
+            awaitUntil("field focused again") { focused.get() }
+            awaitUntil("caret rect published again") {
+                MacOsTextInputClientProbe.imeRect(handle) != null
+            }
+        }
+    }
+
+    /**
+     * Two stacked fields, the first focused on composition. Stacked (not
+     * side by side) so the caret rects differ on the axis
+     * `firstRectForCharacterRange:` reports in screen coordinates.
+     */
+    @Composable
+    private fun twoImeFields(
+        secondField: FocusRequester,
+        focused: AtomicBoolean,
+    ) {
+        val firstField = remember { FocusRequester() }
+        var top by remember { mutableStateOf(TextFieldValue("top")) }
+        var bottom by remember { mutableStateOf(TextFieldValue("bottom")) }
+        LaunchedEffect(Unit) {
+            firstField.requestFocus()
+            focused.set(true)
+        }
+        Column(Modifier.fillMaxSize()) {
+            BasicTextField(
+                value = top,
+                onValueChange = { top = it },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(FIELD_HEIGHT_DP.dp)
+                        .focusRequester(firstField),
+            )
+            Spacer(Modifier.height(FIELD_GAP_DP.dp))
+            BasicTextField(
+                value = bottom,
+                onValueChange = { bottom = it },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(FIELD_HEIGHT_DP.dp)
+                        .focusRequester(secondField),
+            )
+        }
+    }
 
     private fun kotoeriNihongoCommitsWithoutNewline(): TaoWindowTestCase {
         val value = AtomicReference("")
@@ -299,6 +447,8 @@ internal object ImeHeadfulCases {
 
     private fun Char.isJapanese(): Boolean = isKana() || this in '\u4E00'..'\u9FFF' || this in '\uFF66'..'\uFF9D'
 
+    private const val FIELD_HEIGHT_DP = 40
+    private const val FIELD_GAP_DP = 80
     private const val CASE_TIMEOUT_MILLIS = 45_000L
     private const val FOCUS_SETTLE_MILLIS = 200L
     private const val IME_SWITCH_SETTLE_MILLIS = 400L

@@ -1,14 +1,27 @@
 package dev.nucleusframework.gradle
 
 import org.apache.tools.ant.taskdefs.condition.Os
+import org.gradle.api.DefaultTask
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.plugins.JavaPlugin
+import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Exec
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.SourceSet
+import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.kotlin.dsl.create
+import org.gradle.kotlin.dsl.getByType
 import org.gradle.kotlin.dsl.named
 import org.gradle.kotlin.dsl.register
 import org.gradle.kotlin.dsl.withType
@@ -75,6 +88,23 @@ open class NativeModuleExtension(
         description: String = NativeTarget.LINUX.defaultDescription,
     ): TaskProvider<Exec> = register(NativeTarget.LINUX, library, description)
 
+    /**
+     * Declares libraries a dependency of this module ships under `nucleus/native/` and this
+     * module loads through `NativeLibraryLoader`, so the Nucleus Gradle plugin moves them out of
+     * that dependency's JAR together with the module's own.
+     *
+     * @param library library file name, e.g. `libGLESv2.dll`
+     * @param target the platform the dependency ships it for
+     */
+    fun dependencyLibraries(
+        target: NativeTarget,
+        vararg library: String,
+    ) {
+        nativeLibrariesManifest.configure {
+            dependencyEntries.addAll(target.resourceDirs.flatMap { dir -> library.map { "nucleus/native/$dir/$it" } })
+        }
+    }
+
     private fun register(
         target: NativeTarget,
         library: String,
@@ -103,7 +133,12 @@ open class NativeModuleExtension(
                 // there). Other vendor trees (accesskit forks, ANGLE headers)
                 // are large and rarely change independently of `src/**`.
                 include("vendor/tao/**")
-                exclude("target/**", "vendor/accesskit_*/**", "vendor/angle-headers/**")
+                exclude("**/target/**", "vendor/accesskit_*/**", "vendor/angle-headers/**")
+                // The build scripts drop their intermediates next to the sources
+                // (cl.exe writes .obj into the working directory, cargo leaves
+                // marker files in the vendor trees). Tracking them as inputs made
+                // every native task out-of-date on the run right after it built.
+                exclude(GENERATED_ARTIFACTS)
             }
 
         val task =
@@ -116,6 +151,10 @@ open class NativeModuleExtension(
                     .files(nativeSources)
                     .withPropertyName("nativeSources")
                     .withPathSensitivity(PathSensitivity.RELATIVE)
+                inputs
+                    .file(project.rootProject.layout.projectDirectory.file("native-common/nucleus_jni.h"))
+                    .withPropertyName("nucleusJniHeader")
+                    .optional()
                 outputs.dir(resourceDir).withPropertyName("nativeLibraries")
                 onlyIf("native build task matches the current host OS") { target.isHost }
                 if (skipWhenPrebuilt) {
@@ -134,29 +173,66 @@ open class NativeModuleExtension(
         }
         // Registered by the publishing plugin, which may not be applied yet.
         project.tasks.matching { it.name == "sourcesJar" }.configureEach { dependsOn(task) }
+        nativeLibrariesManifest.configure { dependsOn(task) }
 
         return task
     }
 
-    /** Mirrors `NativeLibraryLoader.resolveCacheDir()` in `core-runtime`. */
+    /**
+     * Lists the module's libraries under `META-INF/nucleus/native-libraries/`, so the Nucleus
+     * Gradle plugin moves those — and only those — out of the JARs of a packaged application.
+     * The file name is unique per module so the list survives the GraalVM uber JAR's merge.
+     */
+    private val nativeLibrariesManifest: TaskProvider<NativeLibrariesManifestTask> by lazy {
+        val manifest =
+            project.tasks.register<NativeLibrariesManifestTask>("generateNativeLibrariesManifest") {
+                nativeLibraries.from(
+                    project.fileTree(project.layout.projectDirectory.dir(NATIVE_RESOURCE_PATH)) {
+                        include("*/*")
+                        exclude("**/.*")
+                    },
+                )
+                manifestName.set("nucleus.${project.name}")
+                outputDir.set(project.layout.buildDirectory.dir("generated/nucleus-native-libraries"))
+            }
+        project.plugins.withType<JavaPlugin>().configureEach {
+            project.extensions
+                .getByType<JavaPluginExtension>()
+                .sourceSets
+                .named(SourceSet.MAIN_SOURCE_SET_NAME)
+                .configure { resources.srcDir(manifest) }
+        }
+        manifest
+    }
+
+    /**
+     * Mirrors `NativeLibraryLoader.defaultCacheDir()` in `core-runtime`.
+     *
+     * Deliberately only the platform default: an application that relocates its
+     * cache (`NativeLibraryLoader.CACHE_DIR_PROPERTY` / `cacheDirectory`) does so
+     * in its own JVM, which this build never sees, so guessing an override here
+     * would evict a directory nothing reads and leave the real one untouched.
+     * Developers running with a relocated cache clear it themselves.
+     */
     private fun loaderCacheDir(): File {
         val os = System.getProperty("os.name", "").lowercase()
         val userHome = System.getProperty("user.home")
+
+        // Blank or relative values are ignored, exactly as the loader does:
+        // evicting a relative directory would miss the cache actually in use.
+        fun envDir(name: String): File? =
+            project.providers
+                .environmentVariable(name)
+                .orNull
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::File)
+                ?.takeIf { it.isAbsolute }
+
         val base =
             when {
-                os.contains("win") ->
-                    project.providers
-                        .environmentVariable("LOCALAPPDATA")
-                        .orNull
-                        ?.let(::File)
-                        ?: File(userHome, "AppData/Local")
+                os.contains("win") -> envDir("LOCALAPPDATA") ?: File(userHome, "AppData/Local")
                 os.contains("mac") -> File(userHome, "Library/Caches")
-                else ->
-                    project.providers
-                        .environmentVariable("XDG_CACHE_HOME")
-                        .orNull
-                        ?.let(::File)
-                        ?: File(userHome, ".cache")
+                else -> envDir("XDG_CACHE_HOME") ?: File(userHome, ".cache")
             }
         return File(base, "nucleus/native")
     }
@@ -226,6 +302,66 @@ enum class NativeTarget(
 }
 
 private const val NATIVE_RESOURCE_PATH = "src/main/resources/nucleus/native"
+
+/**
+ * Writes `META-INF/nucleus/native-libraries/<manifestName>`: one `nucleus/native/<arch>/<file>`
+ * JAR entry per line, for every library the module ships (sidecars included) plus the
+ * [dependencyEntries] it loads from a dependency's JAR.
+ */
+abstract class NativeLibrariesManifestTask : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val nativeLibraries: ConfigurableFileCollection
+
+    /** `nucleus/native/<arch>/<file>` entries shipped by a dependency, see `dependencyLibraries`. */
+    @get:Input
+    abstract val dependencyEntries: ListProperty<String>
+
+    @get:Input
+    abstract val manifestName: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    /** Rewrites the manifest from the libraries currently in the module resources. */
+    @TaskAction
+    fun generate() {
+        val entries =
+            nativeLibraries.asFileTree.files
+                .map { "nucleus/native/${it.parentFile.name}/${it.name}" }
+                .plus(dependencyEntries.get())
+                .distinct()
+                .sorted()
+        val root = outputDir.get().asFile
+        root.deleteRecursively()
+        File(root, "META-INF/nucleus/native-libraries/${manifestName.get()}").apply {
+            parentFile.mkdirs()
+            writeText(entries.joinToString(separator = "\n", postfix = if (entries.isEmpty()) "" else "\n"))
+        }
+    }
+}
+
+/**
+ * Build by-products the native scripts leave inside `src/main/native`. They are
+ * derived from the sources, never edited, and must not take part in the
+ * up-to-date check.
+ */
+private val GENERATED_ARTIFACTS =
+    listOf(
+        "**/*.obj",
+        "**/*.o",
+        "**/*.lib",
+        "**/*.exp",
+        "**/*.pdb",
+        "**/*.ilk",
+        "**/*.d",
+        "**/*.dll",
+        "**/*.so",
+        "**/*.dylib",
+        "**/build_log.txt",
+        "**/.cargo-ok",
+        "**/.cargo_vcs_info.json",
+    )
 
 private fun evictFromLoaderCache(
     cacheDir: File,

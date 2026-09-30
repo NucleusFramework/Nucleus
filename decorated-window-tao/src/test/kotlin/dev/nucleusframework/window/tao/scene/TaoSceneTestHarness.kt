@@ -27,6 +27,7 @@ import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.dispatchTrackpadPan
+import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import kotlinx.coroutines.CoroutineDispatcher
@@ -34,6 +35,7 @@ import kotlinx.coroutines.awaitCancellation
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.Picture
+import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import kotlin.coroutines.CoroutineContext
 
@@ -260,6 +262,18 @@ internal class TaoSceneTestScope(
     val scene: ComposeScene get() = sceneBundle.scene
 
     /**
+     * Mirrors [TaoSceneBundle.renderOverlay] — what a popup layer paints into
+     * the same picture *after* its scene (the scrims of the layers stacked
+     * above it). Recorded inside the frame, so it counts towards the picture's
+     * op count exactly as it does in production.
+     */
+    var renderOverlay: ((org.jetbrains.skia.Canvas) -> Unit)?
+        get() = sceneBundle.renderOverlay
+        set(value) {
+            sceneBundle.renderOverlay = value
+        }
+
+    /**
      * Mirrors the scene host's `exceptionHandler` field (#621): installed on the
      * bundle, so frames go through the production guard in
      * [TaoSceneBundle.render], and consulted at the input / IME entry points the
@@ -343,7 +357,16 @@ internal class TaoSceneTestScope(
      * render pass: pump continuations, deliver the frame clock, then record
      * the scene through the production CPU record path.
      */
-    fun frame(deltaMillis: Long = FRAME_DELTA_MILLIS): Picture {
+    fun frame(
+        deltaMillis: Long = FRAME_DELTA_MILLIS,
+        /**
+         * Cull rect handed to the picture recorder. Defaults to the scene size,
+         * as a window host records; a popup layer records the same scene with a
+         * rect rooted at its draw bounds, which is what
+         * `MacPopupPictureCullTest` exercises.
+         */
+        cullRect: Rect? = null,
+    ): Picture {
         timeNanos += deltaMillis * NANOS_PER_MILLI
         // Release virtual-clock timers (delay / withTimeout) due at the new
         // time BEFORE pumping, so their continuations run in this frame.
@@ -358,7 +381,13 @@ internal class TaoSceneTestScope(
         // dispatchers around the tick), so the recompose triggered by this
         // frame's `withFrameNanos` continuations is part of the recorded picture
         // — same guarantee the explicit sendFrame + pump used to give.
-        return recordSceneToPicture(sceneBundle, width, height, timeNanos).also { lastPicture = it }
+        return recordSceneToPicture(
+            bundle = sceneBundle,
+            widthPx = width,
+            heightPx = height,
+            nanoTime = timeNanos,
+            cullRect = cullRect ?: Rect.makeWH(width.toFloat(), height.toFloat()),
+        ).also { lastPicture = it }
     }
 
     /**
@@ -527,6 +556,25 @@ internal class TaoSceneTestScope(
         frame()
     }
 
+    /**
+     * Mirrors the scene host's trackpad pinch dispatch (`dispatchTrackpadScale`,
+     * #660): [scaleFactor] is a multiplicative per-event ratio (`1f` = no
+     * change). The pointer sits at the last cursor position.
+     */
+    fun scale(
+        type: PointerEventType,
+        scaleFactor: Float = 1f,
+    ) {
+        scene.dispatchTrackpadScale(
+            x = pointerDeadband.x,
+            y = pointerDeadband.y,
+            type = type,
+            scaleFactor = scaleFactor,
+            keyboardModifiers = taoKeyboardModifiers(modifierState),
+        )
+        frame()
+    }
+
     /** Mirrors `TaoComposeSceneHost.onPointerScroll` (AWT-shaped native event attached). */
     fun scroll(event: TaoPointerScrollEvent) {
         val modifiers = taoKeyboardModifiers(modifierState)
@@ -680,9 +728,17 @@ internal class TaoSceneTestScope(
     // ── Pixels ──────────────────────────────────────────────────────────────
 
     /** Rasterizes the last recorded frame (CPU) and returns it as a Skia bitmap. */
-    fun renderToBitmap(clearColor: Int = COLOR_WHITE): Bitmap {
+    fun renderToBitmap(
+        clearColor: Int = COLOR_WHITE,
+        surfaceProps: org.jetbrains.skia.SurfaceProps? = null,
+    ): Bitmap {
         val picture = lastPicture ?: frame()
-        val surface = Surface.makeRasterN32Premul(width, height)
+        val surface =
+            Surface.makeRaster(
+                ImageInfo.makeN32Premul(width, height),
+                0,
+                surfaceProps,
+            )
         surface.canvas.clear(clearColor)
         surface.canvas.drawPicture(picture)
         val bitmap = Bitmap()
