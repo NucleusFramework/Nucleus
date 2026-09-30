@@ -836,7 +836,7 @@ private fun JvmApplicationContext.configurePackageTask(
         packageTask.packageDescription.set(displayNameForJpackage)
         packageTask.packageCopyright.set(executables.copyright)
         packageTask.packageVendor.set(executables.vendor)
-        packageTask.packageVersion.set(packageVersionFor(packageTask.targetFormat))
+        packageTask.packageVersion.set(jpackageVersionFor(packageTask.targetFormat))
     }
 
     val dirSuffix = if (sandboxed) "-sandboxed" else ""
@@ -896,9 +896,17 @@ private fun JvmApplicationContext.configurePackageTask(
         provider {
             val executableTypeArg = "-D$APP_EXECUTABLE_TYPE=${packageTask.targetFormat.executableTypeValue}"
             val appIdArg = "-D$APP_ID=${resolvedAppIdProvider().get()}"
+            // jpackage may have dropped a pre-release suffix from --app-version, which the
+            // launcher exposes as jpackage.app-version. Pass the full version so NucleusApp.version,
+            // and the updater comparing it against the manifest, still see it.
+            val fullVersion = packageVersionFor(packageTask.targetFormat).get()
+            val versionArgs =
+                listOfNotNull(
+                    "-D$APP_VERSION=$fullVersion".takeIf { fullVersion != packageTask.packageVersion.get() },
+                )
             // GC flags before app.jvmArgs so an explicit -XX:+Use…GC there still wins.
             val gcArgs = app.garbageCollector?.jvmArgs.orEmpty()
-            var args = defaultJvmArgs + gcArgs + executableTypeArg + appIdArg + app.jvmArgs
+            var args = defaultJvmArgs + gcArgs + executableTypeArg + appIdArg + versionArgs + app.jvmArgs
             val splash = app.nativeDistributions.splashImage
             if (splash != null) {
                 args = args + "-splash:\$APPDIR/resources/$splash"
