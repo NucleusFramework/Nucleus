@@ -1039,6 +1039,10 @@ public class TaoWindow internal constructor(
      *   origin before `wl_subsurface.set_position`, so callers — drag ghosts,
      *   in-scene popup layers — can keep working in content space. Zero once
      *   GTK collapses the margins (maximized / fullscreen / tiled).
+     *
+     * @throws IllegalArgumentException when ([xDp], [yDp]) is not a screen position: NaN,
+     *   infinite, or farther than [MAX_OUTER_POSITION_DP] from the origin — a sentinel or an
+     *   uncomputed value, which the platform would refuse (AppKit aborts the process on it).
      */
     public fun setOuterPosition(
         xDp: Double,
@@ -1053,6 +1057,14 @@ public class TaoWindow internal constructor(
             // Packed as (x << 32) | (y & 0xffff_ffff) in logical GTK units.
             x += (packed shr 32).toInt()
             y += packed.toInt()
+        }
+        // A caller bug, reported to the caller: AppKit throws on a frame outside the 32-bit range,
+        // and that NSException cannot unwind through the Rust event loop, so reaching the native
+        // side the process aborted with no hint of who asked (a sentinel such as Int.MIN_VALUE
+        // passed off as a position did exactly that).
+        require(isPlaceableOuterPosition(x, y)) {
+            "setOuterPosition($xDp, $yDp): not a screen position (NaN, infinite or beyond " +
+                "±$MAX_OUTER_POSITION_DP dp) — an unspecified or uncomputed position?"
         }
         NativeTaoBridge.nativeSetOuterPosition(handle, x, y)
     }
