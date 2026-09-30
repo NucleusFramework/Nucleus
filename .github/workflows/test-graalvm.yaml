@@ -57,14 +57,17 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
+          # Xvfb itself comes from setup-nucleus, which also starts it.
+          sudo apt-get install -y openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
 
       - name: Run native test pyramid (Linux, under Xvfb + openbox)
         if: runner.os == 'Linux'
         run: |
-          export DISPLAY=:99
-          Xvfb :99 -screen 0 1600x1200x24 &
-          for i in $(seq 1 50); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.2; done
+          # setup-nucleus (packaging-tools) already runs Xvfb and exports DISPLAY; a second
+          # `Xvfb :99` here only failed with "Server is already active for display 99".
+          test -n "${DISPLAY:-}" || { echo "::error::DISPLAY is not set; setup-nucleus should start Xvfb"; exit 1; }
+          for i in $(seq 1 50); do xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break; sleep 0.2; done
+          xdpyinfo -display "$DISPLAY" >/dev/null || { echo "::error::No X server on $DISPLAY"; exit 1; }
           openbox &
           sleep 1
           # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
