@@ -83,6 +83,11 @@ jobs:
       - name: Run native test pyramid
         if: runner.os != 'Linux'
         shell: bash
+        env:
+          # Arms the macOS scrollWheel: injector the trackpad headful cases drive
+          # (nativeDiagInjectScrollWheel); without it they fail. taoHeadfulTest sets the
+          # same variable for the JVM run.
+          NUCLEUS_TAO_INPUT_INJECTION: '1'
         run: |
           # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
           # next to it, which the bare nativeCompile artifact lacks.
