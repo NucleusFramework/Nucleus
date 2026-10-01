@@ -44,10 +44,14 @@ dependencies {
     // only callable by an app that has filekit-dialogs; never forced on consumers.
     compileOnly(libs.filekit.core)
     compileOnly(libs.filekit.dialogs)
+    // compileOnly: NucleusWindow.share is only callable by an app that already builds a
+    // ShareRequest, i.e. that has nucleus.share; never forced on consumers.
+    compileOnly(project(":share"))
 
     testImplementation(libs.junit)
     testImplementation(libs.filekit.core)
     testImplementation(libs.filekit.dialogs)
+    testImplementation(project(":share"))
     testImplementation(compose.desktop.currentOs)
     testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }

@@ -63,6 +63,7 @@ composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "hot
 lighthouse = { id = "io.github.dev-vikas-soni.lighthouse", version.ref = "lighthouse" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 androidApplication = { id = "com.android.application", version.ref = "agp" }
+androidKotlinMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 kotlinxSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 
 [libraries]
@@ -91,6 +92,8 @@ ktor-client-java = { module = "io.ktor:ktor-client-java", version.ref = "ktor" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-apache5 = { module = "io.ktor:ktor-client-apache5", version.ref = "ktor" }
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 jewel-foundation = { module = "org.jetbrains.jewel:jewel-foundation", version.ref = "jewel" }
 jewel-ui = { module = "org.jetbrains.jewel:jewel-ui", version.ref = "jewel" }

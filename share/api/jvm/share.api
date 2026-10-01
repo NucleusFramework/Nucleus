@@ -1,0 +1,185 @@
+public final class dev/nucleusframework/share/ShareAnchor {
+	public fun <init> (DDDD)V
+	public final fun component1 ()D
+	public final fun component2 ()D
+	public final fun component3 ()D
+	public final fun component4 ()D
+	public final fun copy (DDDD)Ldev/nucleusframework/share/ShareAnchor;
+	public static synthetic fun copy$default (Ldev/nucleusframework/share/ShareAnchor;DDDDILjava/lang/Object;)Ldev/nucleusframework/share/ShareAnchor;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHeight ()D
+	public final fun getWidth ()D
+	public final fun getX ()D
+	public final fun getY ()D
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/share/ShareError : java/lang/Enum {
+	public static final field AlreadyOpen Ldev/nucleusframework/share/ShareError;
+	public static final field Empty Ldev/nucleusframework/share/ShareError;
+	public static final field InvalidItem Ldev/nucleusframework/share/ShareError;
+	public static final field Io Ldev/nucleusframework/share/ShareError;
+	public static final field NoHandler Ldev/nucleusframework/share/ShareError;
+	public static final field NoWindow Ldev/nucleusframework/share/ShareError;
+	public static final field Platform Ldev/nucleusframework/share/ShareError;
+	public static final field Unsupported Ldev/nucleusframework/share/ShareError;
+	public static final field UnsupportedItem Ldev/nucleusframework/share/ShareError;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/share/ShareError;
+	public static fun values ()[Ldev/nucleusframework/share/ShareError;
+}
+
+public final class dev/nucleusframework/share/ShareException : java/lang/Exception {
+	public fun <init> (Ldev/nucleusframework/share/ShareError;Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ldev/nucleusframework/share/ShareError;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getError ()Ldev/nucleusframework/share/ShareError;
+}
+
+public abstract interface class dev/nucleusframework/share/ShareItem {
+}
+
+public final class dev/nucleusframework/share/ShareItem$File : dev/nucleusframework/share/ShareItem {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/share/ShareItem$File;
+	public static synthetic fun copy$default (Ldev/nucleusframework/share/ShareItem$File;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/share/ShareItem$File;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMimeType ()Ljava/lang/String;
+	public final fun getPath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/share/ShareItem$FileUri : dev/nucleusframework/share/ShareItem {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/share/ShareItem$FileUri;
+	public static synthetic fun copy$default (Ldev/nucleusframework/share/ShareItem$FileUri;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/share/ShareItem$FileUri;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMimeType ()Ljava/lang/String;
+	public final fun getUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/share/ShareItem$Text : dev/nucleusframework/share/ShareItem {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/share/ShareItem$Text;
+	public static synthetic fun copy$default (Ldev/nucleusframework/share/ShareItem$Text;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/share/ShareItem$Text;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/share/ShareItem$Url : dev/nucleusframework/share/ShareItem {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/share/ShareItem$Url;
+	public static synthetic fun copy$default (Ldev/nucleusframework/share/ShareItem$Url;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/share/ShareItem$Url;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUrl ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/share/ShareParent {
+}
+
+public final class dev/nucleusframework/share/ShareParent$Auto : dev/nucleusframework/share/ShareParent {
+	public static final field INSTANCE Ldev/nucleusframework/share/ShareParent$Auto;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/share/ShareParent$Linux : dev/nucleusframework/share/ShareParent {
+	public fun <init> (Ljava/lang/String;Ljava/lang/AutoCloseable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/AutoCloseable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/AutoCloseable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/AutoCloseable;)Ldev/nucleusframework/share/ShareParent$Linux;
+	public static synthetic fun copy$default (Ldev/nucleusframework/share/ShareParent$Linux;Ljava/lang/String;Ljava/lang/AutoCloseable;ILjava/lang/Object;)Ldev/nucleusframework/share/ShareParent$Linux;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKeepAlive ()Ljava/lang/AutoCloseable;
+	public final fun getPortalParent ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/share/ShareParent$MacOs : dev/nucleusframework/share/ShareParent {
+	public fun <init> (JLdev/nucleusframework/share/ShareAnchor;)V
+	public synthetic fun <init> (JLdev/nucleusframework/share/ShareAnchor;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ldev/nucleusframework/share/ShareAnchor;
+	public final fun copy (JLdev/nucleusframework/share/ShareAnchor;)Ldev/nucleusframework/share/ShareParent$MacOs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/share/ShareParent$MacOs;JLdev/nucleusframework/share/ShareAnchor;ILjava/lang/Object;)Ldev/nucleusframework/share/ShareParent$MacOs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAnchor ()Ldev/nucleusframework/share/ShareAnchor;
+	public final fun getNsWindow ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/share/ShareParent$Windows : dev/nucleusframework/share/ShareParent {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Ldev/nucleusframework/share/ShareParent$Windows;
+	public static synthetic fun copy$default (Ldev/nucleusframework/share/ShareParent$Windows;JILjava/lang/Object;)Ldev/nucleusframework/share/ShareParent$Windows;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHwnd ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/share/ShareRequest {
+	public fun <init> (Ljava/util/List;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/util/List;Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/share/ShareRequest;
+	public static synthetic fun copy$default (Ldev/nucleusframework/share/ShareRequest;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/share/ShareRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getItems ()Ljava/util/List;
+	public final fun getSubject ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/share/ShareRequestBuilder {
+	public final fun file (Ljava/lang/String;Ljava/lang/String;)V
+	public static synthetic fun file$default (Ldev/nucleusframework/share/ShareRequestBuilder;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun fileUri (Ljava/lang/String;Ljava/lang/String;)V
+	public static synthetic fun fileUri$default (Ldev/nucleusframework/share/ShareRequestBuilder;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun getSubject ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun item (Ldev/nucleusframework/share/ShareItem;)V
+	public final fun setSubject (Ljava/lang/String;)V
+	public final fun setTitle (Ljava/lang/String;)V
+	public final fun text (Ljava/lang/String;)V
+	public final fun url (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/share/ShareRequestKt {
+	public static final fun shareRequest (Lkotlin/jvm/functions/Function1;)Ldev/nucleusframework/share/ShareRequest;
+}
+
+public final class dev/nucleusframework/share/ShareSheet {
+	public static final field INSTANCE Ldev/nucleusframework/share/ShareSheet;
+	public final fun isSupported ()Z
+	public final fun share (Ldev/nucleusframework/share/ShareRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun share (Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/share/ShareSheet_jvmKt {
+	public static final fun share (Ldev/nucleusframework/share/ShareSheet;Ldev/nucleusframework/share/ShareRequest;Ldev/nucleusframework/share/ShareParent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
