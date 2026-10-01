@@ -6,6 +6,7 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.updater.exception.ChecksumException
 import dev.nucleusframework.updater.exception.NetworkException
 import dev.nucleusframework.updater.exception.NoMatchingFileException
+import dev.nucleusframework.updater.exception.ParseException
 import dev.nucleusframework.updater.exception.UpdateException
 import dev.nucleusframework.updater.internal.ChecksumVerifier
 import dev.nucleusframework.updater.internal.FeedFetcher
@@ -157,8 +158,9 @@ public class NucleusUpdater(
 
     private fun download(info: UpdateInfo): Flow<DownloadProgress> =
         flow {
-            pendingUpdateVersion = info.version
             val targetFile = info.currentFile
+            requirePlainFileName(targetFile.fileName)
+            pendingUpdateVersion = info.version
             // A fresh, owner-only (0700 on POSIX) staging directory: a predictable path in the
             // shared temp dir would be a pre-created-file/symlink hazard on multi-user systems.
             val stagingDir = Files.createTempDirectory("nucleus-update-").toFile()
@@ -574,6 +576,26 @@ public class NucleusUpdater(
         val install = WindowsHotUpdate.currentInstall(PlatformInfo.currentPlatform(), resolveExecutableType())
         val installed = install?.let(WindowsHotUpdate::installedVersionDir) ?: return false
         return Version.fromString(installed.name) >= version
+    }
+
+    /**
+     * Rejects an artifact name that is anything other than a single path component.
+     *
+     * The name comes from the manifest's `url` field, which is remote input, and names the file
+     * inside the staging directory. A value like `../victim` would resolve outside it, so the
+     * download and the rename after it could overwrite any file the app can write. Rejected rather
+     * than reduced to its last component, which would hide a malformed or tampered manifest.
+     */
+    private fun requirePlainFileName(fileName: String) {
+        val invalid =
+            fileName.isEmpty() ||
+                fileName == "." ||
+                fileName == ".." ||
+                fileName.contains('/') ||
+                fileName.contains('\\')
+        if (invalid) {
+            throw ParseException("Update manifest names an artifact that is not a plain file name: '$fileName'")
+        }
     }
 
     private fun resolveExecutableType(): ExecutableType {
