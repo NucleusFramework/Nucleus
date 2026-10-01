@@ -71,8 +71,9 @@ class TaoSceneScrollTest {
     // runs under Compose's FlushCoroutineDispatcher, which does not reach the harness's virtual
     // Delay, so it times out on kotlinx's DefaultExecutor in REAL time (see
     // crossThreadResumptions in the failure message) and races the virtual frames. The result
-    // does not depend on the real-time gap between the two notches. Re-enable once the
-    // timeout runs on the virtual clock; the failure message now carries the timing facts.
+    // does not depend on the real-time gap between the two notches. Re-enable once
+    // https://youtrack.jetbrains.com/issue/CMP-10875 is fixed and the timeout runs on the
+    // virtual clock; the failure message now carries the timing facts.
     @Ignore
     @Test
     fun `scroll direction is symmetric`() =
