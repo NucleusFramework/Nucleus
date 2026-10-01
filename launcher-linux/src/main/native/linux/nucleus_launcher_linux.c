@@ -224,7 +224,7 @@ static GDBusConnection *get_connection(void) {
      * hangs the calling thread forever. A session bus that exists is always
      * advertised through this variable, so "unset" simply means "no bus". */
     const gchar *address = g_getenv("DBUS_SESSION_BUS_ADDRESS");
-    if (address == NULL || *address == ' ') return NULL;
+    if (address == NULL || *address == '\0') return NULL;
     GError *error = NULL;
     g_conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
     if (error) { g_error_free(error); g_conn = NULL; }
