@@ -114,6 +114,17 @@ tasks.withType<Test>().configureEach {
 // a main() via JavaExec (process main thread = macOS main thread). Windows uses
 // the in-process JUnit test in StandalonePanelNativeSmokeTest.
 
+// ── Test failure output ─────────────────────────────────────────────────────
+// Gradle's default format prints only "AssertionError at File.kt:N" on the
+// console, dropping the message the scene tests put their diagnostics in, so a
+// CI failure left nothing to go on. Print the message and stack of failures.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
 // ── Test-classes artifact for the native test runner ────────────────────────
 // examples/tao-native-test compiles the stage-1/stage-2 suites into a GraalVM
 // native image; it consumes the compiled test classes through this
