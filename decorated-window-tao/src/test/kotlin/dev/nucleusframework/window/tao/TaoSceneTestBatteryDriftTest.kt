@@ -95,6 +95,7 @@ class TaoSceneTestBatteryDriftTest {
             TitleBarHitTestTest::class.java,
             LcdTextTest::class.java,
             WindowPositionerTest::class.java,
+            OuterPositionTest::class.java,
             SatelliteWorkspaceTest::class.java,
             SatelliteDockedGeometryTest::class.java,
             DockLandingRectTest::class.java,

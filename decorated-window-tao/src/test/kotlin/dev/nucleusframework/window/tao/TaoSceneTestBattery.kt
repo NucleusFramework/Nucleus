@@ -710,6 +710,12 @@ public object TaoSceneTestBattery {
         run("WindowPositionerTest: an unconstrained placement is returned untouched by every adjustment") {
             WindowPositionerTest().`an unconstrained placement is returned untouched by every adjustment`()
         }
+        run("OuterPositionTest: positions on any real desktop are placeable, off the main screen included") {
+            OuterPositionTest().`positions on any real desktop are placeable, off the main screen included`()
+        }
+        run("OuterPositionTest: a sentinel or a broken computation is not a position") {
+            OuterPositionTest().`a sentinel or a broken computation is not a position`()
+        }
 
         run(
             "SatelliteDockedGeometryTest: docking from a floating window brings its size along as the panel extent",
