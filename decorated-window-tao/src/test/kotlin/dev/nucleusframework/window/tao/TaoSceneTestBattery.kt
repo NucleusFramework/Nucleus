@@ -402,9 +402,8 @@ public object TaoSceneTestBattery {
             TaoSceneScrollTest().`wheel down scrolls a vertical column`()
         }
         run("TaoSceneScrollTest: wheel up at top is a no-op") { TaoSceneScrollTest().`wheel up at top is a no-op`() }
-        run(
-            "TaoSceneScrollTest: scroll direction is symmetric",
-        ) { TaoSceneScrollTest().`scroll direction is symmetric`() }
+        // "TaoSceneScrollTest: scroll direction is symmetric" is @Ignore'd (flaky until
+        // https://youtrack.jetbrains.com/issue/CMP-10875 is fixed); re-register it when re-enabled.
         run("TaoSceneScrollTest: larger scrollAmount scrolls further per notch") {
             TaoSceneScrollTest().`larger scrollAmount scrolls further per notch`()
         }
