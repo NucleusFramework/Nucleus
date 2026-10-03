@@ -156,6 +156,8 @@ class TaoSceneTestBatteryDriftTest {
                 "pure state mapping + geometry provider evaluation, no ComposeScene",
             TaoMonitorsTest::class.java to
                 "parses the native monitor wire format; no ComposeScene",
+            OuterPositionTest::class.java to
+                "pure-function outer position validation; no ComposeScene",
             dev.nucleusframework.window.tao.popup.PopupScreenClampTest::class.java to
                 "pure-function popup screen clamp geometry (#569); no ComposeScene",
             dev.nucleusframework.window.tao.popup.PopupDrawInflateTest::class.java to
