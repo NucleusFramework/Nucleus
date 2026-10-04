@@ -92,6 +92,9 @@ internal object AnimatedWindowSizeHeadfulCases {
         TaoWindowTestCase(
             name = "#576 maximize and restore zoom present every step in its own turn",
             timeoutMillis = CASE_TIMEOUT_MILLIS,
+            // PresentLagProbe reads TaoPresentDiagnostics, which only the Metal and
+            // ANGLE hosts record — on Linux every step would read as lagging.
+            skip = { "the Linux host records no presents".takeIf { Platform.Current == Platform.Linux } },
         ) {
             awaitUntil("window mapped") { window.hasRealFramePx() }
             settle()
