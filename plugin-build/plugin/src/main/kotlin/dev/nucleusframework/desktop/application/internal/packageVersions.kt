@@ -10,11 +10,24 @@ import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.internal.utils.OS
 import org.gradle.api.provider.Provider
 
+/**
+ * The version [targetFormat] is packaged with: the format's own version, then the OS's, then
+ * `nativeDistributions.packageVersion`, then `project.version`, then `1.0.0`.
+ *
+ * Every caller that stamps a version into an artifact goes through this, so they all agree.
+ */
 internal fun JvmApplicationContext.packageVersionFor(targetFormat: TargetFormat): Provider<String> =
+    configuredPackageVersionFor(targetFormat).orElse("1.0.0")
+
+/**
+ * [packageVersionFor] without the `1.0.0` default: absent when neither the DSL nor `project.version`
+ * sets one. `nucleus-app.properties` uses it so an unconfigured app reports no version at all, which
+ * is what keeps an unpackaged run in the updater's dev mode.
+ */
+internal fun JvmApplicationContext.configuredPackageVersionFor(targetFormat: TargetFormat): Provider<String> =
     project.provider {
         app.nativeDistributions.packageVersionFor(targetFormat)
             ?: project.version.toString().takeIf { it != "unspecified" }
-            ?: "1.0.0"
     }
 
 /** The version jpackage stamps into the app image; see [jpackageAppVersion]. */

@@ -137,7 +137,9 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
             // AUMID must match the electron-builder appId (used in NSIS/MSI shortcut properties)
             val resolvedAumid = app.nativeDistributions.packageName?.let { "com.app.$it" }
             resolvedAumid?.let { appAumid.set(it) }
-            app.nativeDistributions.packageVersion?.let { appVersion.set(it) }
+            // The app image's version, in full: jpackage.app-version has the SemVer suffix
+            // dropped on Windows and macOS, so this is the only place the app reads it from.
+            appVersion.set(configuredPackageVersionFor(TargetFormat.RawAppImage))
             app.nativeDistributions.vendor?.let { appVendor.set(it) }
             app.nativeDistributions.description?.let { appDescription.set(it) }
             // Store the computed StartupWMClass so graalvm-runtime can use it as
@@ -960,17 +962,9 @@ private fun JvmApplicationContext.configurePackageTask(
         provider {
             val executableTypeArg = "-D$APP_EXECUTABLE_TYPE=${packageTask.targetFormat.executableTypeValue}"
             val appIdArg = "-D$APP_ID=${resolvedAppIdProvider().get()}"
-            // jpackage may have dropped a pre-release suffix from --app-version, which the
-            // launcher exposes as jpackage.app-version. Pass the full version so NucleusApp.version,
-            // and the updater comparing it against the manifest, still see it.
-            val fullVersion = packageVersionFor(packageTask.targetFormat).get()
-            val versionArgs =
-                listOfNotNull(
-                    "-D$APP_VERSION=$fullVersion".takeIf { fullVersion != packageTask.packageVersion.get() },
-                )
             // GC flags before app.jvmArgs so an explicit -XX:+Use…GC there still wins.
             val gcArgs = app.garbageCollector?.jvmArgs.orEmpty()
-            var args = defaultJvmArgs + gcArgs + executableTypeArg + appIdArg + versionArgs + app.jvmArgs
+            var args = defaultJvmArgs + gcArgs + executableTypeArg + appIdArg + app.jvmArgs
             val splash = app.nativeDistributions.splashImage
             if (splash != null) {
                 args = args + "-splash:\$APPDIR/resources/$splash"
