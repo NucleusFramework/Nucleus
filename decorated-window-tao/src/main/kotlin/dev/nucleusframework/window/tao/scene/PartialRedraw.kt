@@ -321,14 +321,17 @@ internal class PartialRedrawStats {
     private var windowPixels = 0L
     private var lastReportNs = System.nanoTime()
     private val sources = HashMap<String, LongArray>()
+    private val bufferAges = java.util.TreeMap<Int, Int>()
 
     /** Counts a frame; returns the report line when one is due. */
     fun frame(
         repaint: IntRect?,
         windowArea: Int,
         frameSources: List<Pair<IntRect, String>>,
+        bufferAge: Int,
     ): String? {
         frames++
+        bufferAges.merge(bufferAge, 1, Int::plus)
         windowPixels += windowArea
         repaintedPixels += repaint?.let { it.width.toLong() * it.height } ?: windowArea.toLong()
         if (repaint != null) partialFrames++
@@ -346,17 +349,20 @@ internal class PartialRedrawStats {
                 .take(TOP_SOURCES)
                 .joinToString("\n") { (source, v) -> "    ${v[0]} frames, ${v[1] / v[0]} px avg — $source" }
         val line =
-            "Partial redraw: %.0f fps, %d%% partial, %.1f%% of the window repainted on average\n%s".format(
-                frames / seconds,
-                partialFrames * 100 / frames.coerceAtLeast(1),
-                repaintedPixels * 100.0 / windowPixels.coerceAtLeast(1),
-                top,
-            )
+            "Partial redraw: %.0f fps, %d%% partial, %.1f%% of the window repainted on average, buffer ages %s\n%s"
+                .format(
+                    frames / seconds,
+                    partialFrames * 100 / frames.coerceAtLeast(1),
+                    repaintedPixels * 100.0 / windowPixels.coerceAtLeast(1),
+                    bufferAges,
+                    top,
+                )
         frames = 0
         partialFrames = 0
         repaintedPixels = 0
         windowPixels = 0
         sources.clear()
+        bufferAges.clear()
         lastReportNs = now
         return line
     }

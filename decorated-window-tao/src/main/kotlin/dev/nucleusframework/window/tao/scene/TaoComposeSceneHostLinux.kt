@@ -376,6 +376,19 @@ internal class TaoComposeSceneHostLinux(
     /** When the swap thread last finished presenting. */
     private var lastSwapDoneNs = 0L
 
+    /**
+     * Partial redraw on a driver whose buffer age is always 0 (NVIDIA on
+     * X11, #755): the frame is drawn — partially — into this surface, which
+     * always holds the previous frame, then copied whole into the back buffer.
+     * One full-surface copy per presented frame instead of a full raster of
+     * the UI.
+     */
+    private var retainedBackBuffer: Surface? = null
+
+    /** Latched once [RETAINED_AFTER_ZERO_AGE_FRAMES] eligible frames in a row had a buffer age of 0. */
+    private var retainedBackBufferMode = false
+    private var zeroAgeFrames = 0
+
     /** [partialRedrawFrameKey] of the previous frame. */
     private var lastPartialFrameKey = 0L
 
@@ -878,6 +891,7 @@ internal class TaoComposeSceneHostLinux(
         swapThread = null
         NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
         cachedSurface?.close()
+        closeRetainedBackBuffer()
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
@@ -2050,6 +2064,7 @@ internal class TaoComposeSceneHostLinux(
         if (!surfaceRebuildDue) return
         surfaceRebuildDue = false
         cachedSurface?.close()
+        closeRetainedBackBuffer()
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
@@ -2258,7 +2273,8 @@ internal class TaoComposeSceneHostLinux(
         // repaints in full whatever changed. Queried before any drawing.
         val bufferAge = partialRedrawBufferAge(paintSize, inFrame)
         val frameKey = partialRedrawFrameKey()
-        val canvas = surface.canvas
+        val retained = retainedBackBufferFor(ctx, paintSize)
+        val canvas = retained?.canvas ?: surface.canvas
         var frameDamage: IntRect? = null
         var repaint: IntRect? = null
         var cleared = false
@@ -2287,7 +2303,13 @@ internal class TaoComposeSceneHostLinux(
                 }
             if (PartialRedraw.debug) {
                 logFullFrameReason(bundle, bufferAge, damage, frameKey)
-                partialStats.frame(repaint, widthPx * heightPx, bundle.damageSources)?.let { linuxHostLogger.info(it) }
+                partialStats
+                    .frame(
+                        repaint,
+                        widthPx * heightPx,
+                        bundle.damageSources,
+                        bufferAge,
+                    )?.let { linuxHostLogger.info(it) }
             }
             canvas.save()
             repaint?.let { canvas.clipRect(it.toSkiaRect()) }
@@ -2325,6 +2347,7 @@ internal class TaoComposeSceneHostLinux(
         applyFrameDecoration(canvas, paintSize.width, paintSize.height)
         repaint?.let { if (PartialRedraw.debugTint) tintRepaint(canvas, it) }
         canvas.restore()
+        retained?.let { blitRetainedBackBuffer(it, surface) }
         verifyPicture?.let {
             verifyPartialFrame(ctx, it, surface, repaint)
             it.close()
@@ -2349,7 +2372,78 @@ internal class TaoComposeSceneHostLinux(
         }
         if (!PartialRedraw.enabled || inFrame || resizeBurstActive || foreignGlInterop) return -1
         if (paintSize.width != widthPx || paintSize.height != heightPx) return -1
-        return NativeTaoEglBridge.nativeBufferAge(attachmentHandle)
+        val age = NativeTaoEglBridge.nativeBufferAge(attachmentHandle)
+        if (age < 0) return -1
+        if (!retainedBackBufferMode) {
+            zeroAgeFrames = if (age == 0) zeroAgeFrames + 1 else 0
+            if (zeroAgeFrames < RETAINED_AFTER_ZERO_AGE_FRAMES) return age
+            // A driver that never knows its back buffer's age (NVIDIA on X11):
+            // keep our own, see [retainedBackBuffer].
+            retainedBackBufferMode = true
+            damageHistory.clear()
+        }
+        // The retained buffer holds the last frame drawn, unless it is new.
+        val retained = retainedBackBuffer
+        return if (retained != null &&
+            retained.width == paintSize.width &&
+            retained.height == paintSize.height
+        ) {
+            1
+        } else {
+            0
+        }
+    }
+
+    /**
+     * The surface frames are drawn into in [retainedBackBufferMode], created
+     * or resized to [paintSize]; null outside that mode.
+     */
+    private fun retainedBackBufferFor(
+        ctx: DirectContext,
+        paintSize: IntSize,
+    ): Surface? {
+        if (!retainedBackBufferMode) return null
+        val existing = retainedBackBuffer
+        if (existing != null &&
+            existing.width == paintSize.width &&
+            existing.height == paintSize.height
+        ) {
+            return existing
+        }
+        closeRetainedBackBuffer()
+        val info =
+            org.jetbrains.skia.ImageInfo(
+                paintSize.width,
+                paintSize.height,
+                org.jetbrains.skia.ColorType.RGBA_8888,
+                org.jetbrains.skia.ColorAlphaType.PREMUL,
+                org.jetbrains.skia.ColorSpace.sRGB,
+            )
+        return Surface
+            .makeRenderTarget(
+                ctx,
+                false,
+                info,
+                0,
+                org.jetbrains.skia.SurfaceOrigin.BOTTOM_LEFT,
+                lcdSurfaceProps(fullyTransparent),
+            ).also { retainedBackBuffer = it }
+    }
+
+    private fun closeRetainedBackBuffer() {
+        retainedBackBuffer?.close()
+        retainedBackBuffer = null
+    }
+
+    /** Copies the whole [retained] frame into the back buffer it is presented from. */
+    private fun blitRetainedBackBuffer(
+        retained: Surface,
+        target: Surface,
+    ) {
+        org.jetbrains.skia.Paint().use { paint ->
+            paint.blendMode = org.jetbrains.skia.BlendMode.SRC
+            retained.draw(target.canvas, 0, 0, paint)
+        }
     }
 
     /**
@@ -2580,6 +2674,7 @@ internal class TaoComposeSceneHostLinux(
             return existing
         }
         cachedSurface?.close()
+        closeRetainedBackBuffer()
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
@@ -3516,6 +3611,7 @@ internal class TaoComposeSceneHostLinux(
             NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
         }
         cachedSurface?.close()
+        closeRetainedBackBuffer()
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
@@ -3544,6 +3640,13 @@ internal class TaoComposeSceneHostLinux(
         /** Present intervals outside this range are not one display frame (a stall, a pause). */
         const val MIN_PRESENT_PERIOD_NS = 4_000_000L
         const val MAX_PRESENT_PERIOD_NS = 40_000_000L
+
+        /**
+         * Eligible frames in a row with a buffer age of 0 after which the
+         * driver is taken never to know it (#755). A resize or a new surface
+         * gives a few; a driver that never tracks it, every one.
+         */
+        const val RETAINED_AFTER_ZERO_AGE_FRAMES = 30
 
         /** Weight of the running average of the present period. */
         const val PERIOD_SMOOTHING = 8L
