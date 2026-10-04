@@ -389,6 +389,8 @@ internal class TaoSceneTestScope(
          */
         cullRect: Rect? = null,
     ): Picture {
+        lastFrameDamage = null
+        lastFullFrameReason = null
         timeNanos += deltaMillis * NANOS_PER_MILLI
         // Release virtual-clock timers (delay / withTimeout) due at the new
         // time BEFORE pumping, so their continuations run in this frame.
@@ -409,8 +411,21 @@ internal class TaoSceneTestScope(
             heightPx = height,
             nanoTime = timeNanos,
             cullRect = cullRect ?: Rect.makeWH(width.toFloat(), height.toFloat()),
+            beforeDraw = {
+                // What the host's partial redraw asks between layout and draw (#755).
+                lastFrameDamage = sceneBundle.frameDamage(width, height)
+                lastFullFrameReason = sceneBundle.fullFrameReason
+            },
         ).also { lastPicture = it }
     }
+
+    /** The damage the last [frame] reported to the partial redraw (#755); `null` = unknown. */
+    var lastFrameDamage: androidx.compose.ui.unit.IntRect? = null
+        private set
+
+    /** Why [lastFrameDamage] is `null` — see [TaoSceneBundle.fullFrameReason]. */
+    var lastFullFrameReason: String? = null
+        private set
 
     /**
      * Renders frames until the scene stops self-invalidating (animations

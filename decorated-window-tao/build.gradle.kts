@@ -19,7 +19,14 @@ val publishVersion =
         ?.removePrefix("refs/tags/v")
         ?: "1.0.0"
 
+// Compile-time stand-in for the class the Nucleus plugin generates into
+// Compose's ui-desktop jar for partial redraw (#755, LayerDamageTransform).
+// compileOnly and never packaged: at run time the class comes from the
+// patched jar, or is absent and the redraw stays full-frame.
+val composeStubs: SourceSet by sourceSets.creating
+
 dependencies {
+    compileOnly(composeStubs.output)
     api(project(":decorated-window-core"))
     implementation(project(":core-runtime"))
     // Compose `Modifier.keepScreenOn()` is a no-op on desktop unless the

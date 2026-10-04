@@ -147,6 +147,12 @@
 -dontwarn dev.nucleusframework.**
 -dontnote dev.nucleusframework.**
 
+# Partial redraw (#755): `decorated-window-tao` reads layer versions through
+# `NucleusLayerDamage`, a class the Nucleus plugin generates into Compose's
+# ui-desktop jar. Opted out of (`-Pnucleus.tao.partialRedraw.patch=false`),
+# the class is absent and the runtime falls back to full repaints.
+-dontwarn androidx.compose.ui.node.NucleusLayerDamage
+
 # ── Nucleus JNI bridges ─────────────────────────────────────────────
 # Native entry points are resolved by symbol name (Java_<pkg>_<class>_<method>),
 # so renaming a class or a method that declares `native` breaks the lookup at the

@@ -357,6 +357,37 @@ internal class TaoComposeSceneHostLinux(
      */
     private var foreignGlInterop = false
 
+    /** Partial redraw (#755): damage of the frames last presented to the attachment. */
+    private val damageHistory = DamageHistory()
+
+    /** The attachment [damageHistory] describes; another one starts it over. */
+    private var damageHistoryHandle = 0L
+
+    /**
+     * When the previous frame presented nothing (#755), the earliest time the
+     * next may render — the pacing its swap would otherwise have given. 0 = none.
+     */
+    private var idleFrameDeadlineNs = 0L
+
+    /** The display's frame period, as measured between back-to-back swaps. */
+    @Volatile
+    private var presentPeriodNs = DEFAULT_PRESENT_PERIOD_NS
+
+    /** When the swap thread last finished presenting. */
+    private var lastSwapDoneNs = 0L
+
+    /** [partialRedrawFrameKey] of the previous frame. */
+    private var lastPartialFrameKey = 0L
+
+    /** Alternates the `nucleus.tao.partialRedraw.debug` tint. */
+    private var partialDebugFrame = 0
+
+    /** `nucleus.tao.partialRedraw.debug`: repaint statistics, logged every few seconds. */
+    private val partialStats = PartialRedrawStats()
+
+    /** Last reason logged by [logFullFrameReason]. */
+    private var lastFullFrameReason: String? = ""
+
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
@@ -2052,8 +2083,9 @@ internal class TaoComposeSceneHostLinux(
         // back-pressure below already throttles an occluded/minimised window —
         // but this also covers the app-synthesised minimize (Wayland reports no
         // iconified state). redrawPending is already cleared above, so restore's
-        // requestRedraw re-arms cleanly.
-        if (window.isMinimized) return
+        // requestRedraw re-arms cleanly. A frame following one that presented
+        // nothing waits for the display's rhythm (#755).
+        if (window.isMinimized || (!inFrame && heldByIdleFramePacing())) return
 
         // Wait for the previous frame's `eglSwapBuffers` to complete on the
         // swap thread before issuing the next render. This is what gives us
@@ -2170,14 +2202,114 @@ internal class TaoComposeSceneHostLinux(
         val surface = ensurePaintSurface(ctx, paintSize.width, paintSize.height) ?: return
         probeResizeFrame(paintSize)
 
-        // Clear to the resolved title-bar background (pushed by `TitleBar` via
-        // [LocalRequestedClearColor]) so any Compose region without an explicit
-        // background matches the chrome color — aligned with the macOS / Windows
-        // Tao hosts and the AWT backends, instead of showing the desktop through
-        // a transparent clear. The rounded corners are carved back to
-        // transparent by [applyFrameDecoration] below.
-        surface.canvas.clear(clearColorArgbState.value)
-        bundle.render(surface.canvas, now)
+        val frameDamage = drawFrame(ctx, bundle, surface, paintSize, inFrame, now)
+
+        surface.flushAndSubmit(syncCpu = false)
+        closeResizeProbeFrame()
+        NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+        present(frameDamage, paintSize, inFrame)
+
+        // Re-align the content subsurface with GTK's content area AFTER the
+        // swap was requested, so the repositioning (which the native side
+        // applies with an explicit parent commit) lands in the compositor in
+        // the same frame as the newly-sized buffer — offset changes only ever
+        // accompany a size change (maximize/restore/tile collapse the CSD
+        // shadow margins).
+        applyContentOffset()
+        drainPopupRenderers()
+    }
+
+    /**
+     * Hands the frame to the swap thread with its [frameDamage] — unless
+     * nothing changed on screen (#755): an animation off screen or clipped
+     * away, a recomposition that drew nothing new. Presenting that would only
+     * wake the GPU and the compositor for an identical picture; the next frame
+     * is paced by [idleFrameDeadlineNs] instead.
+     */
+    private fun present(
+        frameDamage: IntRect?,
+        paintSize: IntSize,
+        inFrame: Boolean,
+    ) {
+        if (frameDamage != null && frameDamage.isIdle() && !inFrame) {
+            idleFrameDeadlineNs = System.nanoTime() + presentPeriodNs
+            return
+        }
+        damageHistory.push(frameDamage)
+        swapThread?.requestSwap(frameDamage?.let { PartialRedraw.eglRects(it.orAPixel(), paintSize.height) })
+        if (inFrame) awaitInFrameSwap()
+    }
+
+    /**
+     * Clears, draws the scene and decorates the frame into [surface], partially
+     * when it can (#755), and returns the frame's damage — what changed since
+     * the previous present, `null` for everything.
+     */
+    @Suppress("LongParameterList")
+    private fun drawFrame(
+        ctx: DirectContext,
+        bundle: TaoSceneBundle,
+        surface: Surface,
+        paintSize: IntSize,
+        inFrame: Boolean,
+        now: Long,
+    ): IntRect? {
+        // Partial redraw (#755): how old the back buffer is, -1 when this frame
+        // repaints in full whatever changed. Queried before any drawing.
+        val bufferAge = partialRedrawBufferAge(paintSize, inFrame)
+        val frameKey = partialRedrawFrameKey()
+        val canvas = surface.canvas
+        var frameDamage: IntRect? = null
+        var repaint: IntRect? = null
+        var cleared = false
+        // Verifying, the scene is recorded once and that recording is drawn
+        // both here and into the full reference — the same frame, by
+        // construction. A second live draw would not be: layers invalidated
+        // during the first one record their next content in the second.
+        val verifyRecorder = if (PartialRedraw.verify) org.jetbrains.skia.PictureRecorder() else null
+        val sceneCanvas =
+            verifyRecorder?.beginRecording(
+                org.jetbrains.skia.Rect
+                    .makeWH(paintSize.width.toFloat(), paintSize.height.toFloat()),
+            ) ?: canvas
+        bundle.render(sceneCanvas, now) { _ ->
+            // Asked on every frame, partial or not: the tracker compares each
+            // frame with the one before, so it must see them all.
+            val damage = bundle.frameDamage(widthPx, heightPx)
+            frameDamage =
+                if (bufferAge >= 0 && frameKey == lastPartialFrameKey) damage else null
+            // A frame that changed nothing presents nothing (see renderFrame): draw nothing either.
+            repaint =
+                if (frameDamage?.isIdle() == true && !inFrame) {
+                    IntRect.Zero
+                } else {
+                    damageHistory.repaintRegion(frameDamage, bufferAge)
+                }
+            if (PartialRedraw.debug) {
+                logFullFrameReason(bundle, bufferAge, damage, frameKey)
+                partialStats.frame(repaint, widthPx * heightPx, bundle.damageSources)?.let { linuxHostLogger.info(it) }
+            }
+            canvas.save()
+            repaint?.let { canvas.clipRect(it.toSkiaRect()) }
+            // Clear to the resolved title-bar background (pushed by `TitleBar` via
+            // [LocalRequestedClearColor]) so any Compose region without an explicit
+            // background matches the chrome color — aligned with the macOS / Windows
+            // Tao hosts and the AWT backends, instead of showing the desktop through
+            // a transparent clear. The rounded corners are carved back to
+            // transparent by [applyFrameDecoration] below.
+            canvas.clear(clearColorArgbState.value)
+            cleared = true
+        }
+        if (!cleared) {
+            // The frame failed before drawing: present it cleared, as before.
+            canvas.save()
+            canvas.clear(clearColorArgbState.value)
+            frameDamage = null
+        }
+        val verifyPicture = verifyRecorder?.finishRecordingAsPicture()
+        verifyRecorder?.close()
+        verifyPicture?.let { canvas.drawPicture(it) }
+        lastPartialFrameKey = frameKey
         // bundle.render runs composition effects: an embed's WebKit can do
         // GL right here (webkit_web_view_load_uri in update{}, realize on
         // mount) and leave ITS EGL context current on this thread. All the
@@ -2190,22 +2322,153 @@ internal class TaoComposeSceneHostLinux(
             NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
             ctx.resetGLAll()
         }
-        applyFrameDecoration(surface.canvas, paintSize.width, paintSize.height)
+        applyFrameDecoration(canvas, paintSize.width, paintSize.height)
+        repaint?.let { if (PartialRedraw.debugTint) tintRepaint(canvas, it) }
+        canvas.restore()
+        verifyPicture?.let {
+            verifyPartialFrame(ctx, it, surface, repaint)
+            it.close()
+        }
+        return frameDamage
+    }
 
-        surface.flushAndSubmit(syncCpu = false)
-        closeResizeProbeFrame()
-        NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
-        swapThread?.requestSwap()
-        if (inFrame) awaitInFrameSwap()
+    /**
+     * Age of the back buffer for a partial frame (#755), or -1 when this frame
+     * repaints in full: partial redraw off or unsupported by the surface, a
+     * frame rendered inside GTK's `draw` during a resize burst (#444), a buffer
+     * not yet at the window's size, or a foreign GL context sharing the thread
+     * (an embedded WebKit). Must run with the context current, before drawing.
+     */
+    private fun partialRedrawBufferAge(
+        paintSize: IntSize,
+        inFrame: Boolean,
+    ): Int {
+        if (damageHistoryHandle != attachmentHandle) {
+            damageHistory.clear()
+            damageHistoryHandle = attachmentHandle
+        }
+        if (!PartialRedraw.enabled || inFrame || resizeBurstActive || foreignGlInterop) return -1
+        if (paintSize.width != widthPx || paintSize.height != heightPx) return -1
+        return NativeTaoEglBridge.nativeBufferAge(attachmentHandle)
+    }
 
-        // Re-align the content subsurface with GTK's content area AFTER the
-        // swap was requested, so the repositioning (which the native side
-        // applies with an explicit parent commit) lands in the compositor in
-        // the same frame as the newly-sized buffer — offset changes only ever
-        // accompany a size change (maximize/restore/tile collapse the CSD
-        // shadow margins).
-        applyContentOffset()
-        drainPopupRenderers()
+    /**
+     * Everything outside the scene that shapes a frame's pixels: size, clear
+     * colour, the rounded-corner carve and the popup scrims painted over the
+     * content (uniform, so a partial frame re-dims exactly what it repaints).
+     * A frame whose key differs from the previous one repaints in full.
+     */
+    private fun partialRedrawFrameKey(): Long {
+        val roundCorners = cornerRadiusPx > 0 && !window.isMaximized && !window.isFullscreen && !window.isTiled
+        val radius = if (roundCorners) (cornerRadiusPx * scale).roundToInt().coerceAtLeast(1) else 0
+        var key = widthPx.toLong() shl 32 or (heightPx.toLong() and 0xFFFFFFFFL)
+        key = key * 31 + clearColorArgbState.value
+        key = key * 31 + radius
+        key = key * 31 + popupScrims.all().hashCode()
+        return key
+    }
+
+    /**
+     * The previous frame changed nothing on screen and presented nothing
+     * (#755), so no swap paces this one: holds it to the display's rhythm,
+     * re-arming the redraw for when it is due. Returns true when held.
+     */
+    private fun heldByIdleFramePacing(): Boolean {
+        if (idleFrameDeadlineNs != 0L) {
+            val wait = idleFrameDeadlineNs - System.nanoTime()
+            if (wait > 0L) {
+                DelayScheduler.schedule({ requestRedrawCoalesced() }, wait, TimeUnit.NANOSECONDS)
+                return true
+            }
+        }
+        idleFrameDeadlineNs = 0L
+        return false
+    }
+
+    /**
+     * Swap thread, after a present: back-to-back presents are one display
+     * frame apart, which is what an idle frame waits (#755).
+     */
+    private fun notePresented() {
+        val now = System.nanoTime()
+        val interval = now - lastSwapDoneNs
+        lastSwapDoneNs = now
+        if (interval in MIN_PRESENT_PERIOD_NS..MAX_PRESENT_PERIOD_NS) {
+            presentPeriodNs = (presentPeriodNs * (PERIOD_SMOOTHING - 1) + interval) / PERIOD_SMOOTHING
+        }
+    }
+
+    /** `-Dnucleus.tao.partialRedraw.debug=true`: logs why frames repaint in full, when that changes. */
+    private fun logFullFrameReason(
+        bundle: TaoSceneBundle,
+        bufferAge: Int,
+        damage: IntRect?,
+        frameKey: Long,
+    ) {
+        val reason =
+            when {
+                !PartialRedraw.enabled -> "partial redraw disabled"
+                bufferAge < 0 -> "no partial frame on this surface now (unsupported, resizing or foreign GL)"
+                damage == null -> bundle.fullFrameReason
+                frameKey != lastPartialFrameKey -> "size, clear colour, corners or scrims changed"
+                else -> null
+            }
+        if (reason != lastFullFrameReason) {
+            lastFullFrameReason = reason
+            linuxHostLogger.info("Partial redraw: ${reason?.let { "full frames — $it" } ?: "partial frames"}")
+        }
+    }
+
+    /** `-Dnucleus.tao.partialRedraw.debug=true`: tints what this frame repainted. */
+    private fun tintRepaint(
+        canvas: Canvas,
+        repaint: IntRect,
+    ) {
+        val tint = PartialRedraw.DEBUG_TINTS[partialDebugFrame++ and 1]
+        org.jetbrains.skia.Paint().use { paint ->
+            paint.color = tint
+            canvas.drawRect(repaint.toSkiaRect(), paint)
+        }
+    }
+
+    /**
+     * `-Dnucleus.tao.partialRedraw.verify=true`: draws the frame's recording
+     * again, in full, into an offscreen surface and compares it with the
+     * partial frame pixel for pixel — the partial frame is the previous buffer
+     * contents plus [repaint], so any damage the tracker missed shows up as a
+     * difference.
+     */
+    private fun verifyPartialFrame(
+        ctx: DirectContext,
+        scene: org.jetbrains.skia.Picture,
+        surface: Surface,
+        repaint: IntRect?,
+    ) {
+        val width = surface.width
+        val height = surface.height
+        val info =
+            org.jetbrains.skia.ImageInfo
+                .makeN32Premul(width, height)
+        val reference = Surface.makeRenderTarget(ctx, false, info) ?: return
+        try {
+            reference.canvas.clear(clearColorArgbState.value)
+            reference.canvas.drawPicture(scene)
+            applyFrameDecoration(reference.canvas, width, height)
+            val partialPixels =
+                org.jetbrains.skia
+                    .Bitmap()
+                    .apply { allocPixels(info) }
+            val fullPixels =
+                org.jetbrains.skia
+                    .Bitmap()
+                    .apply { allocPixels(info) }
+            if (!surface.readPixels(partialPixels, 0, 0) || !reference.readPixels(fullPixels, 0, 0)) return
+            PartialRedrawVerifier.compare(partialPixels, fullPixels, repaint)
+            partialPixels.close()
+            fullPixels.close()
+        } finally {
+            reference.close()
+        }
     }
 
     /**
@@ -3275,6 +3538,16 @@ internal class TaoComposeSceneHostLinux(
     }
 
     private companion object {
+        /** Frame period assumed until two back-to-back presents measured one (#755). */
+        const val DEFAULT_PRESENT_PERIOD_NS = 16_666_667L
+
+        /** Present intervals outside this range are not one display frame (a stall, a pause). */
+        const val MIN_PRESENT_PERIOD_NS = 4_000_000L
+        const val MAX_PRESENT_PERIOD_NS = 40_000_000L
+
+        /** Weight of the running average of the present period. */
+        const val PERIOD_SMOOTHING = 8L
+
         /** A run of skipped frames is only worth a line past this. */
         private const val FRAME_STALL_TRACE_MILLIS = 100L
 
@@ -3396,9 +3669,19 @@ internal class TaoComposeSceneHostLinux(
             requestedInterval.set(interval)
         }
 
-        /** Called on the GTK main thread after `flushAndSubmit` + release. */
-        fun requestSwap() {
+        /** The pending swap's damage, EGL rectangles (#755); `null` presents the whole buffer. */
+        private var pendingDamage: IntArray? = null
+
+        /**
+         * Called on the GTK main thread after `flushAndSubmit` + release.
+         * [damage] is what changed since the previous present, as EGL
+         * rectangles (bottom-left origin), or `null` for everything.
+         */
+        fun requestSwap(damage: IntArray?) {
             lock.withLock {
+                // Never more than one swap pending (the render gate waits for
+                // it), but if one were, it must not lose the earlier damage.
+                pendingDamage = if (swapPending) null else damage
                 swapPending = true
                 workCond.signal()
             }
@@ -3475,12 +3758,15 @@ internal class TaoComposeSceneHostLinux(
         override fun run() {
             try {
                 while (true) {
+                    var damage: IntArray? = null
                     val doSwap =
                         lock.withLock {
                             while (!shutdown && !swapPending) workCond.await()
                             if (shutdown) return
                             swapPending = false
                             swapping = true
+                            damage = pendingDamage
+                            pendingDamage = null
                             true
                         }
                     if (doSwap) {
@@ -3491,7 +3777,13 @@ internal class TaoComposeSceneHostLinux(
                                 NativeTaoEglBridge.nativeSetSwapInterval(handle, interval)
                                 presentInterval = interval
                             }
-                            NativeTaoEglBridge.nativePresent(handle)
+                            val rects = damage
+                            if (rects != null) {
+                                NativeTaoEglBridge.nativePresentWithDamage(handle, rects, rects.size / 4)
+                            } else {
+                                NativeTaoEglBridge.nativePresent(handle)
+                            }
+                            notePresented()
                         } catch (t: Throwable) {
                             linuxHostLogger.log(java.util.logging.Level.WARNING, "EGL present failed", t)
                         } finally {

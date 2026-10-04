@@ -1,13 +1,22 @@
 package dev.nucleusframework.window.tao
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 
@@ -57,6 +66,32 @@ class TabHoverPreviewTest {
 
         assertEquals(1, tab.thumbnailRequest, "the workspace asked for a picture of its own")
         assertSame(picture, TabHoverPreviewScopeImpl(workspace, requireNotNull(tab.group), tab).thumbnail)
+    }
+
+    @Test
+    @OptIn(ExperimentalComposeUiApi::class)
+    fun `the recorder answers a request with a picture of the body`() {
+        val workspace = TabWorkspace(captureThumbnails = true)
+        val tab = workspace.register("a", "A", groupId = null)
+        val scene =
+            ImageComposeScene(width = 200, height = 100) {
+                TabThumbnailRecorder(tab) { Box(Modifier.fillMaxSize().background(Color.Red)) }
+            }
+        try {
+            scene.render(System.nanoTime())
+            workspace.captureThumbnail("a")
+            // The recorder settles before it captures, on the real clock.
+            val deadline = System.nanoTime() + 5_000_000_000L
+            while (tab.thumbnail == null && System.nanoTime() < deadline) {
+                scene.render(System.nanoTime())
+                Thread.sleep(16)
+            }
+            val picture = assertNotNull(tab.thumbnail, "no picture within 5 s")
+            val pixels = picture.toPixelMap()
+            assertEquals(Color.Red, pixels[pixels.width / 2, pixels.height / 2])
+        } finally {
+            scene.close()
+        }
     }
 
     @Test

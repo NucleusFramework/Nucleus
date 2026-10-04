@@ -13,6 +13,7 @@ import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.PkgSettings
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
+import dev.nucleusframework.desktop.application.internal.transforms.configureLayerDamageTransform
 import dev.nucleusframework.desktop.application.internal.transforms.configureLcdTextDefaultTransform
 import dev.nucleusframework.desktop.application.internal.validation.validateMacBundleName
 import dev.nucleusframework.desktop.application.internal.validation.validatePackageVersions
@@ -96,6 +97,10 @@ internal fun JvmApplicationContext.configureJvmApplication() {
     // LCD / ClearType text on Windows (#875): patch Compose's hardcoded
     // grayscale PlatformDefault at build time — see LcdTextDefaultTransform.
     configureLcdTextDefaultTransform(project)
+
+    // Partial redraw on the Tao backend (#755): give Compose's render layers
+    // the content version the damage tracker reads — see LayerDamageTransform.
+    configureLayerDamageTransform(project)
 
     validatePackageVersions()
     validateMacBundleName()

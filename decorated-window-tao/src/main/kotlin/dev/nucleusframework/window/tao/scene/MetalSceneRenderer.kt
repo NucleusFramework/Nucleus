@@ -51,12 +51,14 @@ internal fun recordSceneToPicture(
      * Skia quick-rejects a picture whose cull rect misses the replay matrix.
      */
     cullRect: Rect = Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()),
+    /** See [TaoSceneBundle.render]. */
+    beforeDraw: ((org.jetbrains.skia.Canvas) -> Unit)? = null,
 ): Picture =
     PictureRecorder().use { recorder ->
         // The cull bounds match the drawable size (physical pixels). The scene is
         // rendered at this size; the clear happens at replay time, not here.
         val canvas = recorder.beginRecording(cullRect)
-        bundle.render(canvas, nanoTime)
+        bundle.render(canvas, nanoTime, beforeDraw)
         // Closing the recorder here frees its native memory deterministically
         // (one recorder per frame — a GC-driven Cleaner would lag far behind);
         // the returned Picture owns its own native ref and survives the close.
