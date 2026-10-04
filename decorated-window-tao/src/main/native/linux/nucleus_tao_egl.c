@@ -1098,8 +1098,6 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
     att->context        = ctx;
     att->surface        = surf;
     egl_resolve_damage_support(edpy, &att->has_buffer_age, &att->swap_with_damage);
-    /* X11: NVIDIA reports a buffer age of 0 there, every frame. */
-    att->preserved = egl_try_preserve(edpy, chosen, surf);
     att->xdisplay       = xdpy;
     att->parent_xid     = xwin;
     att->child_xid      = child_xid;
@@ -1863,6 +1861,23 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeBufferAge(
  * (a zero-rect damage call means "everything" to EGL, which is what the
  * caller wants in that case too).
  */
+/**
+ * EGL_BUFFER_PRESERVED on demand (#755): asked by the Kotlin side once the
+ * buffer age has stayed 0 (NVIDIA on X11), and only on a surface that can
+ * present with damage — a preserved swap may copy the whole surface on every
+ * frame, which only partial redraw repays.
+ */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeTryPreserve(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->swap_with_damage) return JNI_FALSE;
+    if (!att->preserved) att->preserved = egl_try_preserve(att->display, att->config, att->surface);
+    return att->preserved ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativePresentWithDamage(
     JNIEnv *env, jclass clazz, jlong handle, jintArray rects, jint count)

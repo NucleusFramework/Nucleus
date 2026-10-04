@@ -376,6 +376,16 @@ internal class TaoComposeSceneHostLinux(
     /** When the swap thread last finished presenting. */
     private var lastSwapDoneNs = 0L
 
+    /** An idle frame went unpresented since the last present: the next interval is no period. */
+    @Volatile
+    private var idleSincePresent = false
+
+    /** A wake-up for the end of the idle hold is already scheduled. */
+    private var idleWakeScheduled = false
+
+    /** The surface has no partial redraw (no buffer age / swap-with-damage): the tracker is not walked. */
+    private var partialSurfaceUnsupported = false
+
     /**
      * Partial redraw on a driver whose buffer age is always 0 (NVIDIA on
      * X11, #755): the frame is drawn — partially — into this surface, which
@@ -2248,6 +2258,7 @@ internal class TaoComposeSceneHostLinux(
     ) {
         if (frameDamage != null && frameDamage.isIdle() && !inFrame) {
             idleFrameDeadlineNs = System.nanoTime() + presentPeriodNs
+            idleSincePresent = true
             return
         }
         damageHistory.push(frameDamage)
@@ -2289,9 +2300,11 @@ internal class TaoComposeSceneHostLinux(
                     .makeWH(paintSize.width.toFloat(), paintSize.height.toFloat()),
             ) ?: canvas
         bundle.render(sceneCanvas, now) { _ ->
-            // Asked on every frame, partial or not: the tracker compares each
-            // frame with the one before, so it must see them all.
-            val damage = bundle.frameDamage(widthPx, heightPx)
+            // Asked on every frame that could be partial, now or soon: the
+            // tracker compares each frame with the one before, so it must see
+            // them all. Partial redraw off or unsupported, it is not walked.
+            val damage =
+                if (PartialRedraw.enabled && !partialSurfaceUnsupported) bundle.frameDamage(widthPx, heightPx) else null
             frameDamage =
                 if (bufferAge >= 0 && frameKey == lastPartialFrameKey) damage else null
             // A frame that changed nothing presents nothing (see renderFrame): draw nothing either.
@@ -2369,18 +2382,33 @@ internal class TaoComposeSceneHostLinux(
         if (damageHistoryHandle != attachmentHandle) {
             damageHistory.clear()
             damageHistoryHandle = attachmentHandle
+            partialSurfaceUnsupported = false
+            zeroAgeFrames = 0
         }
-        if (!PartialRedraw.enabled || inFrame || resizeBurstActive || foreignGlInterop) return -1
-        if (paintSize.width != widthPx || paintSize.height != heightPx) return -1
+        val eligible =
+            PartialRedraw.enabled &&
+                !partialSurfaceUnsupported &&
+                !inFrame &&
+                !resizeBurstActive &&
+                !foreignGlInterop &&
+                paintSize.width == widthPx &&
+                paintSize.height == heightPx
+        if (!eligible) return -1
         val age = NativeTaoEglBridge.nativeBufferAge(attachmentHandle)
-        if (age < 0) return -1
+        if (age < 0) {
+            partialSurfaceUnsupported = true
+            return -1
+        }
         if (!retainedBackBufferMode) {
             zeroAgeFrames = if (age == 0) zeroAgeFrames + 1 else 0
             if (zeroAgeFrames < RETAINED_AFTER_ZERO_AGE_FRAMES) return age
+            zeroAgeFrames = 0
             // A driver that never knows its back buffer's age (NVIDIA on X11):
-            // keep our own, see [retainedBackBuffer].
-            retainedBackBufferMode = true
+            // a preserved swap if the surface can, else keep our own copy —
+            // see [retainedBackBuffer].
             damageHistory.clear()
+            if (NativeTaoEglBridge.nativeTryPreserve(attachmentHandle)) return 0
+            retainedBackBufferMode = true
         }
         // The retained buffer holds the last frame drawn, unless it is new.
         val retained = retainedBackBuffer
@@ -2471,7 +2499,25 @@ internal class TaoComposeSceneHostLinux(
         if (idleFrameDeadlineNs != 0L) {
             val wait = idleFrameDeadlineNs - System.nanoTime()
             if (wait > 0L) {
-                DelayScheduler.schedule({ requestRedrawCoalesced() }, wait, TimeUnit.NANOSECONDS)
+                // Held like a frame behind a busy swap: the CPU is free, so the
+                // scene's continuations run now rather than a frame late (a
+                // TextureView producer is what makes such a frame idle), within
+                // the same per-frame budget.
+                if (skipDrainBudget > 0) {
+                    skipDrainBudget--
+                    flushingDispatcher.drain()
+                }
+                if (!idleWakeScheduled) {
+                    idleWakeScheduled = true
+                    DelayScheduler.schedule(
+                        {
+                            idleWakeScheduled = false
+                            requestRedrawCoalesced()
+                        },
+                        wait,
+                        TimeUnit.NANOSECONDS,
+                    )
+                }
                 return true
             }
         }
@@ -2487,7 +2533,12 @@ internal class TaoComposeSceneHostLinux(
         val now = System.nanoTime()
         val interval = now - lastSwapDoneNs
         lastSwapDoneNs = now
-        if (interval in MIN_PRESENT_PERIOD_NS..MAX_PRESENT_PERIOD_NS) {
+        // An idle frame in between makes the interval several periods long:
+        // averaging it would stretch every later idle hold (30 fps content on
+        // a 60 Hz panel drifting the period towards 33 ms).
+        val consecutive = !idleSincePresent
+        idleSincePresent = false
+        if (consecutive && interval in MIN_PRESENT_PERIOD_NS..MAX_PRESENT_PERIOD_NS) {
             presentPeriodNs = (presentPeriodNs * (PERIOD_SMOOTHING - 1) + interval) / PERIOD_SMOOTHING
         }
     }

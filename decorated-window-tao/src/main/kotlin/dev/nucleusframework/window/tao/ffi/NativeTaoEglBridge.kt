@@ -158,6 +158,15 @@ internal object NativeTaoEglBridge {
     external fun nativeBufferAge(handle: Long): Int
 
     /**
+     * Asks for `EGL_BUFFER_PRESERVED` on the surface (#755), for a driver
+     * whose buffer age stays 0: [nativeBufferAge] then reports 1. Returns
+     * whether the surface took it — only one with swap-with-damage is asked,
+     * since a preserved swap can cost a full-surface copy per frame.
+     */
+    @JvmStatic
+    external fun nativeTryPreserve(handle: Long): Boolean
+
+    /**
      * Presents like [nativePresent], telling the compositor which part of
      * the buffer changed: [rects] holds [count] `(x, y, w, h)` quadruples in
      * buffer pixels with a **bottom-left** origin (the EGL convention). A
