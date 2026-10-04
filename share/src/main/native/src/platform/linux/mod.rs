@@ -99,17 +99,7 @@ impl LinuxPayload {
         match self {
             LinuxPayload::Path { path, cleanup } => open_path(&parent, path, cleanup, done),
             LinuxPayload::Uri(uri) => open_uri(&parent, uri, done),
-            LinuxPayload::Save { title, items } => {
-                // The dialog stays up for as long as the user wants: never block the caller.
-                std::thread::Builder::new()
-                    .name("nucleus-share".to_owned())
-                    .spawn(move || {
-                        save_bundle(&parent, &title, items);
-                        drop(done);
-                    })
-                    .map(|_| ())
-                    .map_err(Error::Io)
-            }
+            LinuxPayload::Save { title, items } => save_bundle(&parent, &title, items, done),
         }
     }
 }
@@ -148,7 +138,10 @@ fn wait_for_portal_request(request: dbus::Request, cleanup: Option<PathBuf>, don
 }
 
 /// Ask the portal to save the bundle to a folder, then write each item there.
-fn save_bundle(parent: &str, title: &str, items: Vec<SaveItem>) {
+///
+/// The request is made on the caller's thread, so a missing portal falls back to
+/// `xdg-open` and reports its failure; only the wait for the dialog is moved off it.
+fn save_bundle(parent: &str, title: &str, items: Vec<SaveItem>, done: Completion) -> Result<()> {
     let names = items
         .iter()
         .map(|item| {
@@ -158,35 +151,46 @@ fn save_bundle(parent: &str, title: &str, items: Vec<SaveItem>) {
         })
         .collect::<Vec<_>>();
 
-    match dbus::save_files(parent, title, &names) {
-        // A failed wait means the dialog is gone without an answer: nothing to save.
-        Ok(request) => {
+    let request = match dbus::save_files(parent, title, &names) {
+        Ok(request) => request,
+        // Err means no d-bus portal, so just open the first item with `xdg-open` instead.
+        Err(_) => return open_first_with_xdg(&items),
+    };
+    // The dialog stays up for as long as the user wants: never block the caller.
+    std::thread::Builder::new()
+        .name("nucleus-share".to_owned())
+        .spawn(move || {
+            // A failed wait means the dialog is gone without an answer: nothing to save.
             if let Ok(dests) = request.wait_for_files() {
                 for (dest, item) in pair_destinations(&items, dests) {
                     let _ = item.write_to(&dest);
                 }
             }
+            drop(done);
+        })
+        .map(|_| ())
+        .map_err(Error::Io)
+}
+
+/// Opens the bundle's first text, else its first file, with `xdg-open`.
+fn open_first_with_xdg(items: &[SaveItem]) -> Result<()> {
+    if let Some(text) = items.iter().find_map(|item| match &item.source {
+        SaveSource::Text(text) => Some(text),
+        SaveSource::File(_) => None,
+    }) {
+        let path = write_temp_text_file(text)?;
+        let result = open_with_xdg(path.clone().into_os_string());
+        if result.is_err() {
+            remove_temp_file(&path);
         }
-        // Err means no d-bus portal, so just open the first item with `xdg-open` instead.
-        Err(_) => {
-            let arg = items
-                .iter()
-                .find_map(|item| match &item.source {
-                    SaveSource::Text(text) => {
-                        write_temp_text_file(text).ok().map(PathBuf::into_os_string)
-                    }
-                    SaveSource::File(_) => None,
-                })
-                .or_else(|| {
-                    items.iter().find_map(|item| match &item.source {
-                        SaveSource::File(path) => Some(path.clone().into_os_string()),
-                        SaveSource::Text(_) => None,
-                    })
-                });
-            if let Some(arg) = arg {
-                let _ = open_with_xdg(arg);
-            }
-        }
+        return result;
+    }
+    match items.iter().find_map(|item| match &item.source {
+        SaveSource::File(path) => Some(path),
+        SaveSource::Text(_) => None,
+    }) {
+        Some(path) => open_with_xdg(path.clone().into_os_string()),
+        None => Err(Error::NoHandler),
     }
 }
 
@@ -282,32 +286,47 @@ fn dialog_title(options: &ShareOptions) -> String {
 }
 
 /// Best-effort portal parent when the caller gave none: the active X11 window, via
-/// `xprop`. Wayland windows cannot be named this way — pass Tao's `xdgPortalParent`.
+/// `xprop`, if it is one of ours. Wayland windows cannot be named this way — pass Tao's
+/// `xdgPortalParent`.
 fn active_x11_parent() -> String {
     // `xprop` needs a reachable X server (real X11, or XWayland under Wayland).
     if std::env::var_os("DISPLAY").is_none() {
         return String::new();
     }
     active_x11_window()
+        // Under a Wayland session the active X11 window belongs to whichever XWayland
+        // client last had focus, never to a native Wayland app: no parent beats theirs.
+        .filter(|&xid| x11_window_pid(xid) == Some(std::process::id()))
         .map(|xid| format!("x11:{xid:x}"))
         .unwrap_or_default()
 }
 
 /// Returns the current X11 window ID (`_NET_ACTIVE_WINDOW`) via xprop.
 fn active_x11_window() -> Option<u64> {
+    // "_NET_ACTIVE_WINDOW" is a property formatted as a hex number, like "... 0x2600011"
+    let text = xprop(&["-root", "-notype", "_NET_ACTIVE_WINDOW"])?;
+    let hex = text.rsplit("0x").next()?.trim();
+    u64::from_str_radix(hex, 16).ok().filter(|&id| id != 0)
+}
+
+/// Returns the `_NET_WM_PID` of an X11 window via xprop.
+fn x11_window_pid(xid: u64) -> Option<u32> {
+    // Formatted as "_NET_WM_PID = 12345"
+    let text = xprop(&["-id", &format!("0x{xid:x}"), "-notype", "_NET_WM_PID"])?;
+    text.rsplit('=').next()?.trim().parse().ok()
+}
+
+fn xprop(args: &[&str]) -> Option<String> {
     let output = Command::new("xprop")
-        .args(["-root", "-notype", "_NET_ACTIVE_WINDOW"])
+        .args(args)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
         .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    // "_NET_ACTIVE_WINDOW" is a property formatted as a hex number, like "... 0x2600011"
-    let text = String::from_utf8_lossy(&output.stdout);
-    let hex = text.rsplit("0x").next()?.trim();
-    u64::from_str_radix(hex, 16).ok().filter(|&id| id != 0)
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Resolve a shared file to a tuple of `(suggested name, readable path)`.

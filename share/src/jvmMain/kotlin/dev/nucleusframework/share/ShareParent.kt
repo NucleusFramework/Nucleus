@@ -9,7 +9,10 @@ package dev.nucleusframework.share
  * — or, from `nucleus-application`, `NucleusWindow.share`, which resolves all of this.
  */
 public sealed interface ShareParent {
-    /** The app's frontmost window (on Linux, the active X11 window, if any). */
+    /**
+     * The app's frontmost window. On Linux, the active X11 window when it is one of the
+     * app's own, otherwise none: a native Wayland window can only be named through its export.
+     */
     public data object Auto : ShareParent
 
     /** A Windows `HWND`; a child window resolves to its top-level window. */
