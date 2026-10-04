@@ -36,10 +36,10 @@ pub(super) fn open_uri(parent: &str, uri: &str, ask: bool) -> io::Result<Request
     Connection::session()?.open_uri(parent, uri, ask)
 }
 
-/// Show a save file dialog and returns the chosen destination paths.
+/// Show a save files dialog; [Request::wait_for_files] returns the chosen destinations.
 ///
-/// The returned set will be empty if the user canceled the dialog.
-pub(super) fn save_files(parent: &str, title: &str, names: &[Vec<u8>]) -> io::Result<Vec<PathBuf>> {
+/// An error means the portal could not be asked, never that the user is still choosing.
+pub(super) fn save_files(parent: &str, title: &str, names: &[Vec<u8>]) -> io::Result<Request> {
     Connection::session()?.save_files(parent, title, names)
 }
 
@@ -54,8 +54,16 @@ pub(super) struct Request {
 }
 
 impl Request {
+    /// Blocks until the portal answers, i.e. until its dialog is gone.
     pub(super) fn wait(mut self) -> io::Result<()> {
-        self.connection.await_response(&self.path)
+        self.connection.await_response(&self.path).map(|_| ())
+    }
+
+    /// Blocks until the save files dialog is gone and returns the chosen destination
+    /// paths, empty if the user cancelled it.
+    pub(super) fn wait_for_files(mut self) -> io::Result<Vec<PathBuf>> {
+        let response = self.connection.await_response(&self.path)?;
+        Ok(parse_save_response(response.le, &response.body))
     }
 }
 
@@ -118,7 +126,7 @@ impl Connection {
         Ok(Request { connection: self, path })
     }
 
-    fn save_files(mut self, parent: &str, title: &str, names: &[Vec<u8>]) -> io::Result<Vec<PathBuf>> {
+    fn save_files(mut self, parent: &str, title: &str, names: &[Vec<u8>]) -> io::Result<Request> {
         let mut body = Vec::new();
         put_string(&mut body, parent); // parent window
         put_string(&mut body, title);
@@ -126,20 +134,8 @@ impl Connection {
         let serial = self.next_serial();
         let msg = method_call(serial, DEST, PATH, FILECHOOSER, "SaveFiles", "ssa{sv}", &body, 0);
         self.stream.write_all(&msg)?;
-        let request = self.read_request_handle()?;
-
-        // the dialog stays up only while this connection is open,
-        // so we just pick a randomly long timeout value (5 mins).
-        self.stream.set_read_timeout(Some(Duration::from_secs(300)))?;
-        loop {
-            let m = self.read_message()?;
-            if m.mtype == 4
-                && m.path.as_deref() == Some(request.as_str())
-                && m.member.as_deref() == Some("Response")
-            {
-                return Ok(parse_save_response(m.le, &m.body));
-            }
-        }
+        let path = self.read_request_handle()?;
+        Ok(Request { connection: self, path })
     }
 
     fn next_serial(&mut self) -> u32 {
@@ -205,20 +201,16 @@ impl Connection {
     }
 
     /// Wait for the portal's Response signal to our request.
-    fn await_response(&mut self, request: &str) -> io::Result<()> {
-        // same as above, basically a 5-min timeout
-        self.stream.set_read_timeout(Some(Duration::from_secs(300)))?;
+    ///
+    /// No deadline: the dialog stays up for as long as the user wants, and the portal
+    /// closes it as soon as this connection goes away, so a timeout would dismiss it
+    /// under the user's eyes. The portal always answers once the dialog is gone.
+    fn await_response(&mut self, request: &str) -> io::Result<Msg> {
+        self.stream.set_read_timeout(None)?;
         loop {
-            match self.read_message() {
-                Ok(m)
-                    if m.mtype == 4
-                        && m.path.as_deref() == Some(request)
-                        && m.member.as_deref() == Some("Response") =>
-                {
-                    return Ok(())
-                }
-                Ok(_) => continue,
-                Err(_) => return Ok(()),
+            let m = self.read_message()?;
+            if m.mtype == 4 && m.path.as_deref() == Some(request) && m.member.as_deref() == Some("Response") {
+                return Ok(m);
             }
         }
     }

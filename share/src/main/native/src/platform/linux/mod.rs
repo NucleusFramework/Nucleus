@@ -159,10 +159,11 @@ fn save_bundle(parent: &str, title: &str, items: Vec<SaveItem>) {
         .collect::<Vec<_>>();
 
     match dbus::save_files(parent, title, &names) {
-        Ok(dests) => {
-            if dests.len() == items.len() {
-                for (dest, item) in dests.iter().zip(&items) {
-                    let _ = item.write_to(dest);
+        // A failed wait means the dialog is gone without an answer: nothing to save.
+        Ok(request) => {
+            if let Ok(dests) = request.wait_for_files() {
+                for (dest, item) in pair_destinations(&items, dests) {
+                    let _ = item.write_to(&dest);
                 }
             }
         }
@@ -187,6 +188,37 @@ fn save_bundle(parent: &str, title: &str, items: Vec<SaveItem>) {
             }
         }
     }
+}
+
+/// Pairs each destination the portal chose with the item it was suggested for.
+///
+/// The portal spec returns the destinations in the order of the suggested names, but
+/// Nautilus 50 reverses them, so they are matched on their file name first; whatever
+/// does not match by name (a portal that renamed a file) is paired in order. Nothing is
+/// returned when the counts differ, rather than writing an item under another's name.
+fn pair_destinations(items: &[SaveItem], dests: Vec<PathBuf>) -> Vec<(PathBuf, &SaveItem)> {
+    if dests.len() != items.len() {
+        return Vec::new();
+    }
+    let mut taken = vec![false; items.len()];
+    let mut slots: Vec<Option<usize>> = dests
+        .iter()
+        .map(|dest| {
+            let name = dest.file_name()?.to_str()?;
+            let index = (0..items.len()).find(|&i| !taken[i] && items[i].name == name)?;
+            taken[index] = true;
+            Some(index)
+        })
+        .collect();
+    let mut unmatched = (0..items.len()).filter(|&i| !taken[i]);
+    for slot in slots.iter_mut().filter(|slot| slot.is_none()) {
+        *slot = unmatched.next();
+    }
+    dests
+        .into_iter()
+        .zip(slots)
+        .filter_map(|(dest, slot)| Some((dest, &items[slot?])))
+        .collect()
 }
 
 /// Turn a URL into an `.html` file, which is the only file that all Linux distros
@@ -434,5 +466,53 @@ fn hex_value(value: u8) -> Option<u8> {
         b'a'..=b'f' => Some(value - b'a' + 10),
         b'A'..=b'F' => Some(value - b'A' + 10),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text_item(name: &str) -> SaveItem {
+        SaveItem { name: name.to_owned(), source: SaveSource::Text(name.to_owned()) }
+    }
+
+    fn paired(items: &[SaveItem], dests: &[&str]) -> Vec<(String, String)> {
+        pair_destinations(items, dests.iter().map(PathBuf::from).collect())
+            .into_iter()
+            .map(|(dest, item)| (dest.to_string_lossy().into_owned(), item.name.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn destinations_in_reverse_order_are_paired_by_name() {
+        let items = [text_item("text.txt"), text_item("github.com.html"), text_item("first.txt")];
+        assert_eq!(
+            paired(&items, &["/d/first.txt", "/d/github.com.html", "/d/text.txt"]),
+            [
+                ("/d/first.txt".to_owned(), "first.txt".to_owned()),
+                ("/d/github.com.html".to_owned(), "github.com.html".to_owned()),
+                ("/d/text.txt".to_owned(), "text.txt".to_owned()),
+            ],
+        );
+    }
+
+    #[test]
+    fn renamed_destinations_take_the_unmatched_items_in_order() {
+        let items = [text_item("a.txt"), text_item("b.txt"), text_item("c.txt")];
+        assert_eq!(
+            paired(&items, &["/d/b.txt", "/d/a (1).txt", "/d/c (1).txt"]),
+            [
+                ("/d/b.txt".to_owned(), "b.txt".to_owned()),
+                ("/d/a (1).txt".to_owned(), "a.txt".to_owned()),
+                ("/d/c (1).txt".to_owned(), "c.txt".to_owned()),
+            ],
+        );
+    }
+
+    #[test]
+    fn a_count_mismatch_writes_nothing() {
+        let items = [text_item("a.txt"), text_item("b.txt")];
+        assert!(paired(&items, &["/d/a.txt"]).is_empty());
     }
 }
