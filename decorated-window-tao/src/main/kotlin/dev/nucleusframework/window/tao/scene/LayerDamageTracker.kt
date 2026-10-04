@@ -90,7 +90,7 @@ internal class LayerDamageTracker {
 
     init {
         // Installs the GraphicsLayer hooks before the scene records anything.
-        GraphicsLayerDrawRegistry.available
+        explicitTracking
     }
 
     /**
@@ -137,7 +137,7 @@ internal class LayerDamageTracker {
      * [frameDamage] then makes a full one.
      */
     fun afterDraw(): Boolean {
-        if (!GraphicsLayerDrawRegistry.available || !GraphicsLayerDrawRegistry.drainForeignRecords()) return false
+        if (!explicitTracking || !GraphicsLayerDrawRegistry.drainForeignRecords()) return false
         foreignRecord = true
         return true
     }
@@ -229,7 +229,7 @@ internal class LayerDamageTracker {
         rootCoordinates = root.coordinates
         walk(root, sceneRect, forced = null, drawn = root.isPlaced)
         rootCoordinates = null
-        if (GraphicsLayerDrawRegistry.available) {
+        if (explicitTracking) {
             visitExplicitLayers()
             return
         }
@@ -484,6 +484,13 @@ internal class LayerDamageTracker {
         const val AA_MARGIN_PX = 2
 
         val logger: Logger = Logger.getLogger(LayerDamageTracker::class.java.name)
+
+        /**
+         * Whether explicit layers are followed through the GraphicsLayer hooks:
+         * off with partial redraw, so `-Dnucleus.tao.partialRedraw=false`
+         * leaves no hook installed.
+         */
+        val explicitTracking: Boolean by lazy { PartialRedraw.enabled && GraphicsLayerDrawRegistry.available }
 
         /** Cleared for the process once the patched classes turn out to be missing. */
         @Volatile

@@ -1,7 +1,6 @@
 package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.ui.graphics.layer.NucleusGraphicsLayerHooks
-import java.util.IdentityHashMap
 import java.util.WeakHashMap
 import java.util.function.BiConsumer
 import java.util.function.Consumer
@@ -31,7 +30,12 @@ internal object GraphicsLayerDrawRegistry {
 
     private val lock = Any()
 
-    /** The layers each layer drew in its latest recording. */
+    /**
+     * The layers each layer drew in its latest recording. Weak on both sides:
+     * layers move between parents (a tab's content relocated to another
+     * window), and a parent that never re-records would otherwise keep every
+     * layer it once drew — and their own children — alive.
+     */
     private val children = WeakHashMap<Any, MutableSet<Any>>()
 
     /** Per layer, how many times it recorded outside any other layer's recording. */
@@ -80,7 +84,7 @@ internal object GraphicsLayerDrawRegistry {
         parent: Any?,
     ) {
         if (parent == null) return
-        synchronized(lock) { children.getOrPut(parent) { newIdentitySet() }.add(layer) }
+        synchronized(lock) { children.getOrPut(parent) { newWeakSet() }.add(layer) }
     }
 
     /**
@@ -121,7 +125,8 @@ internal object GraphicsLayerDrawRegistry {
             foreign
         }
 
-    private fun newIdentitySet(): MutableSet<Any> = java.util.Collections.newSetFromMap(IdentityHashMap())
+    /** Graphics layers compare by identity, so a WeakHashMap-backed set is a weak identity set. */
+    private fun newWeakSet(): MutableSet<Any> = java.util.Collections.newSetFromMap(WeakHashMap())
 
     /** Past this many nested records between two drains, the draw is reported foreign. */
     private const val MAX_NESTED_RECORDS = 1 shl 16
