@@ -19,6 +19,7 @@ import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -382,6 +383,8 @@ internal class TaoComposeSceneHost(
         val handle = NativeMetalBridge.nativeAttach(nsView)
         require(handle != 0L) { "Failed to attach CAMetalLayer to NSView" }
         attachmentHandle = handle
+        // The partial-redraw oracle reads the presented drawables back (#755).
+        if (PartialRedraw.verify) NativeMetalBridge.nativeSetFramebufferOnly(handle, false)
 
         // #416: keep NSWindow non-opaque and layers clear after attach.
         // tao already set opaque=false at builder time; our background / glass
@@ -759,6 +762,18 @@ internal class TaoComposeSceneHost(
      */
     @Volatile
     private var presentedInDispatch: Boolean = false
+
+    /** Partial redraw (#755): what each drawable has missed, owned by the render thread. */
+    private val drawableDamage = MetalDrawableDamage()
+
+    /** [partialRedrawFrameKey] of the previous recorded frame. */
+    private var lastPartialFrameKey = 0L
+
+    /** `nucleus.tao.partialRedraw.debug`: repaint statistics, logged every few seconds. */
+    private val partialStats = PartialRedrawStats()
+
+    /** Last reason logged by [logFullFrameReason]. */
+    private var lastFullFrameReason: String? = ""
 
     /**
      * Reclaims the per-size GPU scratch a live resize mints, while the sizes are
@@ -1773,10 +1788,9 @@ internal class TaoComposeSceneHost(
         // Clear to the current themed fallback color, not hard-coded white, so
         // fullscreen/title-bar animation gaps don't flash. The clear itself runs
         // at replay time on the recorded surface.
-        val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
         val frameW = widthPx
         val frameH = heightPx
-        val mainPicture = recordSceneToPicture(bundle, frameW, frameH)
+        val (mainPicture, frameDamage, mainClear) = recordMainScene(bundle, frameW, frameH)
         val popupSurfaces = recordPopupSurfaces()
         // Drain Compose's async work (sendFrame continuations, recomposer steps)
         // synchronously so their state writes happen now and trigger invalidate →
@@ -1790,26 +1804,20 @@ internal class TaoComposeSceneHost(
         presentedInDispatch = false
         withContext(renderDispatcher) {
             try {
-                if (!skipMain) {
-                    mainPresented =
-                        replayPictureToFrame(handle, ctx, mainPicture, mainClear) { h, d ->
-                            if (needsTransaction) {
-                                // nativePresentWithInterop hops to the main queue
-                                // internally for the CATransaction + AppKit mutations;
-                                // the Runnable below therefore runs on the main thread.
-                                NativeMetalBridge.nativePresentWithInterop(
-                                    h,
-                                    d,
-                                    Runnable {
-                                        tx.performTransaction()
-                                        if (!tx.isInteropActive) rendererIsInteropActive = false
-                                    },
-                                )
-                            } else {
-                                NativeMetalBridge.nativePresent(h, d)
-                            }
-                        }
-                }
+                mainPresented =
+                    replayMainFrame(
+                        handle,
+                        ctx,
+                        mainPicture,
+                        mainClear,
+                        frameW,
+                        frameH,
+                        frameDamage,
+                        skipMain,
+                        tx,
+                        needsTransaction,
+                    )
+                if (PartialRedraw.debug && !skipMain) logPartialStats(bundle, frameW, frameH)
             } finally {
                 mainPicture.close()
             }
@@ -1873,6 +1881,148 @@ internal class TaoComposeSceneHost(
     }
 
     /**
+     * Render thread: replays the window's frame through [drawableDamage] and
+     * presents it, with [tx]'s AppKit mutations when [needsTransaction]. A
+     * [skipped] frame (its same-turn present is already on screen, see
+     * [presentedInDispatch]) is not replayed. Returns whether it presented.
+     */
+    @Suppress("LongParameterList")
+    private fun replayMainFrame(
+        handle: Long,
+        ctx: DirectContext,
+        picture: org.jetbrains.skia.Picture,
+        clearColor: Int,
+        frameW: Int,
+        frameH: Int,
+        frameDamage: IntRect?,
+        skipped: Boolean,
+        tx: TaoInteropTransaction,
+        needsTransaction: Boolean,
+    ): Boolean {
+        if (skipped) {
+            // The frame on screen is the same-turn one, not this recording.
+            drawableDamage.invalidate()
+            return false
+        }
+        // AppKit mutations ride on the present: never skip it then.
+        return drawableDamage.replay(
+            handle,
+            ctx,
+            picture,
+            clearColor,
+            frameW,
+            frameH,
+            frameDamage,
+            mustPresent = needsTransaction,
+        ) { h, d ->
+            if (needsTransaction) {
+                // nativePresentWithInterop hops to the main queue
+                // internally for the CATransaction + AppKit mutations;
+                // the Runnable below therefore runs on the main thread.
+                NativeMetalBridge.nativePresentWithInterop(
+                    h,
+                    d,
+                    Runnable {
+                        tx.performTransaction()
+                        if (!tx.isInteropActive) rendererIsInteropActive = false
+                    },
+                )
+            } else {
+                NativeMetalBridge.nativePresent(h, d)
+            }
+        }
+    }
+
+    /**
+     * Records the window's scene and returns it with the frame's damage —
+     * what changed since the previous frame, `null` for everything (#755).
+     */
+    private fun recordMainScene(
+        bundle: TaoSceneBundle,
+        frameW: Int,
+        frameH: Int,
+    ): RecordedMainScene {
+        var frameDamage: IntRect? = null
+        var clearColor: Int? = null
+        val picture =
+            recordSceneToPicture(bundle, frameW, frameH) {
+                // Read once the scene has composed: the TitleBar sets the clear
+                // colour and a dialog its scrim during composition, and the key
+                // must describe the colour this frame is cleared with.
+                val clear = mainClearColor()
+                val frameKey = partialRedrawFrameKey(frameW, frameH, clear)
+                // Asked on every frame, partial or not: the tracker compares
+                // each frame with the one before, so it must see them all.
+                // Partial redraw off, it is not walked.
+                val damage = if (PartialRedraw.enabled) bundle.frameDamage(frameW, frameH) else null
+                frameDamage = if (frameKey == lastPartialFrameKey) damage else null
+                if (PartialRedraw.debug) logFullFrameReason(bundle, damage, frameKey)
+                lastPartialFrameKey = frameKey
+                clearColor = clear
+            }
+        // A frame that failed before drawing is cleared as before, and is full.
+        return RecordedMainScene(picture, frameDamage, clearColor ?: mainClearColor())
+    }
+
+    /** The window scene's clear colour: transparent under glass, else the themed fallback. */
+    private fun mainClearColor(): Int = if (glassBackgroundState.value) 0 else clearColorArgbState.value
+
+    /** [recordMainScene]'s frame: its recording, its damage (`null`: unknown) and its clear colour. */
+    private data class RecordedMainScene(
+        val picture: org.jetbrains.skia.Picture,
+        val damage: IntRect?,
+        val clearColor: Int,
+    )
+
+    /** `-Dnucleus.tao.partialRedraw.debug=true`: counts the frame just replayed (render thread). */
+    private fun logPartialStats(
+        bundle: TaoSceneBundle,
+        frameW: Int,
+        frameH: Int,
+    ) {
+        // No buffer age on macOS: the stats report 1 for every frame.
+        partialStats
+            .frame(drawableDamage.lastRepaint, frameW * frameH, bundle.damageSources, 1)
+            ?.let { macHostLogger.info(it) }
+    }
+
+    /**
+     * Everything outside the scene that shapes a frame's pixels (#755): size,
+     * clear colour (glass included) and the popup scrims painted over the
+     * content (uniform, so a partial frame re-dims exactly what it repaints).
+     * A frame whose key differs from the previous one repaints in full.
+     */
+    private fun partialRedrawFrameKey(
+        frameW: Int,
+        frameH: Int,
+        clearColor: Int,
+    ): Long {
+        var key = frameW.toLong() shl 32 or (frameH.toLong() and 0xFFFFFFFFL)
+        key = key * 31 + clearColor
+        key = key * 31 + popupScrims.all().hashCode()
+        return key
+    }
+
+    /** `-Dnucleus.tao.partialRedraw.debug=true`: logs why frames repaint in full, when that changes. */
+    private fun logFullFrameReason(
+        bundle: TaoSceneBundle,
+        damage: IntRect?,
+        frameKey: Long,
+    ) {
+        val reason =
+            when {
+                !PartialRedraw.enabled -> "partial redraw disabled"
+                damage == null -> bundle.fullFrameReason
+                frameKey != lastPartialFrameKey -> "size, clear colour or scrims changed"
+                else -> null
+            }
+        if (reason != lastFullFrameReason) {
+            lastFullFrameReason = reason
+            macHostLogger.info("Partial redraw: ${reason?.let { "full frames — $it" } ?: "partial frames"}")
+        }
+    }
+
+    /**
      * Renders one frame synchronously (record on main + blocking replay on the
      * render thread). Used only for the initial paint at window build, where the
      * render thread is idle and no interop is active; the steady-state loop uses
@@ -1885,7 +2035,7 @@ internal class TaoComposeSceneHost(
         val bundle = sceneBundle ?: return false
         val ctx = directContext ?: return false
         if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return false
-        val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
+        val mainClear = mainClearColor()
         val frameW = widthPx
         val frameH = heightPx
         val mainPicture = recordSceneToPicture(bundle, frameW, frameH)
@@ -1896,7 +2046,18 @@ internal class TaoComposeSceneHost(
             runOnRenderThread {
                 val ok =
                     try {
-                        replayPictureToFrame(handle, ctx, mainPicture, mainClear)
+                        // Not asked for its damage: a full frame, and so is the next.
+                        drawableDamage.replay(
+                            handle,
+                            ctx,
+                            mainPicture,
+                            mainClear,
+                            frameW,
+                            frameH,
+                            damage = null,
+                            mustPresent = true,
+                            present = NativeMetalBridge::nativePresent,
+                        )
                     } finally {
                         mainPicture.close()
                     }
@@ -2152,3 +2313,7 @@ private const val IME_DOCUMENT_WINDOW_UTF16 = 128
 
 /** `TaoNativeViewHost.dispatchPointerToNative` type code for a Press. */
 private const val NATIVE_POINTER_PRESS = 1
+
+private val macHostLogger: java.util.logging.Logger =
+    java.util.logging.Logger
+        .getLogger(TaoComposeSceneHost::class.java.name)

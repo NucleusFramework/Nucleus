@@ -331,6 +331,22 @@ internal object NativeMetalBridge {
     )
 
     /**
+     * Partial redraw (#755): the buffer behind an acquired drawable, as
+     * `(IOSurfaceID shl 1) or lost` — `lost` set when its IOSurface was purged
+     * (contents discarded) since it was last drawn — or -1 when the drawable
+     * has no IOSurface. Only reads the purgeable state.
+     */
+    @JvmStatic
+    external fun nativeDrawableBufferState(drawablePtr: Long): Long
+
+    /** `CAMetalLayer.framebufferOnly`; off only for the partial-redraw oracle, which reads drawables back. */
+    @JvmStatic
+    external fun nativeSetFramebufferOnly(
+        handle: Long,
+        flag: Boolean,
+    )
+
+    /**
      * Toggles `CAMetalLayer.presentsWithTransaction`. When `true`, the layer
      * defers its surface swap so it can be committed atomically inside the
      * enclosing `CATransaction` along with sibling AppKit mutations (subview
