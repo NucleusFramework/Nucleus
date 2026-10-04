@@ -201,6 +201,8 @@ pub(crate) fn run_event_loop_blocking() {
         if force_x11 && std::env::var_os("GDK_BACKEND").is_none() {
             std::env::set_var("GDK_BACKEND", "x11");
         }
+        // Before `builder.build()`, which initialises GTK and opens its X display.
+        crate::platform::linux::init_xlib_threads();
     }
 
     let mut builder = EventLoopBuilder::<UserEvent>::with_user_event();

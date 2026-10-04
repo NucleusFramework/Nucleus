@@ -50,8 +50,9 @@ import kotlin.test.fail
  * never run inside the native image unless it is also registered there.
  *
  * Two invariants:
- *  1. every `@Test` method of every battery class has a matching battery
- *     case named `"<SimpleClassName>: <method name>"` — and nothing more;
+ *  1. every `@Test` method (not `@Ignore`d) of every battery class has a
+ *     matching battery case named `"<SimpleClassName>: <method name>"` — and
+ *     nothing more;
  *  2. every test class in this module is either part of the battery or
  *     explicitly listed as JVM-only below (with the reason it can't run in
  *     the native image).
@@ -94,6 +95,7 @@ class TaoSceneTestBatteryDriftTest {
             TitleBarHitTestTest::class.java,
             LcdTextTest::class.java,
             WindowPositionerTest::class.java,
+            OuterPositionTest::class.java,
             SatelliteWorkspaceTest::class.java,
             SatelliteDockedGeometryTest::class.java,
             DockLandingRectTest::class.java,
@@ -168,9 +170,11 @@ class TaoSceneTestBatteryDriftTest {
                 "pure finishTaoApplication / exitProcessOnExit mapping (#667); no ComposeScene",
         )
 
+    // An @Ignore'd test is disabled everywhere, so it must not be in the battery either.
     private fun testMethodNames(cls: Class<*>): List<String> =
         cls.declaredMethods
             .filter { it.isAnnotationPresent(org.junit.Test::class.java) }
+            .filterNot { it.isAnnotationPresent(org.junit.Ignore::class.java) }
             .map { it.name }
 
     @Test

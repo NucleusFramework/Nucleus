@@ -123,10 +123,29 @@ private class QueueDispatcher :
     @Volatile
     private var nowNanos = 0L
 
+    private val ownerThread: Thread = Thread.currentThread()
+
+    /**
+     * Tasks enqueued from a thread other than the test thread, and which threads they came from.
+     * These run on real time rather than the virtual clock (e.g. a `withTimeout` inside
+     * `FlushCoroutineDispatcher`-wrapped scene code times out on kotlinx's DefaultExecutor), so
+     * they are the first suspect when a scene test is flaky. Reported in failure messages.
+     */
+    val crossThreadDispatches =
+        java.util.concurrent.atomic
+            .AtomicInteger()
+    val crossThreadSources: MutableSet<String> =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet()
+
     override fun dispatch(
         context: CoroutineContext,
         block: Runnable,
     ) {
+        if (Thread.currentThread() !== ownerThread) {
+            crossThreadDispatches.incrementAndGet()
+            crossThreadSources += Thread.currentThread().name
+        }
         queue.add(block)
     }
 
@@ -198,6 +217,9 @@ internal class TaoSceneTestScope(
     private val dispatcher = QueueDispatcher()
     private var timeNanos = 0L
     private var invalidated = false
+
+    /** Times [frameUntilIdle] gave up at its frame cap with the scene still busy. */
+    private var idleCapHits = 0
 
     /** Captured through the same PlatformContext hook the host exposes. */
     private val owners = mutableListOf<SemanticsOwner>()
@@ -418,8 +440,19 @@ internal class TaoSceneTestScope(
             picture = frame()
             quiet = if (busy()) 0 else quiet + 1
         }
+        if (quiet < quietFrames) idleCapHits++
         return picture
     }
+
+    /**
+     * What, if anything, happened outside the virtual clock during this test — for failure
+     * messages of timing-sensitive scene tests, so a flaky CI failure leaves something to go on.
+     */
+    fun timingDiagnostics(): String =
+        "virtualTime=${timeNanos / NANOS_PER_MILLI}ms, " +
+            "crossThreadResumptions=${dispatcher.crossThreadDispatches.get()} " +
+            "from ${dispatcher.crossThreadSources.sorted()}, " +
+            "frameUntilIdleCapHits=$idleCapHits"
 
     // ── Pointer input (wire-format shaped, host dispatch mirrored) ──────────
 
