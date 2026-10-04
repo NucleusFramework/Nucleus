@@ -380,6 +380,12 @@ internal class TaoComposeSceneHostLinux(
     @Volatile
     private var idleSincePresent = false
 
+    /** The frame [drawFrame] just drew changed nothing and is not presented (#755). */
+    private var frameIdle = false
+
+    /** The next frame must be presented whole — see [renderFrame]. */
+    private var fullPresentPending = false
+
     /** A wake-up for the end of the idle hold is already scheduled. */
     private var idleWakeScheduled = false
 
@@ -2081,6 +2087,29 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
+     * The start of [renderFrame]: opens its redraw gate, notes a redraw
+     * the scene did not ask for, and returns true when this frame is not drawn
+     * now — the window minimized, or held after an idle frame.
+     */
+    private fun frameDeferred(inFrame: Boolean): Boolean {
+        val askedByScene = redrawPending.getAndSet(false)
+        // A redraw the scene did not ask for comes from the OS — an expose, a
+        // map, a restore — and may mean the window lost its pixels (X11 with
+        // no compositor). Whatever the damage, the next frame is presented in
+        // full (#755); latched, so a frame deferred behind a busy swap keeps it.
+        if (!askedByScene && !inFrame) fullPresentPending = true
+
+        // Minimized: skip before the frame-clock tick so animations park and
+        // the loop goes idle. Belt-and-suspenders here — the swap-in-flight
+        // back-pressure below already throttles an occluded/minimised window —
+        // but this also covers the app-synthesised minimize (Wayland reports no
+        // iconified state). redrawPending is already cleared above, so restore's
+        // requestRedraw re-arms cleanly. A frame following one that presented
+        // nothing waits for the display's rhythm (#755).
+        return window.isMinimized || (!inFrame && !fullPresentPending && heldByIdleFramePacing())
+    }
+
+    /**
      * In-frame only (#444): the swap thread's `eglSwapBuffers` (interval 0 for
      * the burst, so no frame-callback wait) attaches and commits the buffer;
      * in sync mode the compositor caches it until the parent commits — which
@@ -2101,16 +2130,7 @@ internal class TaoComposeSceneHostLinux(
         // Resetting *after* the early-return below would leave the gate
         // armed permanently if we skip this frame, and Compose would never
         // be able to schedule another redraw — i.e. the app would freeze.
-        redrawPending.set(false)
-
-        // Minimized: skip before the frame-clock tick so animations park and
-        // the loop goes idle. Belt-and-suspenders here — the swap-in-flight
-        // back-pressure below already throttles an occluded/minimised window —
-        // but this also covers the app-synthesised minimize (Wayland reports no
-        // iconified state). redrawPending is already cleared above, so restore's
-        // requestRedraw re-arms cleanly. A frame following one that presented
-        // nothing waits for the display's rhythm (#755).
-        if (window.isMinimized || (!inFrame && heldByIdleFramePacing())) return
+        if (frameDeferred(inFrame)) return
 
         // Wait for the previous frame's `eglSwapBuffers` to complete on the
         // swap thread before issuing the next render. This is what gives us
@@ -2256,11 +2276,12 @@ internal class TaoComposeSceneHostLinux(
         paintSize: IntSize,
         inFrame: Boolean,
     ) {
-        if (frameDamage != null && frameDamage.isIdle() && !inFrame) {
+        if (frameIdle) {
             idleFrameDeadlineNs = System.nanoTime() + presentPeriodNs
             idleSincePresent = true
             return
         }
+        if (frameDamage == null) fullPresentPending = false
         damageHistory.push(frameDamage)
         swapThread?.requestSwap(frameDamage?.let { PartialRedraw.eglRects(it.orAPixel(), paintSize.height) })
         if (inFrame) awaitInFrameSwap()
@@ -2283,12 +2304,15 @@ internal class TaoComposeSceneHostLinux(
         // Partial redraw (#755): how old the back buffer is, -1 when this frame
         // repaints in full whatever changed. Queried before any drawing.
         val bufferAge = partialRedrawBufferAge(paintSize, inFrame)
-        val frameKey = partialRedrawFrameKey()
+        // Read once the scene has composed (in beforeDraw): the TitleBar sets
+        // the clear colour and a dialog its scrim during composition.
+        var frameKey = lastPartialFrameKey
         val retained = retainedBackBufferFor(ctx, paintSize)
         val canvas = retained?.canvas ?: surface.canvas
         var frameDamage: IntRect? = null
         var repaint: IntRect? = null
         var cleared = false
+        frameIdle = false
         // Verifying, the scene is recorded once and that recording is drawn
         // both here and into the full reference — the same frame, by
         // construction. A second live draw would not be: layers invalidated
@@ -2305,15 +2329,13 @@ internal class TaoComposeSceneHostLinux(
             // them all. Partial redraw off or unsupported, it is not walked.
             val damage =
                 if (PartialRedraw.enabled && !partialSurfaceUnsupported) bundle.frameDamage(widthPx, heightPx) else null
+            frameKey = partialRedrawFrameKey()
             frameDamage =
-                if (bufferAge >= 0 && frameKey == lastPartialFrameKey) damage else null
-            // A frame that changed nothing presents nothing (see renderFrame): draw nothing either.
-            repaint =
-                if (frameDamage?.isIdle() == true && !inFrame) {
-                    IntRect.Zero
-                } else {
-                    damageHistory.repaintRegion(frameDamage, bufferAge)
-                }
+                if (bufferAge >= 0 && frameKey == lastPartialFrameKey && !fullPresentPending) damage else null
+            repaint = damageHistory.repaintRegion(frameDamage, bufferAge)
+            // Idle only when the history confirms the buffer needs nothing:
+            // a new surface, an unknown age or a full frame before all repaint.
+            frameIdle = !inFrame && repaint?.isIdle() == true
             if (PartialRedraw.debug) {
                 logFullFrameReason(bundle, bufferAge, damage, frameKey)
                 partialStats
@@ -2507,21 +2529,17 @@ internal class TaoComposeSceneHostLinux(
                     skipDrainBudget--
                     flushingDispatcher.drain()
                 }
+                // One wake-up per hold. Cleared below, on this thread, once the
+                // deadline has passed — never from the scheduler's thread.
                 if (!idleWakeScheduled) {
                     idleWakeScheduled = true
-                    DelayScheduler.schedule(
-                        {
-                            idleWakeScheduled = false
-                            requestRedrawCoalesced()
-                        },
-                        wait,
-                        TimeUnit.NANOSECONDS,
-                    )
+                    DelayScheduler.schedule({ requestRedrawCoalesced() }, wait, TimeUnit.NANOSECONDS)
                 }
                 return true
             }
         }
         idleFrameDeadlineNs = 0L
+        idleWakeScheduled = false
         return false
     }
 

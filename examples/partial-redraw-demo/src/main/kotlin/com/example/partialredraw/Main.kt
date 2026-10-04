@@ -73,6 +73,8 @@ import kotlin.system.exitProcess
  *  - `blink-plain` — the same box without a layer of its own: its change
  *    re-records the layer around it, which is what gets repainted;
  *  - `idle` — the busy window alone, nothing animating;
+ *  - `bare` — a full-window background and a counter with no layer of the
+ *    app's own around them (no Surface, no clip);
  *  - `tour` — a scripted sequence of every kind of change the damage tracker
  *    has to get right (content, placement, transform, alpha, scroll, shadow,
  *    blur, item animations, popups, explicit layers, a caret), run under
@@ -102,6 +104,12 @@ fun main(args: Array<String>) {
                     exitProcess(0)
                 }
             }
+            if (scene == "bare") {
+                // No Surface, no clip, no layer of the app's own: the root's
+                // own layer is all there is.
+                BareToggle()
+                return@DecoratedWindow
+            }
             MaterialTheme {
                 Surface(Modifier.fillMaxSize(), color = Color(0xFFF4F4F6)) {
                     when (scene) {
@@ -111,6 +119,23 @@ fun main(args: Array<String>) {
                 }
             }
         }
+    }
+}
+
+/** A full-window background and a counter toggling with nothing around them. */
+@Composable
+private fun BareToggle() {
+    var on by remember { mutableStateOf(false) }
+    var count by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(300)
+            on = !on
+            count++
+        }
+    }
+    Box(Modifier.fillMaxSize().background(if (on) Color(0xFF203040) else Color(0xFF402030))) {
+        Text("$count", color = Color.White, fontSize = 40.sp)
     }
 }
 
