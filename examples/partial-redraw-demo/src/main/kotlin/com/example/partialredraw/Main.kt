@@ -73,6 +73,8 @@ import kotlin.system.exitProcess
  *  - `blink-plain` — the same box without a layer of its own: its change
  *    re-records the layer around it, which is what gets repainted;
  *  - `idle` — the busy window alone, nothing animating;
+ *  - `main-tick` — the idle window with a main-thread `delay(40)` loop writing
+ *    the same value to a state: no change on screen, so no frame (#754);
  *  - `bare` — a full-window background and a counter with no layer of the
  *    app's own around them (no Surface, no clip);
  *  - `tour` — a scripted sequence of every kind of change the damage tracker
@@ -118,6 +120,16 @@ fun main(args: Array<String>) {
                     when (scene) {
                         "tour" -> Tour()
                         "torture" -> Torture(windowState)
+                        "main-tick" -> {
+                            var tick by remember { mutableIntStateOf(0) }
+                            LaunchedEffect(Unit) {
+                                while (true) {
+                                    delay(40)
+                                    tick = 0
+                                }
+                            }
+                            BusyWindow(blink = false, isolated = true)
+                        }
                         else -> BusyWindow(blink = scene != "idle", isolated = scene != "blink-plain")
                     }
                 }
