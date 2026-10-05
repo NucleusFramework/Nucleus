@@ -108,6 +108,13 @@ public fun ApplicationScope.DecoratedDialog(
             position = initialPosition,
         )
 
+    // Set once the native owner relationship is in place. On macOS that step
+    // centres the dialog natively, at whatever size its frame has at that
+    // moment; the wrap-content recentre below waits for it so it always has
+    // the last word — run first, it was undone by a native centring of the
+    // creation-size frame (top edge left at the parent's top, #546).
+    val ownerApplied = remember { mutableStateOf(false) }
+
     DecoratedWindow(
         onCloseRequest = {
             // Just delegate: the user callback typically toggles the `showDialog`
@@ -160,6 +167,7 @@ public fun ApplicationScope.DecoratedDialog(
                     owner = parent,
                     autoCenter = autoCenterRequested,
                 )
+                ownerApplied.value = true
                 onDispose { /* native handle destruction restores focus to owner */ }
             }
 
@@ -174,7 +182,11 @@ public fun ApplicationScope.DecoratedDialog(
     val recenterPending = remember { mutableStateOf(autoCenterRequested && !sizeSpecified) }
     LaunchedEffect(windowState.size) {
         if (state.size != windowState.size) state.size = windowState.size
-        if (recenterPending.value) recenterPending.value = !recenterOnParent(parent, windowState, state)
+    }
+    LaunchedEffect(windowState.size, ownerApplied.value) {
+        if (recenterPending.value && ownerApplied.value) {
+            recenterPending.value = !recenterOnParent(parent, windowState, state)
+        }
     }
     LaunchedEffect(windowState.position) {
         val p = windowState.position
