@@ -54,17 +54,21 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     handle: jlong,
     code: jint,
 ) {
-    let guard = match WINDOWS.lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
-    let Some(map) = guard.as_ref() else { return };
-    if let Some(window) = map.get(&(handle as u64)) {
+    {
+        let guard = match WINDOWS.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(window) = guard.as_ref().and_then(|map| map.get(&(handle as u64))) else {
+            return;
+        };
         window.set_cursor_icon(cursor_from_code(code));
-        #[cfg(target_os = "macos")]
-        unsafe {
-            crate::platform::macos::ffi::nucleus_tao_set_cursor_icon(code);
-        }
+    }
+    // Outside the `WINDOWS` lock: off the main thread this `dispatch_sync`s to
+    // it, and a main thread waiting on that lock would never run the block.
+    #[cfg(target_os = "macos")]
+    unsafe {
+        crate::platform::macos::ffi::nucleus_tao_set_cursor_icon(code);
     }
 }
 
