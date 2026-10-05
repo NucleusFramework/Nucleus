@@ -69,35 +69,38 @@ static DEFERRED_QUERY: AtomicBool = AtomicBool::new(false);
 /// the app once and every window gives the same answer. `WM_ENDSESSION` forgets it.
 const ANSWER_REUSE_MS: u64 = 1_000;
 
-/// The last answer (`1` may end, `0` not, `-1` none) and when it was given, in
-/// ms since the first use. Read from the AWT thread too.
-static LAST_ANSWER: AtomicIsize = AtomicIsize::new(-1);
-static LAST_ANSWER_AT: AtomicU64 = AtomicU64::new(0);
+/// `lParam` flag of a critical shutdown: Windows ends the session whatever the
+/// answer and waits for nobody.
+const ENDSESSION_CRITICAL: isize = 0x4000_0000;
+
+/// The last answer with the time it was given, in one word so the AWT thread
+/// never pairs an answer with another one's time: `((ms + 1) << 1) | may_end`
+/// with `ms` since the first use, `0` for none.
+static LAST_ANSWER: AtomicU64 = AtomicU64::new(0);
 
 fn now_ms() -> u64 {
     static EPOCH: OnceLock<Instant> = OnceLock::new();
     EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
-/// The answer given within [ANSWER_REUSE_MS], if any; reusing it extends it.
+/// The answer given less than [ANSWER_REUSE_MS] ago, if any. Reusing it does
+/// not extend it: a stream of queries cannot keep an answer alive.
 pub(crate) fn recent_answer() -> Option<bool> {
-    let answer = LAST_ANSWER.load(Ordering::Relaxed);
-    let now = now_ms();
-    if answer < 0 || now.saturating_sub(LAST_ANSWER_AT.load(Ordering::Relaxed)) >= ANSWER_REUSE_MS {
+    let packed = LAST_ANSWER.load(Ordering::Acquire);
+    if packed == 0 {
         return None;
     }
-    LAST_ANSWER_AT.store(now, Ordering::Relaxed);
-    Some(answer == 1)
+    let given_at = (packed >> 1) - 1;
+    (now_ms().saturating_sub(given_at) < ANSWER_REUSE_MS).then_some(packed & 1 == 1)
 }
 
 fn remember(may_end: bool) -> bool {
-    LAST_ANSWER_AT.store(now_ms(), Ordering::Relaxed);
-    LAST_ANSWER.store(may_end as isize, Ordering::Relaxed);
+    LAST_ANSWER.store(((now_ms() + 1) << 1) | may_end as u64, Ordering::Release);
     may_end
 }
 
 fn forget() {
-    LAST_ANSWER.store(-1, Ordering::Relaxed);
+    LAST_ANSWER.store(0, Ordering::Release);
 }
 
 /// Called on the event-loop thread once the loop exists.
@@ -123,7 +126,12 @@ unsafe extern "system" fn find_thread_target(hwnd: HWND, _: LPARAM) -> BOOL {
 }
 
 /// `WM_QUERYENDSESSION`: `true` when the session may end now.
-pub(crate) fn on_query_end_session(hwnd: isize, _lparam: isize, nested: bool) -> bool {
+pub(crate) fn on_query_end_session(hwnd: isize, lparam: isize, nested: bool) -> bool {
+    if lparam & ENDSESSION_CRITICAL != 0 {
+        // Nothing to ask: the session ends anyway, WM_ENDSESSION tears down.
+        release_block();
+        return remember(true);
+    }
     if let Some(may_end) = recent_answer() {
         return may_end;
     }
@@ -164,11 +172,24 @@ pub(crate) fn on_end_session(_hwnd: isize, ending: bool, nested: bool) {
     forget();
     release_block();
     if !nested {
-        let _ = call_kotlin(|env, cb| {
-            env.call_method(cb, "onEndSession", "(Z)V", &[JValue::Bool(ending.into())])
-                .map(|_| ())
-        });
+        end_session_kotlin(ending);
+    } else if !ending {
+        // A cancel must still reach the app (it resets `isQuitting`): later,
+        // from the loop. An ending session cannot wait for that.
+        let _ = send_user_event(UserEvent::SessionEndCancelled);
     }
+}
+
+/// [UserEvent::SessionEndCancelled]: a cancel that arrived inside a nested pump.
+pub(crate) fn on_deferred_session_end_cancelled() {
+    end_session_kotlin(false);
+}
+
+fn end_session_kotlin(ending: bool) {
+    let _ = call_kotlin(|env, cb| {
+        env.call_method(cb, "onEndSession", "(Z)V", &[JValue::Bool(ending.into())])
+            .map(|_| ())
+    });
 }
 
 fn apply(answer: jint, hwnd: isize) -> bool {

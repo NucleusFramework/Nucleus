@@ -232,6 +232,44 @@ class TaoApplicationExitTest {
     }
 
     @Test
+    fun `a later query of the same session end does not ask again`() {
+        var asked = 0
+        val main =
+            TaoWindow(1).also { w ->
+                w.onCloseRequested {
+                    asked++
+                    TaoApplication.consentToQuit()
+                }
+            }
+        querySession(main) { answer, settle, _ ->
+            assertEquals(TaoApplication.END_SESSION_AGREE, answer)
+            settle()
+            // Past the native reuse window, through another window or AWT.
+            assertEquals(TaoApplication.END_SESSION_AGREE, TaoApplication.queryEndSession(listOf(main)))
+            assertEquals(1, asked)
+        }
+    }
+
+    @Test
+    fun `a query re-entering from a pumping close request turns an agree into a hold`() {
+        var inner = -1
+        val main =
+            TaoWindow(1).also { w ->
+                w.onCloseRequested {
+                    // A native dialog pumps sent messages: another window's query arrives.
+                    inner = TaoApplication.queryEndSession(listOf(w))
+                    TaoApplication.consentToQuit()
+                }
+            }
+        querySession(main) { answer, settle, _ ->
+            assertEquals(TaoApplication.END_SESSION_HOLD, inner)
+            assertEquals(TaoApplication.END_SESSION_HOLD, answer, "Windows already has a FALSE from the app")
+            settle()
+            assertEquals(1, sessionExits, "the app exits by itself, as Windows waits for it")
+        }
+    }
+
+    @Test
     fun `a session end cancelled after a hold lets the quit finish`() {
         // HOLD: a window closes through recomposition — it is gone, so the app exits.
         val doc = TaoWindow(1).also { w -> w.onCloseRequested {} }

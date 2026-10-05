@@ -19,13 +19,18 @@
 //   app's teardown runs on the event-loop thread and exits the process, and
 //   AWT's `ToolkitShutdown` hook waits for this very thread — blocking it here
 //   until the event loop answers would deadlock the exit against it.
+//
+// The WinEvent hook is out of context, i.e. asynchronous: a session query that
+// reaches the toolkit window between its creation and its adoption (a few ms at
+// startup) is still AWT's. The hook is removed once the window is adopted.
 
+use std::ffi::c_void;
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Threading::GetCurrentProcessId;
-use windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
+use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, EnumWindows, GetClassNameW, GetWindowLongPtrW, GetWindowThreadProcessId,
     SendMessageTimeoutW, SendNotifyMessageW, SetWindowLongPtrW, CHILDID_SELF, EVENT_OBJECT_CREATE,
@@ -47,12 +52,17 @@ const QUERY_FORWARD_TIMEOUT_MS: u32 = 30_000;
 /// The subclassed AWT toolkit window and its original window procedure.
 static AWT_HWND: AtomicIsize = AtomicIsize::new(0);
 static AWT_PROC: AtomicIsize = AtomicIsize::new(0);
+/// The WinEvent hook watching for the toolkit window, until it is adopted.
+static CREATE_HOOK: AtomicIsize = AtomicIsize::new(0);
 
 /// Called on the event-loop thread once the loop exists: adopts an AWT toolkit
 /// window already there and watches for one.
 pub(crate) fn install() {
     unsafe {
         let _ = EnumWindows(Some(find_awt_toolkit), LPARAM(0));
+        if AWT_HWND.load(Ordering::Relaxed) != 0 {
+            return;
+        }
         // Out of context: the callback runs on this thread, from its message loop.
         let hook = SetWinEventHook(
             EVENT_OBJECT_CREATE,
@@ -65,6 +75,8 @@ pub(crate) fn install() {
         );
         if hook.is_invalid() {
             eprintln!("[nucleus-tao] SetWinEventHook failed: AWT session-end routing unavailable");
+        } else {
+            CREATE_HOOK.store(hook.0 as isize, Ordering::Relaxed);
         }
     }
 }
@@ -114,6 +126,10 @@ unsafe fn adopt(hwnd: HWND) {
     AWT_PROC.store(original, Ordering::Relaxed);
     AWT_HWND.store(hwnd.0 as isize, Ordering::Relaxed);
     SetWindowLongPtrW(hwnd, GWLP_WNDPROC, awt_proc as usize as isize);
+    let hook = CREATE_HOOK.swap(0, Ordering::Relaxed);
+    if hook != 0 {
+        let _ = UnhookWinEvent(HWINEVENTHOOK(hook as *mut c_void));
+    }
 }
 
 /// Runs on the AWT toolkit thread.
@@ -124,17 +140,18 @@ unsafe extern "system" fn awt_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     let original: WNDPROC = std::mem::transmute(AWT_PROC.load(Ordering::Relaxed));
-    let target = super::end_session::thread_target();
-    let routed = target.is_some();
-    let target = target.unwrap_or_default();
+    let target = match msg {
+        WM_QUERYENDSESSION | WM_ENDSESSION => super::end_session::thread_target(),
+        _ => None,
+    };
     match msg {
-        WM_QUERYENDSESSION if routed => {
+        WM_QUERYENDSESSION if target.is_some() => {
             if let Some(may_end) = super::end_session::recent_answer() {
                 return LRESULT(may_end as isize);
             }
             let mut answer = 0usize;
             let sent = SendMessageTimeoutW(
-                target,
+                target.unwrap_or_default(),
                 msg,
                 wparam,
                 lparam,
@@ -144,8 +161,8 @@ unsafe extern "system" fn awt_proc(
             );
             LRESULT((sent.0 != 0 && answer != 0) as isize)
         }
-        WM_ENDSESSION if routed => {
-            let _ = SendNotifyMessageW(target, msg, wparam, lparam);
+        WM_ENDSESSION if target.is_some() => {
+            let _ = SendNotifyMessageW(target.unwrap_or_default(), msg, wparam, lparam);
             LRESULT(0)
         }
         _ => CallWindowProcW(original, hwnd, msg, wparam, lparam),

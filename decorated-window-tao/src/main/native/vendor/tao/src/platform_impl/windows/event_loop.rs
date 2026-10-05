@@ -1095,8 +1095,8 @@ unsafe fn public_window_callback_inner<T: 'static>(
       if let Some(hook) = crate::platform::windows::END_SESSION_HOOK.get() {
         let runner = &subclass_input.event_loop_runner;
         hook(runner.thread_msg_target().0 as isize, wparam.0 != 0, runner.should_buffer());
+        result = ProcResult::Value(LRESULT(0));
       }
-      result = ProcResult::Value(LRESULT(0));
     }
 
     win32wm::WM_EXITSIZEMOVE => {
@@ -2530,7 +2530,7 @@ unsafe extern "system" fn thread_event_target_callback<T: 'static>(
     win32wm::WM_ENDSESSION => {
       if let Some(hook) = crate::platform::windows::END_SESSION_HOOK.get() {
         let nested = subclass_input.event_loop_runner.should_buffer();
-        hook(window.0 as isize, wparam.0 == TRUE.0 as usize, nested);
+        hook(window.0 as isize, wparam.0 != 0, nested);
         // The embedder owns the session end: a loop destroyed here would stop
         // delivering events to an app that is still finishing its exit.
         return LRESULT(0);

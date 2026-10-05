@@ -1364,10 +1364,14 @@ public class TaoWindow internal constructor(
      * arriving later finds nothing.
      */
     internal fun destroyed() {
+        if (isDestroyed) return
+        isDestroyed = true
         TaoEventLoopWatchdog.unregisterWindow(handle)
         destroyedListeners.forEach { it.invoke() }
         TaoApplication.remove(handle)
     }
+
+    private var isDestroyed = false
 
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */
     public fun onDestroyed(block: () -> Unit) {

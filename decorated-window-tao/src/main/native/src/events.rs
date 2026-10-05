@@ -446,6 +446,10 @@ pub(crate) enum UserEvent {
     // the window procedure (#751), asked again from the loop.
     #[cfg(target_os = "windows")]
     QueryEndSession,
+    // A Windows session-end cancel that arrived inside a nested pump, delivered
+    // from the loop (#751).
+    #[cfg(target_os = "windows")]
+    SessionEndCancelled,
     Exit,
 }
 

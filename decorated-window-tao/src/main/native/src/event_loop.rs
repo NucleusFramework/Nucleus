@@ -931,6 +931,10 @@ pub(crate) fn run_event_loop_blocking() {
                 UserEvent::QueryEndSession => {
                     crate::platform::windows::end_session::on_deferred_query_end_session();
                 }
+                #[cfg(target_os = "windows")]
+                UserEvent::SessionEndCancelled => {
+                    crate::platform::windows::end_session::on_deferred_session_end_cancelled();
+                }
                 UserEvent::Exit => {
                     *control_flow = ControlFlow::Exit;
                 }

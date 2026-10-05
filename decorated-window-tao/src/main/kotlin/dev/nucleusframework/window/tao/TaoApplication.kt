@@ -188,7 +188,16 @@ public object TaoApplication {
      * Quit, logout / restart / shutdown; on Windows logoff / restart / shutdown
      * and Restart Manager closes (#751) — while the windows are being asked to
      * close, and for good once they all did (on Windows, until the session end
-     * is confirmed: a cancelled one resets it). Reset when a window keeps itself
+     * is confirmed: a cancelled one resets it).
+     *
+     * Windows specifics: a close request that keeps its window open refuses
+     * the session end; one that closes it through recomposition makes the app
+     * hold the session (Windows lists it as preventing shutdown until it exits)
+     * — which a Restart Manager close (an installer) reads as a refusal, as it
+     * waits for nobody; a critical shutdown asks no window. Once the session
+     * ends the app is torn down and the process exits from the UI thread, so a
+     * shutdown hook must not wait for work posted to `Dispatchers.Main`. A
+     * close request that throws counts as agreeing. Reset when a window keeps itself
      * open, which cancels the quit. Electron's `before-quit` flag: an
      * `onCloseRequest` that normally hides to the tray checks it to let a real
      * quit through (`if (isQuitting) exitApplication() else hide()`).
@@ -279,24 +288,55 @@ public object TaoApplication {
      * that closed itself during its close request (HOLD's case) stays closed.
      */
     internal fun queryEndSession(open: Collection<TaoWindow> = windows.values): Int {
-        // A quit cancelled inside requestQuit (a synchronous veto) is seen as
-        // `isQuitting == false` once it returns: a refusal, not a hold.
-        if (!quitInFlight) {
-            sessionExit = SessionExit.None
-            requestQuit(open, sessionQuery = true)
+        // Another window's query delivered while a close request pumps messages:
+        // nobody knows the answer yet, so this one holds — and the outer query,
+        // Windows having a FALSE from the app, will not agree either.
+        if (answeringSessionQuery) {
+            heldMeanwhile = true
+            sessionEndHeld = true
+            return END_SESSION_HOLD
         }
-        val answer =
-            when {
-                !isQuitting -> END_SESSION_REFUSE
-                openAppWindows().isEmpty() -> END_SESSION_AGREE
-                else -> {
-                    sessionEndHeld = true
-                    END_SESSION_HOLD
-                }
+        // Agreed already and waiting for WM_ENDSESSION: the same session end, asked
+        // through another window — do not run the close requests a second time.
+        if (sessionExit == SessionExit.Awaiting && isQuitting) return END_SESSION_AGREE
+        answeringSessionQuery = true
+        var answer: Int
+        try {
+            // A quit cancelled inside requestQuit (a synchronous veto) is seen as
+            // `isQuitting == false` once it returns: a refusal, not a hold.
+            if (!quitInFlight) {
+                sessionExit = SessionExit.None
+                requestQuit(open, sessionQuery = true)
             }
+            answer =
+                when {
+                    !isQuitting -> END_SESSION_REFUSE
+                    openAppWindows().isEmpty() -> END_SESSION_AGREE
+                    else -> {
+                        sessionEndHeld = true
+                        END_SESSION_HOLD
+                    }
+                }
+            if (answer == END_SESSION_AGREE && heldMeanwhile) {
+                // A FALSE went out meanwhile: Windows waits for the app to exit by itself.
+                answer = END_SESSION_HOLD
+                sessionEndHeld = true
+                sessionExit = SessionExit.None
+                if (!quitInFlight) quitExit()
+            }
+        } finally {
+            answeringSessionQuery = false
+            heldMeanwhile = false
+        }
         logger.fine { "Windows session-end query answered $answer" }
         return answer
     }
+
+    /** [queryEndSession] is running further up the stack. */
+    private var answeringSessionQuery = false
+
+    /** A query re-entering [queryEndSession] was answered HOLD. */
+    private var heldMeanwhile = false
 
     /**
      * Windows `WM_ENDSESSION` (#751). [ending] `false`: the session end was
@@ -410,6 +450,8 @@ public object TaoApplication {
         sessionEndHeld = false
         sessionTearingDown = false
         sessionExit = SessionExit.None
+        answeringSessionQuery = false
+        heldMeanwhile = false
         releaseSessionEndHold = NativeTaoBridge::nativeReleaseShutdownBlock
         sessionEndTeardown = {}
         sessionEndExit = { exitProcess(0) }
