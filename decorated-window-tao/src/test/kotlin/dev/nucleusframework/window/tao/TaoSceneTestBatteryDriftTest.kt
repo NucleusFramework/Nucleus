@@ -16,6 +16,7 @@ import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
 import dev.nucleusframework.window.tao.scene.LcdTextCaptureTest
 import dev.nucleusframework.window.tao.scene.LcdTextTest
+import dev.nucleusframework.window.tao.scene.PartialRedrawTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
@@ -114,6 +115,7 @@ class TaoSceneTestBatteryDriftTest {
             TransferDragTest::class.java,
             TabWorkspaceTest::class.java,
             TabHoverPreviewTest::class.java,
+            PartialRedrawTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */

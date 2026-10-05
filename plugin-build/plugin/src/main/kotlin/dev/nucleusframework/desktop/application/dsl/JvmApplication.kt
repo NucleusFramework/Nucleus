@@ -71,6 +71,20 @@ abstract class JvmApplication {
      */
     abstract fun nucleusOptimization(fn: Action<NucleusOptimizationSettings>)
 
+    /**
+     * Debug overlays and logs for the `run` task only — see [NucleusDebugSettings].
+     *
+     * ```
+     * debug {
+     *     partialRedraw { tint = true }
+     *     recomposition { enabled = true }
+     * }
+     * ```
+     */
+    abstract val debug: NucleusDebugSettings
+
+    abstract fun debug(fn: Action<NucleusDebugSettings>)
+
     abstract val nativeDistributions: JvmApplicationDistributions
 
     abstract fun nativeDistributions(fn: Action<JvmApplicationDistributions>)

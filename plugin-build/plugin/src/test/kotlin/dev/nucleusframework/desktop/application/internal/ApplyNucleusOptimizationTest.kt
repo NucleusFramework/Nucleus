@@ -26,7 +26,7 @@ class ApplyNucleusOptimizationTest {
         applyNucleusOptimization(app)
         assertEquals(GarbageCollector.SERIAL, app.garbageCollector)
         assertEquals(
-            listOf(OPTIMIZED_XMS, OPTIMIZED_MAX_RAM_PERCENTAGE, OPTIMIZED_IDLE_GC_FLAG),
+            listOf(OPTIMIZED_XMS, OPTIMIZED_MAX_RAM_PERCENTAGE, OPTIMIZED_IDLE_GC_FLAG, OPTIMIZED_PARTIAL_REDRAW_FLAG),
             app.jvmArgs.toList(),
         )
     }
@@ -41,7 +41,7 @@ class ApplyNucleusOptimizationTest {
         applyNucleusOptimization(app)
         assertEquals(GarbageCollector.G1, app.garbageCollector)
         assertEquals(
-            listOf("-Xms64m", "-XX:MaxRAMPercentage=40", OPTIMIZED_IDLE_GC_FLAG),
+            listOf("-Xms64m", "-XX:MaxRAMPercentage=40", OPTIMIZED_IDLE_GC_FLAG, OPTIMIZED_PARTIAL_REDRAW_FLAG),
             app.jvmArgs.toList(),
         )
     }
@@ -63,7 +63,10 @@ class ApplyNucleusOptimizationTest {
         app.nucleusOptimizationSettings.idleGc = false
         applyNucleusOptimization(app)
         assertEquals(GarbageCollector.SERIAL, app.garbageCollector)
-        assertEquals(listOf(OPTIMIZED_XMS, OPTIMIZED_MAX_RAM_PERCENTAGE), app.jvmArgs.toList())
+        assertEquals(
+            listOf(OPTIMIZED_XMS, OPTIMIZED_MAX_RAM_PERCENTAGE, OPTIMIZED_PARTIAL_REDRAW_FLAG),
+            app.jvmArgs.toList(),
+        )
         assertFalse(app.optIdleGc)
         assertTrue(app.optSingleJar)
     }
@@ -90,6 +93,34 @@ class ApplyNucleusOptimizationTest {
         assertFalse(app.optSerialGc)
         assertFalse(app.optCompactHeap)
         assertFalse(app.optSingleJar)
+    }
+
+    @Test
+    fun `partial redraw is off by default`() {
+        val app = applicationData()
+        applyNucleusOptimization(app)
+        assertFalse(app.optPartialRedraw)
+        assertTrue(app.jvmArgs.none { it.startsWith("-D$NUCLEUS_PARTIAL_REDRAW_PROPERTY=") })
+    }
+
+    @Test
+    fun `only partialRedraw sets its runtime flag`() {
+        val app = applicationData()
+        app.nucleusOptimizationSettings.partialRedraw = true
+        applyNucleusOptimization(app)
+        assertEquals(listOf(OPTIMIZED_PARTIAL_REDRAW_FLAG), app.jvmArgs.toList())
+        assertNull(app.garbageCollector)
+        assertFalse(app.optIdleGc)
+    }
+
+    @Test
+    fun `master on partialRedraw off omits its runtime flag`() {
+        val app = applicationData()
+        app.nucleusOptimization = true
+        app.nucleusOptimizationSettings.partialRedraw = false
+        applyNucleusOptimization(app)
+        assertFalse(app.optPartialRedraw)
+        assertTrue(app.jvmArgs.none { it.startsWith("-D$NUCLEUS_PARTIAL_REDRAW_PROPERTY=") })
     }
 
     @Test

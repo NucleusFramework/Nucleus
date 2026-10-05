@@ -1,3 +1,14 @@
+public final class androidx/compose/ui/node/TaoLayerTreeAccess {
+	public static fun children (Landroidx/compose/ui/layout/LayoutInfo;)Ljava/util/List;
+	public static fun contentVersion (Ljava/lang/Object;)I
+	public static fun graphicsContext (Landroidx/compose/ui/layout/LayoutInfo;)Landroidx/compose/ui/graphics/GraphicsContext;
+	public static fun graphicsLayer (Ljava/lang/Object;)Landroidx/compose/ui/graphics/layer/GraphicsLayer;
+	public static fun innerCoordinator (Landroidx/compose/ui/layout/LayoutInfo;)Landroidx/compose/ui/layout/LayoutCoordinates;
+	public static fun outerCoordinator (Landroidx/compose/ui/layout/LayoutInfo;)Landroidx/compose/ui/layout/LayoutCoordinates;
+	public static fun ownedLayer (Landroidx/compose/ui/layout/LayoutCoordinates;)Ljava/lang/Object;
+	public static fun wrapped (Landroidx/compose/ui/layout/LayoutCoordinates;)Landroidx/compose/ui/layout/LayoutCoordinates;
+}
+
 public final class androidx/compose/ui/scene/TaoComposeSceneContextAccess {
 	public static fun localComposeSceneContext ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }

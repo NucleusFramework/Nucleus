@@ -15,6 +15,7 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
 #import <Metal/Metal.h>
+#import <IOSurface/IOSurface.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Carbon/Carbon.h>
 #import <mach/mach_time.h>
@@ -2420,6 +2421,51 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresent(
         [commandBuffer presentDrawable:drawable];
     }
     [commandBuffer commit];
+}
+
+// ── Partial redraw (#755) ────────────────────────────────────────────────
+//
+// The layer recycles a few drawables; a partial frame repaints only what the
+// drawable it gets has missed since it last held a frame, which assumes the
+// recycled drawable kept its pixels. These two calls let the Kotlin side tell
+// the buffers apart and notice the one documented way that assumption breaks.
+
+// Identifies the buffer behind an acquired drawable: (IOSurfaceID << 1) | lost,
+// where `lost` means its IOSurface was purged — contents discarded — since it
+// was last drawn. -1 when the drawable has no IOSurface (always repaint).
+// Read by setting NonVolatile, which returns the previous state: a purged
+// surface stays Empty — and volatile, purgeable again — until someone makes
+// it non-volatile, and Core Animation never does, so a KeepCurrent read
+// reported that buffer lost (repainted in full) on every frame after one
+// purge. The drawable is about to be drawn and presented: non-volatile is
+// the state Core Animation keeps its drawables in anyway.
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDrawableBufferState(
+        JNIEnv *env, jclass clazz, jlong drawablePtr) {
+    (void) env; (void) clazz;
+    if (drawablePtr == 0) return -1;
+    id<CAMetalDrawable> drawable = (__bridge id<CAMetalDrawable>)(void *)(uintptr_t) drawablePtr;
+    IOSurfaceRef surface = drawable.texture.iosurface;
+    if (surface == NULL) return -1;
+    uint32_t oldState = kIOSurfacePurgeableNonVolatile;
+    kern_return_t kr = IOSurfaceSetPurgeable(surface, kIOSurfacePurgeableNonVolatile, &oldState);
+    jlong lost = (kr != KERN_SUCCESS || oldState == kIOSurfacePurgeableEmpty) ? 1 : 0;
+    return ((jlong) IOSurfaceGetID(surface) << 1) | lost;
+}
+
+// CAMetalLayer.framebufferOnly. Off only for the partial-redraw oracle, which
+// reads the presented drawable back.
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetFramebufferOnly(
+        JNIEnv *env, jclass clazz, jlong handle, jboolean flag) {
+    (void) env; (void) clazz;
+    if (handle == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    CAMetalLayer *layer = att->layer;
+    BOOL value = flag == JNI_TRUE;
+    dispatch_block_t apply = ^{ layer.framebufferOnly = value; };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
 }
 
 // ── VSync-paced rendering via CVDisplayLink ──────────────────────────────

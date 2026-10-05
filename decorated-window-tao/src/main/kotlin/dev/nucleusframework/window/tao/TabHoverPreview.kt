@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,11 +32,11 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalGraphicsContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -375,6 +376,10 @@ public fun TabPreview(
  * workspace built with `captureThumbnails` — it sits *above* the relocation
  * anchor, so the path from that anchor down to the content is the same in
  * every window and `rememberSaveable` state still follows a tab across.
+ *
+ * The layers exist only while a picture is taken: one drawn through
+ * `drawLayer` for good would keep the window out of partial redraw (#755),
+ * whose damage tracker cannot tell where such a layer lands on screen.
  */
 @Suppress("FunctionNaming")
 @Composable
@@ -382,27 +387,43 @@ internal fun TabThumbnailRecorder(
     tab: TabEntry,
     content: @Composable () -> Unit,
 ) {
-    val recorded = rememberGraphicsLayer()
-    val reduced = rememberGraphicsLayer()
+    val graphicsContext = LocalGraphicsContext.current
+    var capture by remember { mutableStateOf<GraphicsLayer?>(null) }
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     Box(
         modifier =
             Modifier.fillMaxSize().drawWithContent {
-                recorded.record { this@drawWithContent.drawContent() }
-                drawLayer(recorded)
+                val layer = capture
+                if (layer == null) {
+                    drawContent()
+                } else {
+                    layer.record { this@drawWithContent.drawContent() }
+                    drawLayer(layer)
+                }
             },
     ) {
         content()
     }
-    LaunchedEffect(tab, recorded, reduced, density, layoutDirection) {
+    LaunchedEffect(tab, graphicsContext, density, layoutDirection) {
         snapshotFlow { tab.thumbnailRequest }.collectLatest {
-            // The body has to have drawn once for the layer to hold anything,
-            // and a picture taken the frame a tab arrives catches it mid
-            // animation: one settle, then the readback. `collectLatest`
+            // A picture taken the frame a tab arrives catches it mid
+            // animation: one settle, then the capture. `collectLatest`
             // collapses a burst of requests into the last one.
             delay(ThumbnailSettleMillis)
-            reducedPicture(recorded, reduced, density, layoutDirection)?.let { tab.thumbnail = it }
+            val recorded = graphicsContext.createGraphicsLayer()
+            val reduced = graphicsContext.createGraphicsLayer()
+            try {
+                capture = recorded
+                // The frame after the next one: the body has drawn into the layer.
+                withFrameNanos {}
+                withFrameNanos {}
+                reducedPicture(recorded, reduced, density, layoutDirection)?.let { tab.thumbnail = it }
+            } finally {
+                capture = null
+                graphicsContext.releaseGraphicsLayer(recorded)
+                graphicsContext.releaseGraphicsLayer(reduced)
+            }
         }
     }
 }

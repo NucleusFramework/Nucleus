@@ -13,6 +13,7 @@ import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.PkgSettings
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
+import dev.nucleusframework.desktop.application.internal.transforms.configureLayerDamageTransform
 import dev.nucleusframework.desktop.application.internal.transforms.configureLcdTextDefaultTransform
 import dev.nucleusframework.desktop.application.internal.validation.validateMacBundleName
 import dev.nucleusframework.desktop.application.internal.validation.validatePackageVersions
@@ -97,6 +98,11 @@ internal fun JvmApplicationContext.configureJvmApplication() {
     // grayscale PlatformDefault at build time — see LcdTextDefaultTransform.
     configureLcdTextDefaultTransform(project)
 
+    // Partial redraw on the Tao backend (#755), opt-in through
+    // nucleusOptimization: give Compose's render layers the content version
+    // the damage tracker reads — see LayerDamageTransform.
+    if (app.optPartialRedraw) configureLayerDamageTransform(project)
+
     validatePackageVersions()
     validateMacBundleName()
     val commonTasks = configureCommonJvmDesktopTasks()
@@ -161,6 +167,7 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
             }
             // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
             idleGc.set(project.provider { app.optIdleGc })
+            partialRedraw.set(project.provider { app.optPartialRedraw })
             outputDir.set(appTmpDir.dir("app-properties"))
         }
 
@@ -1311,6 +1318,8 @@ private fun JvmApplicationContext.configureRunTask(
             }
 
             addAll(app.jvmArgs)
+            // debug { } and -Pnucleus.debug: the run task only, never a package
+            addAll(nucleusDebugJvmArgs(app, project.providers.gradleProperty(NUCLEUS_DEBUG_GRADLE_PROPERTY).orNull, project.logger))
             val appResourcesDir = prepareAppResources.get().destinationDir
             add("-D$APP_RESOURCES_DIR=${appResourcesDir.absolutePath}")
 

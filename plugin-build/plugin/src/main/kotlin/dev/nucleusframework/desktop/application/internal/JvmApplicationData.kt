@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.GarbageCollector
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
+import dev.nucleusframework.desktop.application.dsl.NucleusDebugSettings
 import dev.nucleusframework.desktop.application.dsl.NucleusOptimizationSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationBuildTypes
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
@@ -57,6 +58,7 @@ internal open class JvmApplicationData
         var garbageCollector: GarbageCollector? = null
         var nucleusOptimization: Boolean = false
         val nucleusOptimizationSettings: NucleusOptimizationSettings = objects.new()
+        val debug: NucleusDebugSettings = objects.new()
         val nativeDistributions: JvmApplicationDistributions = objects.new()
         val buildTypes: JvmApplicationBuildTypes = objects.new()
         val graalvm: GraalvmSettings = objects.new()

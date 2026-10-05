@@ -93,6 +93,29 @@ internal object NativeTaoGlBridge {
     external fun nativePresent(handle: Long)
 
     /**
+     * Age of the back buffer the next frame renders into (#755): `1` when
+     * the surface keeps the previous frame (`EGL_BUFFER_PRESERVED` on ANGLE's
+     * offscreen texture) and presents sub-rectangles (`EGL_NV_post_sub_buffer`),
+     * `-1` when it supports no partial redraw.
+     */
+    @JvmStatic
+    external fun nativeBufferAge(handle: Long): Int
+
+    /**
+     * Presents like [nativePresent], copying only the `(x, y, width, height)`
+     * rectangle — surface pixels, **bottom-left** origin (the EGL convention)
+     * — which DXGI also receives as the frame's dirty rect (#755).
+     */
+    @JvmStatic
+    external fun nativePresentWithDamage(
+        handle: Long,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+    )
+
+    /**
      * Presents one frame cleared to [argb]. Used by the fullscreen toggle
      * right after [nativeResize]: DWM registers the child HWND resize
      * immediately but the resized swapchain's first buffer only reaches it

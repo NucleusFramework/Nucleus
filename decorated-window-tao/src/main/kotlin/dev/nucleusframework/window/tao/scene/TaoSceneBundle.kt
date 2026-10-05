@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.runtime.Recomposer
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.graphics.asComposeCanvas
@@ -10,8 +11,9 @@ import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeSceneContext
 import androidx.compose.ui.scene.PlatformLayersComposeScene
-import androidx.compose.ui.scene.SingleComposeSceneRenderingScope
+import androidx.compose.ui.scene.hasInvalidations
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -34,7 +36,8 @@ import kotlin.coroutines.CoroutineContext
  * `ComposeScene.draw` — and replaced the scene factories' former
  * `coroutineContext` / `invalidate` parameters with a [FrameRecomposer] plus
  * separate `invalidateLayout` / `invalidateDraw` callbacks. Compose Desktop's
- * AWT path drives those three steps through [SingleComposeSceneRenderingScope],
+ * AWT path drives those three steps through `SingleComposeSceneRenderingScope`
+ * (mirrored here by [TaoSceneRenderingScope]),
  * which swallows layout/draw invalidations raised during the in-flight frame
  * and re-arms [requestFrame] only if the scene is still dirty afterwards.
  * Driving the steps by hand (and wiring `invalidateLayout`/`invalidateDraw`
@@ -51,7 +54,7 @@ import kotlin.coroutines.CoroutineContext
 internal class TaoSceneBundle(
     val scene: ComposeScene,
     val frameRecomposer: FrameRecomposer,
-    private val renderingScope: SingleComposeSceneRenderingScope,
+    private val renderingScope: TaoSceneRenderingScope,
     private val edtGuard: RectManagerEdtGuard,
     /** Owns [edtGuard]'s debounce wakeups; cancelled with the scene. */
     private val guardScope: CoroutineScope,
@@ -63,6 +66,8 @@ internal class TaoSceneBundle(
     private val requestFrame: () -> Unit,
     /** Shared with the scene's invalidation callbacks — see [visualDirty]. */
     visualDirty: AtomicBoolean,
+    /** Fed the scene's owners through its platform context — see [frameDamage]. */
+    private val damageTracker: LayerDamageTracker,
 ) : AutoCloseable {
     /**
      * Set by the scene's `invalidateLayout` / `invalidateDraw` callbacks — i.e.
@@ -129,20 +134,47 @@ internal class TaoSceneBundle(
     var renderOverlay: ((Canvas) -> Unit)? = null
 
     /**
+     * The window-pixel rectangle the frame being drawn changed since the
+     * previous one, or `null` when it cannot be told (#755) — see
+     * [LayerDamageTracker]. Call from [render]'s `beforeDraw`, every frame:
+     * a frame drawn without asking makes the next answer `null`. Covers the
+     * scene only: whatever else the caller paints — [renderOverlay] included —
+     * must repaint in full whenever it changes.
+     */
+    fun frameDamage(
+        sceneWidth: Int,
+        sceneHeight: Int,
+    ): IntRect? = damageTracker.frameDamage(sceneWidth, sceneHeight)
+
+    /** What damaged the last frame — see [LayerDamageTracker.damageSources]. */
+    val damageSources: List<Pair<IntRect, String>>
+        get() = damageTracker.damageSources
+
+    /** Why the last [frameDamage] was `null` — see [LayerDamageTracker.fullFrameReason]. */
+    val fullFrameReason: String?
+        get() = damageTracker.fullFrameReason
+
+    /**
      * Recomposes, lays out, and draws one frame into [canvas] — the drop-in
      * replacement for the pre-1.12 `scene.render(canvas.asComposeCanvas(), nanoTime)`.
      * [nanoTime] is fed to the recomposer's frame clock, so `withFrameNanos`
      * animations advance on the timestamp the caller paces to.
+     *
+     * [beforeDraw] runs once the frame is laid out and before anything is
+     * drawn — the one point at which the frame's damage is known (#755), so
+     * it is where a partial redraw clips [canvas] and clears what it repaints.
      */
     fun render(
         canvas: Canvas,
         nanoTime: Long,
+        beforeDraw: ((Canvas) -> Unit)? = null,
     ) {
         var swallowed = true
         exceptionHandler.catchExceptions {
-            with(renderingScope) {
-                scene.render(frameRecomposer, canvas.asComposeCanvas(), nanoTime)
-            }
+            renderingScope.render(scene, frameRecomposer, canvas, nanoTime, beforeDraw)
+            // A layer recorded where the damage tracker could not see it change:
+            // the next frame repaints in full, so there has to be one.
+            if (damageTracker.afterDraw()) requestFrame()
             renderOverlay?.invoke(canvas)
             edtGuard.afterFrame()
             swallowed = false
@@ -153,7 +185,11 @@ internal class TaoSceneBundle(
         // this frame was consumed by the pass that just aborted. Skipped once
         // the recomposer is gone: the next frame would be identical, so this
         // would be a repaint spin rather than a retry.
-        if (swallowed && isRecomposerAlive) requestFrame()
+        if (swallowed) {
+            // Whatever the failed pass recorded is not what the tracker saw.
+            damageTracker.invalidate()
+            if (isRecomposerAlive) requestFrame()
+        }
     }
 
     /**
@@ -196,6 +232,51 @@ internal class TaoSceneBundle(
 private val bundleLogger: Logger = Logger.getLogger(TaoSceneBundle::class.java.name)
 
 /**
+ * Compose's `SingleComposeSceneRenderingScope`, with a hook between layout and
+ * draw: swallows the layout/draw invalidations raised by the frame being
+ * rendered, and schedules another frame only if the scene is still dirty
+ * afterwards. Same semantics, step for step — see [TaoSceneBundle].
+ */
+@OptIn(InternalComposeUiApi::class)
+internal class TaoSceneRenderingScope(
+    private val scheduleFrame: () -> Unit,
+) {
+    private var isRendering = false
+
+    /** Wired to the scene's `invalidateLayout` / `invalidateDraw` callbacks. */
+    fun onSceneInvalidation() {
+        if (isRendering) return
+        scheduleFrame()
+    }
+
+    fun render(
+        scene: ComposeScene,
+        frameRecomposer: FrameRecomposer,
+        canvas: Canvas,
+        nanoTime: Long,
+        beforeDraw: ((Canvas) -> Unit)?,
+    ) {
+        check(!isRendering)
+        isRendering = true
+        try {
+            frameRecomposer.performFrame(nanoTime)
+            // `scene.draw` applies the global snapshot again before it draws:
+            // a write since the frame's apply (another thread, a layout
+            // callback) would invalidate a layer after [beforeDraw] measured
+            // the damage. Applied here, only writes landing during the walk
+            // itself can still race it (#755) — see LayerDamageTracker.afterDraw.
+            if (beforeDraw != null) Snapshot.sendApplyNotifications()
+            scene.measureAndLayout()
+            beforeDraw?.invoke(canvas)
+            scene.draw(canvas.asComposeCanvas())
+        } finally {
+            isRendering = false
+        }
+        if (scene.hasInvalidations()) scheduleFrame()
+    }
+}
+
+/**
  * Creates a [CanvasLayersComposeScene] wired to a fresh [FrameRecomposer].
  * [requestFrame] is invoked whenever the scene needs to be repainted
  * (recomposition, relayout, redraw, or a pending animation frame); callers
@@ -210,7 +291,8 @@ internal fun canvasLayersSceneBundle(
     platformContext: PlatformContext,
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
-    val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
+    RecompositionCounter.installIfEnabled()
+    val renderingScope = TaoSceneRenderingScope(requestFrame)
     val closed = AtomicBoolean(false)
     // Every coroutine the scene owns carries the router: a recomposition
     // failure is offered to the window's handler first (#621) and falls
@@ -222,13 +304,14 @@ internal fun canvasLayersSceneBundle(
     val edtGuard = RectManagerEdtGuard(guardScope, requestFrame)
     // Starts true: the first frame must always present. See [TaoSceneBundle.visualDirty].
     val visualDirty = AtomicBoolean(true)
+    val damageTracker = LayerDamageTracker()
     val scene =
         CanvasLayersComposeScene(
             frameRecomposer = frameRecomposer,
             density = density,
             layoutDirection = layoutDirection,
             size = size,
-            platformContext = platformContext.withEdtGuard(edtGuard),
+            platformContext = platformContext.withOwnerListeners(edtGuard, damageTracker),
             invalidateLayout = {
                 visualDirty.set(true)
                 renderingScope.onSceneInvalidation()
@@ -248,6 +331,7 @@ internal fun canvasLayersSceneBundle(
         exceptionRouter,
         requestFrame,
         visualDirty,
+        damageTracker,
     ).also { bundle -> exceptionRouter.sceneIsAlive = { bundle.isRecomposerAlive } }
 }
 
@@ -264,7 +348,8 @@ internal fun platformLayersSceneBundle(
     composeSceneContext: ComposeSceneContext,
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
-    val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
+    RecompositionCounter.installIfEnabled()
+    val renderingScope = TaoSceneRenderingScope(requestFrame)
     // See canvasLayersSceneBundle.
     val closed = AtomicBoolean(false)
     val exceptionRouter = TaoSceneExceptionRouter(closed)
@@ -274,6 +359,7 @@ internal fun platformLayersSceneBundle(
     val edtGuard = RectManagerEdtGuard(guardScope, requestFrame)
     // Starts true: the first frame must always present. See [TaoSceneBundle.visualDirty].
     val visualDirty = AtomicBoolean(true)
+    val damageTracker = LayerDamageTracker()
     val scene =
         PlatformLayersComposeScene(
             frameRecomposer = frameRecomposer,
@@ -283,7 +369,7 @@ internal fun platformLayersSceneBundle(
             composeSceneContext =
                 object : ComposeSceneContext by composeSceneContext {
                     override val platformContext: PlatformContext =
-                        composeSceneContext.platformContext.withEdtGuard(edtGuard)
+                        composeSceneContext.platformContext.withOwnerListeners(edtGuard, damageTracker)
                 },
             invalidateLayout = {
                 visualDirty.set(true)
@@ -304,16 +390,21 @@ internal fun platformLayersSceneBundle(
         exceptionRouter,
         requestFrame,
         visualDirty,
+        damageTracker,
     ).also { bundle -> exceptionRouter.sceneIsAlive = { bundle.isRecomposerAlive } }
 }
 
 /**
  * Returns a [PlatformContext] view whose [PlatformContext.semanticsOwnerListener]
- * additionally registers every announced owner with [edtGuard].
+ * additionally registers every announced owner with [edtGuard] and
+ * [damageTracker].
  */
 @OptIn(InternalComposeUiApi::class)
-private fun PlatformContext.withEdtGuard(edtGuard: RectManagerEdtGuard): PlatformContext =
+private fun PlatformContext.withOwnerListeners(
+    edtGuard: RectManagerEdtGuard,
+    damageTracker: LayerDamageTracker,
+): PlatformContext =
     object : PlatformContext by this {
         override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener =
-            edtGuard.wrapListener(this@withEdtGuard.semanticsOwnerListener)
+            damageTracker.wrapListener(edtGuard.wrapListener(this@withOwnerListeners.semanticsOwnerListener))
     }

@@ -16,6 +16,7 @@ import dev.nucleusframework.window.tao.popup.MacPopupPictureCullTest
 import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
 import dev.nucleusframework.window.tao.scene.LcdTextTest
+import dev.nucleusframework.window.tao.scene.PartialRedrawTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
@@ -1123,6 +1124,30 @@ public object TaoSceneTestBattery {
         }
         run("TabHoverPreviewTest: the selected tab has no card") {
             TabHoverPreviewTest().`the selected tab has no card`()
+        }
+        run("TabHoverPreviewTest: the recorder answers a request with a picture of the body") {
+            TabHoverPreviewTest().`the recorder answers a request with a picture of the body`()
+        }
+        run("PartialRedrawTest: a buffer of age 1 repaints the frame's own damage") {
+            PartialRedrawTest().`a buffer of age 1 repaints the frame's own damage`()
+        }
+        run("PartialRedrawTest: an older buffer also repaints what the frames since changed") {
+            PartialRedrawTest().`an older buffer also repaints what the frames since changed`()
+        }
+        run("PartialRedrawTest: any doubt repaints everything") {
+            PartialRedrawTest().`any doubt repaints everything`()
+        }
+        run("PartialRedrawTest: a frame that changed nothing repaints only what the frames since changed") {
+            PartialRedrawTest().`a frame that changed nothing repaints only what the frames since changed`()
+        }
+        run("PartialRedrawTest: EGL damage rectangles have a bottom-left origin") {
+            PartialRedrawTest().`EGL damage rectangles have a bottom-left origin`()
+        }
+        run("PartialRedrawTest: a repaint covering 80 percent of the frame is done in full") {
+            PartialRedrawTest().`a repaint covering 80 percent of the frame is done in full`()
+        }
+        run("PartialRedrawTest: an unpatched Compose reports no damage and keeps rendering") {
+            PartialRedrawTest().`an unpatched Compose reports no damage and keeps rendering`()
         }
         run("TabHoverPreviewTest: a picture the app assigns stands until the workspace takes one") {
             TabHoverPreviewTest().`a picture the app assigns stands until the workspace takes one`()
