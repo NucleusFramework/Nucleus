@@ -251,6 +251,18 @@ internal object PartialRedrawVerifier {
     var framesMismatched: Int = 0
         private set
 
+    /**
+     * Partial frames that differ only where a layer was invalidated during
+     * the draw (see `LayerDamageTracker.racedDuringDraw`): the change lands a
+     * frame late, not a missed damage.
+     */
+    @Volatile
+    var framesRaced: Int = 0
+        private set
+
+    /** Set by the damage tracker after each draw, consumed by the next [compare]. */
+    var racedArea: IntRect? = null
+
     /** Full frames compared so far (the control). */
     @Volatile
     var framesFull: Int = 0
@@ -263,7 +275,7 @@ internal object PartialRedrawVerifier {
 
     /** One line for the end-to-end checks to parse. */
     fun summary(): String =
-        "Partial redraw verify: checked=$framesChecked mismatched=$framesMismatched " +
+        "Partial redraw verify: checked=$framesChecked mismatched=$framesMismatched raced=$framesRaced " +
             "full=$framesFull fullMismatched=$framesFullMismatched"
 
     /**
@@ -275,10 +287,12 @@ internal object PartialRedrawVerifier {
         reference: org.jetbrains.skia.Bitmap,
         repaint: IntRect?,
     ) {
+        val raced = racedArea
+        racedArea = null
         val a = frame.readPixels() ?: return
         val b = reference.readPixels() ?: return
         if (repaint != null) framesChecked++ else framesFull++
-        val diff = PixelDiff(a, b, frame.width, frame.height, repaint)
+        val diff = PixelDiff(a, b, frame.width, frame.height, repaint, raced)
         val count = diff.count
         val maxDelta = diff.maxDelta
         val outside = diff.outside
@@ -291,7 +305,8 @@ internal object PartialRedrawVerifier {
         // in the pixels kept from earlier frames alike. A missed damage leaves
         // stale pixels outside the repaint at full contrast: only differences
         // above the noise count.
-        val failed = outside > 0 || maxDelta > NOISE_DELTA
+        val failed = outside > 0 || diff.insideMaxDelta > NOISE_DELTA
+        if (repaint != null && !failed && diff.racedOutside > 0) framesRaced++
         if (count > 0 && (failed || repaint == null)) {
             if (repaint != null) framesMismatched++ else framesFullMismatched++
             if (failed) dump(frame, reference)
@@ -314,9 +329,16 @@ internal object PartialRedrawVerifier {
         width: Int,
         height: Int,
         repaint: IntRect?,
+        private val raced: IntRect?,
     ) {
         var count = 0
         var maxDelta = 0
+
+        /** Largest difference outside the [raced] area. */
+        var insideMaxDelta = 0
+
+        /** Pixels outside the repaint that differ by more than the noise, but inside [raced]. */
+        var racedOutside = 0
 
         /** Pixels outside the repaint that differ by more than the noise. */
         var outside = 0
@@ -347,6 +369,11 @@ internal object PartialRedrawVerifier {
             top = minOf(top, y)
             right = maxOf(right, x)
             bottom = maxOf(bottom, y)
+            if (raced != null && raced.containsPixel(x, y)) {
+                if (delta > NOISE_DELTA && repaint != null && !repaint.containsPixel(x, y)) racedOutside++
+                return
+            }
+            insideMaxDelta = maxOf(insideMaxDelta, delta)
             if (delta > NOISE_DELTA && repaint != null && !repaint.containsPixel(x, y)) outside++
         }
 

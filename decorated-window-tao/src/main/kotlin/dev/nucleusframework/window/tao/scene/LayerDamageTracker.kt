@@ -137,6 +137,7 @@ internal class LayerDamageTracker {
      * [frameDamage] then makes a full one.
      */
     fun afterDraw(): Boolean {
+        if (PartialRedraw.verify) PartialRedrawVerifier.racedArea = racedDuringDraw()
         if (!explicitTracking || !GraphicsLayerDrawRegistry.drainForeignRecords()) return false
         foreignRecord = true
         return true
@@ -153,6 +154,23 @@ internal class LayerDamageTracker {
         source: String,
     ) {
         damageSources += area to source
+    }
+
+    /**
+     * The footprints of the layers invalidated between the walk and the end of
+     * the draw — `scene.draw` applies the global snapshot itself, so a write
+     * landing in between (another thread) re-records a layer the damage does
+     * not cover. That frame shows the layer one frame late; the next one sees
+     * the new version and repaints it. For the oracle, which tells this race
+     * from a missed damage.
+     */
+    private fun racedDuringDraw(): IntRect? {
+        if (!previousValid) return null
+        val raced = MutableIntRect()
+        for ((owned, state) in previous) {
+            if (TaoLayerTreeAccess.contentVersion(owned) != state.version) raced.union(state.footprint)
+        }
+        return raced.toIntRect().takeIf { it.width > 0 && it.height > 0 }
     }
 
     /** Forgets the previous frame, so the next [frameDamage] is a full one. */

@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.runtime.Recomposer
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.graphics.asComposeCanvas
@@ -259,6 +260,12 @@ internal class TaoSceneRenderingScope(
         isRendering = true
         try {
             frameRecomposer.performFrame(nanoTime)
+            // `scene.draw` applies the global snapshot again before it draws:
+            // a write since the frame's apply (another thread, a layout
+            // callback) would invalidate a layer after [beforeDraw] measured
+            // the damage. Applied here, only writes landing during the walk
+            // itself can still race it (#755) — see LayerDamageTracker.afterDraw.
+            if (beforeDraw != null) Snapshot.sendApplyNotifications()
             scene.measureAndLayout()
             beforeDraw?.invoke(canvas)
             scene.draw(canvas.asComposeCanvas())
