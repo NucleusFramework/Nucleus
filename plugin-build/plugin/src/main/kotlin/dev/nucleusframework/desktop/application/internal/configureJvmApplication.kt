@@ -704,7 +704,13 @@ private fun JvmApplicationContext.applyWindowsSigningSettings(task: AbstractGene
     val devRunOnly =
         requestedTasks.isNotEmpty() &&
             requestedTasks.all { it.substringAfterLast(':').startsWith("run", ignoreCase = true) }
-    task.signJarLibraries.set(!devRunOnly)
+    // Read when the task runs, once the DSL is configured.
+    task.signJarLibraries.set(
+        project.provider {
+            val signing = distributions.windows.signing
+            currentOS == OS.Windows && signing.enabled && signing.signNativeLibraries && !devRunOnly
+        },
+    )
     task.windowsSigningDescription.set(
         project
             .provider { distributions.appName ?: distributions.packageName }

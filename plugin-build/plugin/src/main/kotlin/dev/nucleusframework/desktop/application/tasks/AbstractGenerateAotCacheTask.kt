@@ -245,12 +245,14 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
     internal val windowsSigningDescription: Property<String> = objects.nullableProperty()
 
     /**
-     * Whether DLLs inside JARs are signed before training. Off for a dev run (`runDistributable`
-     * only), which ships nothing and must not need signtool, the CI certificate or a timestamp
-     * server. An input, so a packaging run after a dev run trains again on the signed JARs.
+     * Whether DLLs inside JARs are signed before training: on Windows, with `signing.enabled` and
+     * `signNativeLibraries`, and never for a dev run (`runDistributable` only), which ships nothing
+     * and must not need signtool, the CI certificate or a timestamp server. An input, so turning
+     * signing on, or packaging after a dev run, trains again on the signed JARs: a cache trained on
+     * unsigned ones would be invalidated when the package task signs them.
      */
     @get:Input
-    internal val signJarLibraries: Property<Boolean> = objects.notNullProperty(true)
+    internal val signJarLibraries: Property<Boolean> = objects.notNullProperty(false)
 
     /** Extra JVM arguments passed to the training run only. */
     @get:Input
@@ -302,12 +304,8 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
      * so the package task, which signs the image afterwards, must find nothing left to rewrite in them.
      */
     private fun signJarLibrariesBeforeTraining(appDir: File) {
+        if (!signJarLibraries.get()) return
         val signing = windowsSigning ?: return
-        if (currentOS != OS.Windows || !signing.enabled || !signing.signNativeLibraries) return
-        if (!signJarLibraries.get()) {
-            logger.info("[aotCache] Dev run: leaving the DLLs inside JARs unsigned")
-            return
-        }
         WindowsAppImageSigner(
             settings = signing,
             description = windowsSigningDescription.get(),
