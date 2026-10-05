@@ -78,7 +78,9 @@ import kotlin.system.exitProcess
  *  - `tour` — a scripted sequence of every kind of change the damage tracker
  *    has to get right (content, placement, transform, alpha, scroll, shadow,
  *    blur, item animations, popups, explicit layers, a caret), run under
- *    `-Dnucleus.tao.partialRedraw.verify=true` by the end-to-end check.
+ *    `-Dnucleus.tao.partialRedraw.verify=true` by the end-to-end check;
+ *  - `torture` — random window-level chaos (resizes, fullscreen, minimize,
+ *    clear colour, pauses, menus) over partial-friendly churn, see [Torture].
  *
  * `-Dpartial.demo.exitAfterSeconds=N` closes the app after N seconds;
  * `-Dpartial.demo.maximized=true` opens it maximized (the power measurement).
@@ -88,13 +90,14 @@ fun main(args: Array<String>) {
     val exitAfter = System.getProperty("partial.demo.exitAfterSeconds")?.toLongOrNull()
     val maximized = System.getProperty("partial.demo.maximized") == "true"
     nucleusApplication(args) {
+        val windowState =
+            rememberWindowState(
+                placement = if (maximized) WindowPlacement.Maximized else WindowPlacement.Floating,
+                size = DpSize(1100.dp, 760.dp),
+            )
         DecoratedWindow(
             onCloseRequest = ::exitApplication,
-            state =
-                rememberWindowState(
-                    placement = if (maximized) WindowPlacement.Maximized else WindowPlacement.Floating,
-                    size = DpSize(1100.dp, 760.dp),
-                ),
+            state = windowState,
             title = "Partial redraw ($scene)",
         ) {
             TitleBar { Text("Partial redraw — $scene", color = Color.White) }
@@ -114,6 +117,7 @@ fun main(args: Array<String>) {
                 Surface(Modifier.fillMaxSize(), color = Color(0xFFF4F4F6)) {
                     when (scene) {
                         "tour" -> Tour()
+                        "torture" -> Torture(windowState)
                         else -> BusyWindow(blink = scene != "idle", isolated = scene != "blink-plain")
                     }
                 }
