@@ -89,6 +89,7 @@ import org.jetbrains.skia.Surface
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import java.util.logging.Logger
@@ -388,6 +389,12 @@ internal class TaoComposeSceneHostLinux(
 
     /** A wake-up for the end of the idle hold is already scheduled. */
     private var idleWakeScheduled = false
+
+    /** When [drainWhileMinimized] last ran the scene's coroutines. */
+    private var lastMinimizedDrainNs = 0L
+
+    /** A wake-up for the next minimized drain is already scheduled. */
+    private val minimizedWakeScheduled = AtomicBoolean(false)
 
     /** The surface has no partial redraw (no buffer age / swap-with-damage): the tracker is not walked. */
     private var partialSurfaceUnsupported = false
@@ -2106,7 +2113,35 @@ internal class TaoComposeSceneHostLinux(
         // iconified state). redrawPending is already cleared above, so restore's
         // requestRedraw re-arms cleanly. A frame following one that presented
         // nothing waits for the display's rhythm (#755).
-        return window.isMinimized || (!inFrame && !fullPresentPending && heldByIdleFramePacing())
+        if (window.isMinimized) {
+            drainWhileMinimized()
+            return true
+        }
+        return !inFrame && !fullPresentPending && heldByIdleFramePacing()
+    }
+
+    /**
+     * Minimized, nothing is drawn and the frame clock stays parked, but the
+     * scene's coroutines — queued on [flushingDispatcher], drained only on the
+     * frame path — still run: an effect that restores the window, an app
+     * timer, a network callback. Without this they froze until the user
+     * restored the window, and the queue grew with every snapshot write.
+     * At most once per display period, so a coroutine re-dispatching itself
+     * cannot spin the event loop.
+     */
+    private fun drainWhileMinimized() {
+        val wait = lastMinimizedDrainNs + presentPeriodNs - System.nanoTime()
+        if (wait > 0L) {
+            if (minimizedWakeScheduled.compareAndSet(false, true)) {
+                DelayScheduler.schedule({
+                    minimizedWakeScheduled.set(false)
+                    requestRedrawCoalesced()
+                }, wait, TimeUnit.NANOSECONDS)
+            }
+            return
+        }
+        lastMinimizedDrainNs = System.nanoTime()
+        flushingDispatcher.drain()
     }
 
     /**

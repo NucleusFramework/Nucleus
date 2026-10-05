@@ -1401,6 +1401,12 @@ internal class TaoComposeSceneHostWindows(
     /** A wake-up for the end of the idle hold is already scheduled. */
     private var idleWakeScheduled = false
 
+    /** When [drainWhileMinimized] last ran the scene's coroutines. */
+    private var lastMinimizedDrainNs = 0L
+
+    /** A wake-up for the next minimized drain is already scheduled. */
+    private val minimizedWakeScheduled = AtomicBoolean(false)
+
     /** The display's frame period, as measured between back-to-back paced presents (read by [requestFrame] too). */
     @Volatile private var presentPeriodNs = DEFAULT_PRESENT_PERIOD_NS
 
@@ -1607,6 +1613,30 @@ internal class TaoComposeSceneHostWindows(
     }
 
     /**
+     * Minimized, nothing is drawn and the frame clock stays parked, but the
+     * scene's coroutines — queued on [flushingDispatcher], drained only on the
+     * frame path — still run: an effect that restores the window, an app
+     * timer, a network callback. Without this they froze until the user
+     * restored the window, and the queue grew with every snapshot write.
+     * At most once per display period, so a coroutine re-dispatching itself
+     * cannot spin the event loop.
+     */
+    private fun drainWhileMinimized() {
+        val wait = lastMinimizedDrainNs + presentPeriodNs - System.nanoTime()
+        if (wait > 0L) {
+            if (minimizedWakeScheduled.compareAndSet(false, true)) {
+                DelayScheduler.schedule({
+                    minimizedWakeScheduled.set(false)
+                    window.requestRedraw()
+                }, wait, TimeUnit.NANOSECONDS)
+            }
+            return
+        }
+        lastMinimizedDrainNs = System.nanoTime()
+        flushingDispatcher.drain()
+    }
+
+    /**
      * After a present: back-to-back VSync-paced presents are one display
      * frame apart, which is what an idle frame waits (#755).
      */
@@ -1744,7 +1774,7 @@ internal class TaoComposeSceneHostWindows(
         // loop would spin recording + presenting into a hidden surface whenever
         // an animation keeps invalidating. Parks animations; restored via
         // TaoWindow.requestRedraw on the MINIMIZED-off event.
-        if (window.isMinimized) return
+        if (window.isMinimized) return drainWhileMinimized()
         val frameStartNanos = System.nanoTime()
 
         if (heldAfterIdleFrame(sameTurnResize)) return
