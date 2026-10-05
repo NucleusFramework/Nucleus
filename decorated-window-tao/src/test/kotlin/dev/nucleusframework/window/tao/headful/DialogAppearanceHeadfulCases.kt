@@ -206,12 +206,34 @@ internal object DialogAppearanceHeadfulCases {
         val finalBlueness: Int get() = visible.lastOrNull()?.blueness ?: 0
         val finalScrimRed: Int get() = samples.lastOrNull()?.scrimRed ?: WHITE
 
-        /** How far below its resting place the dialog was half-way in, in logical px. */
+        /**
+         * How far below its resting place the dialog was half-way in, in
+         * logical px.
+         *
+         * Interpolated between the two grabs that straddle half the settled
+         * blueness, like [scrimRamp]: the dialog moves several px between two
+         * grabs early in the fade, so reading the first grab past that point
+         * measured where the grab happened to land (macOS CI: in-scene 4 px
+         * vs native 9 px for the same animation, both ~10 px interpolated).
+         */
         val slideInPx: Int?
             get() {
-                val first = fadedIn.firstOrNull()?.dialogTop ?: return null
                 val last = finalTop ?: return null
-                return first - last
+                val half = finalBlueness / 2.0
+                val after = visible.indexOfFirst { it.blueness >= half }
+                if (after < 0) return null
+                val b = visible[after]
+                val bTop = b.dialogTop ?: return null
+                val topAtHalf =
+                    if (after == 0) {
+                        bTop.toDouble()
+                    } else {
+                        val a = visible[after - 1]
+                        val aTop = a.dialogTop ?: bTop
+                        val k = (half - a.blueness) / (b.blueness - a.blueness)
+                        aTop + k * (bTop - aTop)
+                    }
+                return (topAtHalf - last).roundToInt()
             }
 
         /** How long the appearance animated on screen, from its first frame to its last change. */
