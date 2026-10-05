@@ -232,6 +232,14 @@ pub(crate) fn run_event_loop_blocking() {
     // Modal resize/move loop → VSync toggle (see on_tao_size_move).
     #[cfg(target_os = "windows")]
     tao::platform::windows::set_size_move_hook(on_tao_size_move);
+    // Logoff / restart / shutdown / Restart Manager → close requests (#751).
+    #[cfg(target_os = "windows")]
+    tao::platform::windows::set_end_session_hooks(
+        crate::platform::windows::end_session::on_query_end_session,
+        crate::platform::windows::end_session::on_end_session,
+    );
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::install();
     #[cfg(target_os = "macos")]
     tao::platform::macos::set_minimized_hook(on_tao_minimized);
     #[cfg(target_os = "linux")]
@@ -918,6 +926,10 @@ pub(crate) fn run_event_loop_blocking() {
                 }
                 UserEvent::QuitRequested => {
                     dispatch(0, EVENT_QUIT_REQUESTED, 0, 0);
+                }
+                #[cfg(target_os = "windows")]
+                UserEvent::QueryEndSession => {
+                    crate::platform::windows::end_session::on_deferred_query_end_session();
                 }
                 UserEvent::Exit => {
                     *control_flow = ControlFlow::Exit;

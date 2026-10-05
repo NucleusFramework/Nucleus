@@ -1358,6 +1358,17 @@ public class TaoWindow internal constructor(
         closingListeners += block
     }
 
+    /**
+     * The native window is gone (or, on a Windows session end, about to be with
+     * the process): releases what it held and unregisters it, so a `DESTROYED`
+     * arriving later finds nothing.
+     */
+    internal fun destroyed() {
+        TaoEventLoopWatchdog.unregisterWindow(handle)
+        destroyedListeners.forEach { it.invoke() }
+        TaoApplication.remove(handle)
+    }
+
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */
     public fun onDestroyed(block: () -> Unit) {
         destroyedListeners += block
@@ -1615,11 +1626,7 @@ public class TaoWindow internal constructor(
             }
             TaoEventCode.SCALE_FACTOR_CHANGED -> scaleFactorListener?.invoke(a / 1000f)
             TaoEventCode.CLOSE_REQUESTED -> closeRequestedListener?.invoke()
-            TaoEventCode.DESTROYED -> {
-                TaoEventLoopWatchdog.unregisterWindow(handle)
-                destroyedListeners.forEach { it.invoke() }
-                TaoApplication.remove(handle)
-            }
+            TaoEventCode.DESTROYED -> destroyed()
             TaoEventCode.REDRAW_REQUESTED -> {
                 // Clear *before* invoking — if the listener (which renders) posts
                 // another invalidate via `requestRedraw`, the next frame must go

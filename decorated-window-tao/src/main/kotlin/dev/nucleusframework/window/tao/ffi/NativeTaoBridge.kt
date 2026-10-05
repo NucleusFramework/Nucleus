@@ -199,7 +199,30 @@ internal object NativeTaoBridge {
             text: String,
         ) {
         }
+
+        /**
+         * Windows `WM_QUERYENDSESSION` — logoff, restart, shutdown or a Restart
+         * Manager close (#751). Runs the windows' close requests synchronously
+         * and answers `TaoApplication.END_SESSION_*`. Default: agree.
+         */
+        fun onQueryEndSession(): Int = 0
+
+        /**
+         * Windows `WM_ENDSESSION` (#751): [ending] `true` when the session ends
+         * (the process may be terminated once this returns), `false` when it
+         * was cancelled. Default no-op.
+         */
+        fun onEndSession(ending: Boolean) {
+        }
     }
+
+    /**
+     * Drops the Windows shutdown block reason a session-end query set, once a
+     * window stayed open and cancelled the quit (#751). No-op elsewhere.
+     * Event-loop thread only.
+     */
+    @JvmStatic
+    external fun nativeReleaseShutdownBlock()
 
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */
     @JvmStatic

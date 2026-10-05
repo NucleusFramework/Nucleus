@@ -152,6 +152,168 @@ class TaoApplicationExitTest {
         assertEquals(1, exits)
     }
 
+    /** Exits the quit performed during the last [querySession]. */
+    private var sessionExits = 0
+
+    /**
+     * Runs a Windows session-end query against a fresh quit state, counting
+     * released holds. [deferSettle] `false` resolves the quit inside the query,
+     * as a bare `TaoApplication` (no Compose loop) does.
+     */
+    private fun querySession(
+        vararg open: TaoWindow,
+        deferSettle: Boolean = true,
+        block: (answer: Int, settle: () -> Unit, releases: () -> Int) -> Unit,
+    ) {
+        var releases = 0
+        val pending = mutableListOf<() -> Unit>()
+        TaoApplication.resetQuit()
+        sessionExits = 0
+        TaoApplication.quitExit = { sessionExits++ }
+        if (deferSettle) TaoApplication.afterQuitRequests = { pending += it }
+        TaoApplication.releaseSessionEndHold = { releases++ }
+        try {
+            val answer = TaoApplication.queryEndSession(open.toList())
+            block(answer, { pending.toList().also { pending.clear() }.forEach { it() } }, { releases })
+        } finally {
+            TaoApplication.resetQuit()
+        }
+    }
+
+    @Test
+    fun `session end may proceed when every window consents synchronously`() {
+        val main = TaoWindow(1).also { w -> w.onCloseRequested { TaoApplication.consentToQuit() } }
+        val closing = TaoWindow(2).also { w -> w.onCloseRequested { w.isClosing = true } }
+        querySession(main, closing) { answer, settle, releases ->
+            assertEquals(TaoApplication.END_SESSION_AGREE, answer)
+            assertTrue(TaoApplication.isQuitting)
+            settle()
+            assertEquals(0, releases())
+            assertEquals(0, sessionExits, "the exit waits for WM_ENDSESSION")
+        }
+    }
+
+    @Test
+    fun `a session end cancelled after an agree keeps the app`() {
+        val main = TaoWindow(1).also { w -> w.onCloseRequested { TaoApplication.consentToQuit() } }
+        querySession(main) { answer, settle, _ ->
+            assertEquals(TaoApplication.END_SESSION_AGREE, answer)
+            settle()
+            TaoApplication.endSession(ending = false)
+            assertFalse(TaoApplication.isQuitting)
+            assertEquals(0, sessionExits)
+        }
+    }
+
+    @Test
+    fun `a session end cancelled before the quit settles keeps the app`() {
+        val main = TaoWindow(1).also { w -> w.onCloseRequested { TaoApplication.consentToQuit() } }
+        querySession(main) { answer, settle, _ ->
+            assertEquals(TaoApplication.END_SESSION_AGREE, answer)
+            TaoApplication.endSession(ending = false)
+            settle()
+            assertFalse(TaoApplication.isQuitting)
+            assertEquals(0, sessionExits)
+        }
+    }
+
+    @Test
+    fun `a confirmed session end after an agree tears down`() {
+        val main = TaoWindow(1).also { w -> w.onCloseRequested { TaoApplication.consentToQuit() } }
+        querySession(main, deferSettle = false) { answer, _, _ ->
+            assertEquals(TaoApplication.END_SESSION_AGREE, answer)
+            val calls = mutableListOf<String>()
+            TaoApplication.sessionEndTeardown = { calls += "teardown" }
+            TaoApplication.sessionEndExit = { calls += "exit" }
+            TaoApplication.endSession(ending = true)
+            assertEquals(listOf("teardown", "exit"), calls)
+            assertEquals(0, sessionExits, "the quit's own exit never ran")
+        }
+    }
+
+    @Test
+    fun `a session end cancelled after a hold lets the quit finish`() {
+        // HOLD: a window closes through recomposition — it is gone, so the app exits.
+        val doc = TaoWindow(1).also { w -> w.onCloseRequested {} }
+        querySession(doc) { answer, settle, _ ->
+            assertEquals(TaoApplication.END_SESSION_HOLD, answer)
+            TaoApplication.endSession(ending = false)
+            doc.isClosing = true
+            settle()
+            assertEquals(1, sessionExits)
+        }
+    }
+
+    @Test
+    fun `a quit still in flight holds the session and a veto releases the hold`() {
+        val asked = mutableListOf<Long>()
+        val doc = window(1, asked, false)
+        querySession(doc) { answer, settle, releases ->
+            assertEquals(TaoApplication.END_SESSION_HOLD, answer)
+            assertTrue(TaoApplication.isQuitting)
+            // A second query while the quit is in flight asks nobody again.
+            assertEquals(TaoApplication.END_SESSION_HOLD, TaoApplication.queryEndSession(listOf(doc)))
+            assertEquals(listOf(1L), asked, "one quit, each window asked once")
+            settle()
+            assertFalse(TaoApplication.isQuitting)
+            assertEquals(1, releases())
+        }
+    }
+
+    @Test
+    fun `a synchronous veto refuses without holding`() {
+        val asked = mutableListOf<Long>()
+        querySession(window(1, asked, false), deferSettle = false) { answer, _, releases ->
+            assertEquals(TaoApplication.END_SESSION_REFUSE, answer)
+            assertFalse(TaoApplication.isQuitting)
+            assertEquals(0, releases(), "nothing was held")
+            // The next session end asks again and still refuses — no stale hold.
+            val next = TaoApplication.queryEndSession(listOf(window(2, asked, false)))
+            assertEquals(TaoApplication.END_SESSION_REFUSE, next)
+            assertEquals(listOf(1L, 2L), asked)
+        }
+    }
+
+    @Test
+    fun `a synchronous consent agrees`() {
+        val main = TaoWindow(1).also { w -> w.onCloseRequested { TaoApplication.consentToQuit() } }
+        querySession(main, deferSettle = false) { answer, _, _ ->
+            assertEquals(TaoApplication.END_SESSION_AGREE, answer)
+        }
+    }
+
+    @Test
+    fun `session end may proceed at once when no app window is open`() {
+        val palette = TaoWindow(1).apply { closesOnQuit = false }
+        querySession(palette) { answer, _, _ ->
+            assertEquals(TaoApplication.END_SESSION_AGREE, answer)
+            assertEquals(0, sessionExits, "the exit waits for WM_ENDSESSION")
+            TaoApplication.endSession(ending = false)
+            assertFalse(TaoApplication.isQuitting)
+        }
+    }
+
+    @Test
+    fun `an ending session tears down then exits, a cancelled one does neither`() {
+        val calls = mutableListOf<String>()
+        TaoApplication.resetQuit()
+        TaoApplication.sessionEndTeardown = { calls += "teardown" }
+        TaoApplication.sessionEndExit = { calls += "exit" }
+        try {
+            TaoApplication.endSession(ending = false)
+            assertEquals(emptyList(), calls)
+            assertFalse(TaoApplication.isQuitting)
+            TaoApplication.endSession(ending = true)
+            assertEquals(listOf("teardown", "exit"), calls)
+            assertTrue(TaoApplication.isQuitting)
+            // Every window — and AWT's, forwarded — gets a WM_ENDSESSION: one teardown.
+            TaoApplication.endSession(ending = true)
+            assertEquals(listOf("teardown", "exit"), calls)
+        } finally {
+            TaoApplication.resetQuit()
+        }
+    }
+
     @Test
     fun `default finish exits 0 after a normal quit`() {
         val exits = mutableListOf<Int>()

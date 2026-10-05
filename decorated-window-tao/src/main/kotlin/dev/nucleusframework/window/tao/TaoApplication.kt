@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Level
 import java.util.logging.Logger
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.system.exitProcess
 
 /**
  * Phase 1 entry point for the Tao backend.
@@ -184,8 +185,10 @@ public object TaoApplication {
 
     /**
      * `true` from the moment the OS asks the app to quit — macOS Cmd+Q, Dock →
-     * Quit, logout / restart / shutdown — while the windows are being asked to
-     * close, and for good once they all did. Reset when a window keeps itself
+     * Quit, logout / restart / shutdown; on Windows logoff / restart / shutdown
+     * and Restart Manager closes (#751) — while the windows are being asked to
+     * close, and for good once they all did (on Windows, until the session end
+     * is confirmed: a cancelled one resets it). Reset when a window keeps itself
      * open, which cancels the quit. Electron's `before-quit` flag: an
      * `onCloseRequest` that normally hides to the tray checks it to let a real
      * quit through (`if (isQuitting) exitApplication() else hide()`).
@@ -208,14 +211,17 @@ public object TaoApplication {
      * window opened meanwhile defers the exit until it closes, and a new
      * request asks every window again.
      */
-    internal fun requestQuit(open: Collection<TaoWindow> = windows.values) {
+    internal fun requestQuit(
+        open: Collection<TaoWindow> = windows.values,
+        sessionQuery: Boolean = false,
+    ) {
         if (quitInFlight) return
         quitScope = open
         waitingForLastWindow = false
         val targets = open.filter { it.closesOnQuit && !it.isClosing }.sortedByDescending { it.handle }
         isQuitting = true
         if (targets.isEmpty()) {
-            quitExit()
+            if (sessionQuery) sessionExit = SessionExit.Awaiting else quitExit()
             return
         }
         quitInFlight = true
@@ -230,27 +236,144 @@ public object TaoApplication {
             if (quitConsent) quitConsented += window
             quitConsent = false
         }
+        // Every window agreed during its close request: on a session query the
+        // exit waits for Windows' decision (see [endSession]).
+        if (sessionQuery && openAppWindows().isEmpty()) sessionExit = SessionExit.Awaiting
         afterQuitRequests {
             quitInFlight = false
             when {
-                targets.any { !it.isClosing && it !in quitConsented } -> isQuitting = false
+                targets.any { !it.isClosing && it !in quitConsented } -> cancelQuit()
                 // A window opened meanwhile (a "Save?" dialog) keeps the app alive;
                 // the quit completes once it is gone — Electron's OnWindowAllClosed.
-                openAppWindows().isEmpty() -> quitExit()
+                openAppWindows().isEmpty() -> finishQuit()
                 else -> waitingForLastWindow = true
             }
         }
     }
 
+    /** Ends a quit every window agreed to, unless a session query left the exit to [endSession]. */
+    private fun finishQuit() {
+        when (sessionExit) {
+            SessionExit.None -> quitExit()
+            SessionExit.Awaiting -> Unit
+            SessionExit.Cancelled -> {
+                sessionExit = SessionExit.None
+                isQuitting = false
+            }
+        }
+    }
+
+    /**
+     * Windows `WM_QUERYENDSESSION` (#751): runs [requestQuit] unless one is in
+     * flight and answers for the app — [END_SESSION_AGREE] when every app
+     * window agreed synchronously (`exitApplication()` from its close request)
+     * or is already closing, [END_SESSION_HOLD] while the quit is still in
+     * flight (native holds the session with a block reason until the quit
+     * completes, or a window staying open releases it), [END_SESSION_REFUSE]
+     * when a window already kept itself open. Native reuses an answer for the
+     * other windows' queries of the same session end.
+     *
+     * On AGREE nothing has closed yet and the app does not exit: Windows may
+     * still cancel (another app refuses, the user cancels, an installer aborts),
+     * so the exit waits for `WM_ENDSESSION` — the Windows contract. A window
+     * that closed itself during its close request (HOLD's case) stays closed.
+     */
+    internal fun queryEndSession(open: Collection<TaoWindow> = windows.values): Int {
+        // A quit cancelled inside requestQuit (a synchronous veto) is seen as
+        // `isQuitting == false` once it returns: a refusal, not a hold.
+        if (!quitInFlight) {
+            sessionExit = SessionExit.None
+            requestQuit(open, sessionQuery = true)
+        }
+        val answer =
+            when {
+                !isQuitting -> END_SESSION_REFUSE
+                openAppWindows().isEmpty() -> END_SESSION_AGREE
+                else -> {
+                    sessionEndHeld = true
+                    END_SESSION_HOLD
+                }
+            }
+        logger.fine { "Windows session-end query answered $answer" }
+        return answer
+    }
+
+    /**
+     * Windows `WM_ENDSESSION` (#751). [ending] `false`: the session end was
+     * cancelled (native already dropped its hold). `true`: Windows may
+     * terminate the process the moment this returns, so the app is torn down
+     * synchronously — Electron's `session-end` — whatever the windows answered
+     * (the user may have chosen "Shut down anyway").
+     */
+    internal fun endSession(ending: Boolean) {
+        logger.fine { "Windows session end, ending=$ending" }
+        sessionEndHeld = false
+        if (!ending) {
+            // Cancelled after an AGREE: the quit the windows agreed to is called off,
+            // once its settle has run if it is still pending.
+            if (sessionExit == SessionExit.Awaiting) {
+                if (quitInFlight) {
+                    sessionExit = SessionExit.Cancelled
+                } else {
+                    sessionExit = SessionExit.None
+                    isQuitting = false
+                }
+            }
+            return
+        }
+        // Several WM_ENDSESSION reach the loop for one session end (every window,
+        // the AWT toolkit's forwarded one); the first one does it.
+        if (sessionTearingDown) return
+        sessionTearingDown = true
+        logger.info("Windows session ending: tearing the application down")
+        isQuitting = true
+        sessionEndTeardown()
+        // A window's scene is disposed when its native window is destroyed, which
+        // the process would not live to see: run that now for every window left.
+        windows.values.toList().forEach { it.destroyed() }
+        sessionEndExit()
+    }
+
+    private var sessionTearingDown = false
+
+    /** Where a quit agreed to on a session query stands until Windows decides. */
+    private enum class SessionExit { None, Awaiting, Cancelled }
+
+    private var sessionExit = SessionExit.None
+
+    /** A session-end query answered [END_SESSION_HOLD]: native holds a shutdown block reason. */
+    private var sessionEndHeld = false
+
+    /** Drops that hold once the quit is cancelled; tests replace it. */
+    internal var releaseSessionEndHold: () -> Unit = NativeTaoBridge::nativeReleaseShutdownBlock
+
+    /** Disposes the app synchronously on a session end; the Compose loop disposes its composition. */
+    internal var sessionEndTeardown: () -> Unit = {}
+
+    /** Ends the process after [sessionEndTeardown], so shutdown hooks run before Windows kills it. */
+    internal var sessionEndExit: () -> Unit = { exitProcess(0) }
+
+    internal const val END_SESSION_AGREE: Int = 0
+    internal const val END_SESSION_HOLD: Int = 1
+    internal const val END_SESSION_REFUSE: Int = 2
+
     /** App windows still open that have not agreed to the quit in flight. */
     private fun openAppWindows(): List<TaoWindow> =
         quitScope.filter { it.closesOnQuit && !it.isClosing && it !in quitConsented }
+
+    private fun cancelQuit() {
+        isQuitting = false
+        if (sessionEndHeld) {
+            sessionEndHeld = false
+            releaseSessionEndHold()
+        }
+    }
 
     /** Called as a window goes away: completes a quit that was waiting for the last one. */
     private fun completeQuitIfLastWindow() {
         if (waitingForLastWindow && openAppWindows().isEmpty()) {
             waitingForLastWindow = false
-            quitExit()
+            finishQuit()
         }
     }
 
@@ -284,6 +407,12 @@ public object TaoApplication {
         quitConsented.clear()
         askingWindow = null
         quitConsent = false
+        sessionEndHeld = false
+        sessionTearingDown = false
+        sessionExit = SessionExit.None
+        releaseSessionEndHold = NativeTaoBridge::nativeReleaseShutdownBlock
+        sessionEndTeardown = {}
+        sessionEndExit = { exitProcess(0) }
         quitExit = ::exit
         afterQuitRequests = { it() }
     }
@@ -483,6 +612,27 @@ public object TaoApplication {
                     TaoEventCode.MAIN_EVENTS_CLEARED -> TaoMainDispatcher.pump()
                     else -> lookup(handle)?.dispatch(code, a, b)
                 }
+            }
+        }
+
+        @Suppress("TooGenericExceptionCaught")
+        override fun onQueryEndSession(): Int =
+            try {
+                queryEndSession()
+            } catch (t: Throwable) {
+                reportFatal(t)
+                END_SESSION_AGREE
+            }
+
+        // Not `guarded`: reportFatal posts a loop exit that would never run —
+        // the process is about to end either way.
+        @Suppress("TooGenericExceptionCaught")
+        override fun onEndSession(ending: Boolean) {
+            try {
+                endSession(ending)
+            } catch (t: Throwable) {
+                logger.log(Level.SEVERE, "Windows session end teardown failed", t)
+                if (ending) sessionEndExit()
             }
         }
 

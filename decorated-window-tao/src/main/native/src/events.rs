@@ -442,6 +442,10 @@ pub(crate) enum UserEvent {
     // Posted by the macOS quit paths only (Cmd-Q, `-[TaoApp terminate:]`).
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     QuitRequested,
+    // A Windows session-end query that could not call into Kotlin from inside
+    // the window procedure (#751), asked again from the loop.
+    #[cfg(target_os = "windows")]
+    QueryEndSession,
     Exit,
 }
 

@@ -67,7 +67,7 @@ public fun taoApplication(
     // [exitProcessOnExit] is true. A plain rethrow would skip exitProcess(0)
     // below and the non-daemon AWT EDT would keep the dead process alive.
     try {
-        runTaoComposeLoop(content)
+        runTaoComposeLoop(exitProcessOnExit, content)
         // Recheck: reportFatal can fire from a non-main thread (the coroutine
         // exception handler runs on the failing coroutine's thread) after
         // run()'s own post-loop check already passed — without this a genuine
@@ -114,7 +114,10 @@ private val composeEntryLogger: Logger = Logger.getLogger(TaoApplication::class.
 private const val QUIT_SETTLE_TIMEOUT_MS = 500L
 
 @OptIn(ExperimentalFoundationApi::class)
-private fun runTaoComposeLoop(content: @Composable ApplicationScope.() -> Unit) {
+private fun runTaoComposeLoop(
+    exitProcessOnExit: Boolean,
+    content: @Composable ApplicationScope.() -> Unit,
+) {
     TaoApplication.run { app ->
         val scope = ComposableApplicationScope(app)
         // CoroutineScope pinned to the Tao main thread. Every `launch` posts
@@ -145,6 +148,16 @@ private fun runTaoComposeLoop(content: @Composable ApplicationScope.() -> Unit) 
         // ponytail: the timeout is a liveness guard only — a recomposer that never
         // reports Idle would otherwise leave isQuitting stuck and swallow every later quit.
         app.quitExit = scope::exitApplication
+        // Windows session end (#751): the process may be killed once WM_ENDSESSION
+        // returns, so the composition is disposed right there — onDispose /
+        // DisposableEffect cleanup runs — and the process exits as a normal quit
+        // would, shutdown hooks included. With exitProcessOnExit = false the
+        // caller never gets control back: Windows ends the process first.
+        app.sessionEndTeardown = {
+            scope.exitApplication()
+            composition.dispose()
+        }
+        app.sessionEndExit = { if (exitProcessOnExit) exitProcess(0) }
         app.afterQuitRequests = { then ->
             coroutineScope.launch {
                 Snapshot.sendApplyNotifications()
