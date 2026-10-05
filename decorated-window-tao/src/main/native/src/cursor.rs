@@ -9,7 +9,7 @@
 // drag itself (channel-dispatched like this) worked fine.
 
 use jni::objects::JClass;
-use jni::sys::{jint, jlong};
+use jni::sys::{jint, jlong, jstring};
 use jni::JNIEnv;
 
 use tao::window::CursorIcon;
@@ -65,5 +65,66 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         unsafe {
             crate::platform::macos::ffi::nucleus_tao_set_cursor_icon(code);
         }
+    }
+}
+
+/// Inverse of [cursor_from_code] for the icons it produces; `None` for the
+/// rest, which have no `TaoCursorIcon` code.
+#[cfg(target_os = "macos")]
+fn code_from_cursor(icon: CursorIcon) -> Option<jint> {
+    Some(match icon {
+        CursorIcon::Arrow => 0,
+        CursorIcon::Text => 1,
+        CursorIcon::Hand => 2,
+        CursorIcon::Crosshair => 3,
+        CursorIcon::Wait => 4,
+        CursorIcon::Move => 5,
+        CursorIcon::NotAllowed => 6,
+        CursorIcon::Help => 7,
+        CursorIcon::Progress => 8,
+        CursorIcon::EwResize => 9,
+        CursorIcon::NsResize => 10,
+        CursorIcon::NeswResize => 11,
+        CursorIcon::NwseResize => 12,
+        CursorIcon::Grab => 13,
+        CursorIcon::Grabbing => 14,
+        _ => return None,
+    })
+}
+
+/// `tao::platform::macos::set_cursor_hook`: Tao's cursor rects resolve icons
+/// through Nucleus' table (`nucleus_tao_cursors.h`), so the shape AppKit
+/// re-asserts is the one `nucleus_tao_set_cursor_icon` just set (#746).
+/// Icons without a code keep Tao's arrow fallback (null).
+#[cfg(target_os = "macos")]
+pub(crate) fn tao_cursor_hook(icon: CursorIcon) -> *mut std::ffi::c_void {
+    match code_from_cursor(icon) {
+        Some(code) => unsafe { crate::platform::macos::ffi::nucleus_tao_cursor_ptr(code) },
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Headful-suite diagnostic: what the cursor for [code] looks like (hotspot,
+/// size, pixel hash), or `[NSCursor currentCursor]` when [code] is negative.
+/// `null` off macOS.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeDiagCursorSignature(
+    env: JNIEnv,
+    _class: JClass,
+    code: jint,
+) -> jstring {
+    #[cfg(target_os = "macos")]
+    {
+        let mut buffer = [0 as std::ffi::c_char; 128];
+        unsafe {
+            crate::platform::macos::ffi::nucleus_tao_diag_cursor_signature(code, buffer.as_mut_ptr(), buffer.len());
+        }
+        let signature = unsafe { std::ffi::CStr::from_ptr(buffer.as_ptr()) }.to_string_lossy();
+        env.new_string(signature.as_ref()).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (env, code);
+        std::ptr::null_mut()
     }
 }

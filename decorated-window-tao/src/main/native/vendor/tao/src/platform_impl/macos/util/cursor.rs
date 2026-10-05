@@ -26,10 +26,23 @@ pub enum Cursor {
   Native(&'static str),
   Undocumented(&'static str),
   WebKit(&'static str),
+  // PATCH(nucleus): resolved by the embedder's `set_cursor_hook`.
+  Hooked(CursorIcon),
 }
 
 impl From<CursorIcon> for Cursor {
   fn from(cursor: CursorIcon) -> Self {
+    // PATCH(nucleus): the embedder's cursor table wins (`set_cursor_hook`), so
+    // the cursor rect AppKit re-asserts is the very cursor the embedder sets.
+    if crate::platform::macos::CURSOR_HOOK.get().is_some() {
+      return Cursor::Hooked(cursor);
+    }
+    Cursor::builtin(cursor)
+  }
+}
+
+impl Cursor {
+  fn builtin(cursor: CursorIcon) -> Self {
     // See native cursors at https://developer.apple.com/documentation/appkit/nscursor?language=objc.
     match cursor {
       CursorIcon::Default => Cursor::Default,
@@ -105,6 +118,15 @@ impl Cursor {
       // PATCH(nucleus): the HIServices cursor bundle is not guaranteed to be
       // there (#746); a missing one falls back to the arrow instead of
       // panicking inside AppKit's `resetCursorRects` callback.
+      Cursor::Hooked(icon) => {
+        let hook = crate::platform::macos::CURSOR_HOOK.get().unwrap();
+        let cursor = hook(*icon) as id;
+        if cursor.is_null() {
+          Cursor::builtin(*icon).load()
+        } else {
+          cursor
+        }
+      }
       Cursor::WebKit(cursor_name) => {
         load_webkit_cursor(cursor_name).unwrap_or_else(|| msg_send![class!(NSCursor), arrowCursor])
       }

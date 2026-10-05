@@ -234,6 +234,9 @@ pub(crate) fn run_event_loop_blocking() {
     tao::platform::windows::set_size_move_hook(on_tao_size_move);
     #[cfg(target_os = "macos")]
     tao::platform::macos::set_minimized_hook(on_tao_minimized);
+    // Tao's cursor rects draw from Nucleus' cursor table (see tao_cursor_hook).
+    #[cfg(target_os = "macos")]
+    tao::platform::macos::set_cursor_hook(crate::cursor::tao_cursor_hook);
     #[cfg(target_os = "linux")]
     tao::platform::linux::set_minimized_hook(on_tao_minimized);
 
