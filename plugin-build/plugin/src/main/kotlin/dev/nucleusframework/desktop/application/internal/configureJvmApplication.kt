@@ -1318,6 +1318,8 @@ private fun JvmApplicationContext.configureRunTask(
             }
 
             addAll(app.jvmArgs)
+            // debug { } and -Pnucleus.debug: the run task only, never a package
+            addAll(nucleusDebugJvmArgs(app, project.providers.gradleProperty(NUCLEUS_DEBUG_GRADLE_PROPERTY).orNull, project.logger))
             val appResourcesDir = prepareAppResources.get().destinationDir
             add("-D$APP_RESOURCES_DIR=${appResourcesDir.absolutePath}")
 
