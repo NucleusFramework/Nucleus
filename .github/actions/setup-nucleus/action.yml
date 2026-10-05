@@ -23,7 +23,7 @@ inputs:
     required: false
     default: 'false'
   setup-gradle:
-    description: 'Setup Gradle via gradle/actions/setup-gradle@v5'
+    description: 'Setup Gradle via gradle/actions/setup-gradle@v6 (open-source basic cache provider)'
     required: false
     default: 'true'
   graalvm:
@@ -60,7 +60,7 @@ runs:
     # the plugin-provisioned GraalVM, so the Gradle JDK contributes nothing to
     # that output.
     - name: Set up JDK
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v6
       with:
         distribution: ${{ runner.os == 'Windows' && 'microsoft' || 'temurin' }}
         java-version: ${{ inputs.java-version }}
@@ -89,7 +89,7 @@ runs:
     # a cache still holding the other build.
     - name: Cache GraalVM toolchain
       if: inputs.graalvm == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.gradle/nucleus/graalvm
         key: graalvm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.graalvm-distribution }}-${{ inputs.graalvm-version }}
@@ -147,7 +147,10 @@ runs:
     # ── Gradle ──────────────────────────────────────────────────────────
     - name: Setup Gradle
       if: inputs.setup-gradle == 'true'
-      uses: gradle/actions/setup-gradle@v5
+      uses: gradle/actions/setup-gradle@v6
+      with:
+        # Open-source cache on GitHub Actions cache; v6's default provider is proprietary.
+        cache-provider: basic
 
     # ── Node.js ─────────────────────────────────────────────────────────
     # No actions/setup-node: the Nucleus plugin downloads the Node.js it runs
@@ -155,7 +158,7 @@ runs:
     # packages with the same toolchain a developer machine does. Only the cache
     # is CI's business.
     - name: Cache Node.js toolchain
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.gradle/nucleus/nodejs
         key: nodejs-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.node-version }}

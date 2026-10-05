@@ -18,18 +18,18 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore native output cache
         id: natives-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: '*/src/main/resources/nucleus/native/win32-*'
           key: natives-v1-windows-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
 
       - name: Setup JDK 21
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -171,7 +171,7 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Upload Windows natives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-windows
           path: '*/src/main/resources/nucleus/native/win32-*/'
@@ -182,18 +182,18 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore native output cache
         id: natives-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: '*/src/main/resources/nucleus/native/darwin-*'
           key: natives-v1-macos-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
 
       - name: Setup JDK 21
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -324,7 +324,7 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Upload macOS natives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-macos
           path: '*/src/main/resources/nucleus/native/darwin-*/'
@@ -351,18 +351,18 @@ jobs:
             arch: aarch64
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore native output cache
         id: natives-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: '*/src/main/resources/nucleus/native/linux-*'
           key: natives-v1-linux-${{ matrix.arch }}-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
 
       - name: Setup JDK 21
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -479,7 +479,7 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Upload Linux natives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-linux-${{ matrix.arch }}
           path: '*/src/main/resources/nucleus/native/linux-*/'
