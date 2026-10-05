@@ -423,6 +423,7 @@ public object TaoHeadfulTestSuiteMain {
             FrameResumeAfterFreezeHeadfulCases.all() +
             // Last: the monkeys are the longest cases, and the robot ones leave the
             // real pointer wherever their last gesture ended.
+            OffScreenPresentHeadfulCases.all() +
             NativeViewMonkeyHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all()
 

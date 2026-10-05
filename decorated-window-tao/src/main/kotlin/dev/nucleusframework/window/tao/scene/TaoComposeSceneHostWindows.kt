@@ -72,12 +72,14 @@ import org.jetbrains.skia.FramebufferFormat
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.PathBuilder
 import org.jetbrains.skia.Rect
+import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Logger
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
@@ -140,9 +142,10 @@ internal class TaoComposeSceneHostWindows(
      * with [clearColorArgbState] (alpha-0 by default) on a top-level that
      * already has tao's DWM blur-behind empty region.
      *
-     * The Windows counterpart of the macOS host's `glassBackgroundState`;
-     * unlike macOS the surface needs no native flag to carry alpha — the ANGLE
-     * swapchain already presents it (verified on the child render surface).
+     * The Windows counterpart of the macOS host's `glassBackgroundState`.
+     * While it is armed the host presents through ANGLE's per-pixel-alpha
+     * surface instead of the opaque flip-model swapchain (see
+     * [syncPresentAlpha]).
      */
     val transparentBackgroundState: androidx.compose.runtime.MutableState<Boolean> =
         androidx.compose.runtime.mutableStateOf(false)
@@ -182,6 +185,15 @@ internal class TaoComposeSceneHostWindows(
     private val windowInfo = TaoWindowInfo()
     private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
+
+    /** Row order of the attachment's draw surface — see `NativeTaoGlBridge.nativeIsTopDown`. */
+    private var surfaceOrigin = SurfaceOrigin.BOTTOM_LEFT
+
+    /** Whether the attachment presents per-pixel alpha — see [syncPresentAlpha]. */
+    private var alphaPresent = false
+
+    /** Set by [prepareClose]: the closing frame stays on the present path it has. */
+    private var presentPathFrozen = false
     private var hwnd: Long = 0
     private var directContext: DirectContext? = null
 
@@ -452,7 +464,7 @@ internal class TaoComposeSceneHostWindows(
         // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
         // Skia needs an EGL-assembled GL interface — the default makeGL()
         // resolves entry points via WGL/opengl32 and fails under ANGLE.
-        val handle = NativeTaoGlBridge.nativeAttach(hwnd)
+        val handle = NativeTaoGlBridge.nativeAttach(hwnd, needsAlphaPresent())
         require(handle != 0L) {
             "Failed to create ANGLE render context for HWND " +
                 "(libEGL/libGLESv2 missing or Direct3D 11 unavailable)"
@@ -465,6 +477,8 @@ internal class TaoComposeSceneHostWindows(
                 null
             }
         attachmentHandle = handle
+        alphaPresent = needsAlphaPresent()
+        surfaceOrigin = surfaceOriginOf(handle)
         directContext =
             (ctx ?: error("Failed to create Skia DirectContext on the ANGLE ES context")).also {
                 // Anchor the GPU resource cache budget. Each frame wraps the
@@ -564,15 +578,7 @@ internal class TaoComposeSceneHostWindows(
 
         // Notify overlay/popup layers when the host window moves on screen
         // — top-level WS_POPUP children of the owner don't auto-track.
-        // Also re-present a frame: the ANGLE child-HWND swapchain presents
-        // through the GDI redirection surface, clipped to the visible region,
-        // so a window created partly off-screen has uninitialized (white)
-        // pixels there — each move re-presents and fills the newly exposed
-        // area. Free while the window is stationary (no WM_MOVE, no frame).
-        window.onMoved { _, _ ->
-            onOwnerMoved()
-            window.requestRedraw()
-        }
+        window.onMoved { _, _ -> onOwnerMoved() }
 
         // Notify overlay/popup layers when the host window loses keyboard
         // focus — for instance, the user clicked the embedded WebView,
@@ -1424,6 +1430,8 @@ internal class TaoComposeSceneHostWindows(
         // recompose → layout → draw — no one-frame lag.
         flushingDispatcher.drain()
 
+        syncPresentAlpha()
+
         // Make sure the ES context + host window surface are current on this
         // thread (defensive — they already were since `attach`, but overlay/
         // popup renderers re-bind their pbuffer surfaces between frames).
@@ -1448,9 +1456,10 @@ internal class TaoComposeSceneHostWindows(
             hostContextDirtied = false
         }
 
-        // Wrap the default framebuffer (id 0). Skia's GL backend uses
-        // BOTTOM_LEFT origin with the GL convention; SurfaceOrigin handles the
-        // flip so Compose draws right-side up.
+        // Wrap the default framebuffer (id 0) — the flip chain's render
+        // texture, stored top-down, or ANGLE's fallback window surface, which
+        // follows the GL convention; [surfaceOrigin] says which, and Skia
+        // flips accordingly so Compose draws right-side up.
         val rt =
             BackendRenderTarget.makeGL(
                 width = widthPx,
@@ -1466,7 +1475,7 @@ internal class TaoComposeSceneHostWindows(
         // creation-time transparent windows. Re-evaluated every frame since
         // the surface is recreated per frame.
         val surface =
-            makeTaoGlSurface(ctx, rt, fullyTransparent || transparentBackgroundState.value) ?: run {
+            makeTaoGlSurface(ctx, rt, fullyTransparent || transparentBackgroundState.value, surfaceOrigin) ?: run {
                 rt.close()
                 return
             }
@@ -2399,6 +2408,33 @@ internal class TaoComposeSceneHostWindows(
         flushingDispatcher.enqueue(Runnable { block() })
     }
 
+    /** Whether frames must carry per-pixel alpha to DWM: a transparent window, or an armed backdrop. */
+    private fun needsAlphaPresent(): Boolean = fullyTransparent || transparentBackgroundState.value
+
+    private fun surfaceOriginOf(handle: Long): SurfaceOrigin =
+        if (NativeTaoGlBridge.nativeIsTopDown(handle)) SurfaceOrigin.TOP_LEFT else SurfaceOrigin.BOTTOM_LEFT
+
+    /**
+     * Moves the attachment to the present path the window's transparency
+     * needs, before a frame renders. The flip-model swapchain (the default)
+     * is the only one DWM receives whole while the window is partly
+     * off-screen, but it presents opaque; a Mica / Acrylic backdrop armed at
+     * run time needs ANGLE's per-pixel-alpha surface, and gets the flip chain
+     * back once disarmed. The new surface holds no frame: this one is
+     * presented whatever it draws, and Skia's GL state cache is resynced.
+     */
+    private fun syncPresentAlpha() {
+        val alpha = needsAlphaPresent()
+        if (alpha == alphaPresent || presentPathFrozen) return
+        alphaPresent = alpha
+        if (!NativeTaoGlBridge.nativeSetAlpha(attachmentHandle, alpha)) {
+            windowsHostLogger.warning("No present path could be rebuilt for alpha=$alpha")
+        }
+        surfaceOrigin = surfaceOriginOf(attachmentHandle)
+        hostContextDirtied = true
+        forcePresentOnce = true
+    }
+
     /**
      * Clear colour for the next present: backdrop tint while a system material
      * is armed, otherwise the resolved clear (alpha-0 for fully transparent
@@ -2433,6 +2469,8 @@ internal class TaoComposeSceneHostWindows(
     fun prepareClose() {
         if (hwnd == 0L || !transparentBackgroundState.value) return
         NativeTaoWindowsDecoBridge.nativePrepareClose(hwnd)
+        // Not worth a new present path for the last frame of the window.
+        presentPathFrozen = true
         // Render the close frame with the opaque themed clear, not the
         // backdrop tint: the backdrop was just reverted above, so a transparent
         // clear would composite as black during the fade-out.
@@ -2659,6 +2697,8 @@ private class WindowsTaoPlatformContext(
 }
 
 /** `NativeView` pointer type / button codes (see `TaoNativeViewHost.dispatchPointerToNative`). */
+private val windowsHostLogger: Logger = Logger.getLogger(TaoComposeSceneHostWindows::class.java.name)
+
 private const val NATIVE_POINTER_PRESS = 1
 private const val NATIVE_SECONDARY_BUTTON = 2
 private const val NATIVE_MIDDLE_BUTTON = 3

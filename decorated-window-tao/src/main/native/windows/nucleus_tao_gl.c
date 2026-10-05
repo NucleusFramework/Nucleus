@@ -15,6 +15,24 @@
  * (ANGLE presents inline — a cross-thread present on ANGLE's shared
  * per-display D3D11 device deadlocks the global display lock).
  *
+ * Presentation is a FLIP-model DXGI swapchain created here on the render
+ * surface, not the window surface ANGLE would build for the HWND: ANGLE's
+ * HWND swapchain is blt-model, and a blt present is copied into the GDI
+ * redirection surface clipped to the window's visible region — which ends
+ * at the edge of the desktop. A frame presented while the window is partly
+ * off-screen therefore never reaches DWM for that part: the window shows a
+ * white (never painted) or stale band when dragged into view, and taskbar
+ * thumbnails / Alt+Tab, which DWM draws from the same copy, show it even
+ * if it never is. A flip-model swapchain is handed to DWM whole. ANGLE
+ * renders into a D3D11 texture through an EGL_ANGLE_d3d_texture_client_buffer
+ * pbuffer (the context's draw surface — so every eglMakeCurrent below binds
+ * it), and nativePresent copies that texture into the back buffer and
+ * presents (same pattern as the overlay path, overlay_dcomp.cpp). The
+ * texture is upside down for D3D (GL row 0 = texture row 0), so the JVM
+ * renders with a TOP_LEFT origin into it (nativeIsTopDown). A window that
+ * needs per-pixel alpha keeps ANGLE's window surface, which is also the
+ * fallback should any step fail (createPresentPath).
+ *
  * The GL surface is NOT the Tao HWND itself: it is a borderless WS_CHILD
  * "render surface" HWND covering the client area, kept at the BOTTOM of the
  * sibling z-order so NativeView children (WebView, …) composite above the
@@ -28,7 +46,8 @@
  *   nativeResize(h,w,h,s)  → resizes the child, stores dimensions for the
  *                            next BackendRenderTarget
  *   <Skia rendering>
- *   nativePresent(h)       → eglSwapBuffers
+ *   nativePresent(h)       → flip-chain copy + Present (eglSwapBuffers on
+ *                            the fallback window surface)
  *   nativeDetach(h)        → tear-down
  *
  * Linked libraries: gdi32.lib user32.lib kernel32.lib
@@ -45,6 +64,20 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <EGL/eglext_angle.h>
+
+#define COBJMACROS
+#include <d3d11.h>
+#include <dxgi1_3.h>
+
+/* GUIDs kept local — avoids linking dxguid.lib under /NODEFAULTLIB. */
+static const GUID kIID_IDXGIDevice =
+    { 0x54ec77fa, 0x1377, 0x44e6, { 0x8c, 0x32, 0x88, 0xfd, 0x5f, 0x44, 0xc8, 0x4c } };
+static const GUID kIID_IDXGIFactory2 =
+    { 0x50c83a1c, 0xe072, 0x4c48, { 0x87, 0xb0, 0x36, 0x30, 0xfa, 0x36, 0xa6, 0xd0 } };
+static const GUID kIID_IDXGISwapChain2 =
+    { 0xa8be2ac4, 0x199f, 0x4946, { 0xb3, 0x31, 0x79, 0x59, 0x9f, 0xb9, 0x8d, 0xe7 } };
+static const GUID kIID_ID3D11Texture2D_Gl =
+    { 0x6f15aaf2, 0xd208, 0x4e89, { 0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f, 0x9c } };
 
 /* /NODEFAULTLIB support */
 int _fltused = 0;
@@ -64,6 +97,7 @@ typedef void (APIENTRY *PFN_glViewport)(int, int, int, int);
 typedef void (APIENTRY *PFN_glClearColor)(float, float, float, float);
 typedef void (APIENTRY *PFN_glClear)(unsigned int);
 typedef void (APIENTRY *PFN_glDisable)(unsigned int);
+typedef void (APIENTRY *PFN_glFlush)(void);
 
 #define NUCLEUS_GL_COLOR_BUFFER_BIT 0x00004000u
 #define NUCLEUS_GL_SCISSOR_TEST     0x0C11u
@@ -90,6 +124,10 @@ static PFN_glViewport                  pglViewport               = NULL;
 static PFN_glClearColor                pglClearColor             = NULL;
 static PFN_glClear                     pglClear                  = NULL;
 static PFN_glDisable                   pglDisable                = NULL;
+static PFN_glFlush                     pglFlush                  = NULL;
+static PFNEGLQUERYDISPLAYATTRIBEXTPROC pEglQueryDisplayAttribEXT = NULL;
+static PFNEGLQUERYDEVICEATTRIBEXTPROC  pEglQueryDeviceAttribEXT  = NULL;
+static PFNEGLCREATEPBUFFERFROMCLIENTBUFFERPROC pEglCreatePbufferFromClientBuffer = NULL;
 
 static void loadEgl(void) {
     if (eglLoaded) return;
@@ -132,6 +170,13 @@ static void loadEgl(void) {
         if (!pglClearColor) pglClearColor = (PFN_glClearColor) pEglGetProcAddress("glClearColor");
         if (!pglClear)      pglClear      = (PFN_glClear)      pEglGetProcAddress("glClear");
         if (!pglDisable)    pglDisable    = (PFN_glDisable)    pEglGetProcAddress("glDisable");
+        pglFlush = (PFN_glFlush) pEglGetProcAddress("glFlush");
+        pEglQueryDisplayAttribEXT = (PFNEGLQUERYDISPLAYATTRIBEXTPROC)
+            pEglGetProcAddress("eglQueryDisplayAttribEXT");
+        pEglQueryDeviceAttribEXT = (PFNEGLQUERYDEVICEATTRIBEXTPROC)
+            pEglGetProcAddress("eglQueryDeviceAttribEXT");
+        pEglCreatePbufferFromClientBuffer = (PFNEGLCREATEPBUFFERFROMCLIENTBUFFERPROC)
+            pEglGetProcAddress("eglCreatePbufferFromClientBuffer");
     }
 
     eglAvailable = (pEglInitialize && pEglChooseConfig && pEglCreateContext &&
@@ -161,12 +206,23 @@ typedef struct {
     HWND  hwnd;        /* Tao top-level window (input, decoration) */
     HWND  surfaceHwnd; /* render-surface child */
     EGLDisplay eglDisplay;
-    EGLSurface eglSurface;
+    EGLSurface eglSurface; /* flip mode: the pbuffer over [texture] */
     EGLContext eglContext;
     EGLConfig  eglConfig;
     int   widthPx;
     int   heightPx;
     float scale;
+    BOOL  alpha;       /* per-pixel alpha requested: ANGLE's blt surface */
+
+    /* Flip-model presentation (see the file header); all NULL when the
+     * attachment fell back to ANGLE's window surface. */
+    ID3D11DeviceContext *imCtx;     /* ANGLE's immediate context */
+    IDXGISwapChain1     *swapChain;
+    ID3D11Texture2D     *texture;   /* what ANGLE renders into */
+    HANDLE frameLatencyWaitable;
+    int    chainWidthPx;
+    int    chainHeightPx;
+    UINT   syncInterval;
 } GlAttachment;
 
 /* ================================================================== */
@@ -417,7 +473,261 @@ static EGLDisplay angleD3D11Display(EGLint deviceType) {
     return pEglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, attribs);
 }
 
-static GlAttachment *attachEgl(HWND hwnd) {
+/* ================================================================== */
+/*  Flip-model presentation                                            */
+/* ================================================================== */
+
+#define FLIP_CHAIN_FORMAT DXGI_FORMAT_B8G8R8A8_UNORM
+#define FLIP_CHAIN_FLAGS  DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT
+/* Upper bound on the paced wait for a queued frame to leave the queue: an
+ * occluded or minimised window may never retire it. */
+#define FLIP_PACE_TIMEOUT_MS 50
+
+/* Destroys the pbuffer and the texture behind it. The pbuffer is the
+ * context's draw surface, so it is unbound first. */
+static void releaseFlipTarget(GlAttachment *att) {
+    if (att->eglSurface != EGL_NO_SURFACE) {
+        pEglMakeCurrent(att->eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        pEglDestroySurface(att->eglDisplay, att->eglSurface);
+        att->eglSurface = EGL_NO_SURFACE;
+    }
+    if (att->texture) {
+        ID3D11Texture2D_Release(att->texture);
+        att->texture = NULL;
+    }
+}
+
+/* Creates the [w]x[h] texture ANGLE renders into and the pbuffer over it,
+ * and binds it. */
+static BOOL createFlipTarget(GlAttachment *att, ID3D11Device *device, int w, int h) {
+    D3D11_TEXTURE2D_DESC desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.Width = (UINT)w;
+    desc.Height = (UINT)h;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = FLIP_CHAIN_FORMAT;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    ID3D11Texture2D *tex = NULL;
+    if (FAILED(ID3D11Device_CreateTexture2D(device, &desc, NULL, &tex))) return FALSE;
+
+    const EGLint pbAttribs[] = {
+        EGL_TEXTURE_FORMAT, EGL_TEXTURE_RGBA,
+        EGL_TEXTURE_TARGET, EGL_TEXTURE_2D,
+        EGL_NONE
+    };
+    EGLSurface pb = pEglCreatePbufferFromClientBuffer(
+        att->eglDisplay, EGL_D3D_TEXTURE_ANGLE, (EGLClientBuffer)tex, att->eglConfig, pbAttribs);
+    if (pb == EGL_NO_SURFACE) {
+        ID3D11Texture2D_Release(tex);
+        return FALSE;
+    }
+    att->texture = tex;
+    att->eglSurface = pb;
+    return pEglMakeCurrent(att->eglDisplay, pb, pb, att->eglContext) ? TRUE : FALSE;
+}
+
+/* ANGLE's own D3D11 device: the pbuffer extension only accepts its
+ * textures, and the copy into the back buffer must stay on its queue.
+ * Borrowed — not AddRef'd. */
+static ID3D11Device *angleDevice(EGLDisplay dpy) {
+    if (!pEglQueryDisplayAttribEXT || !pEglQueryDeviceAttribEXT) return NULL;
+    EGLAttrib devAttr = 0;
+    if (!pEglQueryDisplayAttribEXT(dpy, EGL_DEVICE_EXT, &devAttr)) return NULL;
+    EGLAttrib d3dAttr = 0;
+    if (!pEglQueryDeviceAttribEXT((EGLDeviceEXT)devAttr, EGL_D3D11_DEVICE_ANGLE, &d3dAttr)) return NULL;
+    return (ID3D11Device *)d3dAttr;
+}
+
+static void destroyFlipChain(GlAttachment *att) {
+    releaseFlipTarget(att);
+    if (att->frameLatencyWaitable) {
+        CloseHandle(att->frameLatencyWaitable);
+        att->frameLatencyWaitable = NULL;
+    }
+    if (att->swapChain) {
+        IDXGISwapChain1_Release(att->swapChain);
+        att->swapChain = NULL;
+    }
+    if (att->imCtx) {
+        ID3D11DeviceContext_Release(att->imCtx);
+        att->imCtx = NULL;
+    }
+}
+
+/* Sets up flip-model presentation on the render surface (see the file
+ * header) and leaves its pbuffer current. On failure everything is torn
+ * down and FALSE returned; the caller falls back to ANGLE's window surface. */
+static BOOL createFlipChain(GlAttachment *att) {
+    if (!pEglCreatePbufferFromClientBuffer || !pglFlush) return FALSE;
+    ID3D11Device *device = angleDevice(att->eglDisplay);
+    if (!device) return FALSE;
+
+    RECT rc;
+    if (!GetClientRect(att->surfaceHwnd, &rc)) { rc.right = 1; rc.bottom = 1; }
+    int w = (int)(rc.right - rc.left); if (w < 1) w = 1;
+    int h = (int)(rc.bottom - rc.top); if (h < 1) h = 1;
+
+    IDXGIDevice *dxgiDevice = NULL;
+    IDXGIAdapter *adapter = NULL;
+    IDXGIFactory2 *factory = NULL;
+    IDXGISwapChain2 *chain2 = NULL;
+    BOOL ok = FALSE;
+    do {
+        if (FAILED(ID3D11Device_QueryInterface(device, &kIID_IDXGIDevice, (void **)&dxgiDevice))) break;
+        if (FAILED(IDXGIDevice_GetAdapter(dxgiDevice, &adapter))) break;
+        if (FAILED(IDXGIAdapter_GetParent(adapter, &kIID_IDXGIFactory2, (void **)&factory))) break;
+
+        DXGI_SWAP_CHAIN_DESC1 desc;
+        memset(&desc, 0, sizeof(desc));
+        desc.Width = (UINT)w;
+        desc.Height = (UINT)h;
+        desc.Format = FLIP_CHAIN_FORMAT;
+        desc.SampleDesc.Count = 1;
+        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        desc.BufferCount = 2;
+        /* Anchored top-left, never stretched: while the window outgrows the
+         * last frame, the frame stays put instead of scaling. */
+        desc.Scaling = DXGI_SCALING_NONE;
+        desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        desc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+        desc.Flags = FLIP_CHAIN_FLAGS;
+        if (FAILED(IDXGIFactory2_CreateSwapChainForHwnd(
+                factory, (IUnknown *)device, att->surfaceHwnd, &desc, NULL, NULL, &att->swapChain))) {
+            /* FLIP_DISCARD is Windows 10+; FLIP_SEQUENTIAL is Windows 8. */
+            desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+            if (FAILED(IDXGIFactory2_CreateSwapChainForHwnd(
+                    factory, (IUnknown *)device, att->surfaceHwnd, &desc, NULL, NULL, &att->swapChain))) {
+                att->swapChain = NULL;
+                break;
+            }
+        }
+        /* Alt+Enter is the app's to bind, not DXGI's exclusive fullscreen. */
+        IDXGIFactory2_MakeWindowAssociation(factory, att->surfaceHwnd, DXGI_MWA_NO_ALT_ENTER);
+
+        /* One frame in flight, waited on per swapchain — the pacing ANGLE's
+         * blt present gave (eglSwapBuffers at interval 1 returning a refresh
+         * apart), without IDXGIDevice1::SetMaximumFrameLatency, which every
+         * window on ANGLE's single device would share. */
+        if (FAILED(IDXGISwapChain1_QueryInterface(att->swapChain, &kIID_IDXGISwapChain2, (void **)&chain2))) break;
+        if (FAILED(IDXGISwapChain2_SetMaximumFrameLatency(chain2, 1))) break;
+        att->frameLatencyWaitable = IDXGISwapChain2_GetFrameLatencyWaitableObject(chain2);
+        if (!att->frameLatencyWaitable) break;
+
+        ID3D11Device_GetImmediateContext(device, &att->imCtx);
+        att->chainWidthPx = w;
+        att->chainHeightPx = h;
+        att->syncInterval = 1;
+        if (!createFlipTarget(att, device, w, h)) break;
+        ok = TRUE;
+    } while (0);
+
+    if (chain2) IDXGISwapChain2_Release(chain2);
+    if (factory) IDXGIFactory2_Release(factory);
+    if (adapter) IDXGIAdapter_Release(adapter);
+    if (dxgiDevice) IDXGIDevice_Release(dxgiDevice);
+    if (!ok) destroyFlipChain(att);
+    return ok;
+}
+
+/* Brings the swapchain and the render texture to [w]x[h] and leaves the new
+ * pbuffer current. The texture's content does not survive — the frame that
+ * follows a resize repaints it. */
+static void resizeFlipChain(GlAttachment *att, int w, int h) {
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    if (w == att->chainWidthPx && h == att->chainHeightPx && att->texture) return;
+    ID3D11Device *device = angleDevice(att->eglDisplay);
+    if (!device) return;
+    releaseFlipTarget(att);
+    /* ResizeBuffers wants no outstanding back-buffer reference: presents
+     * release theirs at once, and nothing else holds one. */
+    IDXGISwapChain1_ResizeBuffers(att->swapChain, 0, (UINT)w, (UINT)h, DXGI_FORMAT_UNKNOWN, FLIP_CHAIN_FLAGS);
+    att->chainWidthPx = w;
+    att->chainHeightPx = h;
+    /* On failure the surface stays EGL_NO_SURFACE: frames are skipped until
+     * the next resize tries again. */
+    createFlipTarget(att, device, w, h);
+}
+
+/* Copies the rendered texture into the back buffer and presents it. */
+static void presentFlipChain(GlAttachment *att) {
+    if (!att->texture) return;
+    /* Everything ANGLE recorded must be on the immediate context before the
+     * copy joins the same command stream. */
+    pglFlush();
+    ID3D11Texture2D *backBuffer = NULL;
+    if (FAILED(IDXGISwapChain1_GetBuffer(att->swapChain, 0, &kIID_ID3D11Texture2D_Gl, (void **)&backBuffer))) {
+        return;
+    }
+    ID3D11DeviceContext_CopyResource(att->imCtx, (ID3D11Resource *)backBuffer, (ID3D11Resource *)att->texture);
+    ID3D11Texture2D_Release(backBuffer);
+    IDXGISwapChain1_Present(att->swapChain, att->syncInterval, 0);
+    /* Paced: return once the frame has left the queue, i.e. on the refresh
+     * that shows it. Unpaced (modal resize, drags): return at once. */
+    if (att->syncInterval != 0) {
+        WaitForSingleObjectEx(att->frameLatencyWaitable, FLIP_PACE_TIMEOUT_MS, FALSE);
+    }
+}
+
+/* ================================================================== */
+/*  Present path                                                       */
+/* ================================================================== */
+
+/* Creates the render-surface child and the swapchain behind it, and leaves
+ * its surface current: the flip chain, unless [alpha] — a flip-model HWND
+ * swapchain cannot carry per-pixel alpha (DXGI only accepts
+ * ALPHA_MODE_PREMULTIPLIED on composition swapchains, and DWM composes an
+ * HWND flip chain opaque), while ANGLE's blt surface writes its alpha into
+ * the redirection surface, which is how transparent windows and Mica /
+ * Acrylic backdrops show through. That blt path keeps the off-screen gap
+ * described in the file header; it is also the fallback when the flip chain
+ * cannot be created. */
+static BOOL createPresentPath(GlAttachment *att, BOOL alpha) {
+    HWND surfaceHwnd = createRenderSurface(att->hwnd);
+    if (!surfaceHwnd) return FALSE;
+    if (att->widthPx > 0 && att->heightPx > 0) {
+        SetWindowPos(surfaceHwnd, NULL, 0, 0, att->widthPx, att->heightPx,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_DEFERERASE);
+    }
+    att->surfaceHwnd = surfaceHwnd;
+    att->alpha = alpha;
+    if (!alpha && createFlipChain(att)) return TRUE;
+
+    const EGLint surfAttribs[] = { EGL_NONE };
+    EGLSurface surface = pEglCreateWindowSurface(
+        att->eglDisplay, att->eglConfig, (EGLNativeWindowType)surfaceHwnd, surfAttribs);
+    if (surface == EGL_NO_SURFACE ||
+        !pEglMakeCurrent(att->eglDisplay, surface, surface, att->eglContext)) {
+        if (surface != EGL_NO_SURFACE) pEglDestroySurface(att->eglDisplay, surface);
+        DestroyWindow(surfaceHwnd);
+        att->surfaceHwnd = NULL;
+        return FALSE;
+    }
+    att->eglSurface = surface;
+    /* VSync ON: eglSwapBuffers paces the frame loop off the display
+     * refresh, inline on the event-loop thread (no swap thread — see the
+     * file header). */
+    if (pEglSwapInterval) pEglSwapInterval(att->eglDisplay, 1);
+    return TRUE;
+}
+
+/* Undoes createPresentPath; the context survives, bound to no surface. */
+static void destroyPresentPath(GlAttachment *att) {
+    pEglMakeCurrent(att->eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    if (att->swapChain) {
+        destroyFlipChain(att);
+    } else if (att->eglSurface != EGL_NO_SURFACE) {
+        pEglDestroySurface(att->eglDisplay, att->eglSurface);
+        att->eglSurface = EGL_NO_SURFACE;
+    }
+    if (att->surfaceHwnd && IsWindow(att->surfaceHwnd)) DestroyWindow(att->surfaceHwnd);
+    att->surfaceHwnd = NULL;
+}
+
+static GlAttachment *attachEgl(HWND hwnd, BOOL alpha) {
     loadEgl();
     if (!eglAvailable || !pEglGetPlatformDisplayEXT) return NULL;
 
@@ -458,17 +768,6 @@ static GlAttachment *attachEgl(HWND hwnd) {
         return NULL;
     }
 
-    HWND surfaceHwnd = createRenderSurface(hwnd);
-    if (!surfaceHwnd) return NULL;
-
-    const EGLint surfAttribs[] = { EGL_NONE };
-    EGLSurface surface = pEglCreateWindowSurface(
-        dpy, config, (EGLNativeWindowType)surfaceHwnd, surfAttribs);
-    if (surface == EGL_NO_SURFACE) {
-        DestroyWindow(surfaceHwnd);
-        return NULL;
-    }
-
     /* Request an ES 3 context (Skia prefers it); fall back to ES 2. */
     const EGLint ctxAttribs3[] = { EGL_CONTEXT_MAJOR_VERSION, 3, EGL_NONE };
     const EGLint ctxAttribs2[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
@@ -476,39 +775,26 @@ static GlAttachment *attachEgl(HWND hwnd) {
     if (ctx == EGL_NO_CONTEXT) {
         ctx = pEglCreateContext(dpy, config, EGL_NO_CONTEXT, ctxAttribs2);
     }
-    if (ctx == EGL_NO_CONTEXT) {
-        pEglDestroySurface(dpy, surface);
-        DestroyWindow(surfaceHwnd);
-        return NULL;
-    }
-
-    if (!pEglMakeCurrent(dpy, surface, surface, ctx)) {
-        pEglDestroyContext(dpy, ctx);
-        pEglDestroySurface(dpy, surface);
-        DestroyWindow(surfaceHwnd);
-        return NULL;
-    }
-    /* VSync ON: eglSwapBuffers paces the frame loop off the display
-     * refresh, inline on the event-loop thread (no swap thread — see the
-     * file header). */
-    if (pEglSwapInterval) pEglSwapInterval(dpy, 1);
+    if (ctx == EGL_NO_CONTEXT) return NULL;
 
     GlAttachment *att = (GlAttachment *)HeapAlloc(
         GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(GlAttachment));
     if (!att) {
-        pEglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         pEglDestroyContext(dpy, ctx);
-        pEglDestroySurface(dpy, surface);
-        DestroyWindow(surfaceHwnd);
         return NULL;
     }
     att->hwnd = hwnd;
-    att->surfaceHwnd = surfaceHwnd;
     att->eglDisplay = dpy;
-    att->eglSurface = surface;
+    att->eglSurface = EGL_NO_SURFACE;
     att->eglContext = ctx;
     att->eglConfig = config;
     att->scale = 1.0f;
+
+    if (!createPresentPath(att, alpha)) {
+        pEglDestroyContext(dpy, ctx);
+        HeapFree(GetProcessHeap(), 0, att);
+        return NULL;
+    }
 
     registerHostEgl(hwnd, dpy, ctx, config);
     return att;
@@ -522,12 +808,34 @@ static GlAttachment *attachEgl(HWND hwnd) {
 
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeAttach(
-    JNIEnv *env, jclass clazz, jlong hwndLong)
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean alpha)
 {
     (void)env; (void)clazz;
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd || !IsWindow(hwnd)) return 0;
-    return (jlong)(uintptr_t)attachEgl(hwnd);
+    return (jlong)(uintptr_t)attachEgl(hwnd, alpha ? TRUE : FALSE);
+}
+
+/* Switches the attachment between the flip chain and ANGLE's per-pixel-alpha
+ * blt surface (see createPresentPath) — a Mica / Acrylic backdrop is armed
+ * and disarmed at run time. Neither swapchain can follow the other on the
+ * same HWND (DXGI keeps a window that has had a flip-model swapchain from
+ * taking a blt one), so the render-surface child is recreated with it. The
+ * new surface is current and holds no frame yet: the caller renders one at
+ * once. Returns false when no present path could be rebuilt. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeSetAlpha(
+    JNIEnv *env, jclass clazz, jlong handle, jboolean alphaJ)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    if (!att) return JNI_FALSE;
+    BOOL alpha = alphaJ ? TRUE : FALSE;
+    if (att->alpha == alpha && att->surfaceHwnd) return JNI_TRUE;
+    destroyPresentPath(att);
+    if (createPresentPath(att, alpha)) return JNI_TRUE;
+    /* The other path beats none at all. */
+    return createPresentPath(att, !alpha) ? JNI_TRUE : JNI_FALSE;
 }
 
 /* Address of the GrGLGetProc trampoline for ANGLE (see nucleus_tao_egl_get_proc).
@@ -551,10 +859,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeDetach(
     HWND hostHwnd = att->hwnd;
     /* The EGLDisplay is process-wide (shared with overlays); never
      * eglTerminate it here — just drop this window's context + surface. */
-    pEglMakeCurrent(att->eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    destroyPresentPath(att);
     pEglDestroyContext(att->eglDisplay, att->eglContext);
-    pEglDestroySurface(att->eglDisplay, att->eglSurface);
-    if (IsWindow(att->surfaceHwnd)) DestroyWindow(att->surfaceHwnd);
     HeapFree(GetProcessHeap(), 0, att);
     /* Unregister after freeing att: recompute the global trio to a
      * still-alive host so sibling hosts' popups/overlays keep a live
@@ -586,12 +892,14 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeResize(
     /* Keep the render-surface child glued to the client area. Runs in the
      * same event-dispatch turn as the parent's WM_SIZE (before the next
      * render), so the surface never lags the window visually. */
-    if (att->surfaceHwnd != att->hwnd && IsWindow(att->surfaceHwnd)) {
+    if (att->surfaceHwnd && IsWindow(att->surfaceHwnd)) {
         SetWindowPos(att->surfaceHwnd, NULL, 0, 0, att->widthPx, att->heightPx,
             SWP_NOZORDER | SWP_NOACTIVATE | SWP_DEFERERASE);
     }
-    /* The ANGLE window surface tracks the HWND size automatically; the
-     * explicit viewport keeps Skia surface creation in step. */
+    /* The ANGLE window surface tracks the HWND size automatically; the flip
+     * chain and its texture are resized here. The explicit viewport keeps
+     * Skia surface creation in step. */
+    if (att->swapChain) resizeFlipChain(att, att->widthPx, att->heightPx);
     pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
     if (pglViewport) pglViewport(0, 0, att->widthPx, att->heightPx);
 }
@@ -619,7 +927,11 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeClearPresent(
     float b = (float)( argb        & 0xFF) / 255.0f;
     pglClearColor(r, g, b, a);
     pglClear(NUCLEUS_GL_COLOR_BUFFER_BIT);
-    pEglSwapBuffers(att->eglDisplay, att->eglSurface);
+    if (att->swapChain) {
+        presentFlipChain(att);
+    } else {
+        pEglSwapBuffers(att->eglDisplay, att->eglSurface);
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -635,7 +947,11 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativePresent(
      * surface to be current; re-binding when already current is an ANGLE
      * fast-path no-op. */
     pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
-    pEglSwapBuffers(att->eglDisplay, att->eglSurface);
+    if (att->swapChain) {
+        presentFlipChain(att);
+    } else {
+        pEglSwapBuffers(att->eglDisplay, att->eglSurface);
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -644,7 +960,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeSetVSyncEnabled
 {
     (void)env; (void)clazz;
     GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
-    if (!att || !pEglSwapInterval) return;
+    if (!att) return;
+    if (att->swapChain) {
+        att->syncInterval = enabled ? 1 : 0;
+        return;
+    }
+    if (!pEglSwapInterval) return;
     /* eglSwapInterval applies to the draw surface of the current context, so
      * make our window surface current first (an overlay/popup renderer may have
      * left its pbuffer bound on this thread). interval 1 = pace on the display
@@ -671,6 +992,18 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeHeight(
     (void)env; (void)clazz;
     GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
     return att ? (jint)att->heightPx : 0;
+}
+
+/* Whether the draw surface is the flip chain's texture, whose rows are
+ * top-down for D3D: the JVM then renders with a TOP_LEFT origin (see the
+ * file header). False on ANGLE's window surface, which flips on present. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeIsTopDown(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    return (att && att->swapChain) ? JNI_TRUE : JNI_FALSE;
 }
 
 /* Headless bootstrap: creates the shared ANGLE display/config/context bound

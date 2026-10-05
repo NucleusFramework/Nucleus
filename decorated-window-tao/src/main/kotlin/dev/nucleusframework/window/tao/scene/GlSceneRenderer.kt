@@ -47,11 +47,12 @@ internal fun makeTaoGlSurface(
     context: DirectContext,
     rt: BackendRenderTarget,
     windowTransparent: Boolean,
+    origin: SurfaceOrigin = SurfaceOrigin.BOTTOM_LEFT,
 ): Surface? =
     Surface.makeFromBackendRenderTarget(
         context = context,
         rt = rt,
-        origin = SurfaceOrigin.BOTTOM_LEFT,
+        origin = origin,
         colorFormat = SurfaceColorFormat.RGBA_8888,
         colorSpace = ColorSpace.sRGB,
         surfaceProps = lcdSurfaceProps(windowTransparent),

@@ -17,6 +17,7 @@ private const val LIBRARY_NAME = "nucleus_tao_gl"
  * global display lock (the reason the old WGL backend's swap thread
  * never applied here).
  */
+@Suppress("TooManyFunctions") // one external per JNI entry point
 internal object NativeTaoGlBridge {
     init {
         // ANGLE (libEGL + libGLESv2) backs the Direct3D-11 render path.
@@ -53,9 +54,30 @@ internal object NativeTaoGlBridge {
      * Rendering goes through a child (not the Tao HWND itself), kept at
      * the bottom of the sibling z-order so NativeView children (WebView, …)
      * composite above the Compose canvas.
+     *
+     * [alpha] asks for a surface that carries per-pixel alpha to DWM
+     * (transparent windows, Mica / Acrylic backdrops); otherwise frames go
+     * through a flip-model swapchain, the only one DWM receives whole while
+     * the window is partly off-screen. See [nativeSetAlpha].
      */
     @JvmStatic
-    external fun nativeAttach(hwnd: Long): Long
+    external fun nativeAttach(
+        hwnd: Long,
+        alpha: Boolean,
+    ): Long
+
+    /**
+     * Rebuilds the attachment's present path for [alpha] (see [nativeAttach])
+     * when it differs from the current one. The new surface is current and
+     * holds no frame yet, and [nativeIsTopDown] may have changed: the caller
+     * resyncs Skia's GL state and renders a frame at once. Returns `false`
+     * when no present path could be rebuilt.
+     */
+    @JvmStatic
+    external fun nativeSetAlpha(
+        handle: Long,
+        alpha: Boolean,
+    ): Boolean
 
     /**
      * Address of the native GrGLGetProc trampoline routing to ANGLE's
@@ -123,6 +145,15 @@ internal object NativeTaoGlBridge {
 
     @JvmStatic
     external fun nativeHeight(handle: Long): Int
+
+    /**
+     * Whether the draw surface is stored top-down (the flip-model swapchain's
+     * render texture), in which case Skia must render with a `TOP_LEFT`
+     * origin; `false` on ANGLE's window surface (`BOTTOM_LEFT`). Changes
+     * only through [nativeSetAlpha].
+     */
+    @JvmStatic
+    external fun nativeIsTopDown(handle: Long): Boolean
 
     /**
      * Bootstraps the shared ANGLE display/config/context against a 1x1

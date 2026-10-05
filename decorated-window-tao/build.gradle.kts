@@ -224,6 +224,10 @@ val taoHeadfulTest =
         System.getProperty("nucleus.tao.headful.filter")?.let {
             systemProperty("nucleus.tao.headful.filter", it)
         }
+        // Where the off-screen present case writes its captures (OffScreenPresentHeadfulCases).
+        System.getProperty("nucleus.tao.headful.offscreenDumpDir")?.let {
+            systemProperty("nucleus.tao.headful.offscreenDumpDir", it)
+        }
         // Replays a red monkey run: the case prints the seed it used.
         System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
             systemProperty("nucleus.tao.headful.monkeySeed", it)
