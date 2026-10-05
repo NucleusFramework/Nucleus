@@ -2046,7 +2046,8 @@ internal class TaoComposeSceneHost(
             runOnRenderThread {
                 val ok =
                     try {
-                        // Not asked for its damage: a full frame, and so is the next.
+                        // Not asked for its damage: a full frame, and so is the
+                        // next one drawn into the same drawable.
                         drawableDamage.replay(
                             handle,
                             ctx,
@@ -2056,6 +2057,7 @@ internal class TaoComposeSceneHost(
                             frameH,
                             damage = null,
                             mustPresent = true,
+                            tracked = false,
                             present = NativeMetalBridge::nativePresent,
                         )
                     } finally {

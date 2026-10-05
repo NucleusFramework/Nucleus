@@ -238,6 +238,14 @@ internal class MetalDrawableDamage {
      * drawable and presents it. With [mustPresent] false, a frame that changed
      * nothing is not presented. Returns whether a drawable was presented;
      * [present] runs exactly when one was acquired, as in [replayPictureToFrame].
+     *
+     * [tracked] false is a frame the damage tracker did not walk
+     * (`renderFrameBlocking`): its drawable is left unknown, so the next
+     * frame drawn into it repaints in full. Such a frame pumps the dispatcher
+     * between its record and its replay, so a newer, walked frame can reach
+     * the render thread first — the next damage is then measured from that
+     * one, and a drawable holding this older picture would keep whatever
+     * changed in between (#755).
      */
     @Suppress("LongParameterList")
     fun replay(
@@ -249,6 +257,7 @@ internal class MetalDrawableDamage {
         heightPx: Int,
         damage: IntRect?,
         mustPresent: Boolean,
+        tracked: Boolean = true,
         present: (handle: Long, drawablePtr: Long) -> Unit,
     ): Boolean {
         noteFrame(widthPx, heightPx, damage)
@@ -282,7 +291,7 @@ internal class MetalDrawableDamage {
                     draw(surface, picture, clearColor, PartialRedraw.debugRepaint(repaint), damage)
                     if (PartialRedraw.verify) verify(directContext, surface, picture, clearColor, repaint)
                     surface.flushAndSubmit(syncCpu = false)
-                    if (buffer != null) missed[buffer] = IntRect.Zero
+                    if (buffer != null && tracked) missed[buffer] = IntRect.Zero
                     present(attachmentHandle, frame.drawablePtr)
                     presented = true
                     screenStale = false
