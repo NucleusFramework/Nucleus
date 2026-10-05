@@ -129,15 +129,22 @@ internal class WindowClearColorLayers(
     }
 
     /**
-     * Publishes [argb] as this [key]'s content contribution. Re-entry moves
-     * [key] to the top so co-composed writers resolve by SideEffect order.
+     * Publishes [argb] as this [key]'s content contribution and moves [key] to
+     * the top: among co-composed writers, the last to change its colour wins.
+     * Re-publishing an unchanged colour keeps the order — a writer's
+     * SideEffect runs on every recomposition, and the resolved colour itself
+     * recomposes the chrome (its light/dark), so re-ranking on every call made
+     * a `TitleBar` and a `WindowBackground` of opposite darkness take turns,
+     * one frame each, forever (#755).
      */
     fun setContent(
         key: Any,
         argb: Int,
     ) {
+        val coerced = coerce(argb)
+        if (contentWriters[key] == coerced) return
         contentWriters.remove(key)
-        contentWriters[key] = coerce(argb)
+        contentWriters[key] = coerced
         push()
     }
 

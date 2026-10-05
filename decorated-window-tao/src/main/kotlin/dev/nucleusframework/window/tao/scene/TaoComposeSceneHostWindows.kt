@@ -1391,6 +1391,9 @@ internal class TaoComposeSceneHostWindows(
     /** [partialRedrawFrameKey] of the previous frame. */
     private var lastPartialFrameKey = 0L
 
+    /** `nucleus.tao.partialRedraw.debug`: what [lastPartialFrameKey] was made of. */
+    private var lastFrameKeyParts = ""
+
     /**
      * When the previous frame presented nothing (#755), the earliest time the
      * next may render — the pacing its VSync-paced swap would otherwise have
@@ -1522,7 +1525,7 @@ internal class TaoComposeSceneHostWindows(
                 null
             }
         if (PartialRedraw.debug) {
-            logFullFrameReason(bundle, partial.bufferAge, damage, frameKey)
+            logFullFrameReason(bundle, partial.bufferAge, damage, frameKey, clearArgb)
             partialStats
                 .frame(partial.frameDamage, widthPx * heightPx, bundle.damageSources, partial.bufferAge)
                 ?.let { windowsHostLogger.info(it) }
@@ -1659,14 +1662,20 @@ internal class TaoComposeSceneHostWindows(
         bufferAge: Int,
         damage: IntRect?,
         frameKey: Long,
+        clearArgb: Int,
     ) {
+        val keyParts =
+            "${widthPx}x$heightPx, clear #${Integer.toHexString(clearArgb)}, " +
+                "transparent ${fullyTransparent || transparentBackgroundState.value}, scrims ${popupScrims.all()}"
+        val keyChange = "size, clear colour, transparency or scrims changed ($lastFrameKeyParts -> $keyParts)"
+        lastFrameKeyParts = keyParts
         val reason =
             when {
                 !PartialRedraw.enabled -> "partial redraw disabled"
                 partialSurfaceUnsupported -> "the surface presents no sub-rectangle (no EGL_NV_post_sub_buffer)"
                 bufferAge < 0 -> "resizing"
                 damage == null -> bundle.fullFrameReason
-                frameKey != lastPartialFrameKey -> "size, clear colour, transparency or scrims changed"
+                frameKey != lastPartialFrameKey -> keyChange
                 fullRepaintPending -> "the buffer was drawn outside the scene"
                 damage.coversMostOf(widthPx, heightPx) -> "the damage covers most of the window"
                 else -> null
