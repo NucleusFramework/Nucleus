@@ -13,6 +13,11 @@ import androidx.compose.ui.unit.IntRect
  * what [DamageHistory] keeps. The compositor is then told the frame's own
  * damage (`eglSwapBuffersWithDamage` → `wl_surface.damage_buffer`).
  *
+ * Windows (ANGLE / D3D11): the window surface is ANGLE's offscreen texture,
+ * kept with `EGL_BUFFER_PRESERVED`, so its age is always 1; the frame is
+ * presented with `eglPostSubBufferNV`, which copies only the damaged
+ * rectangle into the swap chain and hands it to DXGI as the dirty rect.
+ *
  * Any doubt is a full repaint: damage unknown, buffer age 0 or older than the
  * history, a resize, a change of clear colour or frame decoration.
  *
@@ -126,8 +131,8 @@ internal fun IntRect.orAPixel(): IntRect = if (width <= 0 || height <= 0) IntRec
 
 /**
  * A frame whose damage is empty changed nothing on screen: it is neither drawn
- * nor presented (Linux host). Never while verifying — the oracle compares what
- * a frame draws.
+ * nor presented (Linux and Windows hosts). Never while verifying — the oracle
+ * compares what a frame draws.
  */
 internal fun IntRect.isIdle(): Boolean = (width <= 0 || height <= 0) && !PartialRedraw.verify
 

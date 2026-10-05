@@ -36,6 +36,8 @@ tasks.withType<JavaExec>().configureEach {
         "nucleus.tao.partialRedraw",
         "nucleus.tao.partialRedraw.debug",
         "nucleus.tao.partialRedraw.verify",
+        "nucleus.tao.partialRedraw.verify.dump",
+        "nucleus.tao.partialRedraw.tint",
     ).forEach { key -> System.getProperty(key)?.let { systemProperty(key, it) } }
 }
 
