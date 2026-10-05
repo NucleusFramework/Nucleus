@@ -115,9 +115,13 @@ internal object NativePopupPlacementHeadfulCases {
             }
         }
 
+    // The right-edge cases sit against the outermost display: past the primary's
+    // right edge there may be another display, and a popup that lands on it is
+    // correctly left there (or moved fully onto it) — not slid back.
+
     private fun popupAtRightEdgeIsClamped(): TaoWindowTestCase =
         popupCase("#569 a popup anchored past the right of the work area slides back in") {
-            moveWindow(fromRightPx = edgeMarginPx())
+            moveWindow(fromRightPx = edgeMarginPx(), work = outermostWorkArea())
             val record = openPopup(alignment = Alignment.TopEnd, offset = IntOffset(POPUP_W_DP, 0))
             checkOnWorkArea(record)
             check(record.clampOffsetPx.x < 0) {
@@ -127,7 +131,7 @@ internal object NativePopupPlacementHeadfulCases {
 
     private fun popupAtBottomRightCornerIsClamped(): TaoWindowTestCase =
         popupCase("#569 a popup in the bottom-right corner clamps on both axes") {
-            moveWindow(fromBottomPx = edgeMarginPx(), fromRightPx = edgeMarginPx())
+            moveWindow(fromBottomPx = edgeMarginPx(), fromRightPx = edgeMarginPx(), work = outermostWorkArea())
             val record =
                 openPopup(
                     alignment = Alignment.BottomEnd,
@@ -265,10 +269,15 @@ internal object NativePopupPlacementHeadfulCases {
                 skipReason() ?: "no owner-move re-clamp on macOS".takeIf { Platform.Current == Platform.MacOS }
             },
             nativePopupLayers = true,
+            // The popup hangs POPUP_H_DP below the window, so the window must
+            // leave that much room under it. The default window centred on the
+            // Windows runner's 768 px display does not (it opened clamped at
+            // (0, -55)); a small one near the top has room on any display.
+            size = DpSize(ESCAPE_WINDOW_DP.dp, ESCAPE_WINDOW_DP.dp),
             content = { PopupSlot() },
         ) {
             awaitUntil("window mapped") { window.hasRealFramePx() }
-            centerWindow()
+            moveWindow(fromTopPx = edgeMarginPx())
             val opened =
                 openPopup(
                     alignment = Alignment.BottomStart,
@@ -282,7 +291,7 @@ internal object NativePopupPlacementHeadfulCases {
                 // Move the window into the bottom-right corner with the popup
                 // still open: the owner-move listener must re-issue the frame.
                 TaoPopupDiagnostics.reset()
-                moveWindow(fromBottomPx = edgeMarginPx(), fromRightPx = edgeMarginPx())
+                moveWindow(fromBottomPx = edgeMarginPx(), fromRightPx = edgeMarginPx(), work = outermostWorkArea())
                 awaitUntil(
                     "popup re-clamped after the owner moved",
                     detail = { "last=${TaoPopupDiagnostics.lastFrame?.frameOnScreenPx}" },
@@ -630,6 +639,18 @@ internal object NativePopupPlacementHeadfulCases {
 
     private fun TaoWindowTestScope.workArea(): IntRect = TaoMonitors.forWindow(window).workAreaPx
 
+    /**
+     * The work area with no display past its right edge (the lowest of them on
+     * a tie), so a popup pushed off its right or bottom edge has nowhere to go
+     * but back. On a single display this is just [workArea].
+     */
+    private fun TaoWindowTestScope.outermostWorkArea(): IntRect =
+        TaoMonitors
+            .all(window)
+            .map { it.workAreaPx }
+            .maxWithOrNull(compareBy<IntRect>({ it.right }, { it.bottom }))
+            ?: workArea()
+
     private fun TaoWindowTestScope.scale(): Float = window.scaleFactor.takeIf { it > 0f } ?: 1f
 
     /** Margin the edge cases leave between the window and the work-area edge. */
@@ -666,8 +687,8 @@ internal object NativePopupPlacementHeadfulCases {
         fromRightPx: Int? = null,
         fromLeftPx: Int? = null,
         abovePx: Int? = null,
+        work: IntRect = workArea(),
     ) {
-        val work = workArea()
         val rect = requireNotNull(bounds()) { "window not mapped" }
         val w = rect[2].toInt()
         val h = rect[3].toInt()
