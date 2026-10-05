@@ -2433,7 +2433,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresent(
 // Identifies the buffer behind an acquired drawable: (IOSurfaceID << 1) | lost,
 // where `lost` means its IOSurface was purged — contents discarded — since it
 // was last drawn. -1 when the drawable has no IOSurface (always repaint).
-// kIOSurfacePurgeableKeepCurrent only reads the state; nothing is changed.
+// Read by setting NonVolatile, which returns the previous state: a purged
+// surface stays Empty — and volatile, purgeable again — until someone makes
+// it non-volatile, and Core Animation never does, so a KeepCurrent read
+// reported that buffer lost (repainted in full) on every frame after one
+// purge. The drawable is about to be drawn and presented: non-volatile is
+// the state Core Animation keeps its drawables in anyway.
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDrawableBufferState(
         JNIEnv *env, jclass clazz, jlong drawablePtr) {
@@ -2443,7 +2448,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDrawableBufferS
     IOSurfaceRef surface = drawable.texture.iosurface;
     if (surface == NULL) return -1;
     uint32_t oldState = kIOSurfacePurgeableNonVolatile;
-    kern_return_t kr = IOSurfaceSetPurgeable(surface, kIOSurfacePurgeableKeepCurrent, &oldState);
+    kern_return_t kr = IOSurfaceSetPurgeable(surface, kIOSurfacePurgeableNonVolatile, &oldState);
     jlong lost = (kr != KERN_SUCCESS || oldState == kIOSurfacePurgeableEmpty) ? 1 : 0;
     return ((jlong) IOSurfaceGetID(surface) << 1) | lost;
 }

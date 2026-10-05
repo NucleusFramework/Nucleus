@@ -323,6 +323,9 @@ internal class MetalDrawableDamage {
      * the size the damage describes.
      */
     private fun bufferOf(frame: MetalFrame): Int? {
+        // Not only the damage's size: a `drawableSize` change reallocates the
+        // pool under the *same* IOSurface IDs, cleared — so every entry goes
+        // on any mismatch, never just this buffer's.
         if (frame.widthPx != width || frame.heightPx != height) {
             missed.clear()
             return null

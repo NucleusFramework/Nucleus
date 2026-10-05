@@ -334,7 +334,8 @@ internal object NativeMetalBridge {
      * Partial redraw (#755): the buffer behind an acquired drawable, as
      * `(IOSurfaceID shl 1) or lost` — `lost` set when its IOSurface was purged
      * (contents discarded) since it was last drawn — or -1 when the drawable
-     * has no IOSurface. Only reads the purgeable state.
+     * has no IOSurface. Leaves the IOSurface non-volatile, so a purge is
+     * reported once rather than on every frame after it.
      */
     @JvmStatic
     external fun nativeDrawableBufferState(drawablePtr: Long): Long
