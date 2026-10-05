@@ -74,6 +74,10 @@ import org.jetbrains.skia.PathBuilder
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
@@ -385,6 +389,32 @@ internal class TaoComposeSceneHostWindows(
     // ANGLE's eglSwapBuffers paces fine inline — the input starvation that
     // motivated the old WGL swap thread never applied to this backend.
 
+    // A clean frame (a frame-clock tick that draws nothing: an FPS readout, a `withFrameNanos` loop) skips the present
+    // below, and with it the VSync pacing, so a scene asking for its next frame right away ticked as fast as the event
+    // loop turns: hundreds of frames a second for nothing, a core kept busy. The frame after a clean one is requested
+    // at the next refresh instead, from a timer rather than by blocking this thread (which every window shares).
+    // Frames that draw are unchanged: the paced swap keeps them on the refresh, and the next one is asked at once.
+    @Volatile private var lastFrameClean = false
+
+    @Volatile private var lastFrameStartNanos = 0L
+
+    /** The display's refresh period, from the paced presents' intervals; 60 Hz until any were measured. */
+    @Volatile private var refreshPeriodNanos = DEFAULT_REFRESH_PERIOD_NANOS
+    private var lastPacedPresentNanos = 0L
+    private val pacedFrameScheduled = AtomicBoolean(false)
+
+    /** The scene's frame request: at once, or at the next refresh after a clean frame (see [lastFrameClean]). */
+    private fun requestFrame() {
+        if (!lastFrameClean) return window.requestRedraw()
+        val delay = lastFrameStartNanos + refreshPeriodNanos - System.nanoTime()
+        if (delay <= 0) return window.requestRedraw()
+        if (!pacedFrameScheduled.compareAndSet(false, true)) return
+        cleanFramePacer.schedule({
+            pacedFrameScheduled.set(false)
+            window.requestRedraw()
+        }, delay, TimeUnit.NANOSECONDS)
+    }
+
     fun attach() {
         check(NativeTaoBridge.isLoaded && NativeTaoGlBridge.isLoaded && NativeTaoWindowsDecoBridge.isLoaded) {
             "Tao Windows native libraries not loaded"
@@ -511,7 +541,7 @@ internal class TaoComposeSceneHostWindows(
                     layoutDirection = GlobalLayoutDirection,
                     composeSceneContext =
                         TaoComposeSceneContext(platformContext, requireNotNull(nativePopupLayerFactory())),
-                    requestFrame = { window.requestRedraw() },
+                    requestFrame = { requestFrame() },
                 )
             } else {
                 canvasLayersSceneBundle(
@@ -519,7 +549,7 @@ internal class TaoComposeSceneHostWindows(
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
                     platformContext = platformContext,
-                    requestFrame = { window.requestRedraw() },
+                    requestFrame = { requestFrame() },
                 )
             }
         scene?.compositionLocalContext = pendingCompositionLocalContext
@@ -1301,7 +1331,21 @@ internal class TaoComposeSceneHostWindows(
         } finally {
             if (unpaced) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
         }
+        if (!unpaced && vsyncEnabled) measureRefreshPeriod()
         TaoPresentDiagnostics.record(window.handle, IntSize(widthPx, heightPx))
+    }
+
+    /**
+     * Folds the interval since the previous paced present into [refreshPeriodNanos]: back-to-back paced presents
+     * return a VBlank apart, while longer gaps (an idle scene, a skipped refresh) aren't a period and are left out.
+     */
+    private fun measureRefreshPeriod() {
+        val now = System.nanoTime()
+        val interval = now - lastPacedPresentNanos
+        lastPacedPresentNanos = now
+        if (interval in MIN_REFRESH_PERIOD_NANOS..(refreshPeriodNanos * 3 / 2)) {
+            refreshPeriodNanos = (refreshPeriodNanos * 7 + interval) / 8
+        }
     }
 
     /** A render-loop frame: WM_PAINT (`RedrawRequested`) or one of the in-loop pumps. */
@@ -1352,6 +1396,7 @@ internal class TaoComposeSceneHostWindows(
         // an animation keeps invalidating. Parks animations; restored via
         // TaoWindow.requestRedraw on the MINIMIZED-off event.
         if (window.isMinimized) return
+        val frameStartNanos = System.nanoTime()
 
         // Push a pending size into the ComposeScene + GL surface before the
         // frame-clock drain, so the size-change-driven recomposition (and any
@@ -1519,11 +1564,14 @@ internal class TaoComposeSceneHostWindows(
         // eglSwapBuffers paces on the display refresh — except for the
         // same-turn resize frame, presented at interval 0 (see above).
         val visualFrame = dirtyBeforeRender || bundle.visualDirty.get()
-        if (mustPresent(visualFrame, resizeApplied, clearArgb)) {
+        val presenting = mustPresent(visualFrame, resizeApplied, clearArgb)
+        if (presenting) {
             forcePresentOnce = false
             lastPresentedClearArgb = clearArgb
             present(unpaced = sameTurnResize && vsyncEnabled)
         }
+        lastFrameStartNanos = frameStartNanos
+        lastFrameClean = !presenting
 
         // Backstop for a continuation that landed after the post-record drain
         // (a worker slower than the record). Costs it the jitter threshold
@@ -2509,7 +2557,7 @@ internal class TaoComposeSceneHostWindows(
             block: Runnable,
         ) {
             queue.add(block)
-            window.requestRedraw()
+            requestFrame()
         }
 
         /**
@@ -2520,7 +2568,7 @@ internal class TaoComposeSceneHostWindows(
          */
         fun enqueue(block: Runnable) {
             queue.add(block)
-            window.requestRedraw()
+            requestFrame()
         }
 
         fun drain() {
@@ -2614,6 +2662,18 @@ private class WindowsTaoPlatformContext(
 private const val NATIVE_POINTER_PRESS = 1
 private const val NATIVE_SECONDARY_BUTTON = 2
 private const val NATIVE_MIDDLE_BUTTON = 3
+
+/** The refresh period assumed until paced presents measured the display's (60 Hz). */
+private const val DEFAULT_REFRESH_PERIOD_NANOS = 16_666_667L
+
+/** Shorter than any display's refresh (500 Hz): paced presents never return closer together. */
+private const val MIN_REFRESH_PERIOD_NANOS = 2_000_000L
+
+/** Requests the frame after a clean one at the next refresh, for every window (see `lastFrameClean`). */
+private val cleanFramePacer: ScheduledExecutorService =
+    Executors.newSingleThreadScheduledExecutor { task ->
+        Thread(task, "Nucleus clean-frame pacer").apply { isDaemon = true }
+    }
 
 /** Bits of `NativeTaoWindowsNativeViewBridge.nativeQueryPointerButtons`. */
 private const val WIN32_LBUTTON_BIT = 1
