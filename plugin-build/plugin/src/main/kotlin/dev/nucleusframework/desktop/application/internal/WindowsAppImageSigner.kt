@@ -233,17 +233,36 @@ internal class WindowsAppImageSigner(
                 description = description,
                 password = certificate.password,
             )
-        val sensitive = setOfNotNull(certificate.password)
         chunked(files, baseArgs).forEach { chunk ->
             withRetries("signtool") {
-                runTool(
-                    tool,
-                    baseArgs + chunk.map { it.absolutePath },
-                    checkExitCodeIsNormal = false,
-                    sensitiveArgs = sensitive,
-                ).exitValue
+                runUnlogged(
+                    tool = tool,
+                    args = baseArgs + chunk.map { it.absolutePath },
+                    secrets = setOfNotNull(certificate.password),
+                )
             }
         }
+    }
+
+    /**
+     * Runs [tool] outside Gradle's exec, which logs every command line it starts at INFO: `/p`
+     * carries the PFX password, which `--info` on CI would print. electron-builder avoids it the
+     * same way, by starting signtool itself. The output is logged with [secrets] masked.
+     */
+    private fun runUnlogged(
+        tool: File,
+        args: List<String>,
+        secrets: Set<String>,
+    ): Int {
+        val process =
+            ProcessBuilder(listOf(tool.absolutePath) + args)
+                .redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        val exitCode = process.waitFor()
+        val masked = secrets.filter { it.isNotEmpty() }.fold(output) { text, secret -> text.replace(secret, "****") }
+        if (exitCode == 0) logger.info(masked) else logger.warn("${tool.name} exited with $exitCode:\n$masked")
+        return exitCode
     }
 
     private fun resolveSignTool(): File =
@@ -322,7 +341,7 @@ internal class WindowsAppImageSigner(
                 Thread.sleep(RETRY_DELAY_MS)
             }
         }
-        throw GradleException("$label failed to sign the app image binaries; see the logs under build/compose/logs")
+        throw GradleException("$label failed to sign the app image binaries; see its output above")
     }
 
     internal companion object {
