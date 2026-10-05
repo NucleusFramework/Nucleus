@@ -1,7 +1,10 @@
 package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
+import org.gradle.api.GradleException
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -10,6 +13,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Base64
 
 class WindowsAppImageSignerTest {
     @get:Rule
@@ -105,6 +109,20 @@ class WindowsAppImageSignerTest {
         assertEquals(files, chunks.flatten())
         chunks.forEach { chunk -> assertTrue(chunk.sumOf { it.absolutePath.length + 3 } < 30_000) }
         assertEquals(emptyList<List<File>>(), WindowsAppImageSigner.chunked(emptyList(), emptyList()))
+    }
+
+    @Test
+    fun `a base64 certificate is decoded, line breaks included`() {
+        val bytes = byteArrayOf(0x30, 0x82.toByte(), 0x0A, 0x1F, 0x02, 0x01, 0x03)
+        val encoded = Base64.getMimeEncoder(4, "\r\n".toByteArray()).encodeToString(bytes)
+        assertArrayEquals(bytes, WindowsAppImageSigner.decodeBase64Certificate(encoded))
+    }
+
+    @Test
+    fun `a link that is not base64 is rejected instead of decoded into garbage`() {
+        listOf("https://example.com/cert.p12", "C:\\certs\\missing.pfx", "", "   ").forEach { link ->
+            assertThrows(GradleException::class.java) { WindowsAppImageSigner.decodeBase64Certificate(link) }
+        }
     }
 
     /** A minimal PE header: DOS stub pointer, PE signature, COFF header and optional header. */

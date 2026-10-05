@@ -5,9 +5,15 @@
 
 package dev.nucleusframework.desktop.application.tasks
 
+import dev.nucleusframework.desktop.application.dsl.WindowsSigningSettings
 import dev.nucleusframework.desktop.application.internal.JvmRuntimeProperties
+import dev.nucleusframework.desktop.application.internal.WindowsAppImageSigner
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
+import dev.nucleusframework.internal.utils.OS
+import dev.nucleusframework.internal.utils.currentArch
+import dev.nucleusframework.internal.utils.currentOS
 import dev.nucleusframework.internal.utils.notNullProperty
+import dev.nucleusframework.internal.utils.nullableProperty
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
@@ -221,6 +227,17 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
             set(false)
         }
 
+    /**
+     * Windows signing settings, read to sign the DLLs inside JARs before training: see
+     * [signJarLibrariesBeforeTraining].
+     */
+    @get:Internal
+    internal var windowsSigning: WindowsSigningSettings? = null
+
+    /** Description stamped on those signatures, the product name electron-builder uses. */
+    @get:Internal
+    internal val windowsSigningDescription: Property<String> = objects.nullableProperty()
+
     /** Extra JVM arguments passed to the training run only. */
     @get:Input
     val extraTrainingJvmArgs: ListProperty<String> = objects.listProperty(String::class.java)
@@ -242,6 +259,8 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
                 ?: throw GradleException("No .cfg file found in $appJarDir")
         val (classpath, javaOptions, mainClass) = parseCfgFile(cfgFile, appJarDir)
 
+        signJarLibrariesBeforeTraining(appDir)
+
         val runtimeTuningArgs = buildAotAdapterCachingArgs(adapterCaching.get())
         val aotCacheFile = File(appJarDir, AOT_CACHE_FILENAME)
         val spec =
@@ -261,6 +280,24 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
         injectAotCacheIntoCfg(cfgFile, runtimeTuningArgs)
 
         logger.lifecycle("[aotCache] Complete: ${aotCacheFile.absolutePath} (${aotCacheFile.length() / 1024}KB)")
+    }
+
+    /**
+     * Signs the DLLs packed inside the image's JARs before the cache is trained. The cache records
+     * each classpath JAR's size and modification time and is refused at startup when either changes,
+     * so the package task, which signs the image afterwards, must find nothing left to rewrite in them.
+     */
+    private fun signJarLibrariesBeforeTraining(appDir: File) {
+        val signing = windowsSigning ?: return
+        if (currentOS != OS.Windows || !signing.enabled || !signing.signNativeLibraries) return
+        WindowsAppImageSigner(
+            settings = signing,
+            description = windowsSigningDescription.get(),
+            architecture = currentArch,
+            workDir = File(temporaryDir, "signing"),
+            runTool = runExternalTool,
+            logger = logger,
+        ).sign(appDir, WindowsAppImageSigner.Scope.JarLibraries)
     }
 
     private fun checkJdkVersion() {

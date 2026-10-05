@@ -2,6 +2,7 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
 import dev.nucleusframework.desktop.application.dsl.WindowsSigningSettings
+import dev.nucleusframework.internal.utils.Arch
 import org.gradle.api.GradleException
 import org.gradle.api.logging.Logger
 import java.io.File
@@ -26,6 +27,11 @@ import java.util.zip.ZipFile
  * library extracts at run time (signed JARs excepted: rewriting an entry would break their digest).
  * A binary that already carries a signature (a JDK vendor's, Microsoft's) keeps it.
  *
+ * The JDK's AOT cache records each classpath JAR's size and modification time and is refused when
+ * either changes, so an image with a cache has its JAR libraries signed by the AOT task before the
+ * training run ([Scope.JarLibraries]); by the time the package task signs the rest, those JARs hold
+ * nothing unsigned and are left untouched.
+ *
  * The certificate is resolved the way electron-builder resolves it for the installer, so one
  * configuration signs both: `certificateFile` / `certificateSha1` / `certificateSubjectName`, then
  * `WIN_CSC_LINK` / `CSC_LINK`, or Azure Artifact Signing when `azureTenantId` is set.
@@ -33,23 +39,39 @@ import java.util.zip.ZipFile
 internal class WindowsAppImageSigner(
     private val settings: WindowsSigningSettings,
     private val description: String,
-    private val architectureId: String,
+    private val architecture: Arch,
     private val workDir: File,
     private val runTool: ExternalToolRunner,
     private val logger: Logger,
 ) {
+    /** What [sign] covers. */
+    enum class Scope {
+        /** The launchers, the loose DLLs and the DLLs inside JARs. */
+        AppImage,
+
+        /** Only the DLLs inside JARs: what must be settled before an AOT cache is trained. */
+        JarLibraries,
+    }
+
     private class EmbeddedLibrary(
         val jar: File,
         val entry: String,
         val extracted: File,
     )
 
-    fun sign(appDir: File) {
+    fun sign(
+        appDir: File,
+        scope: Scope = Scope.AppImage,
+    ) {
         val loose =
-            appDir
-                .walk()
-                .filter { it.isFile && it.isLooseCandidate() && PeSignature.isUnsignedPe(it) }
-                .toList()
+            if (scope == Scope.JarLibraries) {
+                emptyList()
+            } else {
+                appDir
+                    .walk()
+                    .filter { it.isFile && it.isLooseCandidate() && PeSignature.isUnsignedPe(it) }
+                    .toList()
+            }
         workDir.deleteRecursively()
         try {
             val embedded = if (settings.signNativeLibraries) extractUnsignedJarLibraries(appDir) else emptyList()
@@ -199,7 +221,10 @@ internal class WindowsAppImageSigner(
         }
     }
 
-    /** `WIN_CSC_LINK` holds a path, a `file:` URL or the base64-encoded certificate. */
+    /**
+     * `WIN_CSC_LINK` holds a path, a `file:` URL, an `https:` URL or the base64-encoded certificate,
+     * as for electron-builder.
+     */
     private fun materializeCscLink(link: String): File {
         val path =
             when {
@@ -209,10 +234,12 @@ internal class WindowsAppImageSigner(
             }
         if (path.isFile) return path
         val bytes =
-            runCatching { Base64.getMimeDecoder().decode(link) }
-                .getOrElse {
-                    throw GradleException("WIN_CSC_LINK is neither an existing file nor a base64-encoded certificate")
-                }
+            when {
+                link.startsWith("https://") -> URI(link).toURL().openStream().use { it.readBytes() }
+                link.startsWith("http://") ->
+                    throw GradleException("WIN_CSC_LINK must not download the certificate over plain http")
+                else -> decodeBase64Certificate(link)
+            }
         return File(workDir, "certificate.p12").apply {
             parentFile.mkdirs()
             writeBytes(bytes)
@@ -248,7 +275,12 @@ internal class WindowsAppImageSigner(
     private fun resolveSignTool(): File =
         listOf("SIGNTOOL_PATH", "WINDOWS_SIGNTOOL_PATH")
             .firstNotNullOfOrNull { name -> System.getenv(name)?.takeIf { it.isNotBlank() }?.let(::File) }
-            ?: WindowsKitsLocator.locateSignTool(architectureId)
+            ?: WindowsKitsLocator.locateSignTool(
+                when (architecture) {
+                    Arch.X64 -> "x64"
+                    Arch.Arm64 -> "arm64"
+                },
+            )
             ?: throw GradleException(
                 "Windows signing is enabled but signtool.exe was not found: install the Windows SDK " +
                     "or point SIGNTOOL_PATH at it",
@@ -320,6 +352,19 @@ internal class WindowsAppImageSigner(
     }
 
     internal companion object {
+        /**
+         * Decodes a base64 certificate strictly: the MIME decoder skips any character outside the
+         * alphabet, so a mistyped path or URL would decode into garbage instead of failing here.
+         */
+        fun decodeBase64Certificate(link: String): ByteArray =
+            runCatching { Base64.getDecoder().decode(link.filterNot { it.isWhitespace() }) }
+                .getOrNull()
+                ?.takeIf { it.isNotEmpty() }
+                ?: throw GradleException(
+                    "WIN_CSC_LINK / CSC_LINK is neither an existing file, an https URL " +
+                        "nor a base64-encoded certificate",
+                )
+
         private const val MAX_ATTEMPTS = 3
         private const val RETRY_DELAY_MS = 15_000L
         private const val MAX_COMMAND_LINE = 30_000

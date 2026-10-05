@@ -629,11 +629,7 @@ abstract class AbstractElectronBuilderPackageTask
             WindowsAppImageSigner(
                 settings = signing,
                 description = distributions.appName ?: distributions.packageName ?: packageName.get(),
-                architectureId =
-                    when (currentArch) {
-                        Arch.X64 -> "x64"
-                        Arch.Arm64 -> "arm64"
-                    },
+                architecture = currentArch,
                 workDir = File(outputDir, ".nucleus-signing"),
                 runTool = runExternalTool,
                 logger = logger,

@@ -431,6 +431,11 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 javaHome.set(app.javaHomeProvider)
                 javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
                 applyAotCacheSettings(app.nativeDistributions.aotCache)
+                windowsSigning = app.nativeDistributions.windows.signing
+                windowsSigningDescription.set(
+                    project.provider { app.nativeDistributions.appName ?: app.nativeDistributions.packageName }
+                        .orElse(packageNameProvider),
+                )
                 if (currentOS == OS.MacOS) {
                     val mac = app.nativeDistributions.macOS
                     val defaultResources = commonTasks.unpackDefaultResources
