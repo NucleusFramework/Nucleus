@@ -826,6 +826,14 @@ internal object NativeTaoBridge {
     )
 
     /**
+     * Headful-suite diagnostic (macOS): what the cursor for [code] looks like —
+     * hotspot, size and a pixel hash — or `[NSCursor currentCursor]` when
+     * [code] is negative. Equal signatures draw the same shape. `null` elsewhere.
+     */
+    @JvmStatic
+    external fun nativeDiagCursorSignature(code: Int): String?
+
+    /**
      * The last cursor code requested per window handle, exactly as it was
      * handed to [nativeSetCursorIcon]. The platform cursor itself cannot be
      * read back portably (and never under Xvfb), so this is what the headful

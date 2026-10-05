@@ -11,6 +11,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
+#import "nucleus_tao_cursors.h"
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -420,57 +421,32 @@ void nucleus_tao_deactivate_input_context(long ns_view_handle, int64_t token) {
     }
 }
 
-static NSCursor *nucleus_tao_cursor_from_selector(NSString *selectorName) {
-    SEL selector = NSSelectorFromString(selectorName);
-    if (![NSCursor respondsToSelector:selector]) return nil;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    return [NSCursor performSelector:selector];
-#pragma clang diagnostic pop
+/// `nucleus_tao_cursor_for_code` for Rust: the `NSCursor *` (+0, cached for
+/// the process) Tao's cursor rects use (`tao::platform::macos::set_cursor_hook`).
+void *nucleus_tao_cursor_ptr(int code) {
+    return (__bridge void *)nucleus_tao_cursor_for_code(code);
 }
 
-static NSCursor *nucleus_tao_cursor_for_code(int code) {
-    switch (code) {
-        case 1:  return [NSCursor IBeamCursor];
-        case 2:  return [NSCursor pointingHandCursor];
-        case 3:  return [NSCursor crosshairCursor];
-        case 4:
-        case 8: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"busyButClickableCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        case 5: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"_moveCursor");
-            return cursor ?: [NSCursor openHandCursor];
-        }
-        case 6:  return [NSCursor operationNotAllowedCursor];
-        case 7: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"_helpCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        case 9:  return [NSCursor resizeLeftRightCursor];
-        case 13: return [NSCursor openHandCursor];
-        case 14: return [NSCursor closedHandCursor];
-        case 10: return [NSCursor resizeUpDownCursor];
-        case 11: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(
-                @"_windowResizeNorthEastSouthWestCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        case 12: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(
-                @"_windowResizeNorthWestSouthEastCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        default: return [NSCursor arrowCursor];
+/// Headful-suite diagnostic: the signature of the cursor for [code], or of
+/// `[NSCursor currentCursor]` when [code] is negative.
+void nucleus_tao_diag_cursor_signature(int code, char *out, size_t capacity) {
+    if (capacity == 0) return;
+    __block NSString *signature = nil;
+    void (^read)(void) = ^{
+        signature = nucleus_tao_cursor_signature(
+            code < 0 ? [NSCursor currentCursor] : nucleus_tao_cursor_for_code(code));
+    };
+    if ([NSThread isMainThread]) {
+        read();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), read);
     }
+    if (![signature getCString:out maxLength:capacity encoding:NSUTF8StringEncoding]) out[0] = '\0';
 }
 
 void nucleus_tao_set_cursor_icon(int code) {
     void (^apply)(void) = ^{
-        NSCursor *cursor = nucleus_tao_cursor_for_code(code);
-        if (cursor) [cursor set];
+        [nucleus_tao_cursor_for_code(code) set];
     };
 
     if ([NSThread isMainThread]) {
