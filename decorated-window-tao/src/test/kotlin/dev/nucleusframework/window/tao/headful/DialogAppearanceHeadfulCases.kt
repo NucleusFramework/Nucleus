@@ -120,32 +120,46 @@ internal object DialogAppearanceHeadfulCases {
         val hideGoneMs: Long? get() = hiding.firstOrNull { it.dialogTop == null }?.tMs?.minus(hideAtMs)
 
         /**
-         * Grabs during an animation that show exactly the frame before them.
-         * The screen is grabbed faster than the display refreshes, so a few
-         * repeats are normal; many more than the in-scene layer shows means
-         * frames were dropped.
+         * The longest the picture held still during an animation [phase], in
+         * ms: from the first grab of one picture to the first grab of the next.
+         *
+         * A dropped frame is a picture held for longer than a refresh, so this
+         * is measured in time rather than in repeated grabs. The grabber runs
+         * far faster than the display (every 2–15 ms, depending on the host
+         * and its load), so how many consecutive grabs repeat a frame says
+         * more about the grab rate during that particular film than about
+         * the renderer, and two films taken separately are not comparable by
+         * that count. The picture still shown when [phase] ends is not a hold:
+         * nothing came after it to measure against.
          */
-        fun stalls(phase: List<Sample>): Int =
-            phase
-                .zipWithNext()
-                .count { (a, b) ->
-                    a.dialogTop == b.dialogTop &&
-                        a.dialogBottom == b.dialogBottom &&
-                        a.blueness == b.blueness &&
-                        a.scrimRed == b.scrimRed
+        fun longestHoldMs(phase: List<Sample>): Long {
+            var longest = 0L
+            var since = phase.firstOrNull() ?: return 0L
+            for (sample in phase.drop(1)) {
+                val same =
+                    sample.dialogTop == since.dialogTop &&
+                        sample.dialogBottom == since.dialogBottom &&
+                        sample.blueness == since.blueness &&
+                        sample.scrimRed == since.scrimRed
+                if (!same) {
+                    longest = maxOf(longest, sample.tMs - since.tMs)
+                    since = sample
                 }
+            }
+            return longest
+        }
 
-        val showStalls: Int
+        val showLongestHoldMs: Long
             get() {
-                val end = settledMs ?: return 0
-                return stalls(visible.filter { it.tMs <= end })
+                val end = settledMs ?: return 0L
+                return longestHoldMs(visible.filter { it.tMs <= end })
             }
 
-        val hideStalls: Int
+        val hideLongestHoldMs: Long
             get() {
-                val start = hideStartMs ?: return 0
-                val end = hideGoneMs ?: return 0
-                return stalls(hiding.filter { it.tMs - hideAtMs in start..end })
+                val start = hideStartMs ?: return 0L
+                val end = hideGoneMs ?: return 0L
+                return longestHoldMs(hiding.filter { it.tMs - hideAtMs in start..end })
             }
 
         /**
@@ -246,8 +260,8 @@ internal object DialogAppearanceHeadfulCases {
             "show: firstVisible=${firstVisibleMs}ms settled=${settledMs}ms animated=${animationMs}ms " +
                 "slideIn=${slideInPx}px " +
                 "scrimRamp=$scrimRamp finalScrimRed=$finalScrimRed finalBlueness=$finalBlueness " +
-                "stalls=$showStalls | hide: start=${hideStartMs}ms gone=${hideGoneMs}ms " +
-                "minHeight=${hideMinHeightRatio?.let { "%.2f".format(it) }} stalls=$hideStalls"
+                "hold=${showLongestHoldMs}ms | hide: start=${hideStartMs}ms gone=${hideGoneMs}ms " +
+                "minHeight=${hideMinHeightRatio?.let { "%.2f".format(it) }} hold=${hideLongestHoldMs}ms"
     }
 
     /** Keyed by (material, native). */
@@ -501,12 +515,16 @@ internal object DialogAppearanceHeadfulCases {
             val shownNs = System.nanoTime()
             dialogShown.value = true
             var hiddenNs = Long.MAX_VALUE
+            var hideFilmFrom = Int.MAX_VALUE
             try {
                 settle(FILM_MILLIS)
                 stopFilm()
-                // Filming before the hide, for the same reason as the show: the
-                // frames grabbed while it warms up land before `hideAtMs`, in the
-                // settled tail of the appearance.
+                // Filming before the hide, for the same reason as the show. The
+                // frames grabbed while it warms up are dropped below: each is
+                // stamped before its capture runs, so one stamped just before
+                // the hide can already show it, and would be read as the
+                // appearance still changing at its very end.
+                hideFilmFrom = frames.size
                 startFilm()
                 hiddenNs = System.nanoTime()
                 dialogShown.value = false
@@ -519,7 +537,7 @@ internal object DialogAppearanceHeadfulCases {
             val curve =
                 Curve(
                     frames
-                        .filter { (ns, _) -> ns >= shownNs }
+                        .filterIndexed { i, (ns, _) -> ns >= shownNs && (i < hideFilmFrom || ns >= hiddenNs) }
                         .map { (ns, img) -> sample((ns - shownNs) / 1_000_000, img) },
                     hideAtMs = (hiddenNs - shownNs) / 1_000_000,
                 )
@@ -630,13 +648,15 @@ internal object DialogAppearanceHeadfulCases {
             near("hide start (ms)", inScene.hideStartMs, native.hideStartMs, FIRST_VISIBLE_TOLERANCE_MS)
             near("hide gone (ms)", inScene.hideGoneMs, native.hideGoneMs, SETTLE_TOLERANCE_MS)
             near("hide min height ratio", inScene.hideMinHeightRatio, native.hideMinHeightRatio, HEIGHT_RATIO_TOLERANCE)
-            if (native.showStalls > inScene.showStalls + STALL_TOLERANCE) {
+            if (native.showLongestHoldMs > inScene.showLongestHoldMs + HOLD_TOLERANCE_MS) {
                 problems +=
-                    "appearance drops frames: in-scene stalls=${inScene.showStalls} native stalls=${native.showStalls}"
+                    "appearance drops frames: longest hold in-scene=${inScene.showLongestHoldMs}ms " +
+                    "native=${native.showLongestHoldMs}ms (tolerance $HOLD_TOLERANCE_MS)"
             }
-            if (native.hideStalls > inScene.hideStalls + STALL_TOLERANCE) {
+            if (native.hideLongestHoldMs > inScene.hideLongestHoldMs + HOLD_TOLERANCE_MS) {
                 problems +=
-                    "disappearance drops frames: in-scene stalls=${inScene.hideStalls} native stalls=${native.hideStalls}"
+                    "disappearance drops frames: longest hold in-scene=${inScene.hideLongestHoldMs}ms " +
+                    "native=${native.hideLongestHoldMs}ms (tolerance $HOLD_TOLERANCE_MS)"
             }
             check(problems.isEmpty()) {
                 "the native popup layer's dialog does not appear like the in-scene one:\n  " +
@@ -694,7 +714,13 @@ internal object DialogAppearanceHeadfulCases {
     private const val HIDE_FILM_MILLIS = 500L
     private const val HEAVY_ROWS = 40
     private const val HEAVY_REPEATS = 6
-    private const val STALL_TOLERANCE = 3
+
+    /**
+     * How much longer the native layer may hold one picture during an animation
+     * than the in-scene layer did: about two frames at 60 Hz. Across CI and local
+     * films the longest hold is one to three frames (11–58 ms) on both layers.
+     */
+    private const val HOLD_TOLERANCE_MS = 34L
     private const val HEIGHT_RATIO_TOLERANCE = 0.15f
     private const val MAX_FRAMES = 200
 
