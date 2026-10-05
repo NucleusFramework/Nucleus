@@ -14,6 +14,7 @@ import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
+import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
 import dev.nucleusframework.desktop.application.internal.MacPkgScripts
@@ -24,6 +25,7 @@ import dev.nucleusframework.desktop.application.internal.NodeToolchainProvisione
 import dev.nucleusframework.desktop.application.internal.NodeToolchainRequest
 import dev.nucleusframework.desktop.application.internal.NucleusProperties
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
+import dev.nucleusframework.desktop.application.internal.WindowsAppImageSigner
 import dev.nucleusframework.desktop.application.internal.WindowsKitsLocator
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderConfigGenerator
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderInvocation
@@ -114,6 +116,7 @@ abstract class AbstractElectronBuilderPackageTask
             private const val APPX_WIDE_LOGO_HEIGHT = 150
             private const val DEFAULT_PACKAGE_VERSION = "1.0.0"
             private val NSIS_FORMATS = setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)
+            internal val CUSTOM_INSTALL_MACRO = Regex("""!macro\s+customInstall\b""")
         }
 
         @get:InputDirectory
@@ -334,6 +337,7 @@ abstract class AbstractElectronBuilderPackageTask
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir, dist)
+            signWindowsAppImage(workingAppDir, outputDir, dist)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
             val (node, npm) = resolveNodeJs()
@@ -562,7 +566,7 @@ abstract class AbstractElectronBuilderPackageTask
                 )
             }
 
-            val nsisInclude = generateNsisInclude(distributions, outputDir, hotUpdateLayout)
+            val nsisInclude = generateNsisInclude(distributions, appDir, outputDir, hotUpdateLayout)
 
             val configContent =
                 configGenerator.generateConfig(
@@ -612,6 +616,29 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
+         * Signs the app image's launchers (and, with `signNativeLibraries`, its DLLs) before
+         * electron-builder packages it: `--prepackaged` skips electron-builder's own app signing,
+         * which only covers the installer it produces. Runs after the hot update layout, which
+         * moves the binaries but does not touch their bytes.
+         */
+        private fun signWindowsAppImage(
+            appDir: File,
+            outputDir: File,
+            distributions: JvmApplicationDistributions,
+        ) {
+            val signing = distributions.windows.signing
+            if (currentOS != OS.Windows || !signing.enabled) return
+            WindowsAppImageSigner(
+                settings = signing,
+                description = distributions.appName ?: distributions.packageName ?: packageName.get(),
+                architecture = currentArch,
+                workDir = File(outputDir, ".nucleus-signing"),
+                runTool = runExternalTool,
+                logger = logger,
+            ).sign(appDir)
+        }
+
+        /**
          * Generates the NSIS include script passed to electron-builder, or null when nothing needs
          * one. It chains, in order: the user's `nsis.includeScript`, the URL protocol registration and
          * app data removal (only without a user script, see [nucleusNsisMacros]) and the hot update hooks
@@ -619,6 +646,7 @@ abstract class AbstractElectronBuilderPackageTask
          */
         private fun generateNsisInclude(
             distributions: JvmApplicationDistributions,
+            appDir: File,
             outputDir: File,
             hotUpdateLayout: Boolean,
         ): File? {
@@ -626,18 +654,31 @@ abstract class AbstractElectronBuilderPackageTask
             val userInclude =
                 distributions.windows.nsis.includeScript.orNull
                     ?.asFile
-            val nucleusMacros = nucleusNsisMacros(distributions, hasUserInclude = userInclude != null)
-            if (nucleusMacros == null && !hotUpdateLayout) return null
+            val aotJarDir = aotJarDirOrNull(appDir)
+            val nucleusMacros =
+                nucleusNsisMacros(distributions, hasUserInclude = userInclude != null, pinAotJars = aotJarDir != null)
+            // A user script may insert the pinning macro, so it is defined whenever there is one.
+            if (nucleusMacros == null && !hotUpdateLayout && aotJarDir == null && userInclude == null) return null
 
             val script =
                 buildString {
                     if (userInclude != null) {
                         if (hotUpdateLayout) WindowsHotUpdateNsis.warnOnConflicts(userInclude, logger)
+                        if (aotJarDir != null) warnIfCustomInstallSkipsAotPinning(userInclude)
                         appendLine("!include \"${userInclude.absolutePath}\"")
                         appendLine()
                     }
+                    appendLine(aotJarDir?.let { AotJarTimestamps.nsisMacros(it) } ?: AotJarTimestamps.NSIS_NO_OP_MACRO)
                     nucleusMacros?.let { appendLine(it) }
                     if (hotUpdateLayout) append(WindowsHotUpdateNsis.MACROS)
+                    if (aotJarDir != null) {
+                        // Neither the user's script nor the Nucleus macros declared customInstall.
+                        appendLine("!ifmacrondef customInstall")
+                        appendLine("  !macro customInstall")
+                        appendLine("    !insertmacro ${AotJarTimestamps.NSIS_MACRO}")
+                        appendLine("  !macroend")
+                        appendLine("!endif")
+                    }
                 }
 
             val nshFile = File(outputDir, "nucleus-installer.nsh")
@@ -648,6 +689,35 @@ abstract class AbstractElectronBuilderPackageTask
             nshFile.writeText("﻿$script", Charsets.UTF_8)
             logger.info("Generated NSIS include script at ${nshFile.absolutePath}")
             return nshFile
+        }
+
+        /**
+         * The directory holding the image's AOT cache and classpath JARs, relative to the install
+         * directory with Windows separators, or null when the image has no AOT cache.
+         */
+        private fun aotJarDirOrNull(appDir: File): String? =
+            appDir
+                .walk()
+                .firstOrNull { it.isFile && it.name == AOT_CACHE_FILENAME }
+                ?.parentFile
+                ?.relativeTo(appDir)
+                ?.path
+                ?.replace('/', '\\')
+
+        /**
+         * A user `customInstall` replaces the one pinning the JARs' timestamps, so the installed app
+         * would lose its AOT cache unless the script inserts the macro itself.
+         */
+        private fun warnIfCustomInstallSkipsAotPinning(userInclude: File) {
+            val text = userInclude.readText()
+            // `\b` keeps electron-builder's customInstallMode macro from matching.
+            if (CUSTOM_INSTALL_MACRO.containsMatchIn(text) && AotJarTimestamps.NSIS_MACRO !in text) {
+                logger.warn(
+                    "nsis.includeScript declares customInstall: add `!insertmacro ${AotJarTimestamps.NSIS_MACRO}` " +
+                        "to it, or the installed app's AOT cache is refused (the installer resets the JARs' " +
+                        "modification times). The macro is always defined, empty without an AOT cache.",
+                )
+            }
         }
 
         /**
@@ -668,6 +738,7 @@ abstract class AbstractElectronBuilderPackageTask
         private fun nucleusNsisMacros(
             distributions: JvmApplicationDistributions,
             hasUserInclude: Boolean,
+            pinAotJars: Boolean,
         ): String? {
             val appDataDir =
                 runtimeAppId.orNull
@@ -718,6 +789,7 @@ abstract class AbstractElectronBuilderPackageTask
                 buildString {
                     if (handlers.isNotEmpty()) {
                         appendLine("!macro customInstall")
+                        if (pinAotJars) appendLine("  !insertmacro ${AotJarTimestamps.NSIS_MACRO}")
                         for ((scheme, friendlyName) in handlers) {
                             val key = "Software\\Classes\\$scheme"
                             appendLine("  DetailPrint \"Registering $scheme:// URL handler\"")

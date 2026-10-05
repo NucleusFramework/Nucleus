@@ -5,9 +5,16 @@
 
 package dev.nucleusframework.desktop.application.tasks
 
+import dev.nucleusframework.desktop.application.dsl.WindowsSigningSettings
+import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
 import dev.nucleusframework.desktop.application.internal.JvmRuntimeProperties
+import dev.nucleusframework.desktop.application.internal.WindowsAppImageSigner
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
+import dev.nucleusframework.internal.utils.OS
+import dev.nucleusframework.internal.utils.currentArch
+import dev.nucleusframework.internal.utils.currentOS
 import dev.nucleusframework.internal.utils.notNullProperty
+import dev.nucleusframework.internal.utils.nullableProperty
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
@@ -25,11 +32,16 @@ import org.gradle.work.DisableCachingByDefault
 import java.io.File
 import java.io.IOException
 
-private const val AOT_CACHE_FILENAME = "app.aot"
+internal const val AOT_CACHE_FILENAME = "app.aot"
 private const val MIN_AOT_JDK_VERSION = 25
 private const val MIN_AOT_CPU_FEATURE_CHECK_JDK_VERSION = 27
 private const val DEFAULT_SAFETY_TIMEOUT_SECONDS = 300L
 private const val UNLOCK_DIAGNOSTIC_VM_OPTIONS = "-XX:+UnlockDiagnosticVMOptions"
+
+/** Extra options the JDK hands to the cache assembly JVM it forks in the single-step workflow. */
+private const val AOT_CHILD_OPTIONS_ENV = "JDK_AOT_VM_OPTIONS"
+private const val JVMCI_ADD_MODULES = "--add-modules=jdk.internal.vm.ci"
+private val JVMCI_ENABLED_FLAG = Regex("""\bbool\s+EnableJVMCI\s+=\s+true\b""")
 
 /**
  * Builds the Java launcher argument list for AOT training (excluding the java executable path).
@@ -221,6 +233,27 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
             set(false)
         }
 
+    /**
+     * Windows signing settings, read to sign the DLLs inside JARs before training: see
+     * [signJarLibrariesBeforeTraining].
+     */
+    @get:Internal
+    internal var windowsSigning: WindowsSigningSettings? = null
+
+    /** Description stamped on those signatures, the product name electron-builder uses. */
+    @get:Internal
+    internal val windowsSigningDescription: Property<String> = objects.nullableProperty()
+
+    /**
+     * Whether DLLs inside JARs are signed before training: on Windows, with `signing.enabled` and
+     * `signNativeLibraries`, and never for a dev run (`runDistributable` only), which ships nothing
+     * and must not need signtool, the CI certificate or a timestamp server. An input, so turning
+     * signing on, or packaging after a dev run, trains again on the signed JARs: a cache trained on
+     * unsigned ones would be invalidated when the package task signs them.
+     */
+    @get:Input
+    internal val signJarLibraries: Property<Boolean> = objects.notNullProperty(false)
+
     /** Extra JVM arguments passed to the training run only. */
     @get:Input
     val extraTrainingJvmArgs: ListProperty<String> = objects.listProperty(String::class.java)
@@ -242,6 +275,8 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
                 ?: throw GradleException("No .cfg file found in $appJarDir")
         val (classpath, javaOptions, mainClass) = parseCfgFile(cfgFile, appJarDir)
 
+        signJarLibrariesBeforeTraining(appDir)
+
         val runtimeTuningArgs = buildAotAdapterCachingArgs(adapterCaching.get())
         val aotCacheFile = File(appJarDir, AOT_CACHE_FILENAME)
         val spec =
@@ -261,6 +296,24 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
         injectAotCacheIntoCfg(cfgFile, runtimeTuningArgs)
 
         logger.lifecycle("[aotCache] Complete: ${aotCacheFile.absolutePath} (${aotCacheFile.length() / 1024}KB)")
+    }
+
+    /**
+     * Signs the DLLs packed inside the image's JARs before the cache is trained. The cache records
+     * each classpath JAR's size and modification time and is refused at startup when either changes,
+     * so the package task, which signs the image afterwards, must find nothing left to rewrite in them.
+     */
+    private fun signJarLibrariesBeforeTraining(appDir: File) {
+        if (!signJarLibraries.get()) return
+        val signing = windowsSigning ?: return
+        WindowsAppImageSigner(
+            settings = signing,
+            description = windowsSigningDescription.get(),
+            architecture = currentArch,
+            workDir = File(temporaryDir, "signing"),
+            runTool = runExternalTool,
+            logger = logger,
+        ).sign(appDir, WindowsAppImageSigner.Scope.JarLibraries)
     }
 
     private fun checkJdkVersion() {
@@ -510,6 +563,10 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
         spec: TrainingSpec,
     ) {
         unsealConflictingJars(appJarDir)
+        // Last change to the JARs before training. The NSIS installer resets every file's
+        // modification time and pins the JARs back to this same instant, so the cache trained
+        // against them stays valid once installed.
+        if (currentOS == OS.Windows) AotJarTimestamps.normalize(appJarDir)
 
         val jspawnhelper = findJspawnhelper(appDir)
         if (jspawnhelper != null) {
@@ -575,6 +632,12 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
                         .directory(appDir)
                         .redirectErrorStream(true)
                         .redirectOutput(logFile)
+                if (isJvmciEnabled(javaExe, spec.tuningArgs + spec.javaOptions)) {
+                    val env = processBuilder.environment()
+                    env[AOT_CHILD_OPTIONS_ENV] =
+                        listOfNotNull(env[AOT_CHILD_OPTIONS_ENV], JVMCI_ADD_MODULES).joinToString(" ")
+                    logger.lifecycle("[aotCache] JVMCI is on: handing $JVMCI_ADD_MODULES to the assembly JVM")
+                }
 
                 val isLinux = System.getProperty("os.name").lowercase().contains("linux")
                 val needsXvfb = isLinux && System.getenv("DISPLAY").isNullOrEmpty()
@@ -625,6 +688,28 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
             argFile?.delete()
         }
     }
+
+    /**
+     * Whether JVMCI is on for the training run (GraalVM enables it by default), which implicitly adds
+     * `jdk.internal.vm.ci` to the module graph. The single-step workflow's assembly JVM is only
+     * handed the explicit options, so it dumps the cache without that module and every launch then
+     * reports a `jdk.module.addmods` mismatch and drops the archived module graph. The module is
+     * therefore passed to the assembly JVM explicitly through [AOT_CHILD_OPTIONS_ENV].
+     */
+    private fun isJvmciEnabled(
+        javaExe: String,
+        jvmOptions: List<String>,
+    ): Boolean =
+        runCatching {
+            // The app's own options count: `-XX:-EnableJVMCI` there must not get the module added.
+            val process =
+                ProcessBuilder(listOf(javaExe) + jvmOptions + listOf("-XX:+PrintFlagsFinal", "-version"))
+                    .redirectErrorStream(true)
+                    .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor()
+            JVMCI_ENABLED_FLAG.containsMatchIn(output)
+        }.getOrDefault(false)
 
     private fun injectAotCacheIntoCfg(
         cfgFile: File,

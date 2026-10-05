@@ -31,6 +31,15 @@ abstract class WindowsSigningSettings {
     /** Timestamp server URL */
     var timestampServer: String? = null
 
+    /**
+     * Also sign the DLLs bundled with the app — the Java runtime's, Skiko's, the Nucleus natives and
+     * those packed inside JARs (signed JARs excepted) — with this certificate. Windows Smart App
+     * Control refuses to load an unsigned DLL, whichever process loads it. Binaries that already
+     * carry a signature keep it. Only applies when [enabled] is set; the launcher executables are
+     * signed regardless. Default: true
+     */
+    var signNativeLibraries: Boolean = true
+
     /** Signing hash algorithm. Default: [SigningAlgorithm.Sha256] */
     var algorithm: SigningAlgorithm = SigningAlgorithm.Sha256
 

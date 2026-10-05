@@ -431,6 +431,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 javaHome.set(app.javaHomeProvider)
                 javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
                 applyAotCacheSettings(app.nativeDistributions.aotCache)
+                applyWindowsSigningSettings(this)
                 if (currentOS == OS.MacOS) {
                     val mac = app.nativeDistributions.macOS
                     val defaultResources = commonTasks.unpackDefaultResources
@@ -517,6 +518,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                         javaHome.set(app.javaHomeProvider)
                         javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
                         applyAotCacheSettings(app.nativeDistributions.aotCache)
+                        applyWindowsSigningSettings(this)
                         if (currentOS == OS.MacOS) {
                             val mac = app.nativeDistributions.macOS
                             val defaultResources = commonTasks.unpackDefaultResources
@@ -690,15 +692,32 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
 }
 
 /**
- * Registers a task that merges the per-format auto-update manifests of the current OS and uploads
- * the union to S3. electron-builder is always told `publishAutoUpdate: false` for S3 (in the
- * config generator), so the plugin owns the single `<channel><osSuffix>.yml` key that every format
- * (and arch) shares — for one format it publishes that manifest verbatim, for several their union.
- *
- * Returns null when S3 is not enabled, or when no auto-updatable format
- * (see [TargetFormat.producesUpdateManifest]) is compatible with the current OS — in which case
- * there is no manifest to publish.
+ * Hands the Windows signing settings to a training task, which signs the DLLs inside JARs before
+ * training: a JAR rewritten afterwards would invalidate the cache. Both the regular and the
+ * sandboxed (AppX) task need them.
  */
+private fun JvmApplicationContext.applyWindowsSigningSettings(task: AbstractGenerateAotCacheTask) {
+    val distributions = app.nativeDistributions
+    task.windowsSigning = distributions.windows.signing
+    // A run* task alone is a dev run, as for the GraalVM quick build: nothing is shipped.
+    val requestedTasks = project.gradle.startParameter.taskNames
+    val devRunOnly =
+        requestedTasks.isNotEmpty() &&
+            requestedTasks.all { it.substringAfterLast(':').startsWith("run", ignoreCase = true) }
+    // Read when the task runs, once the DSL is configured.
+    task.signJarLibraries.set(
+        project.provider {
+            val signing = distributions.windows.signing
+            currentOS == OS.Windows && signing.enabled && signing.signNativeLibraries && !devRunOnly
+        },
+    )
+    task.windowsSigningDescription.set(
+        project
+            .provider { distributions.appName ?: distributions.packageName }
+            .orElse(packageNameProvider),
+    )
+}
+
 /**
  * Maps the `aotCache { }` DSL onto the training task.
  *
@@ -740,6 +759,16 @@ private fun JvmApplicationContext.registerServeUpdateFeedIfNeeded(
     }
 }
 
+/**
+ * Registers a task that merges the per-format auto-update manifests of the current OS and uploads
+ * the union to S3. electron-builder is always told `publishAutoUpdate: false` for S3 (in the
+ * config generator), so the plugin owns the single `<channel><osSuffix>.yml` key that every format
+ * (and arch) shares — for one format it publishes that manifest verbatim, for several their union.
+ *
+ * Returns null when S3 is not enabled, or when no auto-updatable format
+ * (see [TargetFormat.producesUpdateManifest]) is compatible with the current OS — in which case
+ * there is no manifest to publish.
+ */
 private fun JvmApplicationContext.registerUpdateYmlMergeIfNeeded(
     nonStoreFormats: List<TargetFormat>,
     nonStorePackageFormats: List<TaskProvider<AbstractElectronBuilderPackageTask>>,
