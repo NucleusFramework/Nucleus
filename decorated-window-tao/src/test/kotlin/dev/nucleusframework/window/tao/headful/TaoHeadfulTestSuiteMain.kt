@@ -425,6 +425,8 @@ public object TaoHeadfulTestSuiteMain {
             // real pointer wherever their last gesture ended.
             OffScreenPresentHeadfulCases.all() +
             UnpaintedFlashHeadfulCases.all() +
+            ResizeSyncHeadfulCases.all() +
+            TearOffFlashHeadfulCases.all() +
             NativeViewMonkeyHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all()
 

@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.TaoMonitors
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+import dev.nucleusframework.window.tao.scene.TaoPresentDiagnostics
 import java.awt.image.BufferedImage
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
@@ -51,21 +52,13 @@ internal object OffScreenPresentHeadfulCases {
             else -> null
         }
 
-    /**
-     * Known gap: ANGLE's blt present is clipped at the desktop's edge, and the
-     * flip chain that is not stays opt-in (`NUCLEUS_TAO_FLIP_PRESENT=1`, see
-     * `nucleus_tao_gl.c`) until it resizes without trembling.
-     */
-    private fun offScreenSkipReason(): String? =
-        skipReason() ?: "known gap without NUCLEUS_TAO_FLIP_PRESENT=1 (blt present is clipped at the desktop edge)"
-            .takeIf { System.getenv("NUCLEUS_TAO_FLIP_PRESENT") != "1" }
-
+    @Suppress("LongMethod") // one real-window scenario, read top to bottom
     private fun aFramePresentedOffScreenIsWholeOnceInView(): TaoWindowTestCase {
         val fill = mutableStateOf(BEFORE)
         val drawnFills = AtomicInteger()
         return TaoWindowTestCase(
             name = "windows a frame presented off-screen is whole once moved into view",
-            skip = ::offScreenSkipReason,
+            skip = ::skipReason,
             size = DpSize(WINDOW_W_DP.dp, WINDOW_H_DP.dp),
             // The fill is the whole content: nothing else may cover or share it.
             paintDefaultBackground = false,
@@ -73,6 +66,8 @@ internal object OffScreenPresentHeadfulCases {
                 Box(
                     Modifier.fillMaxSize().drawBehind {
                         drawRect(fill.value)
+                        // A band along the top: a copy that reaches DWM upside down shows it at the bottom.
+                        drawRect(TOP_BAND, size = Size(size.width, TOP_BAND_DP.dp.toPx()))
                         if (fill.value == AFTER) drawnFills.incrementAndGet()
                     },
                 )
@@ -115,8 +110,21 @@ internal object OffScreenPresentHeadfulCases {
             // frame on the decorated window: the caption is client-drawn).
             val offScreenFromX = desktopRight - parkedX + EDGE_INSET_PX
 
+            val mirroredWhileParked = TaoPresentDiagnostics.hasMirror(window.handle)
             val parkedCopy = printClient(hwnd)
             val parkedCoverage = parkedCopy?.coverage(offScreenFromX)
+
+            // Minimized and restored to the same size with nothing to redraw:
+            // no frame comes, and the mirror must come back on its own (a size
+            // change takes it down, only the settle timer brings it back).
+            window.setMinimized(true)
+            awaitUntil("window minimized") { window.isMinimized }
+            settle(PRESENT_SETTLE_MILLIS)
+            window.setMinimized(false)
+            awaitUntil("window restored") { !window.isMinimized && bounds()?.get(0)?.toInt() == parkedX }
+            settle(MIRROR_RETURN_MILLIS)
+            val restoredCopy = printClient(hwnd)
+            val restoredCoverage = restoredCopy?.coverage(offScreenFromX)
 
             // Into view, read before the loop runs again: a drag outruns the
             // repaint the move schedules, so what the user sees while dragging
@@ -141,9 +149,35 @@ internal object OffScreenPresentHeadfulCases {
                     "dwmCopyParked=${parkedCoverage?.describe()} dwmCopyInView=${inViewCoverage?.describe()} " +
                     "screen=${screenCoverage?.describe()}",
             )
+            // The band is where it was drawn, in the copy DWM keeps.
+            val bandRow = TOP_BAND_PX_PROBE
+            val bottomRow = (parkedCopy?.height ?: 0) - TOP_BAND_PX_PROBE
+            val orientation =
+                parkedCopy?.let { copy ->
+                    val x = offScreenFromX + EDGE_INSET_PX
+                    when {
+                        !copy.pixel(x, bandRow).matches(TOP_BAND.toArgb()) ->
+                            "the top band is not at the top of DWM's copy (#%08X)".format(copy.pixel(x, bandRow))
+                        copy.pixel(x, bottomRow).matches(TOP_BAND.toArgb()) -> "DWM's copy is upside down"
+                        else -> null
+                    }
+                }
+            // Back fully on-screen, the mirror goes with the next frame: a window
+            // within the desktop costs nothing more than the blt present.
+            settle(PRESENT_SETTLE_MILLIS)
+            val releasedInView =
+                awaitUntilOrTimeout(MIRROR_RELEASE_MILLIS) { !TaoPresentDiagnostics.hasMirror(window.handle) }
+            println(
+                "[offscreen] mirroredWhileParked=$mirroredWhileParked releasedInView=$releasedInView " +
+                    "dwmCopyRestored=${restoredCoverage?.describe()}",
+            )
             val failures =
                 listOfNotNull(
+                    "no frame mirror while parked off-screen".takeUnless { mirroredWhileParked },
+                    "the frame mirror outlived the window's return on-screen".takeUnless { releasedInView },
+                    orientation,
                     parkedCoverage.failure("DWM's copy (taskbar thumbnail) while parked off-screen"),
+                    restoredCoverage.failure("DWM's copy after a minimize and restore, still parked"),
                     inViewCoverage.failure("DWM's copy right after moving into view"),
                     screenCoverage.failure("the screen right after moving into view"),
                 )
@@ -263,7 +297,8 @@ internal object OffScreenPresentHeadfulCases {
             var matching = 0
             var total = 0
             var firstMiss: Int? = null
-            for (y in EDGE_INSET_PX until height - EDGE_INSET_PX step SAMPLE_STEP_PX) {
+            // Below the top band (up to 2x scale).
+            for (y in BELOW_TOP_BAND_PX until height - EDGE_INSET_PX step SAMPLE_STEP_PX) {
                 for (x in fromX until width - EDGE_INSET_PX step SAMPLE_STEP_PX) {
                     val pixel = argb[offset + y * width + x]
                     total++
@@ -309,9 +344,13 @@ internal object OffScreenPresentHeadfulCases {
     ): Boolean = abs((a and 0xFF) - (b and 0xFF)) <= CHANNEL_TOLERANCE
 
     private val BEFORE = Color(0xFF8E24AA)
+    private val TOP_BAND = Color(0xFF43A047)
     private val AFTER = Color(0xFF1E88E5)
 
     private const val WINDOW_W_DP = 480
+    private const val TOP_BAND_DP = 24
+    private const val TOP_BAND_PX_PROBE = 6
+    private const val BELOW_TOP_BAND_PX = 2 * TOP_BAND_DP + 8
     private const val FRAME_INSET_DP = 16
     private const val WINDOW_H_DP = 320
     private const val VISIBLE_WHEN_PARKED_PX = 120
@@ -319,6 +358,10 @@ internal object OffScreenPresentHeadfulCases {
     private const val EDGE_INSET_PX = 8
     private const val SAMPLE_STEP_PX = 4
     private const val PRESENT_SETTLE_MILLIS = 400L
+    private const val MIRROR_RELEASE_MILLIS = 2_000L
+
+    /** The mirror's settle timer (200 ms) plus composition slack. */
+    private const val MIRROR_RETURN_MILLIS = 600L
     private const val COMPOSE_WAIT_MILLIS = 150L
     private const val TRANSPARENT_SETTLE_MILLIS = 1_000L
     private const val CHANNEL_TOLERANCE = 6

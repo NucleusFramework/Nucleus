@@ -54,30 +54,9 @@ internal object NativeTaoGlBridge {
      * Rendering goes through a child (not the Tao HWND itself), kept at
      * the bottom of the sibling z-order so NativeView children (WebView, …)
      * composite above the Compose canvas.
-     *
-     * [alpha] asks for a surface that carries per-pixel alpha to DWM
-     * (transparent windows, Mica / Acrylic backdrops); otherwise frames go
-     * through a flip-model swapchain, the only one DWM receives whole while
-     * the window is partly off-screen. See [nativeSetAlpha].
      */
     @JvmStatic
-    external fun nativeAttach(
-        hwnd: Long,
-        alpha: Boolean,
-    ): Long
-
-    /**
-     * Rebuilds the attachment's present path for [alpha] (see [nativeAttach])
-     * when it differs from the current one. The new surface is current and
-     * holds no frame yet, and [nativeIsTopDown] may have changed: the caller
-     * resyncs Skia's GL state and renders a frame at once. Returns `false`
-     * when no present path could be rebuilt.
-     */
-    @JvmStatic
-    external fun nativeSetAlpha(
-        handle: Long,
-        alpha: Boolean,
-    ): Boolean
+    external fun nativeAttach(hwnd: Long): Long
 
     /**
      * Address of the native GrGLGetProc trampoline routing to ANGLE's
@@ -147,13 +126,34 @@ internal object NativeTaoGlBridge {
     external fun nativeHeight(handle: Long): Int
 
     /**
-     * Whether the draw surface is stored top-down (the flip-model swapchain's
-     * render texture), in which case Skia must render with a `TOP_LEFT`
-     * origin; `false` on ANGLE's window surface (`BOTTOM_LEFT`). Changes
-     * only through [nativeSetAlpha].
+     * Allows mirroring frames into a DirectComposition visual over the window
+     * while it overhangs the desktop (opaque windows only). The blt present is
+     * clipped at the desktop's edge; the visual reaches DWM whole — the part of
+     * the window off-screen, taskbar thumbnails and Alt+Tab included — and
+     * steps aside while the window's size changes. Nothing is allocated while
+     * the window is fully on-screen. See `nucleus_tao_gl_mirror.cpp`.
+     *
+     * Returns whether mirroring is on: `false` when [enabled] is, or when the
+     * driver lacks what it needs (DirectComposition, the ANGLE EGLImage
+     * extension). A failure later on is reported by [nativeNeedsRepaintOnMove].
      */
     @JvmStatic
-    external fun nativeIsTopDown(handle: Long): Boolean
+    external fun nativeSetMirrorEnabled(
+        handle: Long,
+        enabled: Boolean,
+    ): Boolean
+
+    /**
+     * Whether a window move must be answered with a frame: true without a
+     * working mirror (the blt present lost what was off-screen), and while one
+     * is allocated (a frame swapped fully on-screen releases it).
+     */
+    @JvmStatic
+    external fun nativeNeedsRepaintOnMove(handle: Long): Boolean
+
+    /** Whether a frame mirror is allocated right now (the window overhangs the desktop). */
+    @JvmStatic
+    external fun nativeHasMirror(handle: Long): Boolean
 
     /**
      * Bootstraps the shared ANGLE display/config/context against a 1x1
