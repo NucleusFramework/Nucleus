@@ -198,11 +198,32 @@ internal object DialogAppearanceHeadfulCases {
                 return settled.firstOrNull()?.tMs
             }
 
-        /** How much darker the scrim got between the dialog's first frame and the end. */
+        /**
+         * How much darker the scrim still got after the dialog was half faded in.
+         *
+         * Read at the same moment as [fadedIn], and for the same reason: the
+         * first visible frame lands wherever the sampling clock does, and the
+         * scrim moves ~40 levels between two grabs early in the fade, so a ramp
+         * anchored on it measured the clock (in-scene 115 vs native 88 on one
+         * run, 94 vs 117 on the next). The scrim is interpolated between the
+         * two grabs that straddle half the settled blueness, which names the
+         * same instant of the animation however the grabs fall.
+         */
         val scrimRamp: Int
             get() {
-                val first = visible.firstOrNull()?.scrimRed ?: return 0
-                return first - finalScrimRed
+                val half = finalBlueness / 2.0
+                val after = samples.indexOfFirst { it.blueness >= half }
+                if (after < 0) return 0
+                val b = samples[after]
+                val scrimAtHalf =
+                    if (after == 0) {
+                        b.scrimRed.toDouble()
+                    } else {
+                        val a = samples[after - 1]
+                        val k = (half - a.blueness) / (b.blueness - a.blueness)
+                        a.scrimRed + k * (b.scrimRed - a.scrimRed)
+                    }
+                return (scrimAtHalf - finalScrimRed).roundToInt()
             }
 
         fun table(): String =
@@ -577,7 +598,18 @@ internal object DialogAppearanceHeadfulCases {
             }
             near("appearance duration (ms)", inScene.animationMs, native.animationMs, SETTLE_TOLERANCE_MS)
             near("slide-in (px)", inScene.slideInPx, native.slideInPx, SLIDE_TOLERANCE_PX)
-            near("scrim ramp", inScene.scrimRamp, native.scrimRamp, COLOR_TOLERANCE)
+            // Asymmetric, like first visible: the native dialog's surface
+            // presents without waiting for the owner frame that draws its
+            // scrim, so the scrim trails the content by a frame (measured +14
+            // and +18 over in-scene). A ramp *smaller* than in-scene is the
+            // regression this guards — a scrim missing or popped in at full
+            // strength — and stays strict.
+            val rampDelta = native.scrimRamp - inScene.scrimRamp
+            if (rampDelta < -COLOR_TOLERANCE || rampDelta > SCRIM_TRAIL_TOLERANCE) {
+                problems +=
+                    "scrim ramp: in-scene=${inScene.scrimRamp} native=${native.scrimRamp} " +
+                    "(tolerance -$COLOR_TOLERANCE/+$SCRIM_TRAIL_TOLERANCE)"
+            }
             near("final scrim", inScene.finalScrimRed, native.finalScrimRed, COLOR_TOLERANCE)
             near("final content", inScene.finalBlueness, native.finalBlueness, COLOR_TOLERANCE)
             near("hide start (ms)", inScene.hideStartMs, native.hideStartMs, FIRST_VISIBLE_TOLERANCE_MS)
@@ -608,7 +640,7 @@ internal object DialogAppearanceHeadfulCases {
         val x = w / 2
         var top: Int? = null
         var bottom: Int? = null
-        for (y in 0 until h) {
+        for (y in FRAME_EDGE_INSET until h - FRAME_EDGE_INSET) {
             if (isDialogColor(img.getRGB(x, y))) {
                 if (top == null) top = y
                 bottom = y
@@ -661,4 +693,15 @@ internal object DialogAppearanceHeadfulCases {
     private const val SETTLE_TOLERANCE_MS = 80L
     private const val SLIDE_TOLERANCE_PX = 4
     private const val COLOR_TOLERANCE = 20
+
+    /** How far the native layer's scrim may trail its content: about two frames of the fade. */
+    private const val SCRIM_TRAIL_TOLERANCE = 40
+
+    /**
+     * Rows and columns left out of the dialog search at the capture's edges. The
+     * capture is the window's outer rect, which on Windows includes the
+     * invisible resize borders (~8 px): the desktop shows through there, and the
+     * runner's blue wallpaper read as the dialog in every frame.
+     */
+    private const val FRAME_EDGE_INSET = 16
 }
