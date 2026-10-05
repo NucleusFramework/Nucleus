@@ -537,6 +537,17 @@ public fun ApplicationScope.DecoratedWindow(
                 if (Platform.Current == Platform.Linux) {
                     awaitMappedOnX11(window)
                     window.setOuterPosition(xDp, yDp)
+                    // A `Moved` that landed during the wait reported where the
+                    // window was *before* this re-apply, and its echo already
+                    // sits in `state.position` (the listener writes both it and
+                    // `applied`). Overwriting `applied` below without it would
+                    // have the restart this triggers replay that echo as a new
+                    // request — moving the window back to wherever the WM had
+                    // put it, the exact placement this re-apply overrides. Put
+                    // the request back instead. An app write that landed
+                    // meanwhile differs from `applied` and is left to the
+                    // restart.
+                    if (state.position != pos && state.position == applied.position) state.position = pos
                 }
                 applied.position = pos
             }

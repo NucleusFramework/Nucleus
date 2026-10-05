@@ -32,6 +32,13 @@ import dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT as SHARED_M
 private const val STALE_REDRAW_NANOS: Long = 1_000_000_000L
 
 /**
+ * How long an unanswered move makes an origin `Moved` suspect on Linux — far
+ * past the map and WM round-trip it covers, short enough that a window the WM
+ * does place at the origin is reported.
+ */
+private const val PLACEHOLDER_MOVE_WINDOW_NANOS: Long = 2_000_000_000L
+
+/**
  * Phase 2 handle to a window owned by the Tao event loop.
  *
  * Native commands are thread-safe: they post commands as user events to the
@@ -150,6 +157,23 @@ public class TaoWindow internal constructor(
     // for state-sync. They must coexist.
     private val resizedListeners = CopyOnWriteArrayList<(Int, Int) -> Unit>()
     private val movedListeners = CopyOnWriteArrayList<(Int, Int) -> Unit>()
+
+    /**
+     * Linux/X11: the physical-px target of the last [setOuterPosition] that no
+     * `Moved` has answered yet, and when it was asked for ([System.nanoTime]).
+     * See [isGdkPlaceholderMove].
+     */
+    @Volatile
+    private var pendingMoveXPx = 0
+
+    @Volatile
+    private var pendingMoveYPx = 0
+
+    @Volatile
+    private var pendingMoveSinceNanos = 0L
+
+    @Volatile
+    private var pendingMove = false
     private val minimizedListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
 
     @Volatile
@@ -1066,7 +1090,53 @@ public class TaoWindow internal constructor(
             "setOuterPosition($xDp, $yDp): not a screen position (NaN, infinite or beyond " +
                 "±$MAX_OUTER_POSITION_DP dp) — an unspecified or uncomputed position?"
         }
+        if (Platform.Current == Platform.Linux) {
+            val scale = scaleFactor.takeIf { it > 0f } ?: 1f
+            pendingMoveXPx = (x * scale).roundToInt()
+            pendingMoveYPx = (y * scale).roundToInt()
+            pendingMoveSinceNanos = System.nanoTime()
+            pendingMove = true
+        }
         NativeTaoBridge.nativeSetOuterPosition(handle, x, y)
+    }
+
+    /**
+     * Linux/X11: `true` for a `Moved` that carries GDK's placeholder origin
+     * rather than a position.
+     *
+     * Tao reports a GTK window's position from `gdk_window_get_frame_extents`,
+     * which answers `(0, 0)` for a frame it has not resolved yet — around the
+     * map, and for the configures a move triggers before the window manager
+     * has framed it (openbox under Xvfb sends several in a burst). The outer
+     * frame [outerBoundsPx] already refuses that placeholder and keeps the
+     * last real position; the `Moved` event is not filtered natively, and every
+     * listener took it for the window having gone to the screen origin:
+     * [DecoratedWindow] wrote it into `WindowState.position` (and from there
+     * re-issued it as a move), and a satellite read it as the user dragging
+     * it and anchored itself to the corner of the screen. Both then moved
+     * the window there for real.
+     *
+     * An origin report is only believed when nothing contradicts it: not when
+     * the published frame is elsewhere, and not while a move this window was
+     * given to somewhere else is still unanswered. The second is bounded in
+     * time, so a window manager that really does put the window at the origin
+     * instead is not ignored for good — [outerBoundsPx] carries it either way.
+     * A non-origin position is always delivered.
+     */
+    private fun isGdkPlaceholderMove(
+        xPx: Int,
+        yPx: Int,
+    ): Boolean {
+        if (Platform.Current != Platform.Linux || xPx != 0 || yPx != 0) return false
+        if (!canPlaceOnScreen) return false
+        // Asked for the origin itself: the report is the answer, even while the
+        // published frame still shows where the window came from.
+        if (pendingMove && pendingMoveXPx == 0 && pendingMoveYPx == 0) return false
+        val frame = outerBoundsPx()
+        if (frame != null && (frame[0] != 0L || frame[1] != 0L)) return true
+        return pendingMove &&
+            (pendingMoveXPx != 0 || pendingMoveYPx != 0) &&
+            System.nanoTime() - pendingMoveSinceNanos < PLACEHOLDER_MOVE_WINDOW_NANOS
     }
 
     /**
@@ -1538,7 +1608,11 @@ public class TaoWindow internal constructor(
                 reassertAlwaysOnTop()
                 resizedListeners.forEach { it.invoke(a, b) }
             }
-            TaoEventCode.MOVED -> movedListeners.forEach { it.invoke(a, b) }
+            TaoEventCode.MOVED -> {
+                if (isGdkPlaceholderMove(a, b)) return
+                pendingMove = false
+                movedListeners.forEach { it.invoke(a, b) }
+            }
             TaoEventCode.SCALE_FACTOR_CHANGED -> scaleFactorListener?.invoke(a / 1000f)
             TaoEventCode.CLOSE_REQUESTED -> closeRequestedListener?.invoke()
             TaoEventCode.DESTROYED -> {
