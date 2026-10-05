@@ -75,7 +75,10 @@ class WindowsAppImageSignerTest {
                 offline = false,
             )
         assertEquals(
-            listOf("sign", "/t", "http://timestamp.digicert.com", "/sha1", "ABC", "/s", "My", "/fd", "sha1", "/d", "My App"),
+            listOf(
+                "sign", "/t", "http://timestamp.digicert.com", "/sha1", "ABC", "/s", "My",
+                "/fd", "sha1", "/d", "My App",
+            ),
             args,
         )
     }

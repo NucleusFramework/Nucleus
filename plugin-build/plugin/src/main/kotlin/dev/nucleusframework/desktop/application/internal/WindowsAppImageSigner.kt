@@ -21,8 +21,8 @@ import java.util.zip.ZipFile
  * step the launcher and every DLL inside the installer ship unsigned, and Smart App Control refuses
  * to load them (#748).
  *
- * The launcher executables are always signed. With [WindowsSigningSettings.signNativeLibraries] the
- * DLLs are too — the runtime's, Skiko's, the Nucleus natives, and those packed inside JARs that a
+ * The launcher executables are always signed. Unless [WindowsSigningSettings.signNativeLibraries] is
+ * turned off the DLLs are too — the runtime's, Skiko's, the Nucleus natives, and those packed inside JARs that a
  * library extracts at run time (signed JARs excepted: rewriting an entry would break their digest).
  * A binary that already carries a signature (a JDK vendor's, Microsoft's) keeps it.
  *
@@ -181,12 +181,14 @@ internal class WindowsAppImageSigner(
         val match =
             output
                 .lineSequence()
-                .mapNotNull { line -> line.trim().split('|', limit = 3).takeIf { it.size == 3 } }
+                .mapNotNull { line -> line.trim().split('|', limit = STORE_FIELDS).takeIf { it.size == STORE_FIELDS } }
                 .firstOrNull { (thumbprint, _, certSubject) ->
                     (sha1 == null || thumbprint.equals(sha1, ignoreCase = true)) &&
                         (subject == null || certSubject.contains(subject))
                 }
-                ?: throw GradleException("Cannot find the code signing certificate ${subject ?: sha1} in the certificate stores")
+                ?: throw GradleException(
+                    "Cannot find the code signing certificate ${subject ?: sha1} in the certificate stores",
+                )
         val (thumbprint, parentPath, _) = match
         return buildList {
             add("/sha1")
@@ -208,7 +210,9 @@ internal class WindowsAppImageSigner(
         if (path.isFile) return path
         val bytes =
             runCatching { Base64.getMimeDecoder().decode(link) }
-                .getOrElse { throw GradleException("WIN_CSC_LINK is neither an existing file nor a base64-encoded certificate") }
+                .getOrElse {
+                    throw GradleException("WIN_CSC_LINK is neither an existing file nor a base64-encoded certificate")
+                }
         return File(workDir, "certificate.p12").apply {
             parentFile.mkdirs()
             writeBytes(bytes)
@@ -220,12 +224,23 @@ internal class WindowsAppImageSigner(
         certificate: Certificate,
     ) {
         val tool = resolveSignTool()
-        val baseArgs = signToolArgs(settings.algorithm, settings.timestampServer, certificate.args, description, certificate.password)
+        val baseArgs =
+            signToolArgs(
+                algorithm = settings.algorithm,
+                timestampServer = settings.timestampServer,
+                certificateArgs = certificate.args,
+                description = description,
+                password = certificate.password,
+            )
         val sensitive = setOfNotNull(certificate.password)
         chunked(files, baseArgs).forEach { chunk ->
             withRetries("signtool") {
-                runTool(tool, baseArgs + chunk.map { it.absolutePath }, checkExitCodeIsNormal = false, sensitiveArgs = sensitive)
-                    .exitValue
+                runTool(
+                    tool,
+                    baseArgs + chunk.map { it.absolutePath },
+                    checkExitCodeIsNormal = false,
+                    sensitiveArgs = sensitive,
+                ).exitValue
             }
         }
     }
@@ -252,15 +267,18 @@ internal class WindowsAppImageSigner(
         runTool(
             ps,
             powershellArgs(
-                "Install-Module -Name TrustedSigning -MinimumVersion 0.5.0 -Force -Repository PSGallery -Scope CurrentUser",
+                "Install-Module -Name TrustedSigning -MinimumVersion 0.5.0 -Force -Repository PSGallery " +
+                    "-Scope CurrentUser",
             ),
         )
         // -Files is a comma-separated list, so a path holding a comma is signed on its own.
         val (plain, withComma) = files.partition { ',' !in it.absolutePath }
-        val batches = chunked(plain, emptyList()).map { chunk -> chunk.joinToString(",") { it.absolutePath } } + withComma.map { it.absolutePath }
+        val batches =
+            chunked(plain, emptyList()).map { chunk -> chunk.joinToString(",") { it.absolutePath } } +
+                withComma.map { it.absolutePath }
         batches.forEach { batch ->
             val params =
-                linkedMapOf(
+                listOf(
                     "Endpoint" to settings.azureEndpoint,
                     "CertificateProfileName" to settings.azureCertificateProfileName,
                     "CodeSigningAccountName" to settings.azureCodeSigningAccountName,
@@ -268,9 +286,8 @@ internal class WindowsAppImageSigner(
                     "TimestampDigest" to "SHA256",
                     "FileDigest" to "SHA256",
                     "Files" to batch,
-                ).filterValues { it != null }
-                    .entries
-                    .joinToString(" ") { (name, value) -> "-$name '${value!!.replace("'", "''")}'" }
+                ).mapNotNull { (name, value) -> value?.let { "-$name '${it.replace("'", "''")}'" } }
+                    .joinToString(" ")
             withRetries("Invoke-TrustedSigning") {
                 runTool(ps, powershellArgs("Invoke-TrustedSigning $params"), checkExitCodeIsNormal = false).exitValue
             }
@@ -295,7 +312,7 @@ internal class WindowsAppImageSigner(
             val exitCode = action()
             if (exitCode == 0) return
             if (attempt < MAX_ATTEMPTS - 1) {
-                logger.warn("$label failed with exit code $exitCode, retrying in ${RETRY_DELAY_MS / 1000} s")
+                logger.warn("$label failed with exit code $exitCode, retrying in ${RETRY_DELAY_MS}ms")
                 Thread.sleep(RETRY_DELAY_MS)
             }
         }
@@ -306,6 +323,13 @@ internal class WindowsAppImageSigner(
         private const val MAX_ATTEMPTS = 3
         private const val RETRY_DELAY_MS = 15_000L
         private const val MAX_COMMAND_LINE = 30_000
+
+        /** Room for the executable path and quoting on top of the arguments. */
+        private const val COMMAND_LINE_OVERHEAD = 300
+
+        /** Quotes and separator around each argument. */
+        private const val ARGUMENT_OVERHEAD = 3
+        private const val STORE_FIELDS = 3
         private const val DEFAULT_TIMESTAMP_SERVER = "http://timestamp.digicert.com"
         private val JAR_SIGNATURE_EXTENSIONS = listOf(".SF", ".RSA", ".DSA", ".EC")
 
@@ -351,11 +375,11 @@ internal class WindowsAppImageSigner(
             files: List<File>,
             baseArgs: List<String>,
         ): List<List<File>> {
-            val baseLength = baseArgs.sumOf { it.length + 3 } + 300
+            val baseLength = baseArgs.sumOf { it.length + ARGUMENT_OVERHEAD } + COMMAND_LINE_OVERHEAD
             val chunks = mutableListOf<MutableList<File>>()
             var length = baseLength
             for (file in files) {
-                val fileLength = file.absolutePath.length + 3
+                val fileLength = file.absolutePath.length + ARGUMENT_OVERHEAD
                 if (chunks.isEmpty() || length + fileLength > MAX_COMMAND_LINE) {
                     chunks += mutableListOf<File>()
                     length = baseLength
