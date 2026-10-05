@@ -494,13 +494,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             // Capture all DSL values at configuration time to avoid serializing
             // Project/SourceSet references into the configuration cache.
             val winPkgName = packageNameProvider
-            val winPkgVersion =
-                provider {
-                    app.nativeDistributions.windows.exePackageVersion
-                        ?: app.nativeDistributions.windows.packageVersion
-                        ?: app.nativeDistributions.packageVersion
-                        ?: "1.0.0"
-                }
+            val winPkgVersion = packageVersionFor(TargetFormat.Exe)
             val winCopyright = provider { app.nativeDistributions.copyright ?: "" }
             // FileDescription is the string Windows Task Manager shows as the process
             // "Name", so it must carry the human app name (appName), not the description.
@@ -541,7 +535,10 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     val pkgVersion = winPkgVersion.get()
                     val copyright = winCopyright.get()
                     val displayName = winDisplayName.get()
-                    val versionParts = pkgVersion.split(".").map { it.toIntOrNull() ?: 0 }
+                    // FILEVERSION / PRODUCTVERSION are four numbers: a SemVer suffix would leak
+                    // into them ("2.3.5-beta.7" -> 2,3,0,7). The string values keep the full version.
+                    val versionParts =
+                        pkgVersion.withoutSemVerSuffix().split(".").map { it.toIntOrNull() ?: 0 }
                     val v1 = versionParts.getOrElse(0) { 0 }
                     val v2 = versionParts.getOrElse(1) { 0 }
                     val v3 = versionParts.getOrElse(2) { 0 }
@@ -1732,11 +1729,13 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     // to avoid serializing Project/SourceSet references into the configuration cache.
     val plistBundleName: String = app.nativeDistributions.appName ?: app.nativeDistributions.packageName ?: project.name
     val plistBundleID: String? = app.nativeDistributions.macOS.bundleID
-    val plistVersion: String =
-        app.nativeDistributions.macOS.packageVersion
-            ?: app.nativeDistributions.packageVersion
-            ?: project.version.toString().takeIf { it != "unspecified" }
-            ?: "1.0.0"
+    val plistVersion: String = packageVersionFor(TargetFormat.RawAppImage).get()
+
+    // Both bundle versions must be dot-separated integers, so a SemVer pre-release or build
+    // suffix is dropped, as on the jpackage path. The full version still reaches NucleusApp.version
+    // through nucleus-app.properties.
+    val plistShortVersion: String = plistVersion.withoutSemVerSuffix()
+    val plistBuildVersion: String = app.nativeDistributions.macOS.packageBuildVersion ?: plistShortVersion
     val plistMinSystemVersion = graalvm.macOS.minimumSystemVersion
     val plistCopyright: String? = app.nativeDistributions.copyright
     val plistIconFileName: String =
@@ -1799,7 +1798,8 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             // Wire inputs for up-to-date checks
             inputs.property("bundleName", plistBundleName)
             inputs.property("bundleID", plistBundleID ?: "")
-            inputs.property("version", plistVersion)
+            inputs.property("shortVersion", plistShortVersion)
+            inputs.property("buildVersion", plistBuildVersion)
             inputs.property("imageName", imageName)
             inputs.property("minSystemVersion", plistMinSystemVersion)
             inputs.property("copyright", plistCopyright ?: "")
@@ -1812,8 +1812,8 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
                 plist[PlistKeys.CFBundleName] = plistBundleName
                 plist[PlistKeys.CFBundleDisplayName] = plistBundleName
                 plist[PlistKeys.CFBundleIdentifier] = plistBundleID
-                plist[PlistKeys.CFBundleVersion] = plistVersion
-                plist[PlistKeys.CFBundleShortVersionString] = plistVersion
+                plist[PlistKeys.CFBundleVersion] = plistBuildVersion
+                plist[PlistKeys.CFBundleShortVersionString] = plistShortVersion
                 plist[PlistKeys.CFBundleExecutable] = imageName.get()
                 plist[PlistKeys.CFBundlePackageType] = "APPL"
                 plist[PlistKeys.CFBundleInfoDictionaryVersion] = "6.0"

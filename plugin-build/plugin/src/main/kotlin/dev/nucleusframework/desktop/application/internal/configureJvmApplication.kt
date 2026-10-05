@@ -137,7 +137,9 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
             // AUMID must match the electron-builder appId (used in NSIS/MSI shortcut properties)
             val resolvedAumid = app.nativeDistributions.packageName?.let { "com.app.$it" }
             resolvedAumid?.let { appAumid.set(it) }
-            app.nativeDistributions.packageVersion?.let { appVersion.set(it) }
+            // The app image's version, in full: jpackage.app-version has the SemVer suffix
+            // dropped on Windows and macOS, so this is the only place the app reads it from.
+            appVersion.set(configuredPackageVersionFor(TargetFormat.RawAppImage))
             app.nativeDistributions.vendor?.let { appVendor.set(it) }
             app.nativeDistributions.description?.let { appDescription.set(it) }
             // Store the computed StartupWMClass so graalvm-runtime can use it as
@@ -890,7 +892,7 @@ private fun JvmApplicationContext.configurePackageTask(
         packageTask.packageDescription.set(displayNameForJpackage)
         packageTask.packageCopyright.set(executables.copyright)
         packageTask.packageVendor.set(executables.vendor)
-        packageTask.packageVersion.set(packageVersionFor(packageTask.targetFormat))
+        packageTask.packageVersion.set(jpackageVersionFor(packageTask.targetFormat))
     }
 
     val dirSuffix = if (sandboxed) "-sandboxed" else ""
