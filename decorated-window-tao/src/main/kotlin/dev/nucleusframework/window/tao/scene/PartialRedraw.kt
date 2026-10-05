@@ -404,13 +404,17 @@ internal object PartialRedrawVerifier {
         val dir = System.getProperty("nucleus.tao.partialRedraw.verify.dump") ?: return
         if (dumps >= MAX_DUMPS) return
         val index = dumps++
-        for ((name, bitmap) in listOf("partial" to frame, "full" to reference)) {
-            val data =
-                org.jetbrains.skia.Image
-                    .makeFromBitmap(bitmap)
-                    .encodeToData(org.jetbrains.skia.EncodedImageFormat.PNG) ?: continue
-            java.io.File(dir, "mismatch-$index-$name.png").writeBytes(data.bytes)
-        }
+        // A debug aid: a directory that cannot be written must not take the app down.
+        runCatching {
+            java.io.File(dir).mkdirs()
+            for ((name, bitmap) in listOf("partial" to frame, "full" to reference)) {
+                val data =
+                    org.jetbrains.skia.Image
+                        .makeFromBitmap(bitmap)
+                        .encodeToData(org.jetbrains.skia.EncodedImageFormat.PNG) ?: continue
+                java.io.File(dir, "mismatch-$index-$name.png").writeBytes(data.bytes)
+            }
+        }.onFailure { logger.warning("Partial redraw verify: cannot dump into $dir: $it") }
     }
 
     /** Logs [summary] every so many frames — JUL drops what is logged from a shutdown hook. */
