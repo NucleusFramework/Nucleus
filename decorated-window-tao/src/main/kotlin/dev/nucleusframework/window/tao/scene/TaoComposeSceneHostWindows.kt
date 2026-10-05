@@ -578,7 +578,16 @@ internal class TaoComposeSceneHostWindows(
 
         // Notify overlay/popup layers when the host window moves on screen
         // — top-level WS_POPUP children of the owner don't auto-track.
-        window.onMoved { _, _ -> onOwnerMoved() }
+        // On ANGLE's blt surface also re-present a frame: it presents through
+        // the GDI redirection surface, clipped to the visible region, so a
+        // window presented partly off-screen has unpainted (white) pixels
+        // there — each move re-presents and fills the newly exposed area. Free
+        // while the window is stationary (no WM_MOVE, no frame). The flip
+        // chain (opt-in, see nucleus_tao_gl.c) needs none of it.
+        window.onMoved { _, _ ->
+            onOwnerMoved()
+            if (surfaceOrigin == SurfaceOrigin.BOTTOM_LEFT) window.requestRedraw()
+        }
 
         // Notify overlay/popup layers when the host window loses keyboard
         // focus — for instance, the user clicked the embedded WebView,

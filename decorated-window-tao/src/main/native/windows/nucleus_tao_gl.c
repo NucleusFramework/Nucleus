@@ -15,7 +15,7 @@
  * (ANGLE presents inline — a cross-thread present on ANGLE's shared
  * per-display D3D11 device deadlocks the global display lock).
  *
- * Presentation is a FLIP-model DXGI swapchain created here on the render
+ * Presentation can be a FLIP-model DXGI swapchain created here on the render
  * surface, not the window surface ANGLE would build for the HWND: ANGLE's
  * HWND swapchain is blt-model, and a blt present is copied into the GDI
  * redirection surface clipped to the window's visible region — which ends
@@ -23,7 +23,8 @@
  * off-screen therefore never reaches DWM for that part: the window shows a
  * white (never painted) or stale band when dragged into view, and taskbar
  * thumbnails / Alt+Tab, which DWM draws from the same copy, show it even
- * if it never is. A flip-model swapchain is handed to DWM whole. ANGLE
+ * if it never is. A flip-model swapchain is handed to DWM whole — but it is
+ * opt-in for now, see flipPresentEnabled for what it still breaks. ANGLE
  * renders into a D3D11 texture through an EGL_ANGLE_d3d_texture_client_buffer
  * pbuffer (the context's draw surface — so every eglMakeCurrent below binds
  * it), and nativePresent copies that texture into the back buffer and
@@ -685,6 +686,21 @@ static void presentFlipChain(GlAttachment *att) {
  * Acrylic backdrops show through. That blt path keeps the off-screen gap
  * described in the file header; it is also the fallback when the flip chain
  * cannot be created. */
+/* The flip chain is opt-in (NUCLEUS_TAO_FLIP_PRESENT=1) until it keeps the
+ * window's geometry and its frames in step: composed apart from the
+ * redirection surface, it let DWM show a resized window around a frame of
+ * the previous size (trembling while resizing, unpainted white bands on a
+ * window that grows before its next frame). */
+static BOOL flipPresentEnabled(void) {
+    static int enabled = -1;
+    if (enabled < 0) {
+        char value[8];
+        DWORD n = GetEnvironmentVariableA("NUCLEUS_TAO_FLIP_PRESENT", value, sizeof(value));
+        enabled = (n == 1 && value[0] == '1') ? 1 : 0;
+    }
+    return enabled ? TRUE : FALSE;
+}
+
 static BOOL createPresentPath(GlAttachment *att, BOOL alpha) {
     HWND surfaceHwnd = createRenderSurface(att->hwnd);
     if (!surfaceHwnd) return FALSE;
@@ -694,7 +710,7 @@ static BOOL createPresentPath(GlAttachment *att, BOOL alpha) {
     }
     att->surfaceHwnd = surfaceHwnd;
     att->alpha = alpha;
-    if (!alpha && createFlipChain(att)) return TRUE;
+    if (!alpha && flipPresentEnabled() && createFlipChain(att)) return TRUE;
 
     const EGLint surfAttribs[] = { EGL_NONE };
     EGLSurface surface = pEglCreateWindowSurface(
@@ -832,6 +848,11 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeSetAlpha(
     if (!att) return JNI_FALSE;
     BOOL alpha = alphaJ ? TRUE : FALSE;
     if (att->alpha == alpha && att->surfaceHwnd) return JNI_TRUE;
+    /* Without the flip chain both modes are the same surface. */
+    if (!flipPresentEnabled()) {
+        att->alpha = alpha;
+        return JNI_TRUE;
+    }
     destroyPresentPath(att);
     if (createPresentPath(att, alpha)) return JNI_TRUE;
     /* The other path beats none at all. */

@@ -424,6 +424,7 @@ public object TaoHeadfulTestSuiteMain {
             // Last: the monkeys are the longest cases, and the robot ones leave the
             // real pointer wherever their last gesture ended.
             OffScreenPresentHeadfulCases.all() +
+            UnpaintedFlashHeadfulCases.all() +
             NativeViewMonkeyHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all()
 
