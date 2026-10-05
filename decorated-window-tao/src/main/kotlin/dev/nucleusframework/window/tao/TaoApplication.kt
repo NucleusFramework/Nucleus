@@ -8,6 +8,8 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -192,9 +194,9 @@ public object TaoApplication {
      *
      * Windows specifics: a close request that keeps its window open refuses
      * the session end; one that closes it through recomposition makes the app
-     * hold the session (Windows lists it as preventing shutdown until it exits)
-     * — which a Restart Manager close (an installer) reads as a refusal, as it
-     * waits for nobody; a critical shutdown asks no window. Once the session
+     * hold the session (Windows lists it as preventing shutdown until it exits);
+     * a Restart Manager close (an installer) waits for nobody, so there the quit
+     * is first given up to 2 s to settle; a critical shutdown asks no window. Once the session
      * ends the app is torn down and the process exits from the UI thread, so a
      * shutdown hook must not wait for work posted to `Dispatchers.Main`. A
      * close request that throws counts as agreeing. Reset when a window keeps itself
@@ -287,7 +289,10 @@ public object TaoApplication {
      * so the exit waits for `WM_ENDSESSION` — the Windows contract. A window
      * that closed itself during its close request (HOLD's case) stays closed.
      */
-    internal fun queryEndSession(open: Collection<TaoWindow> = windows.values): Int {
+    internal fun queryEndSession(
+        open: Collection<TaoWindow> = windows.values,
+        flags: Int = 0,
+    ): Int {
         // Another window's query delivered while a close request pumps messages:
         // nobody knows the answer yet, so this one holds — and the outer query,
         // Windows having a FALSE from the app, will not agree either.
@@ -308,6 +313,12 @@ public object TaoApplication {
                 sessionExit = SessionExit.None
                 requestQuit(open, sessionQuery = true)
             }
+            // A Restart Manager close (an installer) waits for nobody: HOLD would read
+            // as a refusal. Let the quit settle now — a window closing through
+            // recomposition is then closing, not pending.
+            if (flags and END_SESSION_FLAG_CLOSE_APP != 0 && quitInFlight) {
+                settleQuitNow { !quitInFlight }
+            }
             answer =
                 when {
                     !isQuitting -> END_SESSION_REFUSE
@@ -317,8 +328,10 @@ public object TaoApplication {
                         END_SESSION_HOLD
                     }
                 }
-            if (answer == END_SESSION_AGREE && heldMeanwhile) {
-                // A FALSE went out meanwhile: Windows waits for the app to exit by itself.
+            val refusedAlready = heldMeanwhile || flags and END_SESSION_FLAG_REFUSED != 0
+            if (answer == END_SESSION_AGREE && refusedAlready) {
+                // A FALSE went out meanwhile — a nested query, a deferred one, AWT's
+                // forward that timed out: Windows waits for the app to exit by itself.
                 answer = END_SESSION_HOLD
                 sessionEndHeld = true
                 sessionExit = SessionExit.None
@@ -328,8 +341,69 @@ public object TaoApplication {
             answeringSessionQuery = false
             heldMeanwhile = false
         }
+        if (answer == END_SESSION_AGREE && sessionExit == SessionExit.Awaiting) armSessionAwaitTimeout()
         logger.fine { "Windows session-end query answered $answer" }
         return answer
+    }
+
+    /**
+     * Runs the Compose main queue until [settled] or a short budget runs out:
+     * [TaoMainDispatcher.pump] only — no Win32 message is pumped, so nothing
+     * re-enters the window procedure (#640). Tests replace it.
+     */
+    internal var settleQuitNow: (settled: () -> Boolean) -> Unit = ::pumpUntil
+
+    private fun pumpUntil(settled: () -> Boolean) {
+        val deadline = System.nanoTime() + SETTLE_NOW_BUDGET_NS
+        while (!settled() && System.nanoTime() < deadline) {
+            TaoMainDispatcher.pump()
+            if (!settled()) Thread.sleep(1)
+        }
+    }
+
+    /**
+     * After an AGREE the exit waits for `WM_ENDSESSION`; one that never comes (a
+     * Restart Manager session that aborts) must not leave [isQuitting] stuck and
+     * every later quit swallowed. A late `WM_ENDSESSION(TRUE)` still tears down.
+     */
+    private fun armSessionAwaitTimeout() {
+        val generation = ++sessionAwaitGeneration
+        scheduleSessionAwaitTimeout {
+            if (generation == sessionAwaitGeneration && sessionExit == SessionExit.Awaiting) {
+                logger.fine("No WM_ENDSESSION after an agree: the session end is treated as cancelled")
+                cancelAwaitingExit()
+            }
+        }
+    }
+
+    private var sessionAwaitGeneration = 0
+
+    /** Runs its argument on the event loop after [SESSION_AWAIT_TIMEOUT_MS]; tests replace it. */
+    internal var scheduleSessionAwaitTimeout: (Runnable) -> Unit = ::runOnLoopAfterAwaitTimeout
+
+    private fun runOnLoopAfterAwaitTimeout(block: Runnable) {
+        sessionAwaitTimer.schedule(
+            { TaoMainDispatcher.dispatch(EmptyCoroutineContext, block) },
+            SESSION_AWAIT_TIMEOUT_MS,
+            TimeUnit.MILLISECONDS,
+        )
+    }
+
+    private val sessionAwaitTimer by lazy {
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "nucleus-tao-session-end").apply { isDaemon = true }
+        }
+    }
+
+    /** The quit agreed to on a session query is called off: Windows cancelled, or never said. */
+    private fun cancelAwaitingExit() {
+        if (sessionExit != SessionExit.Awaiting) return
+        if (quitInFlight) {
+            sessionExit = SessionExit.Cancelled
+        } else {
+            sessionExit = SessionExit.None
+            isQuitting = false
+        }
     }
 
     /** [queryEndSession] is running further up the stack. */
@@ -348,17 +422,11 @@ public object TaoApplication {
     internal fun endSession(ending: Boolean) {
         logger.fine { "Windows session end, ending=$ending" }
         sessionEndHeld = false
+        sessionAwaitGeneration++
         if (!ending) {
             // Cancelled after an AGREE: the quit the windows agreed to is called off,
             // once its settle has run if it is still pending.
-            if (sessionExit == SessionExit.Awaiting) {
-                if (quitInFlight) {
-                    sessionExit = SessionExit.Cancelled
-                } else {
-                    sessionExit = SessionExit.None
-                    isQuitting = false
-                }
-            }
+            cancelAwaitingExit()
             return
         }
         // Several WM_ENDSESSION reach the loop for one session end (every window,
@@ -396,6 +464,15 @@ public object TaoApplication {
     internal const val END_SESSION_AGREE: Int = 0
     internal const val END_SESSION_HOLD: Int = 1
     internal const val END_SESSION_REFUSE: Int = 2
+
+    /** [queryEndSession] flag: a Restart Manager close (`ENDSESSION_CLOSEAPP`). */
+    internal const val END_SESSION_FLAG_CLOSE_APP: Int = 1
+
+    /** [queryEndSession] flag: Windows already got a FALSE from the app for this session end. */
+    internal const val END_SESSION_FLAG_REFUSED: Int = 2
+
+    private const val SETTLE_NOW_BUDGET_NS = 2_000_000_000L
+    private const val SESSION_AWAIT_TIMEOUT_MS = 15_000L
 
     /** App windows still open that have not agreed to the quit in flight. */
     private fun openAppWindows(): List<TaoWindow> =
@@ -452,6 +529,9 @@ public object TaoApplication {
         sessionExit = SessionExit.None
         answeringSessionQuery = false
         heldMeanwhile = false
+        sessionAwaitGeneration++
+        scheduleSessionAwaitTimeout = ::runOnLoopAfterAwaitTimeout
+        settleQuitNow = ::pumpUntil
         releaseSessionEndHold = NativeTaoBridge::nativeReleaseShutdownBlock
         sessionEndTeardown = {}
         sessionEndExit = { exitProcess(0) }
@@ -658,9 +738,9 @@ public object TaoApplication {
         }
 
         @Suppress("TooGenericExceptionCaught")
-        override fun onQueryEndSession(): Int =
+        override fun onQueryEndSession(flags: Int): Int =
             try {
-                queryEndSession()
+                queryEndSession(flags = flags)
             } catch (t: Throwable) {
                 reportFatal(t)
                 END_SESSION_AGREE

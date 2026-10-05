@@ -6,7 +6,9 @@
 // answers `WM_QUERYENDSESSION` with TRUE whatever the app says — and its handler
 // starts the JVM's shutdown right there (hooks, exit), before any
 // `WM_ENDSESSION`, while the app's windows are still asking theirs or have
-// refused.
+// refused. Checked on JDK 17, 21, 25 (HotSpot and OpenJ9), 26 and 27-ea: same
+// class name, same behaviour. AWT never sees a session message here, so a JDK
+// that stopped doing it would lose nothing.
 //
 // So the toolkit window is subclassed as soon as AWT creates it (a WinEvent hook
 // on window creation in this process, delivered to the event-loop thread), and
@@ -159,7 +161,12 @@ unsafe extern "system" fn awt_proc(
                 QUERY_FORWARD_TIMEOUT_MS,
                 Some(&mut answer),
             );
-            LRESULT((sent.0 != 0 && answer != 0) as isize)
+            let may_end = sent.0 != 0 && answer != 0;
+            if sent.0 == 0 {
+                // The loop answers later, to nobody: tell it Windows has a FALSE.
+                super::end_session::refused_unasked();
+            }
+            LRESULT(may_end as isize)
         }
         WM_ENDSESSION if target.is_some() => {
             let _ = SendNotifyMessageW(target.unwrap_or_default(), msg, wparam, lparam);

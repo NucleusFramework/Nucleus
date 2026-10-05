@@ -63,6 +63,34 @@ static BLOCKED_HWND: AtomicIsize = AtomicIsize::new(0);
 /// A deferred query is queued and the session it belongs to is still open.
 static DEFERRED_QUERY: AtomicBool = AtomicBool::new(false);
 
+/// Windows got a FALSE from the app without Kotlin being asked (a deferred
+/// query, AWT's forward that timed out): a later AGREE must hold instead.
+/// Cleared with the session end.
+static REFUSED_UNASKED: AtomicBool = AtomicBool::new(false);
+
+// Mirror `TaoApplication.END_SESSION_FLAG_*`.
+const FLAG_CLOSE_APP: jint = 1;
+const FLAG_REFUSED: jint = 2;
+
+/// `lParam` flag of a Restart Manager close.
+const ENDSESSION_CLOSEAPP: isize = 0x1;
+
+/// Records a FALSE given on the app's behalf without asking it.
+pub(crate) fn refused_unasked() {
+    REFUSED_UNASKED.store(true, Ordering::Relaxed);
+}
+
+fn query_flags(lparam: isize) -> jint {
+    let mut flags = 0;
+    if lparam & ENDSESSION_CLOSEAPP != 0 {
+        flags |= FLAG_CLOSE_APP;
+    }
+    if REFUSED_UNASKED.load(Ordering::Relaxed) {
+        flags |= FLAG_REFUSED;
+    }
+    flags
+}
+
 /// Windows sends the query to each top-level window in turn — tao's, and AWT's
 /// on its own thread — and the quit may resolve between two of them: an answer
 /// is reused for the queries that follow within this, so one session end asks
@@ -136,7 +164,7 @@ pub(crate) fn on_query_end_session(hwnd: isize, lparam: isize, nested: bool) -> 
         return may_end;
     }
     if !nested {
-        if let Some(answer) = query_kotlin() {
+        if let Some(answer) = query_kotlin(query_flags(lparam)) {
             return remember(apply(answer, hwnd));
         }
     }
@@ -146,6 +174,7 @@ pub(crate) fn on_query_end_session(hwnd: isize, lparam: isize, nested: bool) -> 
         return true;
     }
     block(hwnd);
+    refused_unasked();
     remember(false)
 }
 
@@ -156,7 +185,7 @@ pub(crate) fn on_deferred_query_end_session() {
     if !DEFERRED_QUERY.swap(false, Ordering::Relaxed) {
         return;
     }
-    match query_kotlin() {
+    match query_kotlin(query_flags(0)) {
         Some(HOLD) => {}
         _ => {
             release_block();
@@ -169,6 +198,7 @@ pub(crate) fn on_deferred_query_end_session() {
 /// Kotlin side tears the app down and normally does not return.
 pub(crate) fn on_end_session(_hwnd: isize, ending: bool, nested: bool) {
     DEFERRED_QUERY.store(false, Ordering::Relaxed);
+    REFUSED_UNASKED.store(false, Ordering::Relaxed);
     forget();
     release_block();
     if !nested {
@@ -209,8 +239,11 @@ fn apply(answer: jint, hwnd: isize) -> bool {
     }
 }
 
-fn query_kotlin() -> Option<jint> {
-    call_kotlin(|env, cb| env.call_method(cb, "onQueryEndSession", "()I", &[])?.i())
+fn query_kotlin(flags: jint) -> Option<jint> {
+    call_kotlin(|env, cb| {
+        env.call_method(cb, "onQueryEndSession", "(I)I", &[JValue::Int(flags)])?
+            .i()
+    })
 }
 
 /// Runs [call] against the event callback; `None` when it cannot be called

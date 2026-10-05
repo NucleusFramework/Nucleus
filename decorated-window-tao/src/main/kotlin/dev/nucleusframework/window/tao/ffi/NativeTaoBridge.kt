@@ -203,9 +203,10 @@ internal object NativeTaoBridge {
         /**
          * Windows `WM_QUERYENDSESSION` — logoff, restart, shutdown or a Restart
          * Manager close (#751). Runs the windows' close requests synchronously
-         * and answers `TaoApplication.END_SESSION_*`. Default: agree.
+         * and answers `TaoApplication.END_SESSION_*`; [flags] are
+         * `TaoApplication.END_SESSION_FLAG_*`. Default: agree.
          */
-        fun onQueryEndSession(): Int = 0
+        fun onQueryEndSession(flags: Int): Int = 0
 
         /**
          * Windows `WM_ENDSESSION` (#751): [ending] `true` when the session ends

@@ -155,6 +155,9 @@ class TaoApplicationExitTest {
     /** Exits the quit performed during the last [querySession]. */
     private var sessionExits = 0
 
+    /** Await timeouts scheduled during the last [querySession], run by hand. */
+    private val awaitTimeouts = mutableListOf<Runnable>()
+
     /**
      * Runs a Windows session-end query against a fresh quit state, counting
      * released holds. [deferSettle] `false` resolves the quit inside the query,
@@ -163,18 +166,24 @@ class TaoApplicationExitTest {
     private fun querySession(
         vararg open: TaoWindow,
         deferSettle: Boolean = true,
+        flags: Int = 0,
+        settleNow: ((settle: () -> Unit) -> Unit)? = null,
         block: (answer: Int, settle: () -> Unit, releases: () -> Int) -> Unit,
     ) {
         var releases = 0
         val pending = mutableListOf<() -> Unit>()
+        val settle = { pending.toList().also { pending.clear() }.forEach { it() } }
         TaoApplication.resetQuit()
         sessionExits = 0
+        awaitTimeouts.clear()
         TaoApplication.quitExit = { sessionExits++ }
         if (deferSettle) TaoApplication.afterQuitRequests = { pending += it }
         TaoApplication.releaseSessionEndHold = { releases++ }
+        TaoApplication.scheduleSessionAwaitTimeout = { awaitTimeouts += it }
+        TaoApplication.settleQuitNow = { _ -> settleNow?.invoke(settle) }
         try {
-            val answer = TaoApplication.queryEndSession(open.toList())
-            block(answer, { pending.toList().also { pending.clear() }.forEach { it() } }, { releases })
+            val answer = TaoApplication.queryEndSession(open.toList(), flags)
+            block(answer, settle, { releases })
         } finally {
             TaoApplication.resetQuit()
         }
@@ -266,6 +275,60 @@ class TaoApplicationExitTest {
             assertEquals(TaoApplication.END_SESSION_HOLD, answer, "Windows already has a FALSE from the app")
             settle()
             assertEquals(1, sessionExits, "the app exits by itself, as Windows waits for it")
+        }
+    }
+
+    @Test
+    fun `an agree after a FALSE went out unasked holds and exits`() {
+        // The deferred query, or AWT's forward that timed out: Windows has a FALSE.
+        val main = TaoWindow(1).also { w -> w.onCloseRequested { TaoApplication.consentToQuit() } }
+        querySession(main, flags = TaoApplication.END_SESSION_FLAG_REFUSED) { answer, settle, _ ->
+            assertEquals(TaoApplication.END_SESSION_HOLD, answer)
+            settle()
+            assertEquals(1, sessionExits)
+        }
+    }
+
+    @Test
+    fun `a Restart Manager close settles a window closing through recomposition`() {
+        val doc = TaoWindow(1).also { w -> w.onCloseRequested {} }
+        querySession(
+            doc,
+            flags = TaoApplication.END_SESSION_FLAG_CLOSE_APP,
+            settleNow = { settle ->
+                doc.isClosing = true // the recomposition the drain ran
+                settle()
+            },
+        ) { answer, _, _ ->
+            assertEquals(TaoApplication.END_SESSION_AGREE, answer)
+        }
+    }
+
+    @Test
+    fun `an agree without WM_ENDSESSION is cancelled by the await timeout`() {
+        val main = TaoWindow(1).also { w -> w.onCloseRequested { TaoApplication.consentToQuit() } }
+        querySession(main) { answer, settle, _ ->
+            assertEquals(TaoApplication.END_SESSION_AGREE, answer)
+            settle()
+            assertEquals(1, awaitTimeouts.size)
+            awaitTimeouts.single().run()
+            assertFalse(TaoApplication.isQuitting)
+            assertEquals(0, sessionExits)
+        }
+    }
+
+    @Test
+    fun `a stale await timeout does nothing`() {
+        val main = TaoWindow(1).also { w -> w.onCloseRequested { TaoApplication.consentToQuit() } }
+        querySession(main) { _, settle, _ ->
+            settle()
+            val stale = awaitTimeouts.single()
+            TaoApplication.endSession(ending = false)
+            // A new session end agreed meanwhile: the old timeout must not cancel it.
+            assertEquals(TaoApplication.END_SESSION_AGREE, TaoApplication.queryEndSession(listOf(main)))
+            settle()
+            stale.run()
+            assertTrue(TaoApplication.isQuitting)
         }
     }
 
