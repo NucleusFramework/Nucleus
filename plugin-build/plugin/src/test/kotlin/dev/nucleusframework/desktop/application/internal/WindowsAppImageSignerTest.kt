@@ -132,6 +132,51 @@ class WindowsAppImageSignerTest {
         }
     }
 
+    @Test
+    fun `JAR libraries are extracted inside the target directory whatever their entry name`() {
+        val unsigned = pe(plus = true, securitySize = 0)
+        val jar =
+            jar(
+                "native.bin" to unsigned,
+                "lib/ok.dll" to unsigned,
+                "signed.dll" to pe(plus = true, securitySize = 64),
+                "README.txt" to "text".toByteArray(),
+            )
+        // Entry names that would escape the target directory if used as paths.
+        val evilNames = listOf("../../evil.dll", """..\..\evil2.dll""")
+        val slipJar = jar(*(evilNames.map { it to unsigned } + ("lib/ok.dll" to unsigned)).toTypedArray())
+        val target = tmp.newFolder("extract")
+
+        val libraries = WindowsAppImageSigner.extractUnsignedLibraries(slipJar, target, logger)
+
+        assertEquals(evilNames + "lib/ok.dll", libraries.map { it.entry })
+        libraries.forEach {
+            assertTrue(it.extracted.canonicalPath.startsWith(target.canonicalPath + File.separator))
+            assertArrayEquals(unsigned, it.extracted.readBytes())
+        }
+        val mixed = WindowsAppImageSigner.extractUnsignedLibraries(jar, tmp.newFolder("b"), logger)
+        assertEquals(listOf("lib/ok.dll"), mixed.map { it.entry })
+    }
+
+    @Test
+    fun `the DLLs of a signed JAR are left alone`() {
+        val jar = jar("META-INF/APP.SF" to ByteArray(1), "lib/ok.dll" to pe(plus = true, securitySize = 0))
+        assertEquals(emptyList<Any>(), WindowsAppImageSigner.extractUnsignedLibraries(jar, tmp.newFolder("c"), logger))
+    }
+
+    private val logger = org.gradle.api.logging.Logging.getLogger(WindowsAppImageSignerTest::class.java)
+
+    private fun jar(vararg entries: Pair<String, ByteArray>): File =
+        tmp.newFile().apply {
+            java.util.zip.ZipOutputStream(outputStream()).use { zip ->
+                entries.forEach { (name, bytes) ->
+                    zip.putNextEntry(java.util.zip.ZipEntry(name))
+                    zip.write(bytes)
+                    zip.closeEntry()
+                }
+            }
+        }
+
     /** A minimal PE header: DOS stub pointer, PE signature, COFF header and optional header. */
     private fun pe(
         plus: Boolean,

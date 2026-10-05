@@ -53,7 +53,7 @@ internal class WindowsAppImageSigner(
         JarLibraries,
     }
 
-    private class EmbeddedLibrary(
+    internal class EmbeddedLibrary(
         val jar: File,
         val entry: String,
         val extracted: File,
@@ -104,34 +104,8 @@ internal class WindowsAppImageSigner(
         appDir
             .walk()
             .filter { it.isFile && it.extension.equals("jar", ignoreCase = true) }
-            .flatMapIndexed { index, jar -> extractUnsignedLibraries(jar, File(workDir, "jars/$index")) }
+            .flatMapIndexed { index, jar -> extractUnsignedLibraries(jar, File(workDir, "jars/$index"), logger) }
             .toList()
-
-    private fun extractUnsignedLibraries(
-        jar: File,
-        targetDir: File,
-    ): List<EmbeddedLibrary> =
-        ZipFile(jar).use { zip ->
-            val entries = zip.entries().toList()
-            val libraries = entries.filter { !it.isDirectory && it.name.endsWith(".dll", ignoreCase = true) }
-            if (libraries.isEmpty()) return@use emptyList()
-            if (entries.any { it.name.isJarSignatureFile() }) {
-                logger.info("Leaving the DLLs of signed JAR ${jar.name} as they are")
-                return@use emptyList()
-            }
-            libraries.mapNotNull { entry ->
-                val bytes = zip.getInputStream(entry).use { it.readBytes() }
-                if (!PeSignature.isUnsignedPe(bytes)) return@mapNotNull null
-                val extracted = File(targetDir, entry.name).apply { parentFile.mkdirs() }
-                extracted.writeBytes(bytes)
-                EmbeddedLibrary(jar, entry.name, extracted)
-            }
-        }
-
-    private fun String.isJarSignatureFile(): Boolean {
-        if (!startsWith("META-INF/", ignoreCase = true) || indexOf('/', "META-INF/".length) >= 0) return false
-        return JAR_SIGNATURE_EXTENSIONS.any { endsWith(it, ignoreCase = true) }
-    }
 
     private fun writeBack(
         jar: File,
@@ -352,6 +326,39 @@ internal class WindowsAppImageSigner(
     }
 
     internal companion object {
+        /**
+         * Extracts the unsigned DLLs of [jar] into [targetDir], or none when the JAR is signed:
+         * rewriting one of its entries would break its digest.
+         */
+        fun extractUnsignedLibraries(
+            jar: File,
+            targetDir: File,
+            logger: Logger,
+        ): List<EmbeddedLibrary> =
+            ZipFile(jar).use { zip ->
+                val entries = zip.entries().toList()
+                val libraries = entries.filter { !it.isDirectory && it.name.endsWith(".dll", ignoreCase = true) }
+                if (libraries.isEmpty()) return@use emptyList()
+                if (entries.any { it.name.isJarSignatureFile() }) {
+                    logger.info("Leaving the DLLs of signed JAR ${jar.name} as they are")
+                    return@use emptyList()
+                }
+                libraries.mapIndexedNotNull { index, entry ->
+                    val bytes = zip.getInputStream(entry).use { it.readBytes() }
+                    if (!PeSignature.isUnsignedPe(bytes)) return@mapIndexedNotNull null
+                    // Named by index, never by the entry name: `../` or `..\` in an entry would
+                    // otherwise write outside the work directory (zip slip).
+                    val extracted = File(targetDir, "$index.dll").apply { parentFile.mkdirs() }
+                    extracted.writeBytes(bytes)
+                    EmbeddedLibrary(jar, entry.name, extracted)
+                }
+            }
+
+        private fun String.isJarSignatureFile(): Boolean {
+            if (!startsWith("META-INF/", ignoreCase = true) || indexOf('/', "META-INF/".length) >= 0) return false
+            return JAR_SIGNATURE_EXTENSIONS.any { endsWith(it, ignoreCase = true) }
+        }
+
         /**
          * Decodes a base64 certificate strictly: the MIME decoder skips any character outside the
          * alphabet, so a mistyped path or URL would decode into garbage instead of failing here.

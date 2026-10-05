@@ -431,11 +431,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 javaHome.set(app.javaHomeProvider)
                 javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
                 applyAotCacheSettings(app.nativeDistributions.aotCache)
-                windowsSigning = app.nativeDistributions.windows.signing
-                windowsSigningDescription.set(
-                    project.provider { app.nativeDistributions.appName ?: app.nativeDistributions.packageName }
-                        .orElse(packageNameProvider),
-                )
+                applyWindowsSigningSettings(this)
                 if (currentOS == OS.MacOS) {
                     val mac = app.nativeDistributions.macOS
                     val defaultResources = commonTasks.unpackDefaultResources
@@ -522,6 +518,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                         javaHome.set(app.javaHomeProvider)
                         javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
                         applyAotCacheSettings(app.nativeDistributions.aotCache)
+                        applyWindowsSigningSettings(this)
                         if (currentOS == OS.MacOS) {
                             val mac = app.nativeDistributions.macOS
                             val defaultResources = commonTasks.unpackDefaultResources
@@ -704,6 +701,21 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
  * (see [TargetFormat.producesUpdateManifest]) is compatible with the current OS — in which case
  * there is no manifest to publish.
  */
+/**
+ * Hands the Windows signing settings to a training task, which signs the DLLs inside JARs before
+ * training: a JAR rewritten afterwards would invalidate the cache. Both the regular and the
+ * sandboxed (AppX) task need them.
+ */
+private fun JvmApplicationContext.applyWindowsSigningSettings(task: AbstractGenerateAotCacheTask) {
+    val distributions = app.nativeDistributions
+    task.windowsSigning = distributions.windows.signing
+    task.windowsSigningDescription.set(
+        project
+            .provider { distributions.appName ?: distributions.packageName }
+            .orElse(packageNameProvider),
+    )
+}
+
 /**
  * Maps the `aotCache { }` DSL onto the training task.
  *
