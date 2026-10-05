@@ -1618,7 +1618,7 @@ internal class TaoComposeSceneHostWindows(
         // averaging it would stretch every later idle hold.
         val consecutive = paced && !idleSincePresent
         idleSincePresent = false
-        if (consecutive && interval in MIN_PRESENT_PERIOD_NS..MAX_PRESENT_PERIOD_NS) {
+        if (consecutive && interval in MIN_PRESENT_PERIOD_NS..presentPeriodNs * 3 / 2) {
             presentPeriodNs = (presentPeriodNs * (PERIOD_SMOOTHING - 1) + interval) / PERIOD_SMOOTHING
         }
     }
@@ -2878,9 +2878,12 @@ internal class TaoComposeSceneHostWindows(
         /** Frame period assumed until two back-to-back presents measured one (#755). */
         private const val DEFAULT_PRESENT_PERIOD_NS = 16_666_667L
 
-        /** Present intervals outside this range are not one display frame (a stall, a pause). */
-        private const val MIN_PRESENT_PERIOD_NS = 4_000_000L
-        private const val MAX_PRESENT_PERIOD_NS = 40_000_000L
+        /**
+         * Shortest interval taken for one display frame (a 480 Hz panel is ~2.1 ms).
+         * The longest is 1.5x the current period: two refreshes (a slow frame,
+         * 30 fps content on a 60 Hz panel) would drift it otherwise.
+         */
+        private const val MIN_PRESENT_PERIOD_NS = 2_000_000L
 
         /** Weight of the running average of the present period. */
         private const val PERIOD_SMOOTHING = 8L
