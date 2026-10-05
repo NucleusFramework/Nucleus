@@ -414,3 +414,10 @@ internal const val DROP_FAR_PX = 420f
 
 /** Gap left between a window and a second dock host parked beside it. */
 internal const val DIALOG_PARK_GAP_PX = 12L
+
+/**
+ * How much further than [DIALOG_PARK_GAP_PX] a parked host's layout may start
+ * from the window it is parked beside: the frame the platform keeps around the
+ * client area (Windows' invisible resize borders, a title bar's side).
+ */
+internal const val DIALOG_PARK_SLACK_PX = 48f

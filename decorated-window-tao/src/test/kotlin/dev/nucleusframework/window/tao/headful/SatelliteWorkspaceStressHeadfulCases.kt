@@ -311,25 +311,39 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                 val layout = awaitDockLayout(workspace, window)
                 // The dialog is a dock host of its own, and a drop is answered
                 // by the topmost layout under the pointer. Its default
-                // placement centres it over the parent, so on a display small
-                // enough for the two to overlap it sits astride the very zone
-                // these drags aim at and previews *its* edge — this case is
-                // about two drags racing, not about which window is under
-                // them. Park it off the parent's right edge first.
+                // placement centres it over the parent (or, unparented on
+                // macOS, over the screen), so on a display small enough for
+                // the two to overlap it sits astride the very zone these drags
+                // aim at and previews *its* edge — this case is about two drags
+                // racing, not about which window is under them. Park it off
+                // the parent's right edge first.
                 val parked = requireNotNull(window.outerBoundsPx())
-                dialog.setOuterPositionPx(
-                    (parked[0] + parked[RECT_W] + DIALOG_PARK_GAP_PX).toInt(),
-                    parked[1].toInt(),
-                )
+                val parentRight = parked[0] + parked[RECT_W]
+                dialog.setOuterPositionPx((parentRight + DIALOG_PARK_GAP_PX).toInt(), parked[1].toInt())
                 val dropPoints =
                     listOf(
                         Offset(layout.left + DROP_INSET_PX, layout.center.y),
                         Offset(layout.right - DROP_INSET_PX, layout.center.y),
                     )
-                awaitUntil("the dialog is parked clear of the zones the drags aim at") {
+                // Wait for the move itself, not just for a layout clear of the
+                // drop points: the move lands asynchronously, and where the
+                // dialog opened clear of them already — centred on a large
+                // screen — a check of the drop points alone passes at once,
+                // and the drags run against a dialog that is not where this
+                // case put it.
+                awaitUntil("the dialog is parked beside the parent, clear of the zones the drags aim at") {
                     val elsewhere = workspace.dockHostGeometry(dialog)?.layoutScreenRectPx() ?: return@awaitUntil false
-                    dropPoints.none { elsewhere.contains(it) }
+                    elsewhere.left - parentRight in 0f..DIALOG_PARK_GAP_PX + DIALOG_PARK_SLACK_PX &&
+                        dropPoints.none { elsewhere.contains(it) }
                 }
+                // Clear of the drop points is not clear of the palette: centred
+                // on the pointer, it reaches ~90 px past the parent's right edge,
+                // over a dialog parked 12 px from it. Layouts are asked in focus
+                // order and the first one the palette overlaps answers — with the
+                // dialog focused last (it opened last), that is the dialog, which
+                // has no zone there (null on macOS) or its left one (GraalVM).
+                window.focus()
+                awaitUntil("the parent is the owner again") { workspace.owner === window }
                 val outer = requireNotNull(floating.outerBoundsPx())
                 val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * window.scaleFactor)
 
