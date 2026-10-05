@@ -40,7 +40,8 @@ import java.util.zip.ZipEntry
  * layer — `rememberGraphicsLayer()` recorded and drawn with `drawLayer` —
  * and whether it was recorded by that same layer, the case it can attribute.
  *
- * Unlike the LCD patch this one is optional: a Compose layout it does not
+ * Opt-in (`nucleusOptimization { partialRedraw }`). Unlike the LCD patch
+ * this one is also optional at runtime: a Compose layout it does not
  * recognise is handed through untouched, and the runtime — which then finds
  * no `NucleusLayerDamage` — keeps repainting whole frames. Plain bytecode, so
  * HotSpot, ProGuard and GraalVM native-image all see the same thing.
@@ -84,26 +85,15 @@ private const val PATCHED_JAR_SUFFIX = "-nucleus-damage"
 private val LAYER_DAMAGE_PATCHED: Attribute<Boolean> =
     Attribute.of("dev.nucleusframework.layer-damage", Boolean::class.javaObjectType)
 
-/** Gradle property that skips the build-time patch when set to `false`. */
-private const val PATCH_OPT_OUT_PROPERTY = "nucleus.tao.partialRedraw.patch"
-
 /**
  * Registers [LayerDamageTransform] and requests the patched variant on every
  * non-test runtime classpath of [project] — the same classpaths, with the same
  * exclusions, as [configureLcdTextDefaultTransform].
  *
- * Build-time opt-out: `-Pnucleus.tao.partialRedraw.patch=false` (the runtime
- * `-Dnucleus.tao.partialRedraw=false` disables partial redraw on a patched
- * classpath).
+ * Called only when `nucleusOptimization { partialRedraw }` is on; otherwise
+ * Compose is left untouched and every frame repaints in full.
  */
 internal fun configureLayerDamageTransform(project: Project) {
-    val enabled =
-        project.providers
-            .gradleProperty(PATCH_OPT_OUT_PROPERTY)
-            .map { it != "false" }
-            .getOrElse(true)
-    if (!enabled) return
-
     project.dependencies.registerTransform(LayerDamageTransform::class.java) { spec ->
         spec.from.attribute(LAYER_DAMAGE_PATCHED, false)
         spec.to.attribute(LAYER_DAMAGE_PATCHED, true)

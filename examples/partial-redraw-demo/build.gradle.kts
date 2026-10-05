@@ -43,4 +43,6 @@ tasks.withType<JavaExec>().configureEach {
 
 nucleus.application {
     mainClass = "com.example.partialredraw.MainKt"
+    // Partial redraw is opt-in: patches Compose and turns the runtime on.
+    nucleusOptimization { partialRedraw = true }
 }

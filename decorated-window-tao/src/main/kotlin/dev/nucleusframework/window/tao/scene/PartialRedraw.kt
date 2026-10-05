@@ -21,9 +21,16 @@ import androidx.compose.ui.unit.IntRect
  * Any doubt is a full repaint: damage unknown, buffer age 0 or older than the
  * history, a resize, a change of clear colour or frame decoration.
  *
+ * Opt-in: `nucleusOptimization { partialRedraw = true }` in the Nucleus
+ * plugin patches Compose (see [LayerDamageTracker]) and turns it on with
+ * `-Dnucleus.tao.partialRedraw=true`, also baked into
+ * `nucleus/nucleus-app.properties` (`optimization.partialRedraw`) for native
+ * images, which have no launcher `.cfg`.
+ *
  * Switches (system properties):
- *  - `nucleus.tao.partialRedraw=false` turns it off (environment variable
- *    `NUCLEUS_TAO_PARTIAL_REDRAW=0` turns off the native side too);
+ *  - `nucleus.tao.partialRedraw=true|false` forces it on or off, whatever the
+ *    app properties say (environment variable `NUCLEUS_TAO_PARTIAL_REDRAW=0`
+ *    turns off the native side too);
  *  - `nucleus.tao.partialRedraw.debug=true` logs why frames repaint in full,
  *    whenever that changes;
  *  - `nucleus.tao.partialRedraw.tint=true` tints what each frame repaints,
@@ -33,8 +40,24 @@ import androidx.compose.ui.unit.IntRect
  *    difference — the oracle the end-to-end checks run against. Slow.
  */
 internal object PartialRedraw {
-    /** Off with `-Dnucleus.tao.partialRedraw=false`. */
-    val enabled: Boolean = System.getProperty("nucleus.tao.partialRedraw") != "false"
+    /**
+     * On with `nucleusOptimization { partialRedraw }`: the system property
+     * (the launcher `.cfg`, `run`) wins, else the app-properties key (native
+     * images). Off by default.
+     */
+    val enabled: Boolean =
+        System.getProperty(PROPERTY)?.let { it == "true" } ?: readAppPropertiesFlag()
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun readAppPropertiesFlag(): Boolean =
+        try {
+            PartialRedraw::class.java.classLoader
+                ?.getResourceAsStream(APP_PROPERTIES)
+                ?.use { java.util.Properties().apply { load(it) } }
+                ?.getProperty(APP_PROPERTIES_KEY) == "true"
+        } catch (_: Exception) {
+            false
+        }
 
     /** `-Dnucleus.tao.partialRedraw.debug=true`: log why frames repaint in full. */
     val debug: Boolean = System.getProperty("nucleus.tao.partialRedraw.debug") == "true"
@@ -48,6 +71,13 @@ internal object PartialRedraw {
      * the oracle flags.
      */
     val debugTint: Boolean = System.getProperty("nucleus.tao.partialRedraw.tint") == "true" && !verify
+
+    /** Keep in sync with the plugin's `NUCLEUS_PARTIAL_REDRAW_PROPERTY`. */
+    private const val PROPERTY = "nucleus.tao.partialRedraw"
+    private const val APP_PROPERTIES = "nucleus/nucleus-app.properties"
+
+    /** Keep in sync with the plugin's `NUCLEUS_PARTIAL_REDRAW_RESOURCE_KEY`. */
+    private const val APP_PROPERTIES_KEY = "optimization.partialRedraw"
 
     /** Debug tint colours, alternated frame to frame (ARGB, translucent). */
     @Suppress("MagicNumber")

@@ -15,6 +15,15 @@ internal const val NUCLEUS_IDLE_GC_PROPERTY = "nucleus.optimization.idleGc"
 internal const val OPTIMIZED_IDLE_GC_FLAG = "-D$NUCLEUS_IDLE_GC_PROPERTY=true"
 internal const val NUCLEUS_IDLE_GC_RESOURCE_KEY = "optimization.idleGc"
 
+/**
+ * Runtime flag read by `decorated-window-tao` (`PartialRedraw`) to turn partial redraw on.
+ * Also baked into `nucleus-app.properties` as [NUCLEUS_PARTIAL_REDRAW_RESOURCE_KEY], for
+ * native images.
+ */
+internal const val NUCLEUS_PARTIAL_REDRAW_PROPERTY = "nucleus.tao.partialRedraw"
+internal const val OPTIMIZED_PARTIAL_REDRAW_FLAG = "-D$NUCLEUS_PARTIAL_REDRAW_PROPERTY=true"
+internal const val NUCLEUS_PARTIAL_REDRAW_RESOURCE_KEY = "optimization.partialRedraw"
+
 internal val JvmApplicationData.optSerialGc: Boolean
     get() = nucleusOptimizationSettings.serialGc ?: nucleusOptimization
 
@@ -29,6 +38,9 @@ internal val JvmApplicationData.optIdleGc: Boolean
 
 internal val JvmApplicationData.optLastJdk: Boolean
     get() = nucleusOptimizationSettings.lastJdk ?: nucleusOptimization
+
+internal val JvmApplicationData.optPartialRedraw: Boolean
+    get() = nucleusOptimizationSettings.partialRedraw ?: nucleusOptimization
 
 /**
  * Applies [JvmApplicationData.nucleusOptimization] JVM flags without clobbering an
@@ -48,6 +60,9 @@ internal fun applyNucleusOptimization(app: JvmApplicationData) {
     }
     if (app.optIdleGc && app.jvmArgs.none { it.startsWith("-D$NUCLEUS_IDLE_GC_PROPERTY=") }) {
         app.jvmArgs.add(OPTIMIZED_IDLE_GC_FLAG)
+    }
+    if (app.optPartialRedraw && app.jvmArgs.none { it.startsWith("-D$NUCLEUS_PARTIAL_REDRAW_PROPERTY=") }) {
+        app.jvmArgs.add(OPTIMIZED_PARTIAL_REDRAW_FLAG)
     }
 }
 

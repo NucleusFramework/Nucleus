@@ -98,9 +98,10 @@ internal fun JvmApplicationContext.configureJvmApplication() {
     // grayscale PlatformDefault at build time — see LcdTextDefaultTransform.
     configureLcdTextDefaultTransform(project)
 
-    // Partial redraw on the Tao backend (#755): give Compose's render layers
-    // the content version the damage tracker reads — see LayerDamageTransform.
-    configureLayerDamageTransform(project)
+    // Partial redraw on the Tao backend (#755), opt-in through
+    // nucleusOptimization: give Compose's render layers the content version
+    // the damage tracker reads — see LayerDamageTransform.
+    if (app.optPartialRedraw) configureLayerDamageTransform(project)
 
     validatePackageVersions()
     validateMacBundleName()
@@ -166,6 +167,7 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
             }
             // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
             idleGc.set(project.provider { app.optIdleGc })
+            partialRedraw.set(project.provider { app.optPartialRedraw })
             outputDir.set(appTmpDir.dir("app-properties"))
         }
 
