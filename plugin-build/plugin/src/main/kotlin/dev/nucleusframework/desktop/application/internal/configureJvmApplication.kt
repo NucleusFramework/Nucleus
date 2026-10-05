@@ -709,6 +709,12 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
 private fun JvmApplicationContext.applyWindowsSigningSettings(task: AbstractGenerateAotCacheTask) {
     val distributions = app.nativeDistributions
     task.windowsSigning = distributions.windows.signing
+    // A run* task alone is a dev run, as for the GraalVM quick build: nothing is shipped.
+    val requestedTasks = project.gradle.startParameter.taskNames
+    val devRunOnly =
+        requestedTasks.isNotEmpty() &&
+            requestedTasks.all { it.substringAfterLast(':').startsWith("run", ignoreCase = true) }
+    task.signJarLibraries.set(!devRunOnly)
     task.windowsSigningDescription.set(
         project
             .provider { distributions.appName ?: distributions.packageName }

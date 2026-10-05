@@ -244,6 +244,14 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
     @get:Internal
     internal val windowsSigningDescription: Property<String> = objects.nullableProperty()
 
+    /**
+     * Whether DLLs inside JARs are signed before training. Off for a dev run (`runDistributable`
+     * only), which ships nothing and must not need signtool, the CI certificate or a timestamp
+     * server. An input, so a packaging run after a dev run trains again on the signed JARs.
+     */
+    @get:Input
+    internal val signJarLibraries: Property<Boolean> = objects.notNullProperty(true)
+
     /** Extra JVM arguments passed to the training run only. */
     @get:Input
     val extraTrainingJvmArgs: ListProperty<String> = objects.listProperty(String::class.java)
@@ -296,6 +304,10 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
     private fun signJarLibrariesBeforeTraining(appDir: File) {
         val signing = windowsSigning ?: return
         if (currentOS != OS.Windows || !signing.enabled || !signing.signNativeLibraries) return
+        if (!signJarLibraries.get()) {
+            logger.info("[aotCache] Dev run: leaving the DLLs inside JARs unsigned")
+            return
+        }
         WindowsAppImageSigner(
             settings = signing,
             description = windowsSigningDescription.get(),
@@ -622,7 +634,7 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
                         .directory(appDir)
                         .redirectErrorStream(true)
                         .redirectOutput(logFile)
-                if (isJvmciEnabledByDefault(javaExe)) {
+                if (isJvmciEnabled(javaExe, spec.tuningArgs + spec.javaOptions)) {
                     val env = processBuilder.environment()
                     env[AOT_CHILD_OPTIONS_ENV] =
                         listOfNotNull(env[AOT_CHILD_OPTIONS_ENV], JVMCI_ADD_MODULES).joinToString(" ")
@@ -680,16 +692,20 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
     }
 
     /**
-     * Whether the runtime enables JVMCI by default (GraalVM), which implicitly adds
+     * Whether JVMCI is on for the training run (GraalVM enables it by default), which implicitly adds
      * `jdk.internal.vm.ci` to the module graph. The single-step workflow's assembly JVM is only
      * handed the explicit options, so it dumps the cache without that module and every launch then
      * reports a `jdk.module.addmods` mismatch and drops the archived module graph. The module is
      * therefore passed to the assembly JVM explicitly through [AOT_CHILD_OPTIONS_ENV].
      */
-    private fun isJvmciEnabledByDefault(javaExe: String): Boolean =
+    private fun isJvmciEnabled(
+        javaExe: String,
+        jvmOptions: List<String>,
+    ): Boolean =
         runCatching {
+            // The app's own options count: `-XX:-EnableJVMCI` there must not get the module added.
             val process =
-                ProcessBuilder(javaExe, "-XX:+PrintFlagsFinal", "-version")
+                ProcessBuilder(listOf(javaExe) + jvmOptions + listOf("-XX:+PrintFlagsFinal", "-version"))
                     .redirectErrorStream(true)
                     .start()
             val output = process.inputStream.bufferedReader().use { it.readText() }

@@ -656,7 +656,8 @@ abstract class AbstractElectronBuilderPackageTask
             val aotJarDir = aotJarDirOrNull(appDir)
             val nucleusMacros =
                 nucleusNsisMacros(distributions, hasUserInclude = userInclude != null, pinAotJars = aotJarDir != null)
-            if (nucleusMacros == null && !hotUpdateLayout && aotJarDir == null) return null
+            // A user script may insert the pinning macro, so it is defined whenever there is one.
+            if (nucleusMacros == null && !hotUpdateLayout && aotJarDir == null && userInclude == null) return null
 
             val script =
                 buildString {
@@ -666,7 +667,7 @@ abstract class AbstractElectronBuilderPackageTask
                         appendLine("!include \"${userInclude.absolutePath}\"")
                         appendLine()
                     }
-                    aotJarDir?.let { appendLine(AotJarTimestamps.nsisMacros(it)) }
+                    appendLine(aotJarDir?.let { AotJarTimestamps.nsisMacros(it) } ?: AotJarTimestamps.NSIS_NO_OP_MACRO)
                     nucleusMacros?.let { appendLine(it) }
                     if (hotUpdateLayout) append(WindowsHotUpdateNsis.MACROS)
                     if (aotJarDir != null) {
@@ -712,7 +713,7 @@ abstract class AbstractElectronBuilderPackageTask
                 logger.warn(
                     "nsis.includeScript declares customInstall: add `!insertmacro ${AotJarTimestamps.NSIS_MACRO}` " +
                         "to it, or the installed app's AOT cache is refused (the installer resets the JARs' " +
-                        "modification times).",
+                        "modification times). The macro is always defined, empty without an AOT cache.",
                 )
             }
         }

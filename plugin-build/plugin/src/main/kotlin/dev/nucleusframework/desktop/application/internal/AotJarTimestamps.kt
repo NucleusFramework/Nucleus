@@ -23,6 +23,12 @@ internal object AotJarTimestamps {
     /** Name of the NSIS macro that pins the installed JARs, inserted from `customInstall`. */
     const val NSIS_MACRO = "nucleusPinAotJarTimestamps"
 
+    /**
+     * [NSIS_MACRO] for an image without an AOT cache: a user `customInstall` inserting the macro
+     * must still compile when AOT is off or the image is a GraalVM native one.
+     */
+    const val NSIS_NO_OP_MACRO = "!macro $NSIS_MACRO\n!macroend\n"
+
     /** 100-ns intervals between the FILETIME epoch (1601-01-01) and the Unix epoch. */
     private const val FILETIME_UNIX_EPOCH = 116_444_736_000_000_000L
     private const val FILETIME_TICKS_PER_SECOND = 10_000_000L
