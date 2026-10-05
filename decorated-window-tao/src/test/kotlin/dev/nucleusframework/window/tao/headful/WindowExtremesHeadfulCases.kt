@@ -118,12 +118,7 @@ internal object WindowExtremesHeadfulCases {
                 window.setInnerSize(END_W_DP, END_H_DP)
                 awaitSettledAt(probe, window, END_W_DP, END_H_DP)
 
-                val before = probe.frames.get()
-                settle(FRAME_WINDOW_MILLIS)
-                val after = probe.frames.get()
-                check(after - before >= MIN_FRAMES) {
-                    "only ${after - before} frames in ${FRAME_WINDOW_MILLIS}ms after the storm"
-                }
+                assertLoopTicks(probe, "the render loop did not come back after the storm")
             },
         )
     }
@@ -151,11 +146,7 @@ internal object WindowExtremesHeadfulCases {
                 window.setInnerSize(END_W_DP, END_H_DP)
                 awaitSettledAt(probe, window, END_W_DP, END_H_DP)
 
-                val before = probe.frames.get()
-                settle(FRAME_WINDOW_MILLIS)
-                check(probe.frames.get() - before >= MIN_FRAMES) {
-                    "the render loop did not come back after the squeeze"
-                }
+                assertLoopTicks(probe, "the render loop did not come back after the squeeze")
             },
         )
     }
@@ -214,11 +205,7 @@ internal object WindowExtremesHeadfulCases {
                 stormResize(window, ROUNDS)
                 window.setInnerSize(END_W_DP, END_H_DP)
                 awaitSettledAt(probe, window, END_W_DP, END_H_DP)
-                val before = probe.frames.get()
-                settle(FRAME_WINDOW_MILLIS)
-                check(probe.frames.get() - before >= MIN_FRAMES) {
-                    "a transparent window stopped painting after the storm"
-                }
+                assertLoopTicks(probe, "a transparent window stopped painting after the storm")
             },
         )
     }
@@ -242,11 +229,7 @@ internal object WindowExtremesHeadfulCases {
                     settle(SQUEEZE_SETTLE_MILLIS)
                 }
                 awaitSettledAt(probe, window, END_W_DP, END_H_DP)
-                val before = probe.frames.get()
-                settle(FRAME_WINDOW_MILLIS)
-                check(probe.frames.get() - before >= MIN_FRAMES) {
-                    "the transparent window stopped painting after the squeezes"
-                }
+                assertLoopTicks(probe, "the transparent window stopped painting after the squeezes")
             },
         )
     }
@@ -423,9 +406,7 @@ internal object WindowExtremesHeadfulCases {
                     val laid = probe.childBounds.value ?: return@awaitUntil false
                     abs(given.width - laid.width) <= EMBED_TOLERANCE_PX
                 }
-                val before = probe.frames.get()
-                settle(FRAME_WINDOW_MILLIS)
-                check(probe.frames.get() - before >= MIN_FRAMES) { "the loop stopped with an embed on screen" }
+                assertLoopTicks(probe, "the loop stopped with an embed on screen")
             },
         )
     }
@@ -476,11 +457,7 @@ internal object WindowExtremesHeadfulCases {
                 stormResize(window, ROUNDS)
                 window.setInnerSize(END_W_DP, END_H_DP)
                 awaitSettledAt(probe, window, END_W_DP, END_H_DP)
-                val before = probe.frames.get()
-                settle(FRAME_WINDOW_MILLIS)
-                check(probe.frames.get() - before >= MIN_FRAMES) {
-                    "a source-less texture view stopped the loop"
-                }
+                assertLoopTicks(probe, "a source-less texture view stopped the loop")
             },
         )
     }
@@ -504,9 +481,7 @@ internal object WindowExtremesHeadfulCases {
                 probe.showTextureView.value = true
                 window.setInnerSize(END_W_DP, END_H_DP)
                 awaitSettledAt(probe, window, END_W_DP, END_H_DP)
-                val before = probe.frames.get()
-                settle(FRAME_WINDOW_MILLIS)
-                check(probe.frames.get() - before >= MIN_FRAMES) { "the loop stopped after the toggling" }
+                assertLoopTicks(probe, "the loop stopped after the toggling")
             },
         )
     }
@@ -527,13 +502,8 @@ internal object WindowExtremesHeadfulCases {
             driver = {
                 awaitProbe(probe)
                 awaitUntil("the loop is ticking") { probe.frames.get() > MIN_FRAMES }
-                val before = probe.frames.get()
                 repeat(SIGNAL_STORM) { probe.controller.value?.markFrameAvailable() }
-                settle(FRAME_WINDOW_MILLIS)
-                val after = probe.frames.get()
-                check(after - before >= MIN_FRAMES) {
-                    "the signal storm starved the loop: ${after - before} frames"
-                }
+                assertLoopTicks(probe, "the signal storm starved the loop")
                 check(bounds() != null) { "the window did not survive the signal storm" }
             },
         )
@@ -653,6 +623,9 @@ internal object WindowExtremesHeadfulCases {
         /** Frame-clock ticks since the content was composed. */
         val frames = AtomicLong()
 
+        /** [System.nanoTime] of the last frame-clock tick. */
+        val lastTickNanos = AtomicLong()
+
         val showNativeView = mutableStateOf(true)
         val showTextureView = mutableStateOf(true)
         val controller = mutableStateOf<dev.nucleusframework.window.tao.TextureViewController?>(null)
@@ -666,7 +639,7 @@ internal object WindowExtremesHeadfulCases {
         ) {
             val container = LocalWindowInfo.current.containerSize
             SideEffect { sceneSize.value = container }
-            if (animate) FrameTicker(frames)
+            if (animate) FrameTicker(frames, lastTickNanos)
             val childModifier =
                 (if (fixedChild != null) Modifier.size(fixedChild) else Modifier.fillMaxSize())
                     .onGloballyPositioned { childBounds.value = it.boundsInWindow().size }
@@ -698,7 +671,10 @@ internal object WindowExtremesHeadfulCases {
      * the read the clock parks — the host only ticks it when it renders.
      */
     @Composable
-    private fun FrameTicker(frames: AtomicLong) {
+    private fun FrameTicker(
+        frames: AtomicLong,
+        lastTickNanos: AtomicLong,
+    ) {
         val phase = remember { mutableFloatStateOf(0f) }
         // Deliberately the smallest node that can draw: the ticker is a
         // sibling of the probe's content in the window's scene column, and a
@@ -715,6 +691,7 @@ internal object WindowExtremesHeadfulCases {
             while (true) {
                 withFrameNanos {
                     frames.incrementAndGet()
+                    lastTickNanos.set(System.nanoTime())
                     phase.value = (phase.value + 1f) % PHASE_WRAP
                 }
             }
@@ -783,6 +760,29 @@ internal object WindowExtremesHeadfulCases {
                         onDispose = onDispose,
                     )
             }
+        }
+    }
+
+    /**
+     * Fails with [stopped] unless [probe]'s frame clock ticks [MIN_FRAMES] more
+     * times within [LOOP_ALIVE_TIMEOUT_MILLIS].
+     *
+     * Liveness, not throughput: a stopped loop never ticks again, while a live
+     * one can pause well past a fixed window. On the macOS CI runner,
+     * `nextDrawable` blocks up to its 1 s limit after a storm while the
+     * compositor still holds every drawable, and a 400 ms window caught that
+     * pause as "0 frames".
+     */
+    private suspend fun TaoWindowTestScope.assertLoopTicks(
+        probe: ExtremeProbe,
+        stopped: String,
+    ) {
+        val before = probe.frames.get()
+        val ticked = awaitUntilOrTimeout(LOOP_ALIVE_TIMEOUT_MILLIS) { probe.frames.get() - before >= MIN_FRAMES }
+        check(ticked) {
+            val sinceTickMs = (System.nanoTime() - probe.lastTickNanos.get()) / NANOS_PER_MILLI
+            "$stopped: ${probe.frames.get() - before} frames in ${LOOP_ALIVE_TIMEOUT_MILLIS}ms, " +
+                "last tick ${sinceTickMs}ms ago"
         }
     }
 
@@ -884,7 +884,10 @@ internal object WindowExtremesHeadfulCases {
     private const val SIGNAL_STORM = 500
     private const val STORM_STEP_MILLIS = 8L
     private const val SQUEEZE_SETTLE_MILLIS = 120L
-    private const val FRAME_WINDOW_MILLIS = 400L
+
+    /** Comfortably past `nextDrawable`'s 1 s limit, twice over. */
+    private const val LOOP_ALIVE_TIMEOUT_MILLIS = 3_000L
+    private const val NANOS_PER_MILLI = 1_000_000L
     private const val MIN_FRAMES = 4L
     private const val PHASE_WRAP = 1000f
 
