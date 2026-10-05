@@ -23,6 +23,7 @@ import dev.nucleusframework.window.tao.ApplicationScope
 import dev.nucleusframework.window.tao.DecoratedWindow
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.clampOuterPosition
 
 /**
  * A borderless, click-through, always-on-top window covering [screenRectPx]
@@ -68,13 +69,13 @@ internal fun ApplicationScope.DragGhostWindow(
     val scale = scaleFactor.takeIf { it > 0f } ?: 1f
     val state =
         rememberWindowState(
-            position = WindowPosition.Absolute((screenRectPx.left / scale).dp, (screenRectPx.top / scale).dp),
+            position = ghostPosition(screenRectPx, scale),
             size = DpSize((screenRectPx.width / scale).dp, (screenRectPx.height / scale).dp),
         )
     // Reactive follow: the caller republishes the rect on every pointer move,
     // and DecoratedWindow pushes state changes to the native window.
     SideEffect {
-        state.position = WindowPosition.Absolute((screenRectPx.left / scale).dp, (screenRectPx.top / scale).dp)
+        state.position = ghostPosition(screenRectPx, scale)
         state.size = DpSize((screenRectPx.width / scale).dp, (screenRectPx.height / scale).dp)
     }
     DecoratedWindow(
@@ -95,3 +96,18 @@ internal fun ApplicationScope.DragGhostWindow(
         CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) { scope.content() }
     }
 }
+
+/**
+ * The ghost's outer position in dp. The ghost follows the pointer, and a pointer
+ * sample can lie far off every display (#569's headful excursion drags to a
+ * million pixels out), so it is clamped to a placeable spot rather than handed
+ * to `setOuterPosition`, which rejects it as a caller bug.
+ */
+private fun ghostPosition(
+    screenRectPx: Rect,
+    scale: Float,
+): WindowPosition.Absolute =
+    WindowPosition.Absolute(
+        clampOuterPosition(screenRectPx.left / scale.toDouble()).toFloat().dp,
+        clampOuterPosition(screenRectPx.top / scale.toDouble()).toFloat().dp,
+    )
