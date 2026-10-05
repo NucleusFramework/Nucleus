@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -61,7 +61,7 @@ jobs:
 
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -82,7 +82,7 @@ jobs:
           setup-gradle: 'true'
 
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: 'natives-*'
           merge-multiple: true
@@ -137,7 +137,7 @@ jobs:
 
       - name: Upload packaged artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-assets-${{ runner.os }}-${{ matrix.arch }}
           path: |
@@ -181,7 +181,7 @@ jobs:
 
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@v7
         with:
           sparse-checkout: |
             .github/actions
@@ -209,13 +209,13 @@ jobs:
           fi
 
       - name: Download macOS arm64 artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-assets-macOS-arm64
           path: artifacts/release-assets-macOS-arm64
 
       - name: Download macOS amd64 artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-assets-macOS-amd64
           path: artifacts/release-assets-macOS-amd64
@@ -286,7 +286,7 @@ jobs:
         run: security delete-keychain "${{ steps.signing.outputs.keychain-path }}" || true
 
       - name: Upload universal macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-assets-macOS-universal
           path: artifacts/release-assets-macOS-universal
@@ -301,7 +301,7 @@ jobs:
 
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@v7
         with:
           sparse-checkout: |
             .github/actions
@@ -309,13 +309,13 @@ jobs:
           fetch-depth: 1
 
       - name: Download Windows amd64 artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-assets-Windows-amd64
           path: artifacts/release-assets-Windows-amd64
 
       - name: Download Windows arm64 artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-assets-Windows-arm64
           path: artifacts/release-assets-Windows-arm64
@@ -329,7 +329,7 @@ jobs:
           certificate-password: 'ChangeMe-Temp123!'
 
       - name: Upload Windows bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-assets-Windows-bundle
           path: artifacts/release-assets-Windows-bundle
@@ -348,13 +348,13 @@ jobs:
 
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@v7
         with:
           sparse-checkout: .github/actions
           fetch-depth: 1
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: release-assets-*

@@ -113,7 +113,7 @@ runs:
     # Same cache entry as setup-nucleus: the provisioning script uses the
     # plugin's install layout, so a Node.js downloaded by either is reused.
     - name: Cache Node.js toolchain
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.gradle/nucleus/nodejs
         key: nodejs-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.node-version }}

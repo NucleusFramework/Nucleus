@@ -14,7 +14,7 @@ jobs:
       is-dev: ${{ steps.tag.outputs.is-dev }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -35,10 +35,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: 'natives-*'
           merge-multiple: true
@@ -189,13 +189,16 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Setup JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # Open-source cache on GitHub Actions cache; v6's default provider is proprietary.
+          cache-provider: basic
 
       - name: Capture runner egress IP
         run: |
