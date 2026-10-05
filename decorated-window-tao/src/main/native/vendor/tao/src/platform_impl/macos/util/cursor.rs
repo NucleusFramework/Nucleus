@@ -102,14 +102,19 @@ impl Cursor {
         };
         msg_send![class, performSelector: sel]
       }
-      Cursor::WebKit(cursor_name) => load_webkit_cursor(cursor_name),
+      // PATCH(nucleus): the HIServices cursor bundle is not guaranteed to be
+      // there (#746); a missing one falls back to the arrow instead of
+      // panicking inside AppKit's `resetCursorRects` callback.
+      Cursor::WebKit(cursor_name) => {
+        load_webkit_cursor(cursor_name).unwrap_or_else(|| msg_send![class!(NSCursor), arrowCursor])
+      }
     }
   }
 }
 
 // Note that loading `busybutclickable` with this code won't animate the frames;
 // instead you'll just get them all in a column.
-pub unsafe fn load_webkit_cursor(cursor_name: &str) -> id {
+pub unsafe fn load_webkit_cursor(cursor_name: &str) -> Option<id> {
   const CURSOR_ROOT: &str = "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/HIServices.framework/Versions/A/Resources/cursors";
   let cursor_root = ns_string!(CURSOR_ROOT);
   let cursor_name = NSString::from_str(cursor_name);
@@ -125,19 +130,23 @@ pub unsafe fn load_webkit_cursor(cursor_name: &str) -> id {
   let info_path: Retained<NSString> =
     msg_send![&cursor_path, stringByAppendingPathComponent: &*cursor_plist];
 
-  let image = NSImage::initByReferencingFile(NSImage::alloc(), &pdf_path).unwrap();
+  // PATCH(nucleus): every lookup is fallible — upstream unwrapped them all.
+  let image = NSImage::initByReferencingFile(NSImage::alloc(), &pdf_path)?;
+  if !image.isValid() {
+    return None;
+  }
   #[allow(deprecated)]
-  let info =
-    NSDictionary::<AnyObject, AnyObject>::dictionaryWithContentsOfFile(&info_path).unwrap();
-  let x = info.objectForKey(&key_x).unwrap();
-  let y = info.objectForKey(&key_y).unwrap();
+  let info = NSDictionary::<AnyObject, AnyObject>::dictionaryWithContentsOfFile(&info_path)?;
+  let x = info.objectForKey(&key_x)?;
+  let y = info.objectForKey(&key_y)?;
   let point = NSPoint::new(msg_send![&x, doubleValue], msg_send![&y, doubleValue]);
   let cursor: id = msg_send![class!(NSCursor), alloc];
-  msg_send![
+  let cursor: id = msg_send![
     cursor,
     initWithImage:&*image,
     hotSpot:point,
-  ]
+  ];
+  (!cursor.is_null()).then_some(cursor)
 }
 
 pub unsafe fn invisible_cursor() -> id {

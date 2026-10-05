@@ -420,14 +420,23 @@ void nucleus_tao_deactivate_input_context(long ns_view_handle, int64_t token) {
     }
 }
 
+/// Private NSCursor factories (`_moveCursor`, the diagonal resizes, …) are
+/// not API: one may vanish, return something other than a cursor or throw.
+/// Any of that means "no such cursor" — an exception escaping here would
+/// unwind through Rust and the JNI frame and abort the JVM (#746).
 static NSCursor *nucleus_tao_cursor_from_selector(NSString *selectorName) {
     SEL selector = NSSelectorFromString(selectorName);
     if (![NSCursor respondsToSelector:selector]) return nil;
 
+    @try {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    return [NSCursor performSelector:selector];
+        id cursor = [NSCursor performSelector:selector];
 #pragma clang diagnostic pop
+        return [cursor isKindOfClass:[NSCursor class]] ? cursor : nil;
+    } @catch (id exception) {
+        return nil;
+    }
 }
 
 static NSCursor *nucleus_tao_cursor_for_code(int code) {
@@ -469,8 +478,12 @@ static NSCursor *nucleus_tao_cursor_for_code(int code) {
 
 void nucleus_tao_set_cursor_icon(int code) {
     void (^apply)(void) = ^{
-        NSCursor *cursor = nucleus_tao_cursor_for_code(code);
-        if (cursor) [cursor set];
+        @try {
+            NSCursor *cursor = nucleus_tao_cursor_for_code(code);
+            [cursor ?: [NSCursor arrowCursor] set];
+        } @catch (id exception) {
+            [[NSCursor arrowCursor] set];
+        }
     };
 
     if ([NSThread isMainThread]) {
