@@ -116,6 +116,29 @@ internal object DialogAppearanceHeadfulCases {
                 return sustained.toFloat() / restHeight
             }
 
+        /**
+         * The longest the grabber went without a frame while something was
+         * changing: from the show request until the appearance settled, and
+         * from the hide request until the dialog was gone — each including the
+         * wait for the first grab and the grab after the window's end.
+         */
+        val maxCaptureGapMs: Long
+            get() {
+                val show = gapWithin(0L, samples.map { it.tMs }, settledMs ?: hideAtMs)
+                val hide = gapWithin(hideAtMs, hiding.map { it.tMs }, hideAtMs + (hideGoneMs ?: 0L))
+                return maxOf(show, hide)
+            }
+
+        private fun gapWithin(
+            start: Long,
+            times: List<Long>,
+            end: Long,
+        ): Long {
+            val within = times.takeWhile { it <= end }
+            val span = listOf(start) + within + listOfNotNull(times.getOrNull(within.size))
+            return span.zipWithNext { a, b -> b - a }.maxOrNull() ?: 0L
+        }
+
         /** First moment after the hide request where the dialog was gone. */
         val hideGoneMs: Long? get() = hiding.firstOrNull { it.dialogTop == null }?.tMs?.minus(hideAtMs)
 
@@ -483,10 +506,11 @@ internal object DialogAppearanceHeadfulCases {
             // went away" in the comparison.
             var grabber: Thread? = null
 
-            // Returns once the grabber has a frame in hand: the first capture of
-            // a process is slow on macOS (~300 ms on the CI runner), long enough
-            // to miss the whole appearance if the dialog is shown right away —
-            // the curve then starts settled, with no animation and no slide-in.
+            // Returns once the grabber is capturing at a steady pace. Its first
+            // captures are slow on macOS — on the CI runner the first took
+            // ~300 ms, and the one after it ~250 ms more — long enough to miss
+            // the whole appearance if the dialog is shown right away: the curve
+            // then starts settled, with no animation and no slide-in.
             suspend fun startFilm() {
                 capturing.set(true)
                 val from = frames.size
@@ -496,7 +520,15 @@ internal object DialogAppearanceHeadfulCases {
                             frames += System.nanoTime() to robot.createScreenCapture(region)
                         }
                     }
-                awaitUntil("the screen grabber delivered its first frame") { frames.size > from }
+                // Bounded: a host that never settles to a steady pace is still filmed.
+                awaitUntilOrTimeout(STEADY_TIMEOUT_MILLIS) {
+                    val recent =
+                        synchronized(frames) {
+                            if (frames.size - from < STEADY_FRAMES) return@awaitUntilOrTimeout false
+                            frames.subList(frames.size - STEADY_FRAMES, frames.size).map { it.first }
+                        }
+                    recent.zipWithNext().all { (a, b) -> b - a < STEADY_GAP_MILLIS * NANOS_PER_MILLI }
+                }
             }
 
             // Joined off the loop thread: on macOS every capture starts with
@@ -511,78 +543,131 @@ internal object DialogAppearanceHeadfulCases {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { running.join() }
                 grabber = null
             }
-            startFilm()
-            val shownNs = System.nanoTime()
-            dialogShown.value = true
-            var hiddenNs = Long.MAX_VALUE
-            var hideFilmFrom = Int.MAX_VALUE
-            try {
-                settle(FILM_MILLIS)
-                stopFilm()
-                // Filming before the hide, for the same reason as the show. The
-                // frames grabbed while it warms up are dropped below: each is
-                // stamped before its capture runs, so one stamped just before
-                // the hide can already show it, and would be read as the
-                // appearance still changing at its very end.
-                hideFilmFrom = frames.size
+            // A film is only as good as its grabber: a capture that stalls
+            // mid-animation (seen on the macOS CI runner: gaps of 150–330 ms
+            // between grabs) misses frames the dialog did draw, and reads as a
+            // hold, a missing slide-in or a lagging scrim. Such a film is
+            // retaken rather than judged; the steadiest attempt is kept.
+            var curve: Curve? = null
+            var kept: List<Pair<Long, BufferedImage>> = emptyList()
+            var keptShownNs = 0L
+            for (attempt in 1..MAX_FILM_ATTEMPTS) {
+                frames.clear()
                 startFilm()
-                hiddenNs = System.nanoTime()
-                dialogShown.value = false
-                settle(HIDE_FILM_MILLIS)
-            } finally {
-                dialogShown.value = false
-                stopFilm()
+                val shownNs = System.nanoTime()
+                dialogShown.value = true
+                var hiddenNs = Long.MAX_VALUE
+                var hideFilmFrom = Int.MAX_VALUE
+                try {
+                    settle(FILM_MILLIS)
+                    stopFilm()
+                    // Filming before the hide, for the same reason as the show. The
+                    // frames grabbed while it warms up are dropped below: each is
+                    // stamped before its capture runs, so one stamped just before
+                    // the hide can already show it, and would be read as the
+                    // appearance still changing at its very end.
+                    hideFilmFrom = frames.size
+                    startFilm()
+                    hiddenNs = System.nanoTime()
+                    dialogShown.value = false
+                    settle(HIDE_FILM_MILLIS)
+                } finally {
+                    dialogShown.value = false
+                    stopFilm()
+                }
+                settle(SETTLE_BEFORE_MILLIS)
+                val take =
+                    Curve(
+                        frames
+                            .filterIndexed { i, (ns, _) -> ns >= shownNs && (i < hideFilmFrom || ns >= hiddenNs) }
+                            .map { (ns, img) -> sample((ns - shownNs) / 1_000_000, img) },
+                        hideAtMs = (hiddenNs - shownNs) / 1_000_000,
+                    )
+                val best = curve
+                if (best == null || take.maxCaptureGapMs < best.maxCaptureGapMs) {
+                    curve = take
+                    kept = frames.toList()
+                    keptShownNs = shownNs
+                }
+                if (take.maxCaptureGapMs <= MAX_CAPTURE_GAP_MILLIS) break
+                System.err.println(stalledFilmNote(attempt, take, requireNotNull(curve)))
             }
-            settle(SETTLE_BEFORE_MILLIS)
-            val curve =
-                Curve(
-                    frames
-                        .filterIndexed { i, (ns, _) -> ns >= shownNs && (i < hideFilmFrom || ns >= hiddenNs) }
-                        .map { (ns, img) -> sample((ns - shownNs) / 1_000_000, img) },
-                    hideAtMs = (hiddenNs - shownNs) / 1_000_000,
-                )
-            measured[material to native] = curve
+            val film = requireNotNull(curve)
+            measured[material to native] = film
             val mode = (if (material) "m3-" else "") + if (native) "native" else "in-scene"
-            // Keep the first and last grabbed frames on disk: when a curve reads
-            // wrong, the pictures say whether the region or the dialog is off.
-            val dir = java.io.File(System.getProperty("java.io.tmpdir"), "dialog-appearance").apply { mkdirs() }
-            frames.firstOrNull()?.let {
-                javax.imageio.ImageIO.write(
-                    it.second,
-                    "png",
-                    java.io.File(dir, "$mode-first.png"),
-                )
+            reportFilm(mode, rect, scale, region, kept, keptShownNs, film)
+            System.err.println("[dialog-appearance] $mode: ${film.summary()}")
+            System.err.print(film.table())
+            check(film.firstVisibleMs != null) { "the dialog never showed up on screen; ${film.summary()}" }
+        }
+
+    /** Log line for a film [take] the grabber stalled on, saying what happens next. */
+    private fun stalledFilmNote(
+        attempt: Int,
+        take: Curve,
+        steadiest: Curve,
+    ): String {
+        val next =
+            if (attempt < MAX_FILM_ATTEMPTS) {
+                "retaking"
+            } else {
+                "judging the steadiest attempt (${steadiest.maxCaptureGapMs}ms)"
             }
-            frames.lastOrNull()?.let {
-                javax.imageio.ImageIO.write(
-                    it.second,
-                    "png",
-                    java.io.File(dir, "$mode-last.png"),
-                )
-            }
-            if (System.getProperty("nucleus.dialog.appearance.dump") == "true") {
-                for ((ns, img) in frames) {
-                    val t = (ns - shownNs) / 1_000_000
-                    if (t in
-                        0..DUMP_UNTIL_MS
-                    ) {
-                        javax.imageio.ImageIO.write(img, "png", java.io.File(dir, "$mode-t%03d.png".format(t)))
-                    }
+        return "[dialog-appearance] attempt $attempt: the grabber stalled ${take.maxCaptureGapMs}ms " +
+            "(limit $MAX_CAPTURE_GAP_MILLIS) while the dialog animated; $next"
+    }
+
+    /**
+     * Keeps the first and last grabbed frames of the film kept for [mode] on
+     * disk (all of them with `-Dnucleus.dialog.appearance.dump=true`) and logs
+     * where it was taken from.
+     */
+    private fun reportFilm(
+        mode: String,
+        rect: LongArray,
+        scale: Float,
+        region: Rectangle,
+        kept: List<Pair<Long, BufferedImage>>,
+        keptShownNs: Long,
+        film: Curve,
+    ) {
+        // Keep the first and last grabbed frames on disk: when a curve reads
+        // wrong, the pictures say whether the region or the dialog is off.
+        val dir = java.io.File(System.getProperty("java.io.tmpdir"), "dialog-appearance").apply { mkdirs() }
+        kept.firstOrNull()?.let {
+            javax.imageio.ImageIO.write(
+                it.second,
+                "png",
+                java.io.File(dir, "$mode-first.png"),
+            )
+        }
+        kept.lastOrNull()?.let {
+            javax.imageio.ImageIO.write(
+                it.second,
+                "png",
+                java.io.File(dir, "$mode-last.png"),
+            )
+        }
+        if (System.getProperty("nucleus.dialog.appearance.dump") == "true") {
+            for ((ns, img) in kept) {
+                val t = (ns - keptShownNs) / 1_000_000
+                if (t in
+                    0..DUMP_UNTIL_MS
+                ) {
+                    javax.imageio.ImageIO.write(img, "png", java.io.File(dir, "$mode-t%03d.png".format(t)))
                 }
             }
-            val screen =
-                java.awt.GraphicsEnvironment
-                    .getLocalGraphicsEnvironment()
-                    .defaultScreenDevice.defaultConfiguration
-            System.err.println(
-                "[dialog-appearance] $mode: window=${rect.toList()} scale=$scale region=$region " +
-                    "awtScreen=${screen.bounds} awtTransform=${screen.defaultTransform.scaleX} " +
-                    "frames=${frames.size} dump=$dir",
-            )
-            System.err.println("[dialog-appearance] $mode: ${curve.summary()}")
-            System.err.print(curve.table())
-            check(curve.firstVisibleMs != null) { "the dialog never showed up on screen; ${curve.summary()}" }
         }
+        val screen =
+            java.awt.GraphicsEnvironment
+                .getLocalGraphicsEnvironment()
+                .defaultScreenDevice.defaultConfiguration
+        System.err.println(
+            "[dialog-appearance] $mode: window=${rect.toList()} scale=$scale region=$region " +
+                "awtScreen=${screen.bounds} awtTransform=${screen.defaultTransform.scaleX} " +
+                "frames=${kept.size} captureGap=${film.maxCaptureGapMs}ms dump=$dir",
+        )
+    }
 
     private fun compare(material: Boolean = false): TaoWindowTestCase =
         TaoWindowTestCase(
@@ -648,12 +733,12 @@ internal object DialogAppearanceHeadfulCases {
             near("hide start (ms)", inScene.hideStartMs, native.hideStartMs, FIRST_VISIBLE_TOLERANCE_MS)
             near("hide gone (ms)", inScene.hideGoneMs, native.hideGoneMs, SETTLE_TOLERANCE_MS)
             near("hide min height ratio", inScene.hideMinHeightRatio, native.hideMinHeightRatio, HEIGHT_RATIO_TOLERANCE)
-            if (native.showLongestHoldMs > inScene.showLongestHoldMs + HOLD_TOLERANCE_MS) {
+            if (native.showLongestHoldMs > maxOf(inScene.showLongestHoldMs + HOLD_TOLERANCE_MS, HOLD_FLOOR_MS)) {
                 problems +=
                     "appearance drops frames: longest hold in-scene=${inScene.showLongestHoldMs}ms " +
                     "native=${native.showLongestHoldMs}ms (tolerance $HOLD_TOLERANCE_MS)"
             }
-            if (native.hideLongestHoldMs > inScene.hideLongestHoldMs + HOLD_TOLERANCE_MS) {
+            if (native.hideLongestHoldMs > maxOf(inScene.hideLongestHoldMs + HOLD_TOLERANCE_MS, HOLD_FLOOR_MS)) {
                 problems +=
                     "disappearance drops frames: longest hold in-scene=${inScene.hideLongestHoldMs}ms " +
                     "native=${native.hideLongestHoldMs}ms (tolerance $HOLD_TOLERANCE_MS)"
@@ -721,6 +806,27 @@ internal object DialogAppearanceHeadfulCases {
      * films the longest hold is one to three frames (11–58 ms) on both layers.
      */
     private const val HOLD_TOLERANCE_MS = 34L
+
+    /**
+     * A hold shorter than this is never a dropped-frame failure: the macOS CI
+     * runner holds one picture for up to ~76 ms on either layer.
+     */
+    private const val HOLD_FLOOR_MS = 100L
+
+    /** Recordings per film before the steadiest one is judged anyway. */
+    private const val MAX_FILM_ATTEMPTS = 3
+
+    /**
+     * The longest gap between grabs a film may have while the dialog animates
+     * (~5 frames); longer, and it is retaken.
+     */
+    private const val MAX_CAPTURE_GAP_MILLIS = 80L
+
+    /** Grabs that must arrive under [STEADY_GAP_MILLIS] apart before a film starts. */
+    private const val STEADY_FRAMES = 3
+    private const val STEADY_GAP_MILLIS = 50L
+    private const val STEADY_TIMEOUT_MILLIS = 3_000L
+    private const val NANOS_PER_MILLI = 1_000_000L
     private const val HEIGHT_RATIO_TOLERANCE = 0.15f
     private const val MAX_FRAMES = 200
 
