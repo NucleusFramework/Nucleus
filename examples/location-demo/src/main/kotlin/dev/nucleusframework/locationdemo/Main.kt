@@ -2,6 +2,7 @@ package dev.nucleusframework.locationdemo
 
 import dev.nucleusframework.location.Geolocation
 import dev.nucleusframework.location.LocationAccuracy
+import dev.nucleusframework.location.LocationException
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -28,17 +29,24 @@ fun main() =
         println("authorization: ${Geolocation.authorization()}")
         println("requested:     ${Geolocation.requestAuthorization(accuracy = accuracy)}")
 
-        runCatching { Geolocation.currentLocation(accuracy, maxAge = 10.minutes, timeout = 30.seconds) }
-            .onSuccess { println("current:       $it") }
-            .onFailure { println("current:       failed — $it") }
+        try {
+            val here = Geolocation.currentLocation(accuracy, maxAge = 10.minutes, timeout = 30.seconds)
+            println("current:       $here")
+        } catch (e: LocationException) {
+            println("current:       failed — $e")
+        }
 
-        val updates =
+        // A device that does not move may report a single fix: Core Location only reports changes.
+        var received = 0
+        try {
             withTimeoutOrNull(30.seconds) {
-                runCatching {
-                    Geolocation.locationUpdates(accuracy, minInterval = 1.seconds).take(3).collect {
-                        println("update:        $it")
-                    }
-                }.onFailure { println("updates:       failed — $it") }
+                Geolocation.locationUpdates(accuracy, minInterval = 1.seconds).take(3).collect {
+                    received++
+                    println("update:        $it")
+                }
             }
-        if (updates == null) println("updates:       none within 30 s")
+            println("updates:       $received within 30 s")
+        } catch (e: LocationException) {
+            println("updates:       failed — $e")
+        }
     }

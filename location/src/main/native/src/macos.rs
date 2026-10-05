@@ -8,12 +8,19 @@
 //!
 //! Authorization needs a usage description in the app's `Info.plist`
 //! (`NSLocationWhenInUseUsageDescription`, plus `NSLocationAlwaysAndWhenInUseUsageDescription` for
-//! background access). Without one — a bare `java` launched from a terminal or an IDE — Core
-//! Location never prompts, so nothing waits for an answer that cannot come.
+//! background access), and — under the hardened runtime, sandboxed or not — the
+//! `com.apple.security.personal-information.location` entitlement. Without either — a bare `java`
+//! launched from a terminal or an IDE, a notarizable build signed without the entitlement —
+//! locationd never shows the prompt and never answers, so nothing waits for that answer.
+//!
+//! A new `CLLocationManager` reports `NotDetermined` until it has synchronised with locationd;
+//! the true status is the one its delegate receives right after `setDelegate`. Every operation
+//! here therefore starts from that first callback, never from `authorizationStatus()` read on a
+//! manager just created.
 
 use crate::{
-    valid_coordinates, AuthCallback, ErrorKind, Fix, SessionOptions, Sink, AUTH_BACKGROUND,
-    AUTH_DENIED, AUTH_FOREGROUND, AUTH_NOT_DETERMINED, AUTH_RESTRICTED,
+    valid_coordinates, AuthCallback, ErrorKind, Fix, SessionOptions, Sink, AUTH_BACKGROUND, AUTH_DENIED,
+    AUTH_FOREGROUND, AUTH_NOT_DETERMINED, AUTH_RESTRICTED,
 };
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -21,12 +28,13 @@ use objc2::runtime::ProtocolObject;
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
 use objc2_core_foundation::{kCFRunLoopDefaultMode, CFRetained, CFRunLoop, CFRunLoopTimer};
 use objc2_core_location::{
-    kCLDistanceFilterNone, kCLLocationAccuracyBest, kCLLocationAccuracyKilometer,
-    CLAuthorizationStatus, CLError, CLLocation, CLLocationManager, CLLocationManagerDelegate,
+    kCLDistanceFilterNone, kCLLocationAccuracyBest, kCLLocationAccuracyKilometer, CLAuthorizationStatus,
+    CLError, CLLocation, CLLocationManager, CLLocationManagerDelegate,
 };
 use objc2_foundation::{NSArray, NSBundle, NSError, NSObject, NSObjectProtocol, NSString};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -110,39 +118,33 @@ fn on_loop(task: impl FnOnce() + Send + 'static) -> bool {
     true
 }
 
-/// Runs `query` on the Core Location thread and waits for its answer.
-fn query<T: Send + 'static>(query: impl FnOnce() -> T + Send + 'static) -> Option<T> {
-    let (sender, receiver) = mpsc::channel();
-    if !on_loop(move || {
-        let _ = sender.send(query());
-    }) {
-        return None;
-    }
-    receiver.recv_timeout(QUERY_TIMEOUT).ok()
-}
-
 // ---------------------------------------------------------------------------------------------
 // Delegate
 // ---------------------------------------------------------------------------------------------
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Phase {
-    /// Waiting for the user to answer the authorization prompt before starting.
+    /// Waiting for the delegate's first callback, which carries the true status.
+    Resolving,
+    /// Waiting for the user to answer the authorization prompt.
     AwaitingAuthorization,
     Running,
 }
 
+/// What a manager was created for, acted on once its true status is known.
+enum Purpose {
+    /// `authorization_status`: report the status, then drop the manager.
+    Status(Option<mpsc::Sender<i32>>),
+    /// `request_authorization`: prompt if nothing is decided yet, report the answer.
+    Authorization { background: bool, done: Option<AuthCallback> },
+    /// A location session.
+    Session { sink: Arc<dyn Sink>, options: SessionOptions },
+}
+
 struct Ivars {
     key: u64,
-    /// Set for an authorization request, consumed by the first determined status.
-    auth: RefCell<Option<AuthCallback>>,
-    background: bool,
-    /// Set for a location session.
-    sink: Option<Arc<dyn Sink>>,
-    options: Option<SessionOptions>,
+    purpose: RefCell<Purpose>,
     phase: Cell<Phase>,
-    /// Timestamp of the last fix a one-shot delivered, so it never goes backwards.
-    last_delivered: Cell<f64>,
 }
 
 define_class!(
@@ -161,16 +163,15 @@ define_class!(
             _manager: &CLLocationManager,
             locations: &NSArray<CLLocation>,
         ) {
-            let one_shot = self.ivars().options.as_ref().is_some_and(|o| !o.continuous);
             for location in locations.iter() {
-                self.deliver(&location, false, one_shot);
+                self.deliver(&location, false);
             }
         }
 
         #[unsafe(method(locationManager:didFailWithError:))]
         #[allow(non_snake_case)]
         fn locationManager_didFailWithError(&self, _manager: &CLLocationManager, error: &NSError) {
-            let Some(sink) = self.ivars().sink.as_ref() else {
+            let Some(sink) = self.sink() else {
                 return;
             };
             let kind = match CLError(error.code()) {
@@ -192,72 +193,155 @@ define_class!(
 );
 
 impl Delegate {
-    fn new(ivars: Ivars) -> Retained<Self> {
-        let this = Self::alloc().set_ivars(ivars);
+    fn new(key: u64, purpose: Purpose) -> Retained<Self> {
+        let this = Self::alloc().set_ivars(Ivars {
+            key,
+            purpose: RefCell::new(purpose),
+            phase: Cell::new(Phase::Resolving),
+        });
         unsafe { msg_send![super(this), init] }
     }
 
-    fn deliver(&self, location: &CLLocation, cached: bool, one_shot: bool) {
-        let Some(sink) = self.ivars().sink.as_ref() else {
+    fn sink(&self) -> Option<Arc<dyn Sink>> {
+        match &*self.ivars().purpose.borrow() {
+            Purpose::Session { sink, .. } => Some(sink.clone()),
+            _ => None,
+        }
+    }
+
+    /// Drops this manager — on the next turn, not from inside a callback that borrows it.
+    fn release(&self) {
+        let key = self.ivars().key;
+        on_loop(move || drop(ENTRIES.with(|entries| entries.borrow_mut().remove(&key))));
+    }
+
+    // Every fix goes to Kotlin, which decides whether a cached one is recent enough. A fix Core
+    // Location answers a request with is the platform's current answer even when its timestamp
+    // predates the request (a Mac that has not moved gets its last fix back).
+    fn deliver(&self, location: &CLLocation, cached: bool) {
+        let Some(sink) = self.sink() else {
             return;
         };
-        let timestamp = unsafe { location.timestamp().timeIntervalSince1970() };
-        if one_shot {
-            if timestamp <= self.ivars().last_delivered.get() {
-                return;
-            }
-            self.ivars().last_delivered.set(timestamp);
-        }
         if let Some(fix) = to_fix(location, cached) {
             sink.location(fix);
         }
     }
 
     fn begin(&self, manager: &CLLocationManager) {
-        let Some(options) = self.ivars().options.as_ref() else {
-            return;
-        };
         self.ivars().phase.set(Phase::Running);
-        if options.continuous {
+        let (continuous, max_cached_age_millis) = match &*self.ivars().purpose.borrow() {
+            Purpose::Session { options, .. } => (options.continuous, options.max_cached_age_millis),
+            _ => return,
+        };
+        if continuous {
             unsafe { manager.startUpdatingLocation() };
             return;
         }
         // Cached first — the Kotlin side decides whether it is recent enough — then refine.
-        if options.max_cached_age_millis > 0 {
+        if max_cached_age_millis > 0 {
             if let Some(location) = unsafe { manager.location() } {
-                self.deliver(&location, true, true);
+                self.deliver(&location, true);
             }
         }
         unsafe { manager.requestLocation() };
     }
 
+    fn fail(&self, kind: ErrorKind, message: &str) {
+        self.ivars().phase.set(Phase::Running);
+        if let Some(sink) = self.sink() {
+            sink.error(kind, message);
+        }
+    }
+
     fn authorization_changed(&self, manager: &CLLocationManager, status: CLAuthorizationStatus) {
-        if status == CLAuthorizationStatus::NotDetermined {
-            return;
-        }
-        if let Some(done) = self.ivars().auth.borrow_mut().take() {
-            done(map_status(status));
-            let key = self.ivars().key;
-            // Not from inside the callback that borrows this delegate: posted to the next turn.
-            on_loop(move || drop(ENTRIES.with(|entries| entries.borrow_mut().remove(&key))));
-            return;
-        }
-        if self.ivars().phase.get() != Phase::AwaitingAuthorization {
-            return;
-        }
-        match status {
-            CLAuthorizationStatus::AuthorizedAlways | CLAuthorizationStatus::AuthorizedWhenInUse => {
-                self.begin(manager)
+        match self.ivars().phase.get() {
+            Phase::Resolving => self.resolved(manager, status),
+            Phase::AwaitingAuthorization if status != CLAuthorizationStatus::NotDetermined => {
+                self.answered(manager, status)
             }
-            _ => {
-                self.ivars().phase.set(Phase::Running);
-                if let Some(sink) = self.ivars().sink.as_ref() {
-                    sink.error(ErrorKind::AuthorizationDenied, "location access was denied");
+            _ => {}
+        }
+    }
+
+    /// The first callback: the manager's true status.
+    fn resolved(&self, manager: &CLLocationManager, status: CLAuthorizationStatus) {
+        let undetermined = status == CLAuthorizationStatus::NotDetermined;
+        let mut purpose = self.ivars().purpose.borrow_mut();
+        match &mut *purpose {
+            Purpose::Status(sender) => {
+                if let Some(sender) = sender.take() {
+                    let _ = sender.send(map_status(status));
+                }
+                drop(purpose);
+                self.release();
+            }
+            Purpose::Authorization { background, done } => {
+                let upgrade = *background && status == CLAuthorizationStatus::AuthorizedWhenInUse;
+                if (!undetermined && !upgrade) || !can_request_authorization() {
+                    if let Some(done) = done.take() {
+                        done(map_status(status));
+                    }
+                    drop(purpose);
+                    self.release();
+                    return;
+                }
+                self.ivars().phase.set(Phase::AwaitingAuthorization);
+                unsafe {
+                    if *background {
+                        manager.requestAlwaysAuthorization();
+                    } else {
+                        manager.requestWhenInUseAuthorization();
+                    }
+                }
+            }
+            Purpose::Session { .. } => {
+                drop(purpose);
+                match status {
+                    CLAuthorizationStatus::AuthorizedAlways | CLAuthorizationStatus::AuthorizedWhenInUse => {
+                        self.begin(manager)
+                    }
+                    // `requestLocation` fails at once while undetermined: ask first, start on the answer.
+                    CLAuthorizationStatus::NotDetermined if can_request_authorization() => {
+                        self.ivars().phase.set(Phase::AwaitingAuthorization);
+                        unsafe { manager.requestWhenInUseAuthorization() };
+                    }
+                    CLAuthorizationStatus::NotDetermined => {
+                        self.fail(ErrorKind::AuthorizationDenied, CANNOT_PROMPT)
+                    }
+                    _ => self.fail(ErrorKind::AuthorizationDenied, "location access was denied"),
                 }
             }
         }
     }
+
+    /// A determined status after the prompt.
+    fn answered(&self, manager: &CLLocationManager, status: CLAuthorizationStatus) {
+        let mut purpose = self.ivars().purpose.borrow_mut();
+        match &mut *purpose {
+            Purpose::Authorization { done, .. } => {
+                self.ivars().phase.set(Phase::Running);
+                if let Some(done) = done.take() {
+                    done(map_status(status));
+                }
+                drop(purpose);
+                self.release();
+            }
+            Purpose::Session { .. } => {
+                drop(purpose);
+                match status {
+                    CLAuthorizationStatus::AuthorizedAlways | CLAuthorizationStatus::AuthorizedWhenInUse => {
+                        self.begin(manager)
+                    }
+                    _ => self.fail(ErrorKind::AuthorizationDenied, "location access was denied"),
+                }
+            }
+            Purpose::Status(_) => {}
+        }
+    }
 }
+
+const CANNOT_PROMPT: &str = "Core Location cannot prompt this app: it needs an NSLocation*UsageDescription in its \
+    Info.plist and, under the hardened runtime, the com.apple.security.personal-information.location entitlement";
 
 // ---------------------------------------------------------------------------------------------
 // Backend
@@ -287,7 +371,18 @@ pub fn is_available() -> bool {
 }
 
 pub fn authorization_status() -> i32 {
-    query(|| map_status(unsafe { CLLocationManager::new().authorizationStatus() })).unwrap_or(AUTH_RESTRICTED)
+    let (sender, receiver) = mpsc::channel();
+    let key = NEXT_KEY.fetch_add(1, Ordering::Relaxed);
+    let posted = on_loop(move || {
+        let manager = unsafe { CLLocationManager::new() };
+        let delegate = Delegate::new(key, Purpose::Status(Some(sender)));
+        unsafe { manager.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
+        ENTRIES.with(|entries| entries.borrow_mut().insert(key, Entry { manager, _delegate: delegate }));
+    });
+    if !posted {
+        return AUTH_RESTRICTED;
+    }
+    receiver.recv_timeout(QUERY_TIMEOUT).unwrap_or(AUTH_RESTRICTED)
 }
 
 pub fn request_authorization(background: bool, precise: bool, _desktop_id: String, done: AuthCallback) {
@@ -298,31 +393,10 @@ pub fn request_authorization(background: bool, precise: bool, _desktop_id: Strin
             return;
         };
         let manager = unsafe { CLLocationManager::new() };
-        let status = unsafe { manager.authorizationStatus() };
-        let upgrade = background && status == CLAuthorizationStatus::AuthorizedWhenInUse;
-        if (status != CLAuthorizationStatus::NotDetermined && !upgrade) || !can_request_authorization() {
-            done(map_status(status));
-            return;
-        }
         unsafe { manager.setDesiredAccuracy(desired_accuracy(precise)) };
         let key = NEXT_KEY.fetch_add(1, Ordering::Relaxed);
-        let delegate = Delegate::new(Ivars {
-            key,
-            auth: RefCell::new(Some(done)),
-            background,
-            sink: None,
-            options: None,
-            phase: Cell::new(Phase::Running),
-            last_delivered: Cell::new(f64::NEG_INFINITY),
-        });
-        unsafe {
-            manager.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-            if delegate.ivars().background {
-                manager.requestAlwaysAuthorization();
-            } else {
-                manager.requestWhenInUseAuthorization();
-            }
-        }
+        let delegate = Delegate::new(key, Purpose::Authorization { background, done: Some(done) });
+        unsafe { manager.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
         ENTRIES.with(|entries| entries.borrow_mut().insert(key, Entry { manager, _delegate: delegate }));
     });
     if !posted {
@@ -336,8 +410,6 @@ pub fn start(options: SessionOptions, sink: Arc<dyn Sink>) -> Result<Session, (E
     let key = NEXT_KEY.fetch_add(1, Ordering::Relaxed);
     let posted = on_loop(move || {
         let manager = unsafe { CLLocationManager::new() };
-        let status = unsafe { manager.authorizationStatus() };
-        let awaiting = status == CLAuthorizationStatus::NotDetermined && can_request_authorization();
         unsafe {
             manager.setDesiredAccuracy(desired_accuracy(options.precise));
             manager.setDistanceFilter(if options.distance_meters > 0.0 {
@@ -346,24 +418,8 @@ pub fn start(options: SessionOptions, sink: Arc<dyn Sink>) -> Result<Session, (E
                 kCLDistanceFilterNone
             });
         }
-        let delegate = Delegate::new(Ivars {
-            key,
-            auth: RefCell::new(None),
-            background: false,
-            sink: Some(sink.clone()),
-            options: Some(options),
-            phase: Cell::new(if awaiting { Phase::AwaitingAuthorization } else { Phase::Running }),
-            last_delivered: Cell::new(f64::NEG_INFINITY),
-        });
+        let delegate = Delegate::new(key, Purpose::Session { sink, options });
         unsafe { manager.setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
-        match status {
-            CLAuthorizationStatus::Denied | CLAuthorizationStatus::Restricted => {
-                sink.error(ErrorKind::AuthorizationDenied, "location access was denied");
-            }
-            // `requestLocation` fails at once while undetermined: ask first, start on the answer.
-            _ if awaiting => unsafe { manager.requestWhenInUseAuthorization() },
-            _ => delegate.begin(&manager),
-        }
         ENTRIES.with(|entries| entries.borrow_mut().insert(key, Entry { manager, _delegate: delegate }));
     });
     if posted {
@@ -393,8 +449,15 @@ fn map_status(status: CLAuthorizationStatus) -> i32 {
     }
 }
 
-/// Whether Core Location can prompt at all: only with a usage description in the `Info.plist`.
+/// Whether Core Location can prompt at all: only with a usage description in the `Info.plist`,
+/// and under the hardened runtime only with the location entitlement (locationd logs "Client has
+/// supported the hardened runtime but doesn't have the entitlement" and never answers).
 fn can_request_authorization() -> bool {
+    static CAN_PROMPT: OnceLock<bool> = OnceLock::new();
+    *CAN_PROMPT.get_or_init(|| has_usage_description() && (!hardened_runtime() || has_location_entitlement()))
+}
+
+fn has_usage_description() -> bool {
     let bundle = NSBundle::mainBundle();
     [
         "NSLocationUsageDescription",
@@ -404,6 +467,76 @@ fn can_request_authorization() -> bool {
     ]
     .iter()
     .any(|key| bundle.objectForInfoDictionaryKey(&NSString::from_str(key)).is_some())
+}
+
+const LOCATION_ENTITLEMENT: &str = "com.apple.security.personal-information.location";
+/// `kSecCodeSignatureRuntime`.
+const CODE_SIGNATURE_RUNTIME: u32 = 0x10000;
+/// `kSecCSSigningInformation`.
+const CS_SIGNING_INFORMATION: u32 = 1 << 1;
+/// `kCFNumberSInt64Type`.
+const CF_NUMBER_SINT64: isize = 4;
+
+#[link(name = "Security", kind = "framework")]
+extern "C" {
+    static kSecCodeInfoFlags: *const c_void;
+    fn SecCodeCopySelf(flags: u32, code: *mut *mut c_void) -> i32;
+    fn SecCodeCopySigningInformation(code: *mut c_void, flags: u32, information: *mut *const c_void) -> i32;
+    fn SecTaskCreateFromSelf(allocator: *const c_void) -> *mut c_void;
+    fn SecTaskCopyValueForEntitlement(
+        task: *mut c_void,
+        entitlement: *const c_void,
+        error: *mut *mut c_void,
+    ) -> *const c_void;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    static kCFBooleanTrue: *const c_void;
+    fn CFRelease(cf: *const c_void);
+    fn CFDictionaryGetValue(dictionary: *const c_void, key: *const c_void) -> *const c_void;
+    fn CFNumberGetValue(number: *const c_void, kind: isize, value: *mut c_void) -> bool;
+}
+
+/// Whether this process's signature carries the hardened runtime flag.
+fn hardened_runtime() -> bool {
+    unsafe {
+        let mut code = std::ptr::null_mut();
+        if SecCodeCopySelf(0, &mut code) != 0 || code.is_null() {
+            return false;
+        }
+        let mut information = std::ptr::null();
+        let status = SecCodeCopySigningInformation(code, CS_SIGNING_INFORMATION, &mut information);
+        CFRelease(code);
+        if status != 0 || information.is_null() {
+            return false;
+        }
+        let mut flags: i64 = 0;
+        let number = CFDictionaryGetValue(information, kSecCodeInfoFlags);
+        let read = !number.is_null() && CFNumberGetValue(number, CF_NUMBER_SINT64, (&raw mut flags).cast());
+        CFRelease(information);
+        read && flags as u32 & CODE_SIGNATURE_RUNTIME != 0
+    }
+}
+
+fn has_location_entitlement() -> bool {
+    unsafe {
+        let task = SecTaskCreateFromSelf(std::ptr::null());
+        if task.is_null() {
+            return false;
+        }
+        // NSString is toll-free bridged to CFString.
+        let name = NSString::from_str(LOCATION_ENTITLEMENT);
+        let value =
+            SecTaskCopyValueForEntitlement(task, Retained::as_ptr(&name).cast(), std::ptr::null_mut());
+        CFRelease(task);
+        if value.is_null() {
+            return false;
+        }
+        let granted = value == kCFBooleanTrue;
+        CFRelease(value);
+        granted
+    }
 }
 
 fn to_fix(location: &CLLocation, cached: bool) -> Option<Fix> {

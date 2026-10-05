@@ -31,8 +31,10 @@ nucleus.application {
         packageName = "LocationDemo"
         packageVersion = "1.0.0"
 
-        // Core Location never prompts an app without a usage description.
+        // Core Location never prompts an app without a usage description, nor — under the
+        // hardened runtime the app is signed with — without the location entitlement.
         macOS {
+            entitlementsFile.set(layout.projectDirectory.file("packaging/macos/entitlements.plist"))
             infoPlist {
                 extraKeysRawXml =
                     """

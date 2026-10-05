@@ -78,12 +78,18 @@ manifest disables the library.
 
 Core Location only prompts an app whose `Info.plist` explains why it wants the location:
 `NSLocationWhenInUseUsageDescription` (and `NSLocationAlwaysAndWhenInUseUsageDescription` for
-background access; macOS also reads `NSLocationUsageDescription`). With the Nucleus Gradle plugin:
+background access; macOS also reads `NSLocationUsageDescription`).
+
+On macOS the app is signed with the hardened runtime, which also requires the
+`com.apple.security.personal-information.location` entitlement — sandboxed or not. Without it,
+locationd never shows the prompt. A custom `entitlementsFile` replaces the plugin's defaults, so
+repeat the JVM's keys next to it. With the Nucleus Gradle plugin:
 
 ```kotlin
 nucleus.application {
     nativeDistributions {
         macOS {
+            entitlementsFile.set(project.file("packaging/macos/entitlements.plist"))
             infoPlist {
                 extraKeysRawXml = """
                     <key>NSLocationUsageDescription</key>
@@ -97,9 +103,34 @@ nucleus.application {
 }
 ```
 
-An unpackaged run (`./gradlew run`, the IDE) has no such `Info.plist`, so it is never authorized on
-macOS: test location with `runDistributable` or a packaged build. A sandboxed (App Store) build also
-needs the `com.apple.security.personal-information.location` entitlement.
+```xml
+<!-- packaging/macos/entitlements.plist -->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.personal-information.location</key>
+    <true/>
+</dict>
+</plist>
+```
+
+A sandboxed (App Store) build needs the same entitlement in its sandbox entitlements file.
+
+When the app cannot be prompted — an unpackaged run (`./gradlew run`, the IDE) has no such
+`Info.plist`, or the entitlement is missing — nothing waits for an answer that cannot come:
+`requestAuthorization` returns `NotDetermined` at once, and `currentLocation` / `locationUpdates`
+fail with `LocationError.AuthorizationDenied`, whose message names what is missing. Test location
+with `runDistributable` or a packaged build.
+
+macOS grants desktop apps `authorizedAlways`, so a granted request reports
+`LocationAuthorization.Background` even when `LocationAccess.Foreground` was asked for. A Mac that
+has not moved may answer a request with the fix it already had, timestamp included: the fix is
+Core Location's current answer (`isCached = false`), and `timestampMillis` says when it was taken.
 
 ### Windows
 
