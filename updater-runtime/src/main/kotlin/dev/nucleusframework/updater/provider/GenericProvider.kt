@@ -56,5 +56,10 @@ private fun requireSecureBaseUrl(baseUrl: String) {
     }
 }
 
+/** An IPv4 literal in `127.0.0.0/8`. A DNS name such as `127.example.com` must not match. */
+private val IPV4_LOOPBACK_REGEX = Regex("""127(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}""")
+
+/** [URI.getHost] keeps the brackets around an IPv6 literal, hence `[::1]`. */
 private fun isLoopbackHost(host: String?): Boolean =
-    host == "localhost" || host == "127.0.0.1" || host == "::1" || host?.startsWith("127.") == true
+    host != null &&
+        (host.equals("localhost", ignoreCase = true) || host == "[::1]" || IPV4_LOOPBACK_REGEX.matches(host))

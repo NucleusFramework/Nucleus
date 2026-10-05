@@ -27,6 +27,19 @@ class GenericProviderTest {
         // Local integration tests (e.g. the delta RangeHttpServer) serve fixtures over loopback http.
         assertEquals("http://127.0.0.1:8080", GenericProvider("http://127.0.0.1:8080").baseUrl)
         assertEquals("http://localhost:8080", GenericProvider("http://localhost:8080").baseUrl)
+        assertEquals("http://127.10.20.30", GenericProvider("http://127.10.20.30").baseUrl)
+        assertEquals("http://[::1]:8080", GenericProvider("http://[::1]:8080").baseUrl)
+    }
+
+    @Test
+    fun `rejects plain http on a public host whose name looks like a loopback address`() {
+        listOf(
+            "http://127.example.com",
+            "http://127.0.0.1.example.com",
+            "http://localhost.example.com",
+        ).forEach { baseUrl ->
+            assertThrows(baseUrl, IllegalArgumentException::class.java) { GenericProvider(baseUrl) }
+        }
     }
 
     @Test
