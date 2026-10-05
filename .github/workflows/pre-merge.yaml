@@ -243,7 +243,9 @@ jobs:
   # three display-stack runners for nothing.
   tao-headful:
     needs: [build-natives, gradle, tao-tests]
-    timeout-minutes: 30
+    # Above the suite's own 45 min watchdog (GLOBAL_WATCHDOG_MILLIS) plus setup
+    # and compile, so a hung run is halted with a thread dump, not killed here.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
