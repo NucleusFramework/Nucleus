@@ -24,6 +24,7 @@ import dev.nucleusframework.desktop.application.internal.NodeToolchainProvisione
 import dev.nucleusframework.desktop.application.internal.NodeToolchainRequest
 import dev.nucleusframework.desktop.application.internal.NucleusProperties
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
+import dev.nucleusframework.desktop.application.internal.WindowsAppImageSigner
 import dev.nucleusframework.desktop.application.internal.WindowsKitsLocator
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderConfigGenerator
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderInvocation
@@ -334,6 +335,7 @@ abstract class AbstractElectronBuilderPackageTask
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir, dist)
+            signWindowsAppImage(workingAppDir, outputDir, dist)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
             val (node, npm) = resolveNodeJs()
@@ -609,6 +611,33 @@ abstract class AbstractElectronBuilderPackageTask
                 logger.info("Hot update layout skipped: not a jpackage app image")
             }
             return applied
+        }
+
+        /**
+         * Signs the app image's launchers (and, with `signNativeLibraries`, its DLLs) before
+         * electron-builder packages it: `--prepackaged` skips electron-builder's own app signing,
+         * which only covers the installer it produces. Runs after the hot update layout, which
+         * moves the binaries but does not touch their bytes.
+         */
+        private fun signWindowsAppImage(
+            appDir: File,
+            outputDir: File,
+            distributions: JvmApplicationDistributions,
+        ) {
+            val signing = distributions.windows.signing
+            if (currentOS != OS.Windows || !signing.enabled) return
+            WindowsAppImageSigner(
+                settings = signing,
+                description = distributions.appName ?: distributions.packageName ?: packageName.get(),
+                architectureId =
+                    when (currentArch) {
+                        Arch.X64 -> "x64"
+                        Arch.Arm64 -> "arm64"
+                    },
+                workDir = File(outputDir, ".nucleus-signing"),
+                runTool = runExternalTool,
+                logger = logger,
+            ).sign(appDir)
         }
 
         /**
