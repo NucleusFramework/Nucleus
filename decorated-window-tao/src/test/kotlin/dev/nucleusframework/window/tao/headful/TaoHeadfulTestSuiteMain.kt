@@ -681,7 +681,11 @@ public object TaoHeadfulTestSuiteMain {
 
     private const val WINDOW_PUBLISH_TIMEOUT_MILLIS = 15_000L
     private const val WINDOW_PUBLISH_POLL_MILLIS = 25L
-    private const val GLOBAL_WATCHDOG_MILLIS = 900_000L
+
+    // Whole-suite cap, not per case. The full suite takes ~30 min on the macOS
+    // runner; keep this under the tao-headful job's timeout-minutes so a hang
+    // ends here, with a thread dump, rather than in a log-less job kill.
+    private const val GLOBAL_WATCHDOG_MILLIS = 2_700_000L
     private const val WATCHDOG_EXIT_CODE = 42
     private const val BAD_FILTER_EXIT_CODE = 43
     private const val RESIZE_W_DP = 640.0
