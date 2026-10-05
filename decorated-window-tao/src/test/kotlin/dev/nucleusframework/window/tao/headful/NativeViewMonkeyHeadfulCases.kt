@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.NativeView
 import dev.nucleusframework.window.tao.TaoApplication
@@ -113,7 +114,10 @@ internal object NativeViewMonkeyHeadfulCases {
         val fixture = NativeViewFixture()
         return TaoWindowTestCase(
             name = "native view ${driverName(synthetic)} a right click on the embed does not swallow later clicks",
-            skip = { skipReason(synthetic) },
+            skip = {
+                skipReason(synthetic)
+                    ?: SYNTHETIC_RIGHT_CLICK_SKIP_REASON.takeIf { synthetic && syntheticRightClickWedges() }
+            },
             windowState = caseWindowState(),
             size = DpSize(WINDOW_W_DP.dp, WINDOW_H_DP.dp),
             paintDefaultBackground = false,
@@ -834,11 +838,18 @@ private class NativeViewMonkey(
             "[native-view-monkey] seed=${journal.seed} driver=${driver.name} actions=$MONKEY_ACTIONS " +
                 "(replay with -D$MONKEY_SEED_PROPERTY=${journal.seed})",
         )
+        // See syntheticRightClickWedges: a synthetic driver never right-clicks the embed on Windows.
+        val actions =
+            if (driver is SyntheticPointerDriver && syntheticRightClickWedges()) {
+                NativeViewAction.entries - NativeViewAction.RightClickNative
+            } else {
+                NativeViewAction.entries
+            }
         val watchdog = MainLoopWatchdog("native-view-monkey", journal::report).start()
         try {
             while (journal.step < (script?.size ?: MONKEY_ACTIONS)) {
                 val action =
-                    script?.get(journal.step) ?: NativeViewAction.entries[random.nextInt(NativeViewAction.entries.size)]
+                    script?.get(journal.step) ?: actions[random.nextInt(actions.size)]
                 journal.record(action)
                 fixture.note("> ${journal.step} $action")
                 monkeyAction({ journal.failure("$action", fixture.describe(driver)) }) { apply(action) }
@@ -1113,3 +1124,18 @@ private const val EMPTY_SLOT_ARGB = 0xFF555555
 private const val HEX = 16
 private const val OUTER_W = 2
 private const val OUTER_H = 3
+
+/**
+ * Whether a synthetic right click on the embed can leave the event loop stuck.
+ * On Windows the dispatched release reaches the `EDIT`, which opens its context
+ * menu in a modal `TrackPopupMenu` loop on the event-loop thread, and only real
+ * input closes it: the synthetic "dismissing" click lands in Compose. On GitHub's
+ * Windows runner nothing else closed it, the loop thread stayed in the menu (case
+ * timeout included, since it is scheduled on that thread), and the suite's
+ * watchdog `halt()` then hung as well — the job ran out its timeout with no log.
+ * The robot driver's real click closes the menu, so its variants still run.
+ */
+private fun syntheticRightClickWedges(): Boolean = Platform.Current == Platform.Windows
+
+private const val SYNTHETIC_RIGHT_CLICK_SKIP_REASON =
+    "a synthetic click cannot close the embed's native context menu on Windows (the robot variant covers it)"
