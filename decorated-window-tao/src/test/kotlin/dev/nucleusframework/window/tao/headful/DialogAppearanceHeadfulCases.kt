@@ -469,7 +469,11 @@ internal object DialogAppearanceHeadfulCases {
             // went away" in the comparison.
             var grabber: Thread? = null
 
-            fun startFilm() {
+            // Returns once the grabber has a frame in hand: the first capture of
+            // a process is slow on macOS (~300 ms on the CI runner), long enough
+            // to miss the whole appearance if the dialog is shown right away —
+            // the curve then starts settled, with no animation and no slide-in.
+            suspend fun startFilm() {
                 capturing.set(true)
                 val from = frames.size
                 grabber =
@@ -478,11 +482,19 @@ internal object DialogAppearanceHeadfulCases {
                             frames += System.nanoTime() to robot.createScreenCapture(region)
                         }
                     }
+                awaitUntil("the screen grabber delivered its first frame") { frames.size > from }
             }
 
-            fun stopFilm() {
+            // Joined off the loop thread: on macOS every capture starts with
+            // `LWCToolkit.sync()`, which waits for the AppKit main thread —
+            // the Tao loop this driver runs on. A `join()` here parks that
+            // thread while the grabber parks on it, and both wait forever
+            // (seen on macOS 27: `stopFilm` in `Thread.join`, the grabber in
+            // `LWCToolkit.flushNativeSelectors`).
+            suspend fun stopFilm() {
                 capturing.set(false)
-                grabber?.join()
+                val running = grabber ?: return
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { running.join() }
                 grabber = null
             }
             startFilm()
@@ -492,13 +504,16 @@ internal object DialogAppearanceHeadfulCases {
             try {
                 settle(FILM_MILLIS)
                 stopFilm()
+                // Filming before the hide, for the same reason as the show: the
+                // frames grabbed while it warms up land before `hideAtMs`, in the
+                // settled tail of the appearance.
+                startFilm()
                 hiddenNs = System.nanoTime()
                 dialogShown.value = false
-                startFilm()
                 settle(HIDE_FILM_MILLIS)
             } finally {
-                stopFilm()
                 dialogShown.value = false
+                stopFilm()
             }
             settle(SETTLE_BEFORE_MILLIS)
             val curve =
