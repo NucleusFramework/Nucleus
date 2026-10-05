@@ -716,6 +716,9 @@ public object TaoSceneTestBattery {
         run("OuterPositionTest: a sentinel or a broken computation is not a position") {
             OuterPositionTest().`a sentinel or a broken computation is not a position`()
         }
+        run("OuterPositionTest: a pointer far off every display is clamped to a placeable position") {
+            OuterPositionTest().`a pointer far off every display is clamped to a placeable position`()
+        }
 
         run(
             "SatelliteDockedGeometryTest: docking from a floating window brings its size along as the panel extent",

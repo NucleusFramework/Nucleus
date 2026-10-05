@@ -225,6 +225,11 @@ public fun ApplicationScope.DecoratedWindow(
     val wrapHeight = !state.size.height.isSpecified
     val measuredContent = remember { mutableStateOf<IntSize?>(null) }
 
+    // The wrap-content size once resolved and applied — set exactly once. What
+    // follows it (fill the scene, centre the window) is keyed on this, not on
+    // [measuredContent]: see the effect that settles it.
+    val wrapResolved = remember { mutableStateOf<DpSize?>(null) }
+
     // Mirrors Compose Desktop's `appliedState` pattern: tracks the last value
     // we wrote to the window so the native→state listeners can ignore echoes.
     val applied =
@@ -456,6 +461,15 @@ public fun ApplicationScope.DecoratedWindow(
         applied.size = resolved
         latestState.size = resolved
         applied.wrapSettled = true
+        wrapResolved.value = resolved
+    }
+    // Not part of the effect above: that one restarts on every new measurement,
+    // and the scene re-measures while the resize lands. A restart caught during
+    // the wait below was cancelled before it got to `settled`, and the next run
+    // returned early on `wrapSettled` — the scene kept wrapping for good and the
+    // TitleBar stayed the width of its buttons (#546, intermittent on Windows).
+    LaunchedEffect(window, wrapResolved.value) {
+        val resolved = wrapResolved.value ?: return@LaunchedEffect
         // Let the resize land: the scene below fills the new size, and on
         // macOS the Aligned centring reads the live NSWindow frame.
         repeat(ALIGNED_POSITION_RETRIES) { if (applied.pendingProgrammaticPx != null) delay(ALIGNED_POSITION_RETRY_MS) }

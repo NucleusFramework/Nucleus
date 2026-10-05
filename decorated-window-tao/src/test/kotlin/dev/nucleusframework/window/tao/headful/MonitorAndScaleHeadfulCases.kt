@@ -390,7 +390,14 @@ internal object MonitorAndScaleHeadfulCases {
             applicationContent = { with(fixture) { ToolsSatellite() } },
             driver = {
                 val satellite = awaitFloating(fixture)
-                val monitor = TaoMonitors.forWindow(window)
+                // The display with nothing past its right edge: on any other,
+                // the satellite lands on the next display, which is a correct
+                // place for it and not the slide this case is about.
+                val monitor =
+                    TaoMonitors
+                        .all(window)
+                        .maxWithOrNull(compareBy({ it.workAreaPx.right }, { it.workAreaPx.bottom }))
+                        ?: TaoMonitors.forWindow(window)
                 val scale = window.scaleFactor.toDouble()
 
                 // The owner pushed against the right edge of the work area, so
