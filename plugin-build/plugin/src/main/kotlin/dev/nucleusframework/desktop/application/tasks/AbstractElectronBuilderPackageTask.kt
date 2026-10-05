@@ -116,6 +116,7 @@ abstract class AbstractElectronBuilderPackageTask
             private const val APPX_WIDE_LOGO_HEIGHT = 150
             private const val DEFAULT_PACKAGE_VERSION = "1.0.0"
             private val NSIS_FORMATS = setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)
+            internal val CUSTOM_INSTALL_MACRO = Regex("""!macro\s+customInstall\b""")
         }
 
         @get:InputDirectory
@@ -709,7 +710,8 @@ abstract class AbstractElectronBuilderPackageTask
          */
         private fun warnIfCustomInstallSkipsAotPinning(userInclude: File) {
             val text = userInclude.readText()
-            if ("customInstall" in text && AotJarTimestamps.NSIS_MACRO !in text) {
+            // `\b` keeps electron-builder's customInstallMode macro from matching.
+            if (CUSTOM_INSTALL_MACRO.containsMatchIn(text) && AotJarTimestamps.NSIS_MACRO !in text) {
                 logger.warn(
                     "nsis.includeScript declares customInstall: add `!insertmacro ${AotJarTimestamps.NSIS_MACRO}` " +
                         "to it, or the installed app's AOT cache is refused (the installer resets the JARs' " +
