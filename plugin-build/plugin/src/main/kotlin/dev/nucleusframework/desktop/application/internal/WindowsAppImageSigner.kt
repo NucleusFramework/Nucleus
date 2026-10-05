@@ -357,7 +357,11 @@ internal class WindowsAppImageSigner(
          * alphabet, so a mistyped path or URL would decode into garbage instead of failing here.
          */
         fun decodeBase64Certificate(link: String): ByteArray =
-            runCatching { Base64.getDecoder().decode(link.filterNot { it.isWhitespace() }) }
+            runCatching {
+                // electron-builder also accepts a `data:<mime>;base64,` URL.
+                val payload = if (link.startsWith("data:")) link.substringAfter(";base64,", "") else link
+                Base64.getDecoder().decode(payload.filterNot { it.isWhitespace() })
+            }
                 .getOrNull()
                 ?.takeIf { it.isNotEmpty() }
                 ?: throw GradleException(

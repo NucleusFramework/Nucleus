@@ -119,6 +119,13 @@ class WindowsAppImageSignerTest {
     }
 
     @Test
+    fun `a data URL certificate is decoded`() {
+        val bytes = byteArrayOf(0x30, 0x82.toByte(), 0x01)
+        val link = "data:application/x-pkcs12;base64," + Base64.getEncoder().encodeToString(bytes)
+        assertArrayEquals(bytes, WindowsAppImageSigner.decodeBase64Certificate(link))
+    }
+
+    @Test
     fun `a link that is not base64 is rejected instead of decoded into garbage`() {
         listOf("https://example.com/cert.p12", "C:\\certs\\missing.pfx", "", "   ").forEach { link ->
             assertThrows(GradleException::class.java) { WindowsAppImageSigner.decodeBase64Certificate(link) }

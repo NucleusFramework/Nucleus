@@ -14,6 +14,7 @@ import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
+import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
 import dev.nucleusframework.desktop.application.internal.MacPkgScripts
@@ -564,7 +565,7 @@ abstract class AbstractElectronBuilderPackageTask
                 )
             }
 
-            val nsisInclude = generateNsisInclude(distributions, outputDir, hotUpdateLayout)
+            val nsisInclude = generateNsisInclude(distributions, appDir, outputDir, hotUpdateLayout)
 
             val configContent =
                 configGenerator.generateConfig(
@@ -644,6 +645,7 @@ abstract class AbstractElectronBuilderPackageTask
          */
         private fun generateNsisInclude(
             distributions: JvmApplicationDistributions,
+            appDir: File,
             outputDir: File,
             hotUpdateLayout: Boolean,
         ): File? {
@@ -651,18 +653,30 @@ abstract class AbstractElectronBuilderPackageTask
             val userInclude =
                 distributions.windows.nsis.includeScript.orNull
                     ?.asFile
-            val nucleusMacros = nucleusNsisMacros(distributions, hasUserInclude = userInclude != null)
-            if (nucleusMacros == null && !hotUpdateLayout) return null
+            val aotJarDir = aotJarDirOrNull(appDir)
+            val nucleusMacros =
+                nucleusNsisMacros(distributions, hasUserInclude = userInclude != null, pinAotJars = aotJarDir != null)
+            if (nucleusMacros == null && !hotUpdateLayout && aotJarDir == null) return null
 
             val script =
                 buildString {
                     if (userInclude != null) {
                         if (hotUpdateLayout) WindowsHotUpdateNsis.warnOnConflicts(userInclude, logger)
+                        if (aotJarDir != null) warnIfCustomInstallSkipsAotPinning(userInclude)
                         appendLine("!include \"${userInclude.absolutePath}\"")
                         appendLine()
                     }
+                    aotJarDir?.let { appendLine(AotJarTimestamps.nsisMacros(it)) }
                     nucleusMacros?.let { appendLine(it) }
                     if (hotUpdateLayout) append(WindowsHotUpdateNsis.MACROS)
+                    if (aotJarDir != null) {
+                        // Neither the user's script nor the Nucleus macros declared customInstall.
+                        appendLine("!ifmacrondef customInstall")
+                        appendLine("  !macro customInstall")
+                        appendLine("    !insertmacro ${AotJarTimestamps.NSIS_MACRO}")
+                        appendLine("  !macroend")
+                        appendLine("!endif")
+                    }
                 }
 
             val nshFile = File(outputDir, "nucleus-installer.nsh")
@@ -673,6 +687,34 @@ abstract class AbstractElectronBuilderPackageTask
             nshFile.writeText("﻿$script", Charsets.UTF_8)
             logger.info("Generated NSIS include script at ${nshFile.absolutePath}")
             return nshFile
+        }
+
+        /**
+         * The directory holding the image's AOT cache and classpath JARs, relative to the install
+         * directory with Windows separators, or null when the image has no AOT cache.
+         */
+        private fun aotJarDirOrNull(appDir: File): String? =
+            appDir
+                .walk()
+                .firstOrNull { it.isFile && it.name == AOT_CACHE_FILENAME }
+                ?.parentFile
+                ?.relativeTo(appDir)
+                ?.path
+                ?.replace('/', '\\')
+
+        /**
+         * A user `customInstall` replaces the one pinning the JARs' timestamps, so the installed app
+         * would lose its AOT cache unless the script inserts the macro itself.
+         */
+        private fun warnIfCustomInstallSkipsAotPinning(userInclude: File) {
+            val text = userInclude.readText()
+            if ("customInstall" in text && AotJarTimestamps.NSIS_MACRO !in text) {
+                logger.warn(
+                    "nsis.includeScript declares customInstall: add `!insertmacro ${AotJarTimestamps.NSIS_MACRO}` " +
+                        "to it, or the installed app's AOT cache is refused (the installer resets the JARs' " +
+                        "modification times).",
+                )
+            }
         }
 
         /**
@@ -693,6 +735,7 @@ abstract class AbstractElectronBuilderPackageTask
         private fun nucleusNsisMacros(
             distributions: JvmApplicationDistributions,
             hasUserInclude: Boolean,
+            pinAotJars: Boolean,
         ): String? {
             val appDataDir =
                 runtimeAppId.orNull
@@ -743,6 +786,7 @@ abstract class AbstractElectronBuilderPackageTask
                 buildString {
                     if (handlers.isNotEmpty()) {
                         appendLine("!macro customInstall")
+                        if (pinAotJars) appendLine("  !insertmacro ${AotJarTimestamps.NSIS_MACRO}")
                         for ((scheme, friendlyName) in handlers) {
                             val key = "Software\\Classes\\$scheme"
                             appendLine("  DetailPrint \"Registering $scheme:// URL handler\"")
