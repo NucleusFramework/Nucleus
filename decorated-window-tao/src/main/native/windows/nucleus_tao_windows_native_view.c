@@ -401,3 +401,114 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     (*env)->SetIntArrayRegion(env, result, 0, 4, out);
     return result;
 }
+
+#ifndef PW_CLIENTONLY
+#define PW_CLIENTONLY 0x00000001
+#endif
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
+
+/* The window's client area as DWM holds it, read with
+ * PrintWindow(PW_RENDERFULLCONTENT) — the copy taskbar thumbnails and
+ * Alt+Tab are drawn from, which also covers the parts of the window that
+ * lie outside every display. Returned as `[w, h, argb...]` (rows top-down),
+ * or null when the window cannot be captured. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagPrintClient(
+    JNIEnv *env, jclass clazz, jlong hwnd) {
+    (void)clazz;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (!IsWindow(h)) return NULL;
+    RECT rc;
+    if (!GetClientRect(h, &rc)) return NULL;
+    int w = (int)(rc.right - rc.left);
+    int ht = (int)(rc.bottom - rc.top);
+    if (w <= 0 || ht <= 0) return NULL;
+
+    BITMAPINFO bmi;
+    memset(&bmi, 0, sizeof(bmi));
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = w;
+    bmi.bmiHeader.biHeight = -ht; /* top-down rows */
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC screen = GetDC(NULL);
+    HDC mem = CreateCompatibleDC(screen);
+    void *bits = NULL;
+    HBITMAP dib = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+    ReleaseDC(NULL, screen);
+    if (!mem || !dib || !bits) {
+        if (dib) DeleteObject(dib);
+        if (mem) DeleteDC(mem);
+        return NULL;
+    }
+    HGDIOBJ old = SelectObject(mem, dib);
+    BOOL ok = PrintWindow(h, mem, PW_CLIENTONLY | PW_RENDERFULLCONTENT);
+    GdiFlush();
+
+    jintArray result = NULL;
+    if (ok) {
+        jsize count = (jsize)w * (jsize)ht;
+        result = (*env)->NewIntArray(env, 2 + count);
+        if (result != NULL) {
+            jint dims[2] = { w, ht };
+            (*env)->SetIntArrayRegion(env, result, 0, 2, dims);
+            /* BGRA in memory is 0xAARRGGBB as a little-endian int; force the
+             * alpha opaque, GDI leaves it undefined. */
+            jint *px = (jint *)bits;
+            for (jsize i = 0; i < count; ++i) px[i] |= (jint)0xFF000000;
+            (*env)->SetIntArrayRegion(env, result, 2, count, px);
+        }
+    }
+    SelectObject(mem, old);
+    DeleteObject(dib);
+    DeleteDC(mem);
+    return result;
+}
+
+/* The screen in [x, y, w, h] physical px as DWM composed it, layered
+ * windows included (CAPTUREBLT), as `[w, h, argb...]` (rows top-down), or
+ * null. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagCaptureScreen(
+    JNIEnv *env, jclass clazz, jint x, jint y, jint w, jint h) {
+    (void)clazz;
+    if (w <= 0 || h <= 0) return NULL;
+    BITMAPINFO bmi;
+    memset(&bmi, 0, sizeof(bmi));
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = w;
+    bmi.bmiHeader.biHeight = -h; /* top-down rows */
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC screen = GetDC(NULL);
+    HDC mem = CreateCompatibleDC(screen);
+    void *bits = NULL;
+    HBITMAP dib = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+    jintArray result = NULL;
+    if (mem && dib && bits) {
+        HGDIOBJ old = SelectObject(mem, dib);
+        if (BitBlt(mem, 0, 0, w, h, screen, x, y, SRCCOPY | CAPTUREBLT)) {
+            GdiFlush();
+            jsize count = (jsize)w * (jsize)h;
+            result = (*env)->NewIntArray(env, 2 + count);
+            if (result != NULL) {
+                jint dims[2] = { w, h };
+                (*env)->SetIntArrayRegion(env, result, 0, 2, dims);
+                jint *px = (jint *)bits;
+                for (jsize i = 0; i < count; ++i) px[i] |= (jint)0xFF000000;
+                (*env)->SetIntArrayRegion(env, result, 2, count, px);
+            }
+        }
+        SelectObject(mem, old);
+    }
+    if (dib) DeleteObject(dib);
+    if (mem) DeleteDC(mem);
+    ReleaseDC(NULL, screen);
+    return result;
+}

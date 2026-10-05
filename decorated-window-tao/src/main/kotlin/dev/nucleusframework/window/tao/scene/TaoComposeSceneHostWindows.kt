@@ -465,6 +465,7 @@ internal class TaoComposeSceneHostWindows(
                 null
             }
         attachmentHandle = handle
+        syncMirror()
         directContext =
             (ctx ?: error("Failed to create Skia DirectContext on the ANGLE ES context")).also {
                 // Anchor the GPU resource cache budget. Each frame wraps the
@@ -564,14 +565,22 @@ internal class TaoComposeSceneHostWindows(
 
         // Notify overlay/popup layers when the host window moves on screen
         // — top-level WS_POPUP children of the owner don't auto-track.
-        // Also re-present a frame: the ANGLE child-HWND swapchain presents
-        // through the GDI redirection surface, clipped to the visible region,
-        // so a window created partly off-screen has uninitialized (white)
-        // pixels there — each move re-presents and fills the newly exposed
-        // area. Free while the window is stationary (no WM_MOVE, no frame).
+        // Re-present a frame when the frame mirror does not cover the move
+        // (NativeTaoGlBridge.nativeNeedsRepaintOnMove): without a working
+        // mirror — per-pixel-alpha windows, a driver without DirectComposition —
+        // the ANGLE child-HWND swapchain presents through the GDI redirection
+        // surface clipped to the visible region, leaving a window presented
+        // partly off-screen with unpainted (white) pixels there until the next
+        // frame; and a mirror allocated while the window overhung the desktop
+        // is released by the first frame swapped fully on-screen.
         window.onMoved { _, _ ->
             onOwnerMoved()
-            window.requestRedraw()
+            if (NativeTaoGlBridge.nativeNeedsRepaintOnMove(attachmentHandle)) {
+                // The frame is the point, not its content: a clean frame would
+                // otherwise be skipped (mustPresent) and nothing reach DWM.
+                forcePresentOnce = true
+                window.requestRedraw()
+            }
         }
 
         // Notify overlay/popup layers when the host window loses keyboard
@@ -1333,6 +1342,12 @@ internal class TaoComposeSceneHostWindows(
         }
         if (!unpaced && vsyncEnabled) measureRefreshPeriod()
         TaoPresentDiagnostics.record(window.handle, IntSize(widthPx, heightPx))
+        if (mirrorEnabled) {
+            TaoPresentDiagnostics.recordMirror(
+                window.handle,
+                NativeTaoGlBridge.nativeHasMirror(attachmentHandle),
+            )
+        }
     }
 
     /**
@@ -1423,6 +1438,8 @@ internal class TaoComposeSceneHostWindows(
         // animation state is resumed and applied atomically with this frame's
         // recompose → layout → draw — no one-frame lag.
         flushingDispatcher.drain()
+
+        syncMirror()
 
         // Make sure the ES context + host window surface are current on this
         // thread (defensive — they already were since `attach`, but overlay/
@@ -2397,6 +2414,27 @@ internal class TaoComposeSceneHostWindows(
     // AbstractTaoComposeSceneHost.
     override fun dispatchA11yWalk(block: () -> Unit) {
         flushingDispatcher.enqueue(Runnable { block() })
+    }
+
+    /** Whether this window asked for the frame mirror (opaque) — see [syncMirror]. */
+    private var mirrorWanted = false
+
+    /** Whether the frame mirror is on for this window, as the native side answered — see [syncMirror]. */
+    private var mirrorEnabled = false
+
+    /**
+     * Allows mirroring frames into DirectComposition for an opaque window, so
+     * DWM gets them whole even where the window lies off-screen
+     * (`NativeTaoGlBridge.nativeSetMirrorEnabled`). Off for per-pixel alpha
+     * (a transparent window, an armed backdrop): the mirror would lay a
+     * translucent frame over the same frame below it.
+     */
+    private fun syncMirror() {
+        val wanted = !fullyTransparent && !transparentBackgroundState.value
+        if (wanted == mirrorWanted) return
+        mirrorWanted = wanted
+        // What the driver allows, not what was asked for.
+        mirrorEnabled = NativeTaoGlBridge.nativeSetMirrorEnabled(attachmentHandle, wanted)
     }
 
     /**

@@ -224,6 +224,18 @@ val taoHeadfulTest =
         System.getProperty("nucleus.tao.headful.filter")?.let {
             systemProperty("nucleus.tao.headful.filter", it)
         }
+        // Opts into the tear-off flash film (TearOffFlashHeadfulCases).
+        System.getProperty("nucleus.tao.headful.tearOffFlash")?.let {
+            systemProperty("nucleus.tao.headful.tearOffFlash", it)
+        }
+        // Opts into the known-gap programmatic resize film (ResizeSyncHeadfulCases).
+        System.getProperty("nucleus.tao.headful.programmaticResizeSync")?.let {
+            systemProperty("nucleus.tao.headful.programmaticResizeSync", it)
+        }
+        // Where the off-screen present case writes its captures (OffScreenPresentHeadfulCases).
+        System.getProperty("nucleus.tao.headful.offscreenDumpDir")?.let {
+            systemProperty("nucleus.tao.headful.offscreenDumpDir", it)
+        }
         // Replays a red monkey run: the case prints the seed it used.
         System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
             systemProperty("nucleus.tao.headful.monkeySeed", it)

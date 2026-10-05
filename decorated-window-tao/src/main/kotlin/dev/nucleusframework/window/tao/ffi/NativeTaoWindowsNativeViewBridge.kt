@@ -149,4 +149,25 @@ internal object NativeTaoWindowsNativeViewBridge {
     /** A child's rect in its parent's client px, top-left origin, as `[x, y, w, h]`, or null. */
     @JvmStatic
     external fun nativeDiagWindowFrame(hwnd: Long): IntArray?
+
+    /**
+     * The window's client area as DWM holds it (`PrintWindow` with
+     * `PW_RENDERFULLCONTENT`, the copy taskbar thumbnails and Alt+Tab draw
+     * from), as `[w, h, argb...]` with rows top-down, or null.
+     */
+    @JvmStatic
+    external fun nativeDiagPrintClient(hwnd: Long): IntArray?
+
+    /**
+     * The screen in `[x, y, w, h]` physical px as DWM composed it, layered
+     * windows included (`BitBlt` with `CAPTUREBLT`), as `[w, h, argb...]`
+     * with rows top-down, or null.
+     */
+    @JvmStatic
+    external fun nativeDiagCaptureScreen(
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+    ): IntArray?
 }

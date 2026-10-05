@@ -17,6 +17,7 @@ private const val LIBRARY_NAME = "nucleus_tao_gl"
  * global display lock (the reason the old WGL backend's swap thread
  * never applied here).
  */
+@Suppress("TooManyFunctions") // one external per JNI entry point
 internal object NativeTaoGlBridge {
     init {
         // ANGLE (libEGL + libGLESv2) backs the Direct3D-11 render path.
@@ -123,6 +124,36 @@ internal object NativeTaoGlBridge {
 
     @JvmStatic
     external fun nativeHeight(handle: Long): Int
+
+    /**
+     * Allows mirroring frames into a DirectComposition visual over the window
+     * while it overhangs the desktop (opaque windows only). The blt present is
+     * clipped at the desktop's edge; the visual reaches DWM whole — the part of
+     * the window off-screen, taskbar thumbnails and Alt+Tab included — and
+     * steps aside while the window's size changes. Nothing is allocated while
+     * the window is fully on-screen. See `nucleus_tao_gl_mirror.cpp`.
+     *
+     * Returns whether mirroring is on: `false` when [enabled] is, or when the
+     * driver lacks what it needs (DirectComposition, the ANGLE EGLImage
+     * extension). A failure later on is reported by [nativeNeedsRepaintOnMove].
+     */
+    @JvmStatic
+    external fun nativeSetMirrorEnabled(
+        handle: Long,
+        enabled: Boolean,
+    ): Boolean
+
+    /**
+     * Whether a window move must be answered with a frame: true without a
+     * working mirror (the blt present lost what was off-screen), and while one
+     * is allocated (a frame swapped fully on-screen releases it).
+     */
+    @JvmStatic
+    external fun nativeNeedsRepaintOnMove(handle: Long): Boolean
+
+    /** Whether a frame mirror is allocated right now (the window overhangs the desktop). */
+    @JvmStatic
+    external fun nativeHasMirror(handle: Long): Boolean
 
     /**
      * Bootstraps the shared ANGLE display/config/context against a 1x1
