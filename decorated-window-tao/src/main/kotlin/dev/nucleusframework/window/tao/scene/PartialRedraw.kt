@@ -54,6 +54,21 @@ internal object PartialRedraw {
     val DEBUG_TINTS: IntArray = intArrayOf(0x40FF00FF, 0x4000FFFF)
 
     /**
+     * A repaint covering this much of the frame is done in full: a partial
+     * frame has a fixed cost (clip, scissored clears, a sub-rectangle
+     * present), so past some coverage it costs more than repainting
+     * everything. Measured with the real scene recording, full vs partial,
+     * GPU-synced medians:
+     *  - macOS, Apple Silicon, 2560×1050: ~0.3 ms for a few pixels against
+     *    ~0.7 ms in full; breaks even around 80 %, up to ~5 % more above,
+     *    still 6–26 % saved at 70 %;
+     *  - Windows, ANGLE / D3D11, 2560×1032, frames interleaved: ~0.4 ms
+     *    against ~0.9 ms; breaks even at 80 % (1.01–1.05), up to ~9 % more
+     *    above, still 2–11 % saved at 70 %.
+     */
+    const val FULL_REPAINT_PERCENT: Long = 80L
+
+    /**
      * EGL damage rectangles for [rect] on a [surfaceHeight]-tall buffer:
      * `(x, y, w, h)` with a bottom-left origin.
      */
@@ -107,6 +122,13 @@ internal class DamageHistory {
         const val CAPACITY = 4
     }
 }
+
+/** At least [PartialRedraw.FULL_REPAINT_PERCENT] of a [width] × [height] frame: cheaper repainted in full. */
+@Suppress("MagicNumber")
+internal fun IntRect.coversMostOf(
+    width: Int,
+    height: Int,
+): Boolean = this.width.toLong() * this.height * 100 >= PartialRedraw.FULL_REPAINT_PERCENT * width.toLong() * height
 
 /** Bounding box of two rectangles, an empty one leaving the other unchanged. */
 internal fun IntRect.union(other: IntRect): IntRect =

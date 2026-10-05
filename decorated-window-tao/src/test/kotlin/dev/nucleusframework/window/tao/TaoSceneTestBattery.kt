@@ -1143,6 +1143,9 @@ public object TaoSceneTestBattery {
         run("PartialRedrawTest: EGL damage rectangles have a bottom-left origin") {
             PartialRedrawTest().`EGL damage rectangles have a bottom-left origin`()
         }
+        run("PartialRedrawTest: a repaint covering 80 percent of the frame is done in full") {
+            PartialRedrawTest().`a repaint covering 80 percent of the frame is done in full`()
+        }
         run("PartialRedrawTest: an unpatched Compose reports no damage and keeps rendering") {
             PartialRedrawTest().`an unpatched Compose reports no damage and keeps rendering`()
         }

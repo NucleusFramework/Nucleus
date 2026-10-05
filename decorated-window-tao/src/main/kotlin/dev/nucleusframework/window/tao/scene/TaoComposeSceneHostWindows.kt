@@ -1364,7 +1364,7 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
-    /** Partial redraw (#755): one frame's buffer age and damage — on ANGLE's preserved surface, also what it repaints. */
+    /** Partial redraw (#755): one frame's buffer age and damage — on a preserved surface, what it repaints. */
     private class PartialFrame(
         /** See [partialRedrawBufferAge]. */
         val bufferAge: Int,
@@ -1503,8 +1503,13 @@ internal class TaoComposeSceneHostWindows(
         // Read once the scene has composed: the TitleBar sets the clear
         // colour and a dialog its scrim during composition.
         val frameKey = partialRedrawFrameKey(clearArgb)
+        // A repaint covering most of the window costs more than a full one.
         partial.frameDamage =
-            if (partial.bufferAge >= 0 && frameKey == lastPartialFrameKey && !fullRepaintPending) damage else null
+            if (partial.bufferAge >= 0 && frameKey == lastPartialFrameKey && !fullRepaintPending) {
+                damage?.takeUnless { it.coversMostOf(widthPx, heightPx) }
+            } else {
+                null
+            }
         if (PartialRedraw.debug) {
             logFullFrameReason(bundle, partial.bufferAge, damage, frameKey)
             partialStats
@@ -1528,6 +1533,48 @@ internal class TaoComposeSceneHostWindows(
         key = key * 31 + if (fullyTransparent || transparentBackgroundState.value) 1 else 0
         key = key * 31 + popupScrims.all().hashCode()
         return key
+    }
+
+    /**
+     * A frame following one that presented nothing waits for the display's
+     * rhythm (#755) — unless it carries a size, or must present.
+     */
+    private fun heldAfterIdleFrame(sameTurnResize: Boolean): Boolean =
+        !sameTurnResize && !pendingResizeApply && !resizeLoopActive && !forcePresentOnce && heldByIdleFramePacing()
+
+    /**
+     * [renderFrame]'s present decision with partial redraw (#755): calls
+     * [present] with the rectangle to present — `null` for everything — or
+     * presents nothing when nothing changed on screen. A [forced] present
+     * (first after show, resize, clear change) is whole: DWM may hold nothing
+     * of the window to patch. Returns whether it presented.
+     */
+    private inline fun presentFrame(
+        partial: PartialFrame,
+        visualFrame: Boolean,
+        forced: Boolean,
+        present: (damage: IntRect?) -> Unit,
+    ): Boolean {
+        // What the buffer gained since the last present, `null` for anything
+        // unknown — a full frame, even one left unpresented, may have changed
+        // every pixel.
+        val unpresented = pendingPresentDamage?.let { pending -> partial.frameDamage?.let(pending::union) }
+        pendingPresentDamage = unpresented
+        if (!forced && unpresented?.isIdle() == true) {
+            // Nothing changed on screen since the last present — an animation
+            // clipped away, a recomposition that drew nothing new. Presenting
+            // would only wake DWM for an identical picture; the next frame is
+            // held to the display's rhythm instead.
+            if (visualFrame) {
+                idleFrameDeadlineNs = System.nanoTime() + presentPeriodNs
+                idleSincePresent = true
+            }
+            return false
+        }
+        if (!forced && !visualFrame && unpresented == null) return false
+        forcePresentOnce = false
+        present(if (forced) null else unpresented)
+        return true
     }
 
     /**
@@ -1584,6 +1631,7 @@ internal class TaoComposeSceneHostWindows(
                 damage == null -> bundle.fullFrameReason
                 frameKey != lastPartialFrameKey -> "size, clear colour, transparency or scrims changed"
                 fullRepaintPending -> "the buffer was drawn outside the scene"
+                damage.coversMostOf(widthPx, heightPx) -> "the damage covers most of the window"
                 else -> null
             }
         if (reason != lastFullFrameReason) {
@@ -1704,13 +1752,7 @@ internal class TaoComposeSceneHostWindows(
         if (window.isMinimized) return
         val frameStartNanos = System.nanoTime()
 
-        // A frame following one that presented nothing waits for the
-        // display's rhythm (#755) — unless it carries a size, or must present.
-        if (!sameTurnResize && !pendingResizeApply && !resizeLoopActive && !forcePresentOnce &&
-            heldByIdleFramePacing()
-        ) {
-            return
-        }
+        if (heldAfterIdleFrame(sameTurnResize)) return
 
         // Push a pending size into the ComposeScene + GL surface before the
         // frame-clock drain, so the size-change-driven recomposition (and any
@@ -1869,31 +1911,13 @@ internal class TaoComposeSceneHostWindows(
         // eglSwapBuffers paces on the display refresh — except for the
         // same-turn resize frame, presented at interval 0 (see above).
         val visualFrame = dirtyBeforeRender || bundle.visualDirty.get()
-        // Partial redraw (#755): what the buffer gained since the last present,
-        // `null` for anything unknown — a full frame, even one left
-        // unpresented, may have changed every pixel.
-        val unpresented = pendingPresentDamage?.let { pending -> partial.frameDamage?.let(pending::union) }
-        pendingPresentDamage = unpresented
-        val forced = mustPresent(visualFrame = false, resizeApplied, clearArgb)
-        val idle = !forced && unpresented?.isIdle() == true
-        if (idle && visualFrame) {
-            // Nothing changed on screen since the last present — an animation
-            // clipped away, a recomposition that drew nothing new. Presenting
-            // would only wake DWM for an identical picture; the next frame is
-            // held to the display's rhythm instead.
-            idleFrameDeadlineNs = System.nanoTime() + presentPeriodNs
-            idleSincePresent = true
-        }
-        val presenting = !idle && (forced || visualFrame || unpresented != null)
-        if (presenting) {
-            forcePresentOnce = false
-            lastPresentedClearArgb = clearArgb
-            // A forced present (first after show, resize, clear change) is
-            // whole: DWM may hold nothing of the window to patch.
-            present(unpaced = sameTurnResize && vsyncEnabled, damage = if (forced) null else unpresented)
-        }
+        val presented =
+            presentFrame(partial, visualFrame, mustPresent(visualFrame = false, resizeApplied, clearArgb)) {
+                lastPresentedClearArgb = clearArgb
+                present(unpaced = sameTurnResize && vsyncEnabled, damage = it)
+            }
         lastFrameStartNanos = frameStartNanos
-        lastFrameClean = !presenting
+        lastFrameClean = !presented
 
         // Backstop for a continuation that landed after the post-record drain
         // (a worker slower than the record). Costs it the jitter threshold

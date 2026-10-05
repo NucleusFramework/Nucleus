@@ -80,6 +80,15 @@ class PartialRedrawTest {
     }
 
     @Test
+    fun `a repaint covering 80 percent of the frame is done in full`() {
+        assertTrue(IntRect(0, 0, 80, 100).coversMostOf(100, 100))
+        assertTrue(IntRect(0, 0, 100, 100).coversMostOf(100, 100))
+        assertTrue(!IntRect(0, 0, 79, 100).coversMostOf(100, 100))
+        // No Int overflow on large windows.
+        assertTrue(!IntRect(0, 0, 3840, 1000).coversMostOf(3840, 2160))
+    }
+
+    @Test
     fun `an unpatched Compose reports no damage and keeps rendering`() {
         runTaoSceneTest {
             var red by mutableStateOf(true)

@@ -395,9 +395,7 @@ internal class MetalDrawableDamage {
 
     private fun IntRect.isEmpty(): Boolean = width <= 0 || height <= 0
 
-    /** At least [FULL_REPAINT_PERCENT] of [frame]'s area: cheaper repainted in full. */
-    private fun IntRect.coversMostOf(frame: MetalFrame): Boolean =
-        width.toLong() * height * PERCENT >= FULL_REPAINT_PERCENT * frame.widthPx.toLong() * frame.heightPx
+    private fun IntRect.coversMostOf(frame: MetalFrame): Boolean = coversMostOf(frame.widthPx, frame.heightPx)
 
     private companion object {
         /**
@@ -408,16 +406,5 @@ internal class MetalDrawableDamage {
 
         /** More buffers than a layer ever cycles through (3, or 2): the pool was replaced. */
         const val MAX_BUFFERS = 4
-
-        /**
-         * A repaint covering this much of the drawable is done in full. A
-         * partial frame has a fixed cost (~0.3 ms for a few pixels): measured
-         * on Apple Silicon at 2560×1050, it breaks even with a full repaint
-         * around 80 % and costs up to ~5 % more above, while it still saves
-         * 6–26 % at 70 %.
-         */
-        const val FULL_REPAINT_PERCENT = 80L
-
-        const val PERCENT = 100L
     }
 }
