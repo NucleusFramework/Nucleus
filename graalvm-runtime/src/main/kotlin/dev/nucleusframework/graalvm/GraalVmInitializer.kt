@@ -4,6 +4,7 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.graalvm.encoding.PlatformEncodingInitializer
 import dev.nucleusframework.graalvm.locale.NativeLocaleBridge
 import dev.nucleusframework.hidpi.applyLinuxHiDpiScale
+import dev.nucleusframework.hidpi.capLinuxMallocArenas
 import java.io.File
 import java.nio.charset.Charset
 import java.util.Locale
@@ -62,8 +63,13 @@ public object GraalVmInitializer {
             applyMacOsLocale()
         }
 
+        // Linux: cap glibc malloc arenas (#757) before the app, Skia and driver threads exist —
+        // a thread keeps the arena it got. Same JNI library as the HiDPI detection below, so it
+        // too must come after java.library.path is configured.
+        capLinuxMallocArenas()
+
         // Linux HiDPI — must come AFTER java.library.path is configured above,
-        // because applyLinuxHiDpiScale() triggers HiDpiLinuxBridge JNI loading.
+        // because applyLinuxHiDpiScale() triggers LinuxStartupBridge JNI loading.
         // Sets GDK_SCALE via setenv (triggers JDK's native scaling for both
         // rendering AND mouse events) + sun.java2d.uiScale as fallback.
         applyLinuxHiDpiScale()

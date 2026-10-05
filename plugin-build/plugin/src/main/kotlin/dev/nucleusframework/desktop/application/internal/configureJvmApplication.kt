@@ -168,6 +168,7 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
             // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
             idleGc.set(project.provider { app.optIdleGc })
             partialRedraw.set(project.provider { app.optPartialRedraw })
+            mallocArenas.set(project.provider { app.optMallocArenas })
             outputDir.set(appTmpDir.dir("app-properties"))
         }
 

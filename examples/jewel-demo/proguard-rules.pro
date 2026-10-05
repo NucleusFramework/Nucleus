@@ -314,7 +314,7 @@
 -keep class dev.nucleusframework.energymanager.** { *; }
 
 # Nucleus linux-hidpi JNI
--keep class dev.nucleusframework.hidpi.HiDpiLinuxBridge {
+-keep class dev.nucleusframework.hidpi.LinuxStartupBridge {
     native <methods>;
 }
 

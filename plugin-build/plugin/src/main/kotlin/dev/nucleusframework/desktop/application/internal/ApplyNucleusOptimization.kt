@@ -24,6 +24,16 @@ internal const val NUCLEUS_PARTIAL_REDRAW_PROPERTY = "nucleus.tao.partialRedraw"
 internal const val OPTIMIZED_PARTIAL_REDRAW_FLAG = "-D$NUCLEUS_PARTIAL_REDRAW_PROPERTY=true"
 internal const val NUCLEUS_PARTIAL_REDRAW_RESOURCE_KEY = "optimization.partialRedraw"
 
+/**
+ * Runtime flag read by `linux-hidpi` (`capLinuxMallocArenas`) to cap glibc's malloc arenas.
+ * Also baked into `nucleus-app.properties` as [NUCLEUS_MALLOC_ARENA_MAX_RESOURCE_KEY], for
+ * native images.
+ */
+internal const val NUCLEUS_MALLOC_ARENA_MAX_PROPERTY = "nucleus.optimization.mallocArenaMax"
+internal const val OPTIMIZED_MALLOC_ARENA_MAX = 2
+internal const val OPTIMIZED_MALLOC_ARENA_MAX_FLAG = "-D$NUCLEUS_MALLOC_ARENA_MAX_PROPERTY=$OPTIMIZED_MALLOC_ARENA_MAX"
+internal const val NUCLEUS_MALLOC_ARENA_MAX_RESOURCE_KEY = "optimization.mallocArenaMax"
+
 internal val JvmApplicationData.optSerialGc: Boolean
     get() = nucleusOptimizationSettings.serialGc ?: nucleusOptimization
 
@@ -41,6 +51,9 @@ internal val JvmApplicationData.optLastJdk: Boolean
 
 internal val JvmApplicationData.optPartialRedraw: Boolean
     get() = nucleusOptimizationSettings.partialRedraw ?: nucleusOptimization
+
+internal val JvmApplicationData.optMallocArenas: Boolean
+    get() = nucleusOptimizationSettings.mallocArenas ?: nucleusOptimization
 
 /**
  * Applies [JvmApplicationData.nucleusOptimization] JVM flags without clobbering an
@@ -63,6 +76,9 @@ internal fun applyNucleusOptimization(app: JvmApplicationData) {
     }
     if (app.optPartialRedraw && app.jvmArgs.none { it.startsWith("-D$NUCLEUS_PARTIAL_REDRAW_PROPERTY=") }) {
         app.jvmArgs.add(OPTIMIZED_PARTIAL_REDRAW_FLAG)
+    }
+    if (app.optMallocArenas && app.jvmArgs.none { it.startsWith("-D$NUCLEUS_MALLOC_ARENA_MAX_PROPERTY=") }) {
+        app.jvmArgs.add(OPTIMIZED_MALLOC_ARENA_MAX_FLAG)
     }
 }
 
