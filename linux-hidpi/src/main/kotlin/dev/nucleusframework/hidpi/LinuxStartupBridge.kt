@@ -4,8 +4,9 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
 
 private const val LIBRARY_NAME = "nucleus_linux_hidpi_jni"
 
-internal object HiDpiLinuxBridge {
-    private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, HiDpiLinuxBridge::class.java)
+/** JNI bridge for what a Linux process sets up at startup: HiDPI scale detection and the malloc arena cap. */
+internal object LinuxStartupBridge {
+    private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, LinuxStartupBridge::class.java)
 
     val isLoaded: Boolean get() = loaded
 
@@ -22,4 +23,9 @@ internal object HiDpiLinuxBridge {
     // Does not overwrite GDK_SCALE if it is already set by the desktop session.
     @JvmStatic
     external fun nativeApplyScaleToEnv(scale: Int)
+
+    // Caps glibc's malloc arenas with mallopt(M_ARENA_MAX, max).
+    // Returns 1 when applied, 0 when glibc refused it, -1 when the libc is not glibc.
+    @JvmStatic
+    external fun nativeSetMallocArenaMax(max: Int): Int
 }

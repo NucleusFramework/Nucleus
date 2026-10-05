@@ -62,4 +62,14 @@ abstract class NucleusOptimizationSettings {
      * every frame repaints in full.
      */
     var partialRedraw: Boolean? = null
+
+    /**
+     * Linux: cap glibc's malloc arenas at 2 (`mallopt(M_ARENA_MAX, 2)`, first thing in
+     * `nucleusApplication`). glibc creates up to 8 × cores of them and each keeps what it once
+     * held, which leaves a many-threaded app with far more RSS than it uses. Carried by
+     * `-Dnucleus.optimization.mallocArenaMax=2` (another value there wins, `0` disables it)
+     * and baked into `nucleus-app.properties` for native images. A `MALLOC_ARENA_MAX` set
+     * in the environment always wins. No effect on other platforms or off glibc.
+     */
+    var mallocArenas: Boolean? = null
 }
