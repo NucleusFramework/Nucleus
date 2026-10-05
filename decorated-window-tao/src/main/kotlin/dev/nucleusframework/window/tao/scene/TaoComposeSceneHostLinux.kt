@@ -2311,6 +2311,7 @@ internal class TaoComposeSceneHostLinux(
         val canvas = retained?.canvas ?: surface.canvas
         var frameDamage: IntRect? = null
         var repaint: IntRect? = null
+        var tintDamage: IntRect? = null
         var cleared = false
         frameIdle = false
         // Verifying, the scene is recorded once and that recording is drawn
@@ -2346,6 +2347,9 @@ internal class TaoComposeSceneHostLinux(
                         bufferAge,
                     )?.let { linuxHostLogger.info(it) }
             }
+            tintDamage = frameDamage
+            repaint = PartialRedraw.debugRepaint(repaint)
+            frameDamage = PartialRedraw.debugRepaint(frameDamage)
             canvas.save()
             repaint?.let { canvas.clipRect(it.toSkiaRect()) }
             // Clear to the resolved title-bar background (pushed by `TitleBar` via
@@ -2380,7 +2384,9 @@ internal class TaoComposeSceneHostLinux(
             ctx.resetGLAll()
         }
         applyFrameDecoration(canvas, paintSize.width, paintSize.height)
-        repaint?.let { if (PartialRedraw.debugTint) tintRepaint(canvas, it) }
+        if (PartialRedraw.debugTint && !frameIdle) {
+            PartialRedraw.drawDebugTint(canvas, tintDamage, paintSize.width, paintSize.height, partialDebugFrame++)
+        }
         canvas.restore()
         retained?.let { blitRetainedBackBuffer(it, surface) }
         verifyPicture?.let {
@@ -2579,18 +2585,6 @@ internal class TaoComposeSceneHostLinux(
         if (reason != lastFullFrameReason) {
             lastFullFrameReason = reason
             linuxHostLogger.info("Partial redraw: ${reason?.let { "full frames — $it" } ?: "partial frames"}")
-        }
-    }
-
-    /** `-Dnucleus.tao.partialRedraw.debug=true`: tints what this frame repainted. */
-    private fun tintRepaint(
-        canvas: Canvas,
-        repaint: IntRect,
-    ) {
-        val tint = PartialRedraw.DEBUG_TINTS[partialDebugFrame++ and 1]
-        org.jetbrains.skia.Paint().use { paint ->
-            paint.color = tint
-            canvas.drawRect(repaint.toSkiaRect(), paint)
         }
     }
 

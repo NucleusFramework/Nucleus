@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.ui.unit.IntRect
+import org.jetbrains.skia.Rect
 
 /**
  * Partial redraw (#755): repaint and present only what changed.
@@ -33,8 +34,9 @@ import androidx.compose.ui.unit.IntRect
  *    turns off the native side too);
  *  - `nucleus.tao.partialRedraw.debug=true` logs why frames repaint in full,
  *    whenever that changes;
- *  - `nucleus.tao.partialRedraw.tint=true` tints what each frame repaints,
- *    alternating two colours — Android's "show surface updates";
+ *  - `nucleus.tao.partialRedraw.tint=true` flashes what changed in red,
+ *    every other frame, over frames repainted in full — Android's "show GPU
+ *    view updates" (see [drawDebugTint]);
  *  - `nucleus.tao.partialRedraw.verify=true` re-renders every partial frame in
  *    full off screen and compares the two pixel for pixel, logging any
  *    difference — the oracle the end-to-end checks run against. Slow.
@@ -66,9 +68,9 @@ internal object PartialRedraw {
     val verify: Boolean = System.getProperty("nucleus.tao.partialRedraw.verify") == "true"
 
     /**
-     * `-Dnucleus.tao.partialRedraw.tint=true`: tint what each frame repaints —
-     * unless [verify]ing: the tint stays in the buffer, which is exactly what
-     * the oracle flags.
+     * `-Dnucleus.tao.partialRedraw.tint=true`: flash what each frame changed
+     * (see [drawDebugTint]) — unless [verify]ing, which compares partial frames
+     * this mode no longer draws.
      */
     val debugTint: Boolean = System.getProperty("nucleus.tao.partialRedraw.tint") == "true" && !verify
 
@@ -79,9 +81,40 @@ internal object PartialRedraw {
     /** Keep in sync with the plugin's `NUCLEUS_PARTIAL_REDRAW_RESOURCE_KEY`. */
     private const val APP_PROPERTIES_KEY = "optimization.partialRedraw"
 
-    /** Debug tint colours, alternated frame to frame (ARGB, translucent). */
+    /** HWUI's flash colour (`FrameInfoVisualizer`): translucent red. */
     @Suppress("MagicNumber")
-    val DEBUG_TINTS: IntArray = intArrayOf(0x40FF00FF, 0x4000FFFF)
+    private const val DEBUG_TINT: Int = 0x7FFF0000
+
+    /**
+     * [debugTint], as Android's HWUI draws "show GPU view updates"
+     * (`FrameInfoVisualizer::draw`): every other drawn frame, frame number
+     * [frame] flashes what it changed, [damage] — `null` for the whole
+     * [width]×[height] frame — in translucent red. Hosts repaint every frame in
+     * full meanwhile ([debugRepaint]), as HWUI does (`unionDirty` empties the
+     * dirty rectangle), so a flash lasts one frame instead of staying in a
+     * preserved buffer.
+     */
+    fun drawDebugTint(
+        canvas: org.jetbrains.skia.Canvas,
+        damage: IntRect?,
+        width: Int,
+        height: Int,
+        frame: Int,
+    ) {
+        if (frame and 1 != 0) return
+        org.jetbrains.skia.Paint().use { paint ->
+            paint.color = DEBUG_TINT
+            val area = damage?.toSkiaRect() ?: Rect.makeWH(width.toFloat(), height.toFloat())
+            canvas.drawRect(area, paint)
+        }
+    }
+
+    /**
+     * What a frame repaints, given what partial redraw would repaint: all of it
+     * (`null`) under [debugTint], unless nothing changed — HWUI still skips
+     * empty frames.
+     */
+    fun debugRepaint(repaint: IntRect?): IntRect? = if (debugTint && repaint?.isEmpty != true) null else repaint
 
     /**
      * A repaint covering this much of the frame is done in full: a partial

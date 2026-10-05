@@ -1371,6 +1371,9 @@ internal class TaoComposeSceneHostWindows(
     ) {
         /** What changed since the previous frame; `null` = unknown, the frame repaints in full. */
         var frameDamage: IntRect? = null
+
+        /** What [PartialRedraw.drawDebugTint] flashes: what changed, `null` for everything. */
+        var tintDamage: IntRect? = null
     }
 
     /** The surface presents no sub-rectangle or keeps no previous frame: the tracker is not walked. */
@@ -1479,7 +1482,9 @@ internal class TaoComposeSceneHostWindows(
         val verifyPicture = verifyRecorder?.finishRecordingAsPicture()
         verifyRecorder?.close()
         verifyPicture?.let { canvas.drawPicture(it) }
-        partial.frameDamage?.let { if (PartialRedraw.debugTint) tintRepaint(canvas, it) }
+        if (PartialRedraw.debugTint && partial.tintDamage?.isEmpty != true) {
+            PartialRedraw.drawDebugTint(canvas, partial.tintDamage, widthPx, heightPx, partialDebugFrame++)
+        }
         canvas.restore()
         verifyPicture?.let {
             verifyPartialFrame(ctx, it, surface, partial.frameDamage, clearArgb)
@@ -1516,6 +1521,8 @@ internal class TaoComposeSceneHostWindows(
                 .frame(partial.frameDamage, widthPx * heightPx, bundle.damageSources, partial.bufferAge)
                 ?.let { windowsHostLogger.info(it) }
         }
+        partial.tintDamage = partial.frameDamage
+        partial.frameDamage = PartialRedraw.debugRepaint(partial.frameDamage)
         lastPartialFrameKey = frameKey
         fullRepaintPending = false
     }
@@ -1637,18 +1644,6 @@ internal class TaoComposeSceneHostWindows(
         if (reason != lastFullFrameReason) {
             lastFullFrameReason = reason
             windowsHostLogger.info("Partial redraw: ${reason?.let { "full frames — $it" } ?: "partial frames"}")
-        }
-    }
-
-    /** `-Dnucleus.tao.partialRedraw.tint=true`: tints what this frame repainted. */
-    private fun tintRepaint(
-        canvas: Canvas,
-        repaint: IntRect,
-    ) {
-        val tint = PartialRedraw.DEBUG_TINTS[partialDebugFrame++ and 1]
-        org.jetbrains.skia.Paint().use { paint ->
-            paint.color = tint
-            canvas.drawRect(repaint.toSkiaRect(), paint)
         }
     }
 

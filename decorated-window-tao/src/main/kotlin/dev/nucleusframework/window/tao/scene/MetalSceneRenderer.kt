@@ -279,7 +279,7 @@ internal class MetalDrawableDamage {
                         colorSpace = ColorSpace.sRGB,
                     ) ?: return false
                 surface.use {
-                    draw(surface, picture, clearColor, repaint)
+                    draw(surface, picture, clearColor, PartialRedraw.debugRepaint(repaint), damage)
                     if (PartialRedraw.verify) verify(directContext, surface, picture, clearColor, repaint)
                     surface.flushAndSubmit(syncCpu = false)
                     if (buffer != null) missed[buffer] = IntRect.Zero
@@ -339,23 +339,24 @@ internal class MetalDrawableDamage {
         return id
     }
 
-    /** Repaints [repaint] (`null`: everything) of [surface] with the frame [picture]. */
+    /**
+     * Repaints [repaint] (`null`: everything) of [surface] with the frame
+     * [picture]; [damage], what the frame changed, is what the debug tint flashes.
+     */
     private fun draw(
         surface: Surface,
         picture: Picture,
         clearColor: Int,
         repaint: IntRect?,
+        damage: IntRect?,
     ) {
         val canvas = surface.canvas
         canvas.save()
         repaint?.let { canvas.clipRect(it.toSkiaRect()) }
         canvas.clear(clearColor)
         canvas.drawPicture(picture)
-        if (repaint != null && PartialRedraw.debugTint) {
-            org.jetbrains.skia.Paint().use { paint ->
-                paint.color = PartialRedraw.DEBUG_TINTS[tintFrame++ and 1]
-                canvas.drawRect(repaint.toSkiaRect(), paint)
-            }
+        if (PartialRedraw.debugTint) {
+            PartialRedraw.drawDebugTint(canvas, damage, surface.width, surface.height, tintFrame++)
         }
         canvas.restore()
     }
