@@ -964,6 +964,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeResize(
     (void)env; (void)clazz;
     GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
     if (!att) return;
+    BOOL sizeChanged = att->widthPx != (int)widthPx || att->heightPx != (int)heightPx;
     att->widthPx = (int)widthPx;
     att->heightPx = (int)heightPx;
     att->scale = scale;
@@ -977,6 +978,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeResize(
     /* The ANGLE window surface tracks the HWND size automatically; the
      * explicit viewport keeps Skia surface creation in step. */
     pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
+    /* ANGLE only resizes its swap chain at the end of a present
+     * (SurfaceD3D::swapRect -> checkForOutOfDateSwapChain): the frame drawn
+     * right after a resize landed in the old-size buffer, everything past it
+     * lost, and was presented that way. Posting one pixel of the current
+     * buffer — what is already on screen — runs that check, so the next frame
+     * is drawn at the new size (#755). An empty rectangle would not: EGL
+     * returns before reaching the swap chain. */
+    if (sizeChanged && att->postSubBuffer) {
+        att->postSubBuffer(att->eglDisplay, att->eglSurface, 0, 0, 1, 1);
+    }
     if (pglViewport) pglViewport(0, 0, att->widthPx, att->heightPx);
 }
 
