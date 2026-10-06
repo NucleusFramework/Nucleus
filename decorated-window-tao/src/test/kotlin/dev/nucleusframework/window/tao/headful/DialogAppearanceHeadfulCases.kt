@@ -242,9 +242,14 @@ internal object DialogAppearanceHeadfulCases {
          * grabs early in the fade, so reading the first grab past that point
          * measured where the grab happened to land (macOS CI: in-scene 4 px
          * vs native 9 px for the same animation, both ~10 px interpolated).
+         * The first visible grab stands in when it is the first past half
+         * (the dialog is only detected near half-way, so no earlier grab sees
+         * it); `null` when even that grab came late ([sampledAppearance]),
+         * since it then reads where the grab landed, not the slide.
          */
         val slideInPx: Int?
             get() {
+                if (!sampledAppearance) return null
                 val last = finalTop ?: return null
                 val half = finalBlueness / 2.0
                 val after = visible.indexOfFirst { it.blueness >= half }
@@ -262,6 +267,27 @@ internal object DialogAppearanceHeadfulCases {
                     }
                 return (topAtHalf - last).roundToInt()
             }
+
+        /**
+         * Whether a grab caught the fade-in early enough to read the slide:
+         * the first grab that sees the dialog is under [SAMPLED_FADE_FRACTION]
+         * of its final colour. The dialog is only detected near half-way, so
+         * that grab normally lands at 52–65 %; on a slow host the grabs can
+         * skip the slide altogether (macOS CI: nothing at 84 ms, 81 % at
+         * 146 ms, read as a 3 px slide against 10 px).
+         */
+        val sampledAppearance: Boolean
+            get() {
+                val first = visible.firstOrNull() ?: return false
+                return first.blueness < finalBlueness * SAMPLED_FADE_FRACTION
+            }
+
+        /** A film worth judging: the grabber kept up and caught the fade-in. */
+        val isReliable: Boolean get() = sampledAppearance && maxCaptureGapMs <= MAX_CAPTURE_GAP_MILLIS
+
+        /** Of two attempts, the one to judge: one that caught the fade-in, then the steadier. */
+        fun isBetterThan(other: Curve): Boolean =
+            compareValuesBy(this, other, { !it.sampledAppearance }, { it.maxCaptureGapMs }) < 0
 
         /** How long the appearance animated on screen, from its first frame to its last change. */
         val animationMs: Long?
@@ -633,12 +659,12 @@ internal object DialogAppearanceHeadfulCases {
                         hideAtMs = (hiddenNs - shownNs) / 1_000_000,
                     )
                 val best = curve
-                if (best == null || take.maxCaptureGapMs < best.maxCaptureGapMs) {
+                if (best == null || take.isBetterThan(best)) {
                     curve = take
                     kept = frames.toList()
                     keptShownNs = shownNs
                 }
-                if (take.maxCaptureGapMs <= MAX_CAPTURE_GAP_MILLIS) break
+                if (take.isReliable) break
                 System.err.println(stalledFilmNote(attempt, take, requireNotNull(curve)))
             }
             val film = requireNotNull(curve)
@@ -650,7 +676,29 @@ internal object DialogAppearanceHeadfulCases {
             check(film.firstVisibleMs != null) { "the dialog never showed up on screen; ${film.summary()}" }
         }
 
-    /** Log line for a film [take] the grabber stalled on, saying what happens next. */
+    /**
+     * The slide-in disagreement between [inScene] and [native], if any. Only
+     * compared between films that caught the fade-in (see `Curve.slideInPx`);
+     * a pop-in without animation still fails duration and first visible.
+     */
+    private fun slideInProblems(
+        inScene: Curve,
+        native: Curve,
+    ): List<String> {
+        if (!inScene.sampledAppearance || !native.sampledAppearance) {
+            System.err.println("[dialog-appearance] slide-in not compared: a film caught no frame of the fade-in")
+            return emptyList()
+        }
+        val a = inScene.slideInPx
+        val b = native.slideInPx
+        return if (a == null || b == null || abs(a - b) > SLIDE_TOLERANCE_PX) {
+            listOf("slide-in (px): in-scene=$a native=$b (tolerance $SLIDE_TOLERANCE_PX)")
+        } else {
+            emptyList()
+        }
+    }
+
+    /** Log line for a film [take] not worth judging, saying why and what happens next. */
     private fun stalledFilmNote(
         attempt: Int,
         take: Curve,
@@ -662,8 +710,13 @@ internal object DialogAppearanceHeadfulCases {
             } else {
                 "judging the steadiest attempt (${steadiest.maxCaptureGapMs}ms)"
             }
-        return "[dialog-appearance] attempt $attempt: the grabber stalled ${take.maxCaptureGapMs}ms " +
-            "(limit $MAX_CAPTURE_GAP_MILLIS) while the dialog animated; $next"
+        val why =
+            if (take.sampledAppearance) {
+                "the grabber stalled ${take.maxCaptureGapMs}ms (limit $MAX_CAPTURE_GAP_MILLIS) while the dialog animated"
+            } else {
+                "no grab caught the first half of the fade-in"
+            }
+        return "[dialog-appearance] attempt $attempt: $why; $next"
     }
 
     /**
@@ -780,7 +833,7 @@ internal object DialogAppearanceHeadfulCases {
                     "first visible (ms): in-scene=$inSceneFirst native=$nativeFirst (tolerance $FIRST_VISIBLE_TOLERANCE_MS)"
             }
             near("appearance duration (ms)", inScene.animationMs, native.animationMs, SETTLE_TOLERANCE_MS)
-            near("slide-in (px)", inScene.slideInPx, native.slideInPx, SLIDE_TOLERANCE_PX)
+            problems += slideInProblems(inScene, native)
             // Asymmetric, like first visible: the native dialog's surface
             // presents without waiting for the owner frame that draws its
             // scrim, so the scrim trails the content by a frame (measured +14
@@ -913,6 +966,9 @@ internal object DialogAppearanceHeadfulCases {
      * runner holds one picture for up to ~76 ms on either layer.
      */
     private const val HOLD_FLOOR_MS = 100L
+
+    /** See `Curve.sampledAppearance`. */
+    private const val SAMPLED_FADE_FRACTION = 0.75
 
     /** Recordings per film before the steadiest one is judged anyway. */
     private const val MAX_FILM_ATTEMPTS = 3
