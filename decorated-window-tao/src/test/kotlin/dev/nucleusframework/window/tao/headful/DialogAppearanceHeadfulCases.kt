@@ -75,17 +75,38 @@ internal object DialogAppearanceHeadfulCases {
         val visible: List<Sample> get() = samples.filter { it.dialogTop != null }
 
         /** First moment after the hide request where the dialog started to change. */
-        val hideStartMs: Long?
+        val hideStartMs: Long? get() = hideStartWindow?.last
+
+        /**
+         * When the dialog started to change after the hide request, as an
+         * interval, in ms after the request: from the last grab that still
+         * showed it at rest to the first that did not. Grabs are tens of ms
+         * apart on a slow host, so the first changed grab alone says only that
+         * the change came before it — a film whose grab after the request was
+         * 50 ms late read 90 ms where its counterpart, grabbed densely, read 30
+         * (macOS CI). Compared as intervals, see `compare`.
+         */
+        val hideStartWindow: LongRange?
             get() {
                 val rest = hiding.firstOrNull() ?: return null
-                return hiding
-                    .firstOrNull {
-                        it.dialogTop != rest.dialogTop ||
-                            it.blueness != rest.blueness ||
-                            it.scrimRed != rest.scrimRed
-                    }?.tMs
-                    ?.minus(hideAtMs)
+                return eventWindow {
+                    it.dialogTop != rest.dialogTop ||
+                        it.blueness != rest.blueness ||
+                        it.scrimRed != rest.scrimRed
+                }
             }
+
+        /**
+         * The interval, in ms after the hide request, in which [happened] first
+         * became true: between the last grab of [hiding] where it was false (or
+         * the request itself) and the first where it was true.
+         */
+        private fun eventWindow(happened: (Sample) -> Boolean): LongRange? {
+            val index = hiding.indexOfFirst(happened)
+            if (index < 0) return null
+            val before = if (index == 0) hideAtMs else hiding[index - 1].tMs
+            return (before - hideAtMs)..(hiding[index].tMs - hideAtMs)
+        }
 
         /**
          * The smallest height the dialog's colour spanned while fading out,
@@ -140,7 +161,13 @@ internal object DialogAppearanceHeadfulCases {
         }
 
         /** First moment after the hide request where the dialog was gone. */
-        val hideGoneMs: Long? get() = hiding.firstOrNull { it.dialogTop == null }?.tMs?.minus(hideAtMs)
+        val hideGoneMs: Long? get() = hideGoneWindow?.last
+
+        /**
+         * When the dialog was first gone, as an interval: it went between the
+         * grab before [hideGoneMs] and that one. See [hideStartWindow].
+         */
+        val hideGoneWindow: LongRange? get() = eventWindow { it.dialogTop == null }
 
         /**
          * The longest the picture held still during an animation [phase], in
@@ -724,6 +751,22 @@ internal object DialogAppearanceHeadfulCases {
                     problems += "$what: in-scene=$a native=$b (tolerance $tolerance)"
                 }
             }
+
+            // A time read from grabs is only known to lie between two of them:
+            // two such intervals disagree when the gap between them exceeds
+            // the tolerance, not when their upper ends do.
+            fun nearInTime(
+                what: String,
+                a: LongRange?,
+                b: LongRange?,
+                tolerance: Long,
+            ) {
+                if (a == null || b == null) {
+                    problems += "$what: in-scene=$a native=$b"
+                } else if (maxOf(0L, a.first - b.last, b.first - a.last) > tolerance) {
+                    problems += "$what: in-scene=$a native=$b (tolerance $tolerance)"
+                }
+            }
             // One-sided: the native layer shows its first frame sooner (its
             // surface presents without waiting for the owner's frame); later
             // than the in-scene layer would be a regression.
@@ -752,8 +795,8 @@ internal object DialogAppearanceHeadfulCases {
             }
             near("final scrim", inScene.finalScrimRed, native.finalScrimRed, COLOR_TOLERANCE)
             near("final content", inScene.finalBlueness, native.finalBlueness, COLOR_TOLERANCE)
-            near("hide start (ms)", inScene.hideStartMs, native.hideStartMs, FIRST_VISIBLE_TOLERANCE_MS)
-            near("hide gone (ms)", inScene.hideGoneMs, native.hideGoneMs, SETTLE_TOLERANCE_MS)
+            nearInTime("hide start (ms)", inScene.hideStartWindow, native.hideStartWindow, FIRST_VISIBLE_TOLERANCE_MS)
+            nearInTime("hide gone (ms)", inScene.hideGoneWindow, native.hideGoneWindow, SETTLE_TOLERANCE_MS)
             near("hide min height ratio", inScene.hideMinHeightRatio, native.hideMinHeightRatio, HEIGHT_RATIO_TOLERANCE)
             if (native.showLongestHoldMs > maxOf(inScene.showLongestHoldMs + HOLD_TOLERANCE_MS, HOLD_FLOOR_MS)) {
                 problems +=
