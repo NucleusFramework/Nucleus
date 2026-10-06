@@ -53,8 +53,11 @@ class GitHubProviderTest {
         server.stop(0)
     }
 
-    private fun newProvider(token: String? = null): GitHubProvider =
-        GitHubProvider("acme", "tool", token).apply {
+    private fun newProvider(
+        token: String? = null,
+        tagPrefix: String = "v",
+    ): GitHubProvider =
+        GitHubProvider("acme", "tool", token, tagPrefix).apply {
             apiBaseUrl = "http://127.0.0.1:${server.address.port}"
         }
 
@@ -174,6 +177,41 @@ class GitHubProviderTest {
         )
         assertEquals(emptyMap<String, String>(), provider.authHeaders())
         assertEquals(mapOf("Authorization" to "token ghp_x"), newProvider(token = "ghp_x").authHeaders())
+    }
+
+    @Test
+    fun `download url uses the configured tag prefix`() {
+        assertEquals(
+            "https://github.com/acme/tool/releases/download/2.1.0/App-2.1.0.dmg",
+            newProvider(tagPrefix = "").getDownloadUrl("App-2.1.0.dmg", "2.1.0"),
+        )
+        assertEquals(
+            "https://github.com/acme/tool/releases/download/cli-v2.1.0/App-2.1.0.dmg",
+            newProvider(tagPrefix = "cli-v").getDownloadUrl("App-2.1.0.dmg", "2.1.0"),
+        )
+    }
+
+    @Test
+    fun `beta channel matches bare tags when the prefix is empty`() {
+        responseBody = jsonArray(Release("1.2.3-beta.5", prerelease = true))
+
+        val url = newProvider(tagPrefix = "").resolveMetadataUrl("beta", Platform.Linux, httpClient)
+
+        assertEquals("https://github.com/acme/tool/releases/download/1.2.3-beta.5/beta-linux.yml", url)
+    }
+
+    @Test
+    fun `beta channel only considers tags carrying the prefix`() {
+        responseBody =
+            jsonArray(
+                Release("gui-v2.0.0-beta.1", prerelease = true),
+                Release("v1.4.0-beta.3", prerelease = true),
+                Release("cli-v1.3.0-beta.2", prerelease = true),
+            )
+
+        val url = newProvider(tagPrefix = "cli-v").resolveMetadataUrl("beta", Platform.Linux, httpClient)
+
+        assertEquals("https://github.com/acme/tool/releases/download/cli-v1.3.0-beta.2/beta-linux.yml", url)
     }
 
     @Test

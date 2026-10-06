@@ -220,17 +220,21 @@ public final class dev/nucleusframework/updater/provider/GenericProvider : dev/n
 }
 
 public final class dev/nucleusframework/updater/provider/GitHubProvider : dev/nucleusframework/updater/provider/UpdateProvider {
+	public static final field DEFAULT_TAG_PREFIX Ljava/lang/String;
 	public static final field HTTP_FORBIDDEN I
 	public static final field HTTP_OK I
 	public static final field LATEST_CHANNEL Ljava/lang/String;
 	public static final field PER_PAGE I
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun authHeaders ()Ljava/util/Map;
 	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
 	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public final fun getOwner ()Ljava/lang/String;
 	public final fun getRepo ()Ljava/lang/String;
+	public final fun getTagPrefix ()Ljava/lang/String;
 	public final fun getToken ()Ljava/lang/String;
 	public fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
 	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;

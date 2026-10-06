@@ -68,12 +68,16 @@ NucleusUpdater {
 provider = GitHubProvider(
     owner = "myorg",
     repo = "myapp",
-    token = "ghp_..."   // Optional, for private repos
+    token = "ghp_...",  // Optional, for private repos
+    tagPrefix = "v",    // Optional, text before the version in tag names ("" for bare 1.2.3 tags)
 )
 ```
 
 Metadata URL: `https://github.com/{owner}/{repo}/releases/latest/download/latest-{suffix}.yml`
-Download URL: `https://github.com/{owner}/{repo}/releases/download/v{version}/{fileName}`
+Download URL: `https://github.com/{owner}/{repo}/releases/download/{tagPrefix}{version}/{fileName}`
+
+When several products share a repository, give each one its own prefix (e.g. `tagPrefix = "cli-v"`
+for `cli-v1.2.3` tags): `beta` / `alpha` channel lookups then ignore releases tagged for the others.
 
 ### Generic HTTP server
 
