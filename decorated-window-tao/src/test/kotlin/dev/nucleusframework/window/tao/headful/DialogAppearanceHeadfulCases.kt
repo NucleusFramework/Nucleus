@@ -75,17 +75,38 @@ internal object DialogAppearanceHeadfulCases {
         val visible: List<Sample> get() = samples.filter { it.dialogTop != null }
 
         /** First moment after the hide request where the dialog started to change. */
-        val hideStartMs: Long?
+        val hideStartMs: Long? get() = hideStartWindow?.last
+
+        /**
+         * When the dialog started to change after the hide request, as an
+         * interval, in ms after the request: from the last grab that still
+         * showed it at rest to the first that did not. Grabs are tens of ms
+         * apart on a slow host, so the first changed grab alone says only that
+         * the change came before it — a film whose grab after the request was
+         * 50 ms late read 90 ms where its counterpart, grabbed densely, read 30
+         * (macOS CI). Compared as intervals, see `compare`.
+         */
+        val hideStartWindow: LongRange?
             get() {
                 val rest = hiding.firstOrNull() ?: return null
-                return hiding
-                    .firstOrNull {
-                        it.dialogTop != rest.dialogTop ||
-                            it.blueness != rest.blueness ||
-                            it.scrimRed != rest.scrimRed
-                    }?.tMs
-                    ?.minus(hideAtMs)
+                return eventWindow {
+                    it.dialogTop != rest.dialogTop ||
+                        it.blueness != rest.blueness ||
+                        it.scrimRed != rest.scrimRed
+                }
             }
+
+        /**
+         * The interval, in ms after the hide request, in which [happened] first
+         * became true: between the last grab of [hiding] where it was false (or
+         * the request itself) and the first where it was true.
+         */
+        private fun eventWindow(happened: (Sample) -> Boolean): LongRange? {
+            val index = hiding.indexOfFirst(happened)
+            if (index < 0) return null
+            val before = if (index == 0) hideAtMs else hiding[index - 1].tMs
+            return (before - hideAtMs)..(hiding[index].tMs - hideAtMs)
+        }
 
         /**
          * The smallest height the dialog's colour spanned while fading out,
@@ -116,8 +137,37 @@ internal object DialogAppearanceHeadfulCases {
                 return sustained.toFloat() / restHeight
             }
 
+        /**
+         * The longest the grabber went without a frame while something was
+         * changing: from the show request until the appearance settled, and
+         * from the hide request until the dialog was gone — each including the
+         * wait for the first grab and the grab after the window's end.
+         */
+        val maxCaptureGapMs: Long
+            get() {
+                val show = gapWithin(0L, samples.map { it.tMs }, settledMs ?: hideAtMs)
+                val hide = gapWithin(hideAtMs, hiding.map { it.tMs }, hideAtMs + (hideGoneMs ?: 0L))
+                return maxOf(show, hide)
+            }
+
+        private fun gapWithin(
+            start: Long,
+            times: List<Long>,
+            end: Long,
+        ): Long {
+            val within = times.takeWhile { it <= end }
+            val span = listOf(start) + within + listOfNotNull(times.getOrNull(within.size))
+            return span.zipWithNext { a, b -> b - a }.maxOrNull() ?: 0L
+        }
+
         /** First moment after the hide request where the dialog was gone. */
-        val hideGoneMs: Long? get() = hiding.firstOrNull { it.dialogTop == null }?.tMs?.minus(hideAtMs)
+        val hideGoneMs: Long? get() = hideGoneWindow?.last
+
+        /**
+         * When the dialog was first gone, as an interval: it went between the
+         * grab before [hideGoneMs] and that one. See [hideStartWindow].
+         */
+        val hideGoneWindow: LongRange? get() = eventWindow { it.dialogTop == null }
 
         /**
          * The longest the picture held still during an animation [phase], in
@@ -183,13 +233,61 @@ internal object DialogAppearanceHeadfulCases {
         val finalBlueness: Int get() = visible.lastOrNull()?.blueness ?: 0
         val finalScrimRed: Int get() = samples.lastOrNull()?.scrimRed ?: WHITE
 
-        /** How far below its resting place the dialog was half-way in, in logical px. */
+        /**
+         * How far below its resting place the dialog was half-way in, in
+         * logical px.
+         *
+         * Interpolated between the two grabs that straddle half the settled
+         * blueness, like [scrimRamp]: the dialog moves several px between two
+         * grabs early in the fade, so reading the first grab past that point
+         * measured where the grab happened to land (macOS CI: in-scene 4 px
+         * vs native 9 px for the same animation, both ~10 px interpolated).
+         * The first visible grab stands in when it is the first past half
+         * (the dialog is only detected near half-way, so no earlier grab sees
+         * it); `null` when even that grab came late ([sampledAppearance]),
+         * since it then reads where the grab landed, not the slide.
+         */
         val slideInPx: Int?
             get() {
-                val first = fadedIn.firstOrNull()?.dialogTop ?: return null
+                if (!sampledAppearance) return null
                 val last = finalTop ?: return null
-                return first - last
+                val half = finalBlueness / 2.0
+                val after = visible.indexOfFirst { it.blueness >= half }
+                if (after < 0) return null
+                val b = visible[after]
+                val bTop = b.dialogTop ?: return null
+                val topAtHalf =
+                    if (after == 0) {
+                        bTop.toDouble()
+                    } else {
+                        val a = visible[after - 1]
+                        val aTop = a.dialogTop ?: bTop
+                        val k = (half - a.blueness) / (b.blueness - a.blueness)
+                        aTop + k * (bTop - aTop)
+                    }
+                return (topAtHalf - last).roundToInt()
             }
+
+        /**
+         * Whether a grab caught the fade-in early enough to read the slide:
+         * the first grab that sees the dialog is under [SAMPLED_FADE_FRACTION]
+         * of its final colour. The dialog is only detected near half-way, so
+         * that grab normally lands at 52–65 %; on a slow host the grabs can
+         * skip the slide altogether (macOS CI: nothing at 84 ms, 81 % at
+         * 146 ms, read as a 3 px slide against 10 px).
+         */
+        val sampledAppearance: Boolean
+            get() {
+                val first = visible.firstOrNull() ?: return false
+                return first.blueness < finalBlueness * SAMPLED_FADE_FRACTION
+            }
+
+        /** A film worth judging: the grabber kept up and caught the fade-in. */
+        val isReliable: Boolean get() = sampledAppearance && maxCaptureGapMs <= MAX_CAPTURE_GAP_MILLIS
+
+        /** Of two attempts, the one to judge: one that caught the fade-in, then the steadier. */
+        fun isBetterThan(other: Curve): Boolean =
+            compareValuesBy(this, other, { !it.sampledAppearance }, { it.maxCaptureGapMs }) < 0
 
         /** How long the appearance animated on screen, from its first frame to its last change. */
         val animationMs: Long?
@@ -483,10 +581,11 @@ internal object DialogAppearanceHeadfulCases {
             // went away" in the comparison.
             var grabber: Thread? = null
 
-            // Returns once the grabber has a frame in hand: the first capture of
-            // a process is slow on macOS (~300 ms on the CI runner), long enough
-            // to miss the whole appearance if the dialog is shown right away —
-            // the curve then starts settled, with no animation and no slide-in.
+            // Returns once the grabber is capturing at a steady pace. Its first
+            // captures are slow on macOS — on the CI runner the first took
+            // ~300 ms, and the one after it ~250 ms more — long enough to miss
+            // the whole appearance if the dialog is shown right away: the curve
+            // then starts settled, with no animation and no slide-in.
             suspend fun startFilm() {
                 capturing.set(true)
                 val from = frames.size
@@ -496,7 +595,15 @@ internal object DialogAppearanceHeadfulCases {
                             frames += System.nanoTime() to robot.createScreenCapture(region)
                         }
                     }
-                awaitUntil("the screen grabber delivered its first frame") { frames.size > from }
+                // Bounded: a host that never settles to a steady pace is still filmed.
+                awaitUntilOrTimeout(STEADY_TIMEOUT_MILLIS) {
+                    val recent =
+                        synchronized(frames) {
+                            if (frames.size - from < STEADY_FRAMES) return@awaitUntilOrTimeout false
+                            frames.subList(frames.size - STEADY_FRAMES, frames.size).map { it.first }
+                        }
+                    recent.zipWithNext().all { (a, b) -> b - a < STEADY_GAP_MILLIS * NANOS_PER_MILLI }
+                }
             }
 
             // Joined off the loop thread: on macOS every capture starts with
@@ -511,78 +618,158 @@ internal object DialogAppearanceHeadfulCases {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { running.join() }
                 grabber = null
             }
-            startFilm()
-            val shownNs = System.nanoTime()
-            dialogShown.value = true
-            var hiddenNs = Long.MAX_VALUE
-            var hideFilmFrom = Int.MAX_VALUE
-            try {
-                settle(FILM_MILLIS)
-                stopFilm()
-                // Filming before the hide, for the same reason as the show. The
-                // frames grabbed while it warms up are dropped below: each is
-                // stamped before its capture runs, so one stamped just before
-                // the hide can already show it, and would be read as the
-                // appearance still changing at its very end.
-                hideFilmFrom = frames.size
+            // A film is only as good as its grabber: a capture that stalls
+            // mid-animation (seen on the macOS CI runner: gaps of 150–330 ms
+            // between grabs) misses frames the dialog did draw, and reads as a
+            // hold, a missing slide-in or a lagging scrim. Such a film is
+            // retaken rather than judged; the steadiest attempt is kept.
+            var curve: Curve? = null
+            var kept: List<Pair<Long, BufferedImage>> = emptyList()
+            var keptShownNs = 0L
+            for (attempt in 1..MAX_FILM_ATTEMPTS) {
+                frames.clear()
                 startFilm()
-                hiddenNs = System.nanoTime()
-                dialogShown.value = false
-                settle(HIDE_FILM_MILLIS)
-            } finally {
-                dialogShown.value = false
-                stopFilm()
+                val shownNs = System.nanoTime()
+                dialogShown.value = true
+                var hiddenNs = Long.MAX_VALUE
+                var hideFilmFrom = Int.MAX_VALUE
+                try {
+                    settle(FILM_MILLIS)
+                    stopFilm()
+                    // Filming before the hide, for the same reason as the show. The
+                    // frames grabbed while it warms up are dropped below: each is
+                    // stamped before its capture runs, so one stamped just before
+                    // the hide can already show it, and would be read as the
+                    // appearance still changing at its very end.
+                    hideFilmFrom = frames.size
+                    startFilm()
+                    hiddenNs = System.nanoTime()
+                    dialogShown.value = false
+                    settle(HIDE_FILM_MILLIS)
+                } finally {
+                    dialogShown.value = false
+                    stopFilm()
+                }
+                settle(SETTLE_BEFORE_MILLIS)
+                val take =
+                    Curve(
+                        frames
+                            .filterIndexed { i, (ns, _) -> ns >= shownNs && (i < hideFilmFrom || ns >= hiddenNs) }
+                            .map { (ns, img) -> sample((ns - shownNs) / 1_000_000, img) },
+                        hideAtMs = (hiddenNs - shownNs) / 1_000_000,
+                    )
+                val best = curve
+                if (best == null || take.isBetterThan(best)) {
+                    curve = take
+                    kept = frames.toList()
+                    keptShownNs = shownNs
+                }
+                if (take.isReliable) break
+                System.err.println(stalledFilmNote(attempt, take, requireNotNull(curve)))
             }
-            settle(SETTLE_BEFORE_MILLIS)
-            val curve =
-                Curve(
-                    frames
-                        .filterIndexed { i, (ns, _) -> ns >= shownNs && (i < hideFilmFrom || ns >= hiddenNs) }
-                        .map { (ns, img) -> sample((ns - shownNs) / 1_000_000, img) },
-                    hideAtMs = (hiddenNs - shownNs) / 1_000_000,
-                )
-            measured[material to native] = curve
+            val film = requireNotNull(curve)
+            measured[material to native] = film
             val mode = (if (material) "m3-" else "") + if (native) "native" else "in-scene"
-            // Keep the first and last grabbed frames on disk: when a curve reads
-            // wrong, the pictures say whether the region or the dialog is off.
-            val dir = java.io.File(System.getProperty("java.io.tmpdir"), "dialog-appearance").apply { mkdirs() }
-            frames.firstOrNull()?.let {
-                javax.imageio.ImageIO.write(
-                    it.second,
-                    "png",
-                    java.io.File(dir, "$mode-first.png"),
-                )
+            reportFilm(mode, rect, scale, region, kept, keptShownNs, film)
+            System.err.println("[dialog-appearance] $mode: ${film.summary()}")
+            System.err.print(film.table())
+            check(film.firstVisibleMs != null) { "the dialog never showed up on screen; ${film.summary()}" }
+        }
+
+    /**
+     * The slide-in disagreement between [inScene] and [native], if any. Only
+     * compared between films that caught the fade-in (see `Curve.slideInPx`);
+     * a pop-in without animation still fails duration and first visible.
+     */
+    private fun slideInProblems(
+        inScene: Curve,
+        native: Curve,
+    ): List<String> {
+        if (!inScene.sampledAppearance || !native.sampledAppearance) {
+            System.err.println("[dialog-appearance] slide-in not compared: a film caught no frame of the fade-in")
+            return emptyList()
+        }
+        val a = inScene.slideInPx
+        val b = native.slideInPx
+        return if (a == null || b == null || abs(a - b) > SLIDE_TOLERANCE_PX) {
+            listOf("slide-in (px): in-scene=$a native=$b (tolerance $SLIDE_TOLERANCE_PX)")
+        } else {
+            emptyList()
+        }
+    }
+
+    /** Log line for a film [take] not worth judging, saying why and what happens next. */
+    private fun stalledFilmNote(
+        attempt: Int,
+        take: Curve,
+        steadiest: Curve,
+    ): String {
+        val next =
+            if (attempt < MAX_FILM_ATTEMPTS) {
+                "retaking"
+            } else {
+                "judging the steadiest attempt (${steadiest.maxCaptureGapMs}ms)"
             }
-            frames.lastOrNull()?.let {
-                javax.imageio.ImageIO.write(
-                    it.second,
-                    "png",
-                    java.io.File(dir, "$mode-last.png"),
-                )
+        val why =
+            if (take.sampledAppearance) {
+                "the grabber stalled ${take.maxCaptureGapMs}ms (limit $MAX_CAPTURE_GAP_MILLIS) while the dialog animated"
+            } else {
+                "no grab caught the first half of the fade-in"
             }
-            if (System.getProperty("nucleus.dialog.appearance.dump") == "true") {
-                for ((ns, img) in frames) {
-                    val t = (ns - shownNs) / 1_000_000
-                    if (t in
-                        0..DUMP_UNTIL_MS
-                    ) {
-                        javax.imageio.ImageIO.write(img, "png", java.io.File(dir, "$mode-t%03d.png".format(t)))
-                    }
+        return "[dialog-appearance] attempt $attempt: $why; $next"
+    }
+
+    /**
+     * Keeps the first and last grabbed frames of the film kept for [mode] on
+     * disk (all of them with `-Dnucleus.dialog.appearance.dump=true`) and logs
+     * where it was taken from.
+     */
+    private fun reportFilm(
+        mode: String,
+        rect: LongArray,
+        scale: Float,
+        region: Rectangle,
+        kept: List<Pair<Long, BufferedImage>>,
+        keptShownNs: Long,
+        film: Curve,
+    ) {
+        // Keep the first and last grabbed frames on disk: when a curve reads
+        // wrong, the pictures say whether the region or the dialog is off.
+        val dir = java.io.File(System.getProperty("java.io.tmpdir"), "dialog-appearance").apply { mkdirs() }
+        kept.firstOrNull()?.let {
+            javax.imageio.ImageIO.write(
+                it.second,
+                "png",
+                java.io.File(dir, "$mode-first.png"),
+            )
+        }
+        kept.lastOrNull()?.let {
+            javax.imageio.ImageIO.write(
+                it.second,
+                "png",
+                java.io.File(dir, "$mode-last.png"),
+            )
+        }
+        if (System.getProperty("nucleus.dialog.appearance.dump") == "true") {
+            for ((ns, img) in kept) {
+                val t = (ns - keptShownNs) / 1_000_000
+                if (t in
+                    0..DUMP_UNTIL_MS
+                ) {
+                    javax.imageio.ImageIO.write(img, "png", java.io.File(dir, "$mode-t%03d.png".format(t)))
                 }
             }
-            val screen =
-                java.awt.GraphicsEnvironment
-                    .getLocalGraphicsEnvironment()
-                    .defaultScreenDevice.defaultConfiguration
-            System.err.println(
-                "[dialog-appearance] $mode: window=${rect.toList()} scale=$scale region=$region " +
-                    "awtScreen=${screen.bounds} awtTransform=${screen.defaultTransform.scaleX} " +
-                    "frames=${frames.size} dump=$dir",
-            )
-            System.err.println("[dialog-appearance] $mode: ${curve.summary()}")
-            System.err.print(curve.table())
-            check(curve.firstVisibleMs != null) { "the dialog never showed up on screen; ${curve.summary()}" }
         }
+        val screen =
+            java.awt.GraphicsEnvironment
+                .getLocalGraphicsEnvironment()
+                .defaultScreenDevice.defaultConfiguration
+        System.err.println(
+            "[dialog-appearance] $mode: window=${rect.toList()} scale=$scale region=$region " +
+                "awtScreen=${screen.bounds} awtTransform=${screen.defaultTransform.scaleX} " +
+                "frames=${kept.size} captureGap=${film.maxCaptureGapMs}ms dump=$dir",
+        )
+    }
 
     private fun compare(material: Boolean = false): TaoWindowTestCase =
         TaoWindowTestCase(
@@ -617,6 +804,22 @@ internal object DialogAppearanceHeadfulCases {
                     problems += "$what: in-scene=$a native=$b (tolerance $tolerance)"
                 }
             }
+
+            // A time read from grabs is only known to lie between two of them:
+            // two such intervals disagree when the gap between them exceeds
+            // the tolerance, not when their upper ends do.
+            fun nearInTime(
+                what: String,
+                a: LongRange?,
+                b: LongRange?,
+                tolerance: Long,
+            ) {
+                if (a == null || b == null) {
+                    problems += "$what: in-scene=$a native=$b"
+                } else if (maxOf(0L, a.first - b.last, b.first - a.last) > tolerance) {
+                    problems += "$what: in-scene=$a native=$b (tolerance $tolerance)"
+                }
+            }
             // One-sided: the native layer shows its first frame sooner (its
             // surface presents without waiting for the owner's frame); later
             // than the in-scene layer would be a regression.
@@ -630,7 +833,7 @@ internal object DialogAppearanceHeadfulCases {
                     "first visible (ms): in-scene=$inSceneFirst native=$nativeFirst (tolerance $FIRST_VISIBLE_TOLERANCE_MS)"
             }
             near("appearance duration (ms)", inScene.animationMs, native.animationMs, SETTLE_TOLERANCE_MS)
-            near("slide-in (px)", inScene.slideInPx, native.slideInPx, SLIDE_TOLERANCE_PX)
+            problems += slideInProblems(inScene, native)
             // Asymmetric, like first visible: the native dialog's surface
             // presents without waiting for the owner frame that draws its
             // scrim, so the scrim trails the content by a frame (measured +14
@@ -645,15 +848,15 @@ internal object DialogAppearanceHeadfulCases {
             }
             near("final scrim", inScene.finalScrimRed, native.finalScrimRed, COLOR_TOLERANCE)
             near("final content", inScene.finalBlueness, native.finalBlueness, COLOR_TOLERANCE)
-            near("hide start (ms)", inScene.hideStartMs, native.hideStartMs, FIRST_VISIBLE_TOLERANCE_MS)
-            near("hide gone (ms)", inScene.hideGoneMs, native.hideGoneMs, SETTLE_TOLERANCE_MS)
+            nearInTime("hide start (ms)", inScene.hideStartWindow, native.hideStartWindow, FIRST_VISIBLE_TOLERANCE_MS)
+            nearInTime("hide gone (ms)", inScene.hideGoneWindow, native.hideGoneWindow, SETTLE_TOLERANCE_MS)
             near("hide min height ratio", inScene.hideMinHeightRatio, native.hideMinHeightRatio, HEIGHT_RATIO_TOLERANCE)
-            if (native.showLongestHoldMs > inScene.showLongestHoldMs + HOLD_TOLERANCE_MS) {
+            if (native.showLongestHoldMs > maxOf(inScene.showLongestHoldMs + HOLD_TOLERANCE_MS, HOLD_FLOOR_MS)) {
                 problems +=
                     "appearance drops frames: longest hold in-scene=${inScene.showLongestHoldMs}ms " +
                     "native=${native.showLongestHoldMs}ms (tolerance $HOLD_TOLERANCE_MS)"
             }
-            if (native.hideLongestHoldMs > inScene.hideLongestHoldMs + HOLD_TOLERANCE_MS) {
+            if (native.hideLongestHoldMs > maxOf(inScene.hideLongestHoldMs + HOLD_TOLERANCE_MS, HOLD_FLOOR_MS)) {
                 problems +=
                     "disappearance drops frames: longest hold in-scene=${inScene.hideLongestHoldMs}ms " +
                     "native=${native.hideLongestHoldMs}ms (tolerance $HOLD_TOLERANCE_MS)"
@@ -664,31 +867,60 @@ internal object DialogAppearanceHeadfulCases {
             }
         }
 
-    /** Reads one grabbed frame; coordinates are logical px inside the window's outer rect. */
+    /**
+     * Reads one grabbed frame; coordinates are logical px inside the window's
+     * outer rect.
+     *
+     * Read where a page of text cannot fool it. The owner window is
+     * full of text, and with subpixel (ClearType) rendering its glyphs carry
+     * blue and red fringes: a single pixel on the centre column read as the
+     * dialog wherever a fringe crossed it (Windows native image: a "dialog"
+     * from y=18 that never went away), and a single scrim probe that hit a
+     * glyph read it darker than the page. So a row is the dialog only when
+     * its colour spans a run around the centre — the dialog is hundreds of px
+     * wide, a fringe one or two — and the scrim is the brightest red of a
+     * patch, the page between the glyphs.
+     */
     private fun sample(
         tMs: Long,
         img: BufferedImage,
     ): Sample {
         val w = img.width
         val h = img.height
-        val scrim = img.getRGB(SCRIM_PROBE_INSET, h - SCRIM_PROBE_INSET)
+        val scrimRed = brightestRed(img, SCRIM_PROBE_INSET, h - SCRIM_PROBE_INSET)
         val x = w / 2
+        val run = (-DIALOG_RUN_PX..DIALOG_RUN_PX step DIALOG_RUN_STEP_PX).map { x + it }
         var top: Int? = null
         var bottom: Int? = null
         for (y in FRAME_EDGE_INSET until h - FRAME_EDGE_INSET) {
-            if (isDialogColor(img.getRGB(x, y))) {
+            if (run.all { isDialogColor(img.getRGB(it, y)) }) {
                 if (top == null) top = y
                 bottom = y
             }
         }
         val blueness =
             if (top != null && bottom != null) {
-                val c = img.getRGB(x, (top + bottom) / 2)
-                blue(c) - red(c)
+                val y = (top + bottom) / 2
+                run.map { img.getRGB(it, y).let { c -> blue(c) - red(c) } }.sorted()[run.size / 2]
             } else {
                 0
             }
-        return Sample(tMs, red(scrim), top, bottom, blueness)
+        return Sample(tMs, scrimRed, top, bottom, blueness)
+    }
+
+    /** The brightest red channel in the [SCRIM_PATCH_PX] square around ([cx], [cy]). */
+    private fun brightestRed(
+        img: BufferedImage,
+        cx: Int,
+        cy: Int,
+    ): Int {
+        var best = 0
+        for (y in cy - SCRIM_PATCH_PX..cy + SCRIM_PATCH_PX) {
+            for (x in cx - SCRIM_PATCH_PX..cx + SCRIM_PATCH_PX) {
+                if (x in 0 until img.width && y in 0 until img.height) best = maxOf(best, red(img.getRGB(x, y)))
+            }
+        }
+        return best
     }
 
     /** Anything the dialog's blue could look like while fading in over the scrimmed white. */
@@ -708,6 +940,13 @@ internal object DialogAppearanceHeadfulCases {
     private const val WHITE = 255
     private const val SCRIM_PROBE_INSET = 16
     private const val DIALOG_DETECT_THRESHOLD = 40
+
+    /** Half-width of the run around the centre column a dialog row must span, and its sampling step. */
+    private const val DIALOG_RUN_PX = 12
+    private const val DIALOG_RUN_STEP_PX = 6
+
+    /** Half-size of the square the scrim is read from. */
+    private const val SCRIM_PATCH_PX = 4
     private const val SETTLE_BEFORE_MILLIS = 600L
     private const val WARMUP_MILLIS = 200L
     private const val FILM_MILLIS = 700L
@@ -721,6 +960,30 @@ internal object DialogAppearanceHeadfulCases {
      * films the longest hold is one to three frames (11–58 ms) on both layers.
      */
     private const val HOLD_TOLERANCE_MS = 34L
+
+    /**
+     * A hold shorter than this is never a dropped-frame failure: the macOS CI
+     * runner holds one picture for up to ~76 ms on either layer.
+     */
+    private const val HOLD_FLOOR_MS = 100L
+
+    /** See `Curve.sampledAppearance`. */
+    private const val SAMPLED_FADE_FRACTION = 0.75
+
+    /** Recordings per film before the steadiest one is judged anyway. */
+    private const val MAX_FILM_ATTEMPTS = 3
+
+    /**
+     * The longest gap between grabs a film may have while the dialog animates
+     * (~5 frames); longer, and it is retaken.
+     */
+    private const val MAX_CAPTURE_GAP_MILLIS = 80L
+
+    /** Grabs that must arrive under [STEADY_GAP_MILLIS] apart before a film starts. */
+    private const val STEADY_FRAMES = 3
+    private const val STEADY_GAP_MILLIS = 50L
+    private const val STEADY_TIMEOUT_MILLIS = 3_000L
+    private const val NANOS_PER_MILLI = 1_000_000L
     private const val HEIGHT_RATIO_TOLERANCE = 0.15f
     private const val MAX_FRAMES = 200
 
