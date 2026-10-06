@@ -146,7 +146,9 @@ A tag `v<major>.<minor>.<patch>-dev-<id>` (convention: `v3.0.0-dev-YYYYMMDDHHMM`
 Gradle Plugin Portal **without running `preMerge`** — no tests, no `apiCheck`, no detekt; only
 the compile/javadoc/sign graph the publish tasks themselves pull in. Natives are still built and
 verified, since the JARs would be unusable otherwise. Dev tags are also excluded from
-`release-desktop` / `release-graalvm`, so they cut no GitHub release and burn no packaging matrix.
+`release-desktop` / `release-graalvm`, so they burn no packaging matrix. Their only GitHub release
+is a pre-release (never marked latest, notes generated since the previous dev tag) created by
+`publish-maven.yaml`'s `github-prerelease` job once the Central publish succeeds.
 
 `.github/actions/release-tag-info` is the single place that classifies a tag: it rejects anything
 that is not `v<semver>` (every publish task derives its version with

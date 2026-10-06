@@ -7,7 +7,8 @@ description: Create and push a timestamped dev tag for Nucleus 3.0 in the format
 
 Creates a timestamped dev tag on the current HEAD and pushes it to `origin`. The tag publishes
 **unverified** artifacts: `.github/workflows/publish-maven.yaml` and `publish-plugin.yaml` skip
-`preMerge` for dev tags, and the desktop / GraalVM release workflows ignore them entirely.
+`preMerge` for dev tags, and the desktop / GraalVM release workflows ignore them entirely. Once
+the Central publish succeeds, `publish-maven.yaml` creates a GitHub pre-release for the tag.
 
 ## Format
 
