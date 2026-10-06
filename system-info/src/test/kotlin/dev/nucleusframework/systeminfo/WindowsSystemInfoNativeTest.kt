@@ -49,5 +49,6 @@ class WindowsSystemInfoNativeTest {
         assertEquals(selfPid, self.pid)
         assertTrue(self.name.isNotBlank())
         assertTrue(WindowsSystemInfo.process(-1L) == null)
+        assertTrue(WindowsSystemInfo.process(selfPid + 1) == null)
     }
 }

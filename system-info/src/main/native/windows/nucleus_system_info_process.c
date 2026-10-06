@@ -193,17 +193,25 @@ static int fill_single_process(DWORD pid, process_entry_t *p) {
         get_process_details(p);
         return 1;
     }
+    // OpenProcess ignores the low two bits of the pid, so pid + 1 would open pid.
+    if (GetProcessId(hProc) != pid) {
+        CloseHandle(hProc);
+        return 0;
+    }
     reset_process_details(p);
     read_process_details(p, hProc);
     BOOL has_ppid = query_parent_pid(hProc, &p->ppid);
-    CloseHandle(hProc);
 
+    int found = 1;
     const char *base = strrchr(p->exe, '\\');
     if (base && has_ppid) {
         strncpy(p->name, base + 1, sizeof(p->name) - 1);
-        return 1;
+    } else {
+        // Still holding the handle, so the pid can't be reused by the time the snapshot names it.
+        found = snapshot_name_and_ppid(pid, p);
     }
-    return snapshot_name_and_ppid(pid, p);
+    CloseHandle(hProc);
+    return found;
 }
 
 // --- JNI bulk process functions ---
