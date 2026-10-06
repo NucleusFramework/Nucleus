@@ -38,7 +38,7 @@ runs:
 
         version="${tag#v}"
 
-        # Dev channel: `v2.6.0-dev-202609200830`. Cut from any branch, published without
+        # Dev channel: `v3.0.0-dev-202609200830`. Cut from any branch, published without
         # preMerge — the usual Kotlin-ecosystem `-dev-` build.
         if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-dev([.-][0-9A-Za-z]+)*$ ]]; then
           channel=dev

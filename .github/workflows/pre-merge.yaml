@@ -4,14 +4,20 @@ on:
   push:
     branches:
       - main
+      # The release lines (nucleus-3.0, …), the default branch and the base of
+      # every PR. Only a push run here writes the Gradle and natives caches a PR
+      # can read (a PR reads its base branch's and the default branch's caches,
+      # and setup-gradle saves nothing outside the default branch): with `main`
+      # alone, every PR job compiled the whole build from nothing.
+      - 'nucleus-*'
   pull_request:
     branches:
       # '**' (not '*'): base branches with a '/' (e.g. refactor/…) must
       # trigger too — the single-star glob does not cross path separators.
       - '**'
 
-# Supersede in-flight runs on PR pushes; pushes to main are never cancelled
-# (their run saves the caches every other workflow keys off).
+# Supersede in-flight runs on PR pushes; pushes to main or a release line are
+# never cancelled (their run saves the caches every other workflow keys off).
 concurrency:
   group: pre-merge-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

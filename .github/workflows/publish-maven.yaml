@@ -206,7 +206,7 @@ jobs:
           curl -s https://api.ipify.org; echo
           curl -s https://api64.ipify.org; echo
 
-      # Dev builds (`v2.6.0-dev-<timestamp>`) publish straight from the tag: the whole
+      # Dev builds (`v3.0.0-dev-<timestamp>`) publish straight from the tag: the whole
       # point is a throwaway version a downstream app can consume today. Every other tag
       # is a real release and still has to pass preMerge.
       - name: Run pre-merge checks
@@ -222,3 +222,22 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNINGINMEMORYKEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNINGKEYID }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNINGPASSWORD }}
+
+  # Dev tags cut no desktop release (release-desktop ignores them), so this is their only
+  # GitHub release: a pre-release, never marked latest, created once Central has the version.
+  github-prerelease:
+    needs: [validate-release-ref, publish]
+    if: needs.validate-release-ref.outputs.is-dev == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      # Generic notes on purpose: the changelog belongs to the real release.
+      - name: Create GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
+            --prerelease --latest=false \
+            --notes "Development build, not verified. Release notes will come with the final release."

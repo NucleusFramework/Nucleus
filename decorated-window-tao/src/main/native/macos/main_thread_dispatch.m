@@ -11,6 +11,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
+#import "nucleus_tao_cursors.h"
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -48,6 +49,26 @@ extern bool nucleus_tao_post_quit_requested(void);
 
 static id sCmdQMonitor = nil;
 
+static const NSEventModifierFlags kKeyEquivalentModifierFlags =
+    NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption | NSEventModifierFlagControl;
+
+// YES when an item of [menu] or of its submenus is bound to [event]'s key equivalent,
+// enabled or not: in AppKit a disabled item still owns its shortcut.
+static BOOL nucleus_menu_binds_key_equivalent(NSMenu *menu, NSEvent *event) {
+    NSEventModifierFlags mods = event.modifierFlags & kKeyEquivalentModifierFlags;
+    for (NSMenuItem *item in menu.itemArray) {
+        if (item.submenu != nil && nucleus_menu_binds_key_equivalent(item.submenu, event)) return YES;
+        if ([item.keyEquivalent isEqualToString:event.charactersIgnoringModifiers] &&
+            (item.keyEquivalentModifierMask & kKeyEquivalentModifierFlags) == mods) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+// Offer Cmd+Q to the menu bar first, so a NativeMenuBar item bound to it runs, or beeps
+// while disabled (#749). The default Quit item (a11y.m) sends `terminate:`, which TaoApp routes
+// to this same quit; only when no item is bound to Cmd+Q is the quit requested here.
 void nucleus_tao_install_cmd_q_handler(void) {
     if (sCmdQMonitor != nil) return;
     sCmdQMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
@@ -55,7 +76,14 @@ void nucleus_tao_install_cmd_q_handler(void) {
             NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
             if ((mods & NSEventModifierFlagCommand) &&
                 [event.charactersIgnoringModifiers isEqualToString:@"q"]) {
-                nucleus_tao_post_quit_requested();
+                NSMenu *menu = [NSApp mainMenu];
+                if (![menu performKeyEquivalent:event]) {
+                    if (nucleus_menu_binds_key_equivalent(menu, event)) {
+                        NSBeep();
+                    } else {
+                        nucleus_tao_post_quit_requested();
+                    }
+                }
                 return nil;
             }
             return event;
@@ -420,57 +448,32 @@ void nucleus_tao_deactivate_input_context(long ns_view_handle, int64_t token) {
     }
 }
 
-static NSCursor *nucleus_tao_cursor_from_selector(NSString *selectorName) {
-    SEL selector = NSSelectorFromString(selectorName);
-    if (![NSCursor respondsToSelector:selector]) return nil;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    return [NSCursor performSelector:selector];
-#pragma clang diagnostic pop
+/// `nucleus_tao_cursor_for_code` for Rust: the `NSCursor *` (+0, cached for
+/// the process) Tao's cursor rects use (`tao::platform::macos::set_cursor_hook`).
+void *nucleus_tao_cursor_ptr(int code) {
+    return (__bridge void *)nucleus_tao_cursor_for_code(code);
 }
 
-static NSCursor *nucleus_tao_cursor_for_code(int code) {
-    switch (code) {
-        case 1:  return [NSCursor IBeamCursor];
-        case 2:  return [NSCursor pointingHandCursor];
-        case 3:  return [NSCursor crosshairCursor];
-        case 4:
-        case 8: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"busyButClickableCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        case 5: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"_moveCursor");
-            return cursor ?: [NSCursor openHandCursor];
-        }
-        case 6:  return [NSCursor operationNotAllowedCursor];
-        case 7: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"_helpCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        case 9:  return [NSCursor resizeLeftRightCursor];
-        case 13: return [NSCursor openHandCursor];
-        case 14: return [NSCursor closedHandCursor];
-        case 10: return [NSCursor resizeUpDownCursor];
-        case 11: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(
-                @"_windowResizeNorthEastSouthWestCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        case 12: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(
-                @"_windowResizeNorthWestSouthEastCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        default: return [NSCursor arrowCursor];
+/// Headful-suite diagnostic: the signature of the cursor for [code], or of
+/// `[NSCursor currentCursor]` when [code] is negative.
+void nucleus_tao_diag_cursor_signature(int code, char *out, size_t capacity) {
+    if (capacity == 0) return;
+    __block NSString *signature = nil;
+    void (^read)(void) = ^{
+        signature = nucleus_tao_cursor_signature(
+            code < 0 ? [NSCursor currentCursor] : nucleus_tao_cursor_for_code(code));
+    };
+    if ([NSThread isMainThread]) {
+        read();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), read);
     }
+    if (![signature getCString:out maxLength:capacity encoding:NSUTF8StringEncoding]) out[0] = '\0';
 }
 
 void nucleus_tao_set_cursor_icon(int code) {
     void (^apply)(void) = ^{
-        NSCursor *cursor = nucleus_tao_cursor_for_code(code);
-        if (cursor) [cursor set];
+        [nucleus_tao_cursor_for_code(code) set];
     };
 
     if ([NSThread isMainThread]) {

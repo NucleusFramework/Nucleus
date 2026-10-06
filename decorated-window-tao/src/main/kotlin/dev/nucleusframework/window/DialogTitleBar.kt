@@ -58,6 +58,7 @@ public fun DecoratedDialogScope.DialogTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
     val taoScope = this as TaoDecoratedDialogScope
@@ -94,6 +95,7 @@ public fun DecoratedDialogScope.DialogTitleBar(
         style = style,
         controlButtonsDirection = controlDir,
         controlButtonsPlacementDirection = controlsPlacementDir,
+        layoutPolicy = layoutPolicy,
         applyTitleBar = { measuredHeight, titleBarState ->
             heightHolder.value = measuredHeight.value
             // Identical reservation logic to [TitleBar]: macOS traffic-lights

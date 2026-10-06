@@ -58,7 +58,6 @@ import dev.nucleusframework.window.tao.popup.PopupScrimRegistry
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import dev.nucleusframework.window.tao.releaseWindowsTextureImports
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -76,13 +75,11 @@ import org.jetbrains.skia.PathBuilder
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skia.makeGLWithInterface
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
 /**
  * Windows variant of [TaoComposeSceneHost]. Drives a Compose scene onto the
@@ -210,7 +207,7 @@ internal class TaoComposeSceneHostWindows(
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
-    private val flushingDispatcher = FlushingMainDispatcher()
+    private val flushingDispatcher = SceneMainDispatcher()
 
     /**
      * Scope for host-owned gesture work (trackpad-pinch idle-end debounce).
@@ -1404,12 +1401,6 @@ internal class TaoComposeSceneHostWindows(
     /** A wake-up for the end of the idle hold is already scheduled. */
     private var idleWakeScheduled = false
 
-    /** When [drainWhileMinimized] last ran the scene's coroutines. */
-    private var lastMinimizedDrainNs = 0L
-
-    /** A wake-up for the next minimized drain is already scheduled. */
-    private val minimizedWakeScheduled = AtomicBoolean(false)
-
     /** The display's frame period, as measured between back-to-back paced presents (read by [requestFrame] too). */
     @Volatile private var presentPeriodNs = DEFAULT_PRESENT_PERIOD_NS
 
@@ -1616,30 +1607,6 @@ internal class TaoComposeSceneHostWindows(
     }
 
     /**
-     * Minimized, nothing is drawn and the frame clock stays parked, but the
-     * scene's coroutines — queued on [flushingDispatcher], drained only on the
-     * frame path — still run: an effect that restores the window, an app
-     * timer, a network callback. Without this they froze until the user
-     * restored the window, and the queue grew with every snapshot write.
-     * At most once per display period, so a coroutine re-dispatching itself
-     * cannot spin the event loop.
-     */
-    private fun drainWhileMinimized() {
-        val wait = lastMinimizedDrainNs + presentPeriodNs - System.nanoTime()
-        if (wait > 0L) {
-            if (minimizedWakeScheduled.compareAndSet(false, true)) {
-                DelayScheduler.schedule({
-                    minimizedWakeScheduled.set(false)
-                    window.requestRedraw()
-                }, wait, TimeUnit.NANOSECONDS)
-            }
-            return
-        }
-        lastMinimizedDrainNs = System.nanoTime()
-        flushingDispatcher.drain()
-    }
-
-    /**
      * After a present: back-to-back VSync-paced presents are one display
      * frame apart, which is what an idle frame waits (#755).
      */
@@ -1782,8 +1749,9 @@ internal class TaoComposeSceneHostWindows(
         // flip-model swapchain never reports occlusion), so without this the
         // loop would spin recording + presenting into a hidden surface whenever
         // an animation keeps invalidating. Parks animations; restored via
-        // TaoWindow.requestRedraw on the MINIMIZED-off event.
-        if (window.isMinimized) return drainWhileMinimized()
+        // TaoWindow.requestRedraw on the MINIMIZED-off event. The scene's
+        // coroutines keep running meanwhile, between frames (#754).
+        if (window.isMinimized) return
         val frameStartNanos = System.nanoTime()
 
         if (heldAfterIdleFrame(sameTurnResize)) return
@@ -1907,8 +1875,8 @@ internal class TaoComposeSceneHostWindows(
         // threshold, and the cadence stays flat.
         //
         // Bounded by the queue snapshot, so a self-redispatching continuation
-        // cannot spin this thread — it just keeps requesting redraws, which
-        // `dispatch` already did before this drain existed.
+        // cannot spin this thread — what it re-queues runs on the next
+        // off-frame drain (see SceneMainDispatcher).
         flushingDispatcher.drain()
 
         // Drain overlay/popup renderers. Cross-surface sync:
@@ -2773,8 +2741,7 @@ internal class TaoComposeSceneHostWindows(
     }
 
     // Hop the debounced semantics walk onto the render thread (it touches
-    // Compose state); the enqueue asks for the frame that drains it. See
-    // AbstractTaoComposeSceneHost.
+    // Compose state); it runs between frames. See AbstractTaoComposeSceneHost.
     override fun dispatchA11yWalk(block: () -> Unit) {
         flushingDispatcher.enqueue(Runnable { block() })
     }
@@ -2961,37 +2928,6 @@ internal class TaoComposeSceneHostWindows(
                 .concurrent
                 .atomic
                 .AtomicInteger(0)
-    }
-
-    private inner class FlushingMainDispatcher : CoroutineDispatcher() {
-        private val queue = ConcurrentLinkedQueue<Runnable>()
-
-        override fun dispatch(
-            context: KCoroutineContext,
-            block: Runnable,
-        ) {
-            queue.add(block)
-            requestFrame()
-        }
-
-        /**
-         * Queues [block] for the next drain. The drains all sit in the frame
-         * path, so this asks for a frame too — a window with nothing else to
-         * redraw would otherwise hold the block forever (a focus clear that
-         * never runs leaves two carets on screen).
-         */
-        fun enqueue(block: Runnable) {
-            queue.add(block)
-            requestFrame()
-        }
-
-        fun drain() {
-            var remaining = queue.size
-            while (remaining-- > 0) {
-                val runnable = queue.poll() ?: break
-                runnable.run()
-            }
-        }
     }
 }
 

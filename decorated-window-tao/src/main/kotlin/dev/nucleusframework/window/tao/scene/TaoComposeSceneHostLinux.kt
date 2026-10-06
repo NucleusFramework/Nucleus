@@ -66,7 +66,6 @@ import dev.nucleusframework.window.tao.popup.PopupScrimRegistry
 import dev.nucleusframework.window.tao.popup.TaoPopupHostLinux
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerLinux
 import dev.nucleusframework.window.tao.releaseGlTextureImports
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -87,7 +86,6 @@ import org.jetbrains.skia.RRect
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import org.jetbrains.skia.makeGLWithInterface
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -100,7 +98,6 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
-import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
 /**
  * Linux variant of [TaoComposeSceneHost]. Drives a Compose scene onto the
@@ -263,19 +260,13 @@ internal class TaoComposeSceneHostLinux(
      */
     val glTextureHostState: MutableState<TaoGlTextureHost?> = mutableStateOf(null)
 
-    /**
-     * Coroutine drains left for the current frame's swap window — see the
-     * swap-in-flight branch of [onRedrawRequested]. Reset on every render.
-     */
-    private var skipDrainBudget: Int = SKIP_DRAIN_BUDGET_PER_FRAME
-
     /** Diagnostics for a frame the swap gate skipped — see [onRedrawRequested]. */
     private var skippedFrames: Int = 0
     private var skippedFrameStartNanos: Long = 0L
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
-    private val flushingDispatcher = FlushingMainDispatcher()
+    private val flushingDispatcher = SceneMainDispatcher()
 
     /** Floating text-selection bar shown on touch selection. */
     private val textToolbar = TaoTextToolbar()
@@ -283,7 +274,7 @@ internal class TaoComposeSceneHostLinux(
     /**
      * Coalesces `window.requestRedraw()` to one outstanding redraw per frame.
      * Multiple Compose call sites trigger redraws (the scene's `invalidate`
-     * lambda, the FlushingMainDispatcher, a11y schedules, resize/scale
+     * lambda, the frame recomposer, a11y schedules, resize/scale
      * handlers); without this gate they spam Tao's `draw_tx` channel and
      * we render at the dispatch rate (>1k/sec on continuous animations).
      * Reset at the start of [onRedrawRequested].
@@ -389,12 +380,6 @@ internal class TaoComposeSceneHostLinux(
 
     /** A wake-up for the end of the idle hold is already scheduled. */
     private var idleWakeScheduled = false
-
-    /** When [drainWhileMinimized] last ran the scene's coroutines. */
-    private var lastMinimizedDrainNs = 0L
-
-    /** A wake-up for the next minimized drain is already scheduled. */
-    private val minimizedWakeScheduled = AtomicBoolean(false)
 
     /** The surface has no partial redraw (no buffer age / swap-with-damage): the tracker is not walked. */
     private var partialSurfaceUnsupported = false
@@ -1550,10 +1535,9 @@ internal class TaoComposeSceneHostLinux(
     fun density(): Float = scale
 
     // Hop the debounced semantics walk onto the GTK main thread (it touches
-    // Compose state) and coalesce a redraw. See AbstractTaoComposeSceneHost.
+    // Compose state); it runs between frames. See AbstractTaoComposeSceneHost.
     override fun dispatchA11yWalk(block: () -> Unit) {
         flushingDispatcher.enqueue(Runnable { block() })
-        requestRedrawCoalesced()
     }
 
     // Guarded like AWT's `ComposeSceneMediator.setContent`: the first
@@ -2111,37 +2095,11 @@ internal class TaoComposeSceneHostLinux(
         // back-pressure below already throttles an occluded/minimised window —
         // but this also covers the app-synthesised minimize (Wayland reports no
         // iconified state). redrawPending is already cleared above, so restore's
-        // requestRedraw re-arms cleanly. A frame following one that presented
-        // nothing waits for the display's rhythm (#755).
-        if (window.isMinimized) {
-            drainWhileMinimized()
-            return true
-        }
+        // requestRedraw re-arms cleanly. The scene's coroutines keep running
+        // meanwhile, between frames (#754). A frame following one that
+        // presented nothing waits for the display's rhythm (#755).
+        if (window.isMinimized) return true
         return !inFrame && !fullPresentPending && heldByIdleFramePacing()
-    }
-
-    /**
-     * Minimized, nothing is drawn and the frame clock stays parked, but the
-     * scene's coroutines — queued on [flushingDispatcher], drained only on the
-     * frame path — still run: an effect that restores the window, an app
-     * timer, a network callback. Without this they froze until the user
-     * restored the window, and the queue grew with every snapshot write.
-     * At most once per display period, so a coroutine re-dispatching itself
-     * cannot spin the event loop.
-     */
-    private fun drainWhileMinimized() {
-        val wait = lastMinimizedDrainNs + presentPeriodNs - System.nanoTime()
-        if (wait > 0L) {
-            if (minimizedWakeScheduled.compareAndSet(false, true)) {
-                DelayScheduler.schedule({
-                    minimizedWakeScheduled.set(false)
-                    requestRedrawCoalesced()
-                }, wait, TimeUnit.NANOSECONDS)
-            }
-            return
-        }
-        lastMinimizedDrainNs = System.nanoTime()
-        flushingDispatcher.drain()
     }
 
     /**
@@ -2193,32 +2151,8 @@ internal class TaoComposeSceneHostLinux(
         // rendering — the parent's swap latency was paid on the input thread.)
         val st = swapThread
         if (st != null && !st.beginRenderOrMarkOwed(inFrame)) {
-            // The GPU is busy presenting; the CPU is not. Drain the scene's
-            // coroutine queue anyway — pure CPU work, with no GL context bound
-            // (the same state as the drain in the render path below).
-            //
-            // Without this, a continuation that lands while a swap is in flight
-            // waits for the *next* render pass, i.e. a full frame. A coroutine
-            // that hops to a worker and back once per frame — a `TextureView`
-            // producer pulling frames off the frame clock is the canonical case
-            // — then advances only every other frame and animates at half the
-            // refresh rate. Measured on an 89.8 Hz panel: 11.1 ms round trip and
-            // 45 producer fps before, 0.25 ms and 90 fps after, at identical CPU
-            // (the extra event-loop wakeups replace work that was merely being
-            // deferred).
-            //
-            // Budgeted per frame because draining re-arms the redraw whenever the
-            // queue is left non-empty: a continuation that immediately
-            // re-dispatches on this dispatcher (a main-confined `yield()` loop, a
-            // Channel ping-pong) would otherwise spin this thread — which also
-            // dispatches all input — for as long as the swap takes, i.e. forever
-            // on an occluded Wayland window whose frame callbacks stopped coming.
-            // Legitimate per-frame traffic is a couple of continuations; past the
-            // budget the frame behaves as it did before, deferring to the render.
-            if (skipDrainBudget > 0) {
-                skipDrainBudget--
-                flushingDispatcher.drain()
-            }
+            // The GPU is busy presenting. The scene's coroutines do not wait
+            // for it: they run between frames (SceneMainDispatcher).
             skippedFrames++
             TaoWaylandFrameDiagnostics.noteSkipped()
             if (skippedFrameStartNanos == 0L) skippedFrameStartNanos = System.nanoTime()
@@ -2232,7 +2166,6 @@ internal class TaoComposeSceneHostLinux(
             skippedFrameStartNanos = 0L
             skippedFrames = 0
         }
-        skipDrainBudget = SKIP_DRAIN_BUDGET_PER_FRAME
 
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
@@ -2562,14 +2495,6 @@ internal class TaoComposeSceneHostLinux(
         if (idleFrameDeadlineNs != 0L) {
             val wait = idleFrameDeadlineNs - System.nanoTime()
             if (wait > 0L) {
-                // Held like a frame behind a busy swap: the CPU is free, so the
-                // scene's continuations run now rather than a frame late (a
-                // TextureView producer is what makes such a frame idle), within
-                // the same per-frame budget.
-                if (skipDrainBudget > 0) {
-                    skipDrainBudget--
-                    flushingDispatcher.drain()
-                }
                 // One wake-up per hold. Cleared below, on this thread, once the
                 // deadline has passed — never from the scheduler's thread.
                 if (!idleWakeScheduled) {
@@ -3820,14 +3745,6 @@ internal class TaoComposeSceneHostLinux(
         private const val ROTATE_TAKEOVER_DEGREES: Float = 10f
         private const val ROTATE_TAKEOVER_MAX_ZOOM: Float = 1.1f
         private const val WHEEL_ZOOM_IDLE_END_MS: Long = 120L
-
-        /**
-         * How many times a single swap window may drain the scene's coroutine
-         * queue. Generous next to real per-frame traffic (a worker round trip is
-         * one or two continuations), small enough that a self-redispatching
-         * coroutine can't turn the event-loop thread into a spin loop.
-         */
-        private const val SKIP_DRAIN_BUDGET_PER_FRAME: Int = 8
     }
 
     /**
@@ -4025,35 +3942,6 @@ internal class TaoComposeSceneHostLinux(
                 }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
-            }
-        }
-    }
-
-    private inner class FlushingMainDispatcher : CoroutineDispatcher() {
-        private val queue = ConcurrentLinkedQueue<Runnable>()
-
-        override fun dispatch(
-            context: KCoroutineContext,
-            block: Runnable,
-        ) {
-            queue.add(block)
-            requestRedrawCoalesced()
-        }
-
-        /** Same effect as `dispatch` but skips the no-op coroutine context. */
-        fun enqueue(block: Runnable) {
-            queue.add(block)
-            requestRedrawCoalesced()
-        }
-
-        fun drain() {
-            var remaining = queue.size
-            while (remaining-- > 0) {
-                val runnable = queue.poll() ?: break
-                runnable.run()
-            }
-            if (!queue.isEmpty()) {
-                requestRedrawCoalesced()
             }
         }
     }

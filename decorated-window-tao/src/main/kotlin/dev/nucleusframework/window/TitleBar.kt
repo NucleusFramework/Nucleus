@@ -75,6 +75,9 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
  *   theme drives the bar height, content color, and gradient bounds.
  * - [controlButtonsDirection] flips the system control buttons to the other
  *   side independently of the content's [LocalLayoutDirection].
+ * - [layoutPolicy] decides how the children are measured and placed;
+ *   [TitleBarLayoutPolicy.FillCenter] gives the center child exactly the space
+ *   left between the Start/End items and the platform controls.
  * - [backgroundContent] is rendered behind the content layer (full bleed).
  *
  * Tao-specific behavior preserved on top of the canonical contract:
@@ -85,13 +88,14 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
  * - KDE breeze 4 dp edge padding applied on the controls side.
  * - Linux + Windows control buttons are injected here (no native chrome).
  */
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "LongParameterList")
 @Composable
 public fun DecoratedWindowScope.TitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
@@ -100,17 +104,14 @@ public fun DecoratedWindowScope.TitleBar(
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlButtonsDirection,
-        layoutPolicy = TitleBarLayoutPolicy.Default,
+        layoutPolicy = layoutPolicy,
         backgroundContent = backgroundContent,
         content = content,
     )
 }
 
 /**
- * [TitleBar] with the measure policy left open, for chrome that needs a
- * different arrangement than the platform default — a strip that fills the
- * space between the platform controls, for instance
- * ([TitleBarLayoutPolicy.FillCenter]).
+ * [TitleBar] with control over the platform window drag.
  *
  * @param nativeWindowDrag whether pressing the bar starts the platform's own
  *   interactive move. On by default, which is what gives the window the OS
