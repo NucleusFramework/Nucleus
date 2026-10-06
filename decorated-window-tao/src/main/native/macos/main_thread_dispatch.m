@@ -49,8 +49,26 @@ extern bool nucleus_tao_post_quit_requested(void);
 
 static id sCmdQMonitor = nil;
 
-// Offer Cmd+Q to the menu bar first, so a NativeMenuBar item bound to it runs (#749).
-// The default Quit item (a11y.m) sends `terminate:`, which TaoApp routes to this same quit.
+static const NSEventModifierFlags kKeyEquivalentModifierFlags =
+    NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption | NSEventModifierFlagControl;
+
+// YES when an item of [menu] or of its submenus is bound to [event]'s key equivalent,
+// enabled or not: in AppKit a disabled item still owns its shortcut.
+static BOOL nucleus_menu_binds_key_equivalent(NSMenu *menu, NSEvent *event) {
+    NSEventModifierFlags mods = event.modifierFlags & kKeyEquivalentModifierFlags;
+    for (NSMenuItem *item in menu.itemArray) {
+        if (item.submenu != nil && nucleus_menu_binds_key_equivalent(item.submenu, event)) return YES;
+        if ([item.keyEquivalent isEqualToString:event.charactersIgnoringModifiers] &&
+            (item.keyEquivalentModifierMask & kKeyEquivalentModifierFlags) == mods) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+// Offer Cmd+Q to the menu bar first, so a NativeMenuBar item bound to it runs, or does nothing
+// while disabled (#749). The default Quit item (a11y.m) sends `terminate:`, which TaoApp routes
+// to this same quit; only when no item is bound to Cmd+Q is the quit requested here.
 void nucleus_tao_install_cmd_q_handler(void) {
     if (sCmdQMonitor != nil) return;
     sCmdQMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
@@ -58,7 +76,8 @@ void nucleus_tao_install_cmd_q_handler(void) {
             NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
             if ((mods & NSEventModifierFlagCommand) &&
                 [event.charactersIgnoringModifiers isEqualToString:@"q"]) {
-                if (![[NSApp mainMenu] performKeyEquivalent:event]) {
+                NSMenu *menu = [NSApp mainMenu];
+                if (![menu performKeyEquivalent:event] && !nucleus_menu_binds_key_equivalent(menu, event)) {
                     nucleus_tao_post_quit_requested();
                 }
                 return nil;
