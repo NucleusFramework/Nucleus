@@ -745,14 +745,29 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
-                UserEvent::Focus { handle } => {
+                UserEvent::Focus {
+                    handle,
+                    activation_token,
+                } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
                             // Undo a prior `set_minimized(true)` first so the
                             // window is eligible for foreground activation.
                             w.set_minimized(false);
-                            w.set_focus();
+                            #[cfg(target_os = "linux")]
+                            let focused = activation_token.as_deref().is_some_and(|token| {
+                                crate::platform::linux::activation::focus_with_token(w, token)
+                            });
+                            #[cfg(not(target_os = "linux"))]
+                            let focused = {
+                                // Only Wayland needs the token to take focus.
+                                drop(activation_token);
+                                false
+                            };
+                            if !focused {
+                                w.set_focus();
+                            }
                         }
                     }
                 }

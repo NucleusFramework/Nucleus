@@ -214,6 +214,31 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 ) {
     send_user_event(UserEvent::Focus {
         handle: handle as u64,
+        activation_token: None,
+    });
+}
+
+/// [`nativeFocus`] with an xdg-activation token received from the compositor
+/// (portal global shortcut, notification action). A Wayland compositor only
+/// lets a window take focus with such a token; elsewhere it is ignored (#739).
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeFocusWithActivationToken(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    token: JString,
+) {
+    let activation_token = if token.is_null() {
+        None
+    } else {
+        env.get_string(&token)
+            .ok()
+            .map(String::from)
+            .filter(|t| !t.is_empty())
+    };
+    send_user_event(UserEvent::Focus {
+        handle: handle as u64,
+        activation_token,
     });
 }
 

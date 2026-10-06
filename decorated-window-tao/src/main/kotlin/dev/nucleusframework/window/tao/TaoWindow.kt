@@ -1279,6 +1279,25 @@ public class TaoWindow internal constructor(
     }
 
     /**
+     * [focus] backed by an `xdg-activation` token the compositor handed out — with a global
+     * hotkey (`HotKeyEvent.activationToken`), a notification action, an activation request from
+     * another app.
+     *
+     * A Wayland compositor only lets a window take focus with such a token: without one, a
+     * window brought up from a global shortcut opens unfocused and GNOME shows "<App> is
+     * ready" instead (#739). The token is single-use and expires quickly, so pass it on as
+     * soon as it arrives; a hidden window is shown first. On X11, Windows and macOS the token
+     * is ignored and this is [focus]. A null token is [focus] too.
+     */
+    public fun focus(activationToken: String?) {
+        if (activationToken.isNullOrEmpty()) {
+            focus()
+        } else {
+            NativeTaoBridge.nativeFocusWithActivationToken(handle, activationToken)
+        }
+    }
+
+    /**
      * Fires once, right after the NSWindow is created. The NSView pointer is
      * already valid; the window may still be hidden if it was created with
      * `visible = false`. Use this to attach the rendering pipeline and render

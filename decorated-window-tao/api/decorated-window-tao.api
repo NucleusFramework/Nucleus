@@ -1406,6 +1406,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun exportXdgForeignHandle (J)Ldev/nucleusframework/window/tao/XdgForeignExport;
 	public static synthetic fun exportXdgForeignHandle$default (Ldev/nucleusframework/window/tao/TaoWindow;JILjava/lang/Object;)Ldev/nucleusframework/window/tao/XdgForeignExport;
 	public final fun focus ()V
+	public final fun focus (Ljava/lang/String;)V
 	public final fun getCanPlaceOnScreen ()Z
 	public final fun getHandle ()J
 	public final fun getNativeHandle ()J

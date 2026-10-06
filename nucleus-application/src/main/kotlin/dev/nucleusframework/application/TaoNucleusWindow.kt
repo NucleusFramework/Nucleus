@@ -69,6 +69,10 @@ internal class TaoNucleusWindow(
         taoWindow.focus()
     }
 
+    override fun requestFocus(activationToken: String?) {
+        taoWindow.focus(activationToken)
+    }
+
     override fun setMinimized(minimized: Boolean) {
         taoWindow.setMinimized(minimized)
         _minimized.value = minimized
