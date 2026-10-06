@@ -193,6 +193,28 @@ class DifferentialUpdateE2ETest {
     }
 
     @Test
+    fun `a full download that does not match the manifest checksum is rejected and not staged`() {
+        val wrongSha512 = DeltaFixtures.V1_SHA512
+        publish(version = "2.0.0", fileName = "MyApp-2.0.0.zip", artifact = DeltaFixtures.v2(), sha512 = wrongSha512)
+        val updater = updater(currentVersion = "1.0.0")
+        val info = (runBlocking { updater.checkForUpdates() } as UpdateResult.Available).info
+        val stagingBefore = stagingDirs()
+
+        val error =
+            assertThrows(ChecksumException::class.java) {
+                runBlocking { updater.downloadUpdate(info).toList() }
+            }
+
+        assertEquals(
+            "the actual hash must be the SHA-512 of the bytes received",
+            "SHA-512 mismatch: expected=$wrongSha512, actual=${DeltaFixtures.sha512Base64(DeltaFixtures.v2())}",
+            error.message,
+        )
+        assertEquals("no staging directory may be left behind", stagingBefore, stagingDirs())
+        assertFalse("the rejected artifact must not be cached", UpdateCache(cacheDir).artifact.isFile)
+    }
+
+    @Test
     fun `progress is reported over the bytes actually transferred`() {
         primeCache(fileName = "MyApp-1.0.0.zip", artifact = DeltaFixtures.v1())
         publish(version = "2.0.0", fileName = "MyApp-2.0.0.zip", artifact = DeltaFixtures.v2())
@@ -283,6 +305,12 @@ class DifferentialUpdateE2ETest {
         format: String = "zip",
         differential: Boolean = true,
     ): DownloadProgress = downloadAll(currentVersion, format, differential).last()
+
+    private fun stagingDirs(): Set<String> =
+        File(System.getProperty("java.io.tmpdir"))
+            .list { _, name -> name.startsWith("nucleus-update-") }
+            .orEmpty()
+            .toSet()
 
     private fun assertArtifactIs(
         expected: ByteArray,

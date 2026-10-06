@@ -1,5 +1,6 @@
 package dev.nucleusframework.updater.internal.delta
 
+import dev.nucleusframework.updater.internal.ChecksumVerifier
 import kotlinx.coroutines.delay
 import java.io.File
 import java.io.IOException
@@ -11,7 +12,6 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.security.DigestOutputStream
 import java.security.MessageDigest
-import java.util.Base64
 
 /** Everything needed to assemble one artifact from an older copy of it plus ranged requests. */
 internal class DeltaDownload(
@@ -52,7 +52,7 @@ internal class DifferentialDownloader(
         onProgress: suspend (Long, Long) -> Unit,
     ): Long {
         verifyPlanCoversArtifact(request)
-        val digest = MessageDigest.getInstance(SHA_512)
+        val digest = ChecksumVerifier.newSha512Digest()
         val transferred =
             try {
                 assemble(request, digest, onProgress)
@@ -94,7 +94,7 @@ internal class DifferentialDownloader(
         request: DeltaDownload,
         digest: MessageDigest,
     ) {
-        val actual = Base64.getEncoder().encodeToString(digest.digest())
+        val actual = ChecksumVerifier.encode(digest)
         if (actual != request.expectedSha512 || request.target.length() != request.expectedSize) {
             request.target.delete()
             throw DeltaUnavailableException("Assembled artifact does not match the manifest")
@@ -210,7 +210,6 @@ internal class DifferentialDownloader(
     }
 
     private companion object {
-        const val SHA_512 = "SHA-512"
         const val HTTP_PARTIAL_CONTENT = 206
         const val BUFFER_SIZE = 64 * 1024
         const val RANGE_REQUEST_PAUSE_EVERY = 100
