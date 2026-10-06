@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.WindowBackground
 import dev.nucleusframework.window.tao.DecoratedWindow
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
 import java.util.concurrent.atomic.AtomicBoolean
@@ -30,6 +31,13 @@ import kotlin.math.roundToInt
  * one grows, and count white pixels where the window's content (a solid
  * colour, no white anywhere) ends up — leaving out pixels that were already
  * white on the desktop behind it.
+ *
+ * Each window sets [WindowBackground] to that same colour, as an app is told
+ * to: until its first frame lands, a window is erased with its background,
+ * which defaults to white. A window that left it unset was filmed white for
+ * its first frames on a slow runner (2 of 71 on the Windows CI runner) —
+ * the documented default, not a missing present — so with the background
+ * set, any white left is one nobody painted.
  */
 internal object UnpaintedFlashHeadfulCases {
     fun all(): List<TaoWindowTestCase> =
@@ -76,6 +84,7 @@ internal object UnpaintedFlashHeadfulCases {
                         title = "tao-headful: opening film",
                         alwaysOnTop = true,
                     ) {
+                        WindowBackground(FILL)
                         Box(Modifier.fillMaxSize().background(FILL))
                     }
                 }
@@ -94,7 +103,12 @@ internal object UnpaintedFlashHeadfulCases {
             val film = Film(region)
             film.start()
             shown.value = true
-            settle(FILM_MILLIS)
+            // Filmed until the window is on screen, then briefly past it: an
+            // unpainted flash comes before the first frame lands. A fixed film
+            // ended before a slow open on the Windows CI runner (2 of 10 runs
+            // filmed no window at all).
+            awaitUntilOrTimeout(OPEN_TIMEOUT_MILLIS) { film.showsColour(FILL.toArgb()) }
+            settle(SETTLE_AFTER_MILLIS)
             film.stop()
             shown.value = false
             settle()
@@ -108,7 +122,10 @@ internal object UnpaintedFlashHeadfulCases {
             skip = ::skipReason,
             paintDefaultBackground = false,
             size = DpSize(SMALL_W_DP.dp, SMALL_H_DP.dp),
-            content = { Box(Modifier.fillMaxSize().background(FILL)) },
+            content = {
+                WindowBackground(FILL)
+                Box(Modifier.fillMaxSize().background(FILL))
+            },
         ) {
             awaitUntil("window mapped") { window.hasRealFramePx() }
             window.setAlwaysOnTop(true)
@@ -148,7 +165,10 @@ internal object UnpaintedFlashHeadfulCases {
             skip = ::borderDragSkipReason,
             paintDefaultBackground = false,
             size = DpSize(SMALL_W_DP.dp, SMALL_H_DP.dp),
-            content = { Box(Modifier.fillMaxSize().background(FILL)) },
+            content = {
+                WindowBackground(FILL)
+                Box(Modifier.fillMaxSize().background(FILL))
+            },
         ) {
             awaitUntil("window mapped") { window.hasRealFramePx() }
             window.setAlwaysOnTop(true)
@@ -230,6 +250,16 @@ internal object UnpaintedFlashHeadfulCases {
             grabber?.join()
         }
 
+        /** Whether the latest grab shows more than [MIN_WATCHED_PX] pixels of [argb]. */
+        fun showsColour(argb: Int): Boolean {
+            val last = synchronized(frames) { frames.lastOrNull() } ?: return false
+            var count = 0
+            for (i in 2 until last.size) {
+                if (last[i].sameColour(argb) && ++count > MIN_WATCHED_PX) return true
+            }
+            return false
+        }
+
         fun assertNoUnpaintedFlash(what: String) {
             val ref = requireNotNull(reference) { "no reference frame" }
             val last = synchronized(frames) { frames.lastOrNull() } ?: error("no frame filmed")
@@ -277,7 +307,9 @@ internal object UnpaintedFlashHeadfulCases {
     private const val GROW_STEPS = 40
     private const val GROW_STEP_MILLIS = 16L
     private const val SETTLE_AFTER_MILLIS = 300L
-    private const val FILM_MILLIS = 1_200L
+
+    /** How long a window may take to appear before the opening film gives up on it. */
+    private const val OPEN_TIMEOUT_MILLIS = 5_000L
     private const val MAX_FRAMES = 400
     private const val MIN_WATCHED_PX = 1_000
     private const val FLASH_RATIO = 0.005
