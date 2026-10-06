@@ -66,7 +66,7 @@ static BOOL nucleus_menu_binds_key_equivalent(NSMenu *menu, NSEvent *event) {
     return NO;
 }
 
-// Offer Cmd+Q to the menu bar first, so a NativeMenuBar item bound to it runs, or does nothing
+// Offer Cmd+Q to the menu bar first, so a NativeMenuBar item bound to it runs, or beeps
 // while disabled (#749). The default Quit item (a11y.m) sends `terminate:`, which TaoApp routes
 // to this same quit; only when no item is bound to Cmd+Q is the quit requested here.
 void nucleus_tao_install_cmd_q_handler(void) {
@@ -77,8 +77,12 @@ void nucleus_tao_install_cmd_q_handler(void) {
             if ((mods & NSEventModifierFlagCommand) &&
                 [event.charactersIgnoringModifiers isEqualToString:@"q"]) {
                 NSMenu *menu = [NSApp mainMenu];
-                if (![menu performKeyEquivalent:event] && !nucleus_menu_binds_key_equivalent(menu, event)) {
-                    nucleus_tao_post_quit_requested();
+                if (![menu performKeyEquivalent:event]) {
+                    if (nucleus_menu_binds_key_equivalent(menu, event)) {
+                        NSBeep();
+                    } else {
+                        nucleus_tao_post_quit_requested();
+                    }
                 }
                 return nil;
             }
