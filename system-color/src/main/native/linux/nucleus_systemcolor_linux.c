@@ -331,6 +331,7 @@ static void *watch_thread_proc(void *arg) {
     dbus_bus_add_match(conn, MATCH_RULE, &err);
     if (dbus_error_is_set(&err)) {
         dbus_error_free(&err);
+        dbus_connection_close(conn);
         dbus_connection_unref(conn);
         return NULL;
     }
@@ -338,7 +339,9 @@ static void *watch_thread_proc(void *arg) {
 
     while (!g_stopFlag) {
         /* Block up to 500ms waiting for messages, then re-check stop flag */
-        dbus_connection_read_write(conn, 500);
+        if (!dbus_connection_read_write(conn, 500)) {
+            break; /* connection closed */
+        }
 
         DBusMessage *msg;
         while ((msg = dbus_connection_pop_message(conn)) != NULL) {
