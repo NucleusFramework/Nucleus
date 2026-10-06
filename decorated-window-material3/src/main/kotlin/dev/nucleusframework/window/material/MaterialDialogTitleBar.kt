@@ -14,6 +14,18 @@ import dev.nucleusframework.window.TitleBarScope
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
 
+/**
+ * Material 3 themed dialog title bar.
+ *
+ * @param controlButtonsDirection Controls which side the window control buttons
+ *   (close, minimize, maximize) are placed on, independently of the title bar
+ *   content direction. Defaults to [ControlButtonsDirection.Auto].
+ * @param layoutPolicy Layout policy applied to title bar children. Defaults to
+ *   [TitleBarLayoutPolicy.Default]; use [TitleBarLayoutPolicy.FillCenter] to let
+ *   the center child consume the remaining horizontal space between Start/End
+ *   items.
+ * @see ControlButtonsDirection
+ */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
 public fun DecoratedDialogScope.MaterialDialogTitleBar(
