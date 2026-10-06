@@ -50,6 +50,16 @@ public interface NucleusWindow {
 
     public fun requestFocus()
 
+    /**
+     * [requestFocus] backed by the `xdg-activation` token the compositor handed out with the
+     * event that asks for focus — typically `HotKeyEvent.activationToken` of a global hotkey on
+     * Wayland, where a window may not take focus without one. Ignored where no token is needed
+     * (X11, Windows, macOS); a null token is [requestFocus].
+     */
+    public fun requestFocus(activationToken: String?) {
+        requestFocus()
+    }
+
     public fun setMinimized(minimized: Boolean)
 
     public fun setMaximized(maximized: Boolean)

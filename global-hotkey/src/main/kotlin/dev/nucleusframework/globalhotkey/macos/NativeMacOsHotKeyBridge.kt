@@ -2,7 +2,9 @@ package dev.nucleusframework.globalhotkey.macos
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.core.runtime.NucleusUiThread
-import dev.nucleusframework.globalhotkey.HotKeyListener
+import dev.nucleusframework.globalhotkey.HotKeyEvent
+import dev.nucleusframework.globalhotkey.HotKeyEventListener
+import dev.nucleusframework.globalhotkey.HotKeyState
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
@@ -10,7 +12,7 @@ private const val LIBRARY_NAME = "nucleus_global_hotkey"
 
 internal object NativeMacOsHotKeyBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeMacOsHotKeyBridge::class.java)
-    private val listeners = ConcurrentHashMap<Long, HotKeyListener>()
+    private val listeners = ConcurrentHashMap<Long, HotKeyEventListener>()
     private val idGenerator = AtomicLong(0)
 
     val isLoaded: Boolean get() = loaded
@@ -59,10 +61,22 @@ internal object NativeMacOsHotKeyBridge {
     ) {
         // Native fires on its own thread; resolve the listener on the UI thread so a
         // press queued before unregister() is dropped rather than delivered late.
-        NucleusUiThread.post { listeners[id]?.onHotKey(keyCode, modifiers) }
+        // The platform reports neither releases nor an activation token.
+        NucleusUiThread.post {
+            listeners[id]?.onHotKeyEvent(
+                HotKeyEvent(
+                    keyCode,
+                    modifiers,
+                    HotKeyState.PRESSED,
+                    isRepeat = false,
+                    timestamp = 0L,
+                    activationToken = null,
+                ),
+            )
+        }
     }
 
-    fun registerListener(listener: HotKeyListener): Long {
+    fun registerListener(listener: HotKeyEventListener): Long {
         val id = idGenerator.incrementAndGet()
         listeners[id] = listener
         return id
