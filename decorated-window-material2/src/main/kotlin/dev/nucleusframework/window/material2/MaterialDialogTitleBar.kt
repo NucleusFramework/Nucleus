@@ -9,17 +9,19 @@ import dev.nucleusframework.window.ControlButtonsDirection
 import dev.nucleusframework.window.DecoratedDialogScope
 import dev.nucleusframework.window.DecoratedDialogState
 import dev.nucleusframework.window.DialogTitleBar
+import dev.nucleusframework.window.TitleBarLayoutPolicy
 import dev.nucleusframework.window.TitleBarScope
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
 
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "LongParameterList")
 @Composable
 public fun DecoratedDialogScope.MaterialDialogTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
     DialogTitleBar(
@@ -27,6 +29,7 @@ public fun DecoratedDialogScope.MaterialDialogTitleBar(
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlButtonsDirection,
+        layoutPolicy = layoutPolicy,
     ) { state ->
         CompositionLocalProvider(LocalContentColor provides style.colors.content) {
             content(state)

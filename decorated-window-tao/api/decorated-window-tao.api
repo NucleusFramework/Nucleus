@@ -16,25 +16,25 @@ public final class androidx/compose/ui/scene/TaoComposeSceneContextAccess {
 public final class dev/nucleusframework/window/ComposableSingletons$DialogTitleBarKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/ComposableSingletons$DialogTitleBarKt;
 	public fun <init> ()V
-	public final fun getLambda$-1656225001$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-1988126652$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
 }
 
 public final class dev/nucleusframework/window/ComposableSingletons$TitleBarKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/ComposableSingletons$TitleBarKt;
 	public fun <init> ()V
 	public final fun getLambda$-1158225253$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-1196419068$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
 	public final fun getLambda$-1381932086$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
-	public final fun getLambda$1948865750$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$555209157$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$127916435$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
 }
 
 public final class dev/nucleusframework/window/DialogTitleBarKt {
-	public static final fun DialogTitleBar-FU0evQE (Ldev/nucleusframework/window/DecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+	public static final fun DialogTitleBar-TgFrcIs (Ldev/nucleusframework/window/DecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class dev/nucleusframework/window/TitleBarKt {
 	public static final fun BasicTitleBar-IkByU14 (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;ZLkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
-	public static final fun TitleBar-TgFrcIs (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TitleBar-lVb_Clg (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
 }
 
 public abstract interface class dev/nucleusframework/window/TitleBarPlacement {
