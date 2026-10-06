@@ -49,6 +49,8 @@ extern bool nucleus_tao_post_quit_requested(void);
 
 static id sCmdQMonitor = nil;
 
+// Offer Cmd+Q to the menu bar first, so a NativeMenuBar item bound to it runs (#749).
+// The default Quit item (a11y.m) sends `terminate:`, which TaoApp routes to this same quit.
 void nucleus_tao_install_cmd_q_handler(void) {
     if (sCmdQMonitor != nil) return;
     sCmdQMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
@@ -56,7 +58,9 @@ void nucleus_tao_install_cmd_q_handler(void) {
             NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
             if ((mods & NSEventModifierFlagCommand) &&
                 [event.charactersIgnoringModifiers isEqualToString:@"q"]) {
-                nucleus_tao_post_quit_requested();
+                if (![[NSApp mainMenu] performKeyEquivalent:event]) {
+                    nucleus_tao_post_quit_requested();
+                }
                 return nil;
             }
             return event;
