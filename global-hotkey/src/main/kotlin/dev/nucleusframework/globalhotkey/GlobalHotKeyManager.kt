@@ -117,7 +117,8 @@ public object GlobalHotKeyManager {
      *
      * [listener] is called for every press, auto-repeats included. To tell repeats apart,
      * observe releases or bring a window to the front on Wayland (activation token), register
-     * a [HotKeyEventListener] instead.
+     * a [HotKeyEventListener] instead. On Wayland a Nucleus window may take focus from
+     * [listener]: `requestFocus()` uses the hotkey's activation token on its own.
      *
      * @param keyCode AWT virtual key code (e.g., [java.awt.event.KeyEvent.VK_F12]).
      * @param modifiers bitmask of [HotKeyModifier] values (e.g., `HotKeyModifier.CONTROL + HotKeyModifier.ALT`).
@@ -138,7 +139,7 @@ public object GlobalHotKeyManager {
     /**
      * Register a global hotkey whose [listener] receives every [HotKeyEvent]: presses (with
      * [HotKeyEvent.isRepeat]), releases where the platform reports them, and the Wayland
-     * [HotKeyEvent.activationToken] that lets the app focus a window in response.
+     * [HotKeyEvent.activationToken].
      *
      * ```kotlin
      * GlobalHotKeyManager.register(
@@ -148,7 +149,7 @@ public object GlobalHotKeyManager {
      *     listener = HotKeyEventListener { event ->
      *         if (event.state == HotKeyState.PRESSED && !event.isRepeat) {
      *             quickEntry.show()
-     *             quickEntry.focus(event.activationToken)
+     *             quickEntry.requestFocus() // takes the activation token on Wayland
      *         }
      *     },
      * )

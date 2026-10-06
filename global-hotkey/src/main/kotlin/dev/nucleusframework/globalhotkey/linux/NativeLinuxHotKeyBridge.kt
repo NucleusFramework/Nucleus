@@ -1,5 +1,6 @@
 package dev.nucleusframework.globalhotkey.linux
 
+import dev.nucleusframework.core.runtime.ActivationToken
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.core.runtime.NucleusUiThread
 import dev.nucleusframework.globalhotkey.HotKeyEvent
@@ -73,6 +74,8 @@ internal object NativeLinuxHotKeyBridge {
     ) {
         // Arrival time, not the UI thread's: a busy UI thread would stretch the gaps.
         val receivedNanos = System.nanoTime()
+        // A Nucleus window focused from the listener takes it: requestFocus() just works.
+        activationToken?.let(ActivationToken::offer)
         // Native fires on its own thread; resolve the listener on the UI thread so an
         // event queued before unregister() is dropped rather than delivered late.
         NucleusUiThread.post {

@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntRect
+import dev.nucleusframework.core.runtime.ActivationToken
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.core.runtime.UpdateHandoff
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
@@ -1273,27 +1274,20 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetVisible(handle, false)
     }
 
-    /** Raises the window, restores it if minimized, and gives it keyboard focus. */
-    public fun focus() {
-        NativeTaoBridge.nativeFocus(handle)
-    }
-
     /**
-     * [focus] backed by an `xdg-activation` token the compositor handed out — with a global
-     * hotkey (`HotKeyEvent.activationToken`), a notification action, an activation request from
-     * another app.
+     * Raises the window, restores it if minimized, and gives it keyboard focus.
      *
-     * A Wayland compositor only lets a window take focus with such a token: without one, a
-     * window brought up from a global shortcut opens unfocused and GNOME shows "<App> is
-     * ready" instead (#739). The token is single-use and expires quickly, so pass it on as
-     * soon as it arrives; a hidden window is shown first. On X11, Windows and macOS the token
-     * is ignored and this is [focus]. A null token is [focus] too.
+     * On Wayland a window may only take focus with an `xdg-activation` token the compositor
+     * handed out for a user action; this uses the one a global hotkey or a notification click
+     * just delivered ([ActivationToken]), so focusing a window in response to either works
+     * (#739). Without one, the compositor may refuse and flag the window instead.
      */
-    public fun focus(activationToken: String?) {
-        if (activationToken.isNullOrEmpty()) {
-            focus()
+    public fun focus() {
+        val token = if (Platform.Current == Platform.Linux) ActivationToken.take() else null
+        if (token != null) {
+            NativeTaoBridge.nativeFocusWithActivationToken(handle, token)
         } else {
-            NativeTaoBridge.nativeFocusWithActivationToken(handle, activationToken)
+            NativeTaoBridge.nativeFocus(handle)
         }
     }
 

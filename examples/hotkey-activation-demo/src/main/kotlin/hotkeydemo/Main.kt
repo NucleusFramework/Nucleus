@@ -24,6 +24,7 @@ import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.LocalNucleusWindow
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.core.runtime.ActivationToken
 import dev.nucleusframework.globalhotkey.GlobalHotKeyManager
 import dev.nucleusframework.globalhotkey.HotKeyEvent
 import dev.nucleusframework.globalhotkey.HotKeyEventListener
@@ -37,8 +38,8 @@ import java.awt.event.KeyEvent.VK_PAUSE
 import java.io.File
 import kotlin.time.Duration.Companion.seconds
 
-// `token` (default) focuses the window with the hotkey's activation token; `plain` calls
-// requestFocus() without it — the behaviour before #739, which Wayland refuses.
+// `token` (default): requestFocus() takes the hotkey's activation token on its own. `plain` drops
+// the token first — the behaviour before #739, which Wayland refuses.
 private val mode = System.getenv("HOTKEY_DEMO_MODE") ?: "token"
 
 // `visible` (default): the window stays mapped, behind whatever the user moves on to. `hidden`: it
@@ -95,8 +96,8 @@ fun main(args: Array<String>) =
                                         status = "Opened by the hotkey"
                                         visible = true
                                         window.show()
-                                        // A null token is plain requestFocus().
-                                        window.requestFocus(event.activationToken.takeIf { mode == "token" })
+                                        if (mode == "plain") ActivationToken.take()
+                                        window.requestFocus()
                                     }
                                 },
                         )
