@@ -196,7 +196,7 @@ class DifferentialUpdateE2ETest {
     fun `a full download that does not match the manifest checksum is rejected and not staged`() {
         val wrongSha512 = DeltaFixtures.V1_SHA512
         publish(version = "2.0.0", fileName = "MyApp-2.0.0.zip", artifact = DeltaFixtures.v2(), sha512 = wrongSha512)
-        val updater = updater(currentVersion = "1.0.0", differential = false)
+        val updater = updater(currentVersion = "1.0.0")
         val info = (runBlocking { updater.checkForUpdates() } as UpdateResult.Available).info
         val stagingBefore = stagingDirs()
 
