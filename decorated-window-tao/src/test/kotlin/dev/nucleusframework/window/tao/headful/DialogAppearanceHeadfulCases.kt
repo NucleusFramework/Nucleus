@@ -771,31 +771,60 @@ internal object DialogAppearanceHeadfulCases {
             }
         }
 
-    /** Reads one grabbed frame; coordinates are logical px inside the window's outer rect. */
+    /**
+     * Reads one grabbed frame; coordinates are logical px inside the window's
+     * outer rect.
+     *
+     * Read where a page of text cannot fool it. The owner window is
+     * full of text, and with subpixel (ClearType) rendering its glyphs carry
+     * blue and red fringes: a single pixel on the centre column read as the
+     * dialog wherever a fringe crossed it (Windows native image: a "dialog"
+     * from y=18 that never went away), and a single scrim probe that hit a
+     * glyph read it darker than the page. So a row is the dialog only when
+     * its colour spans a run around the centre — the dialog is hundreds of px
+     * wide, a fringe one or two — and the scrim is the brightest red of a
+     * patch, the page between the glyphs.
+     */
     private fun sample(
         tMs: Long,
         img: BufferedImage,
     ): Sample {
         val w = img.width
         val h = img.height
-        val scrim = img.getRGB(SCRIM_PROBE_INSET, h - SCRIM_PROBE_INSET)
+        val scrimRed = brightestRed(img, SCRIM_PROBE_INSET, h - SCRIM_PROBE_INSET)
         val x = w / 2
+        val run = (-DIALOG_RUN_PX..DIALOG_RUN_PX step DIALOG_RUN_STEP_PX).map { x + it }
         var top: Int? = null
         var bottom: Int? = null
         for (y in FRAME_EDGE_INSET until h - FRAME_EDGE_INSET) {
-            if (isDialogColor(img.getRGB(x, y))) {
+            if (run.all { isDialogColor(img.getRGB(it, y)) }) {
                 if (top == null) top = y
                 bottom = y
             }
         }
         val blueness =
             if (top != null && bottom != null) {
-                val c = img.getRGB(x, (top + bottom) / 2)
-                blue(c) - red(c)
+                val y = (top + bottom) / 2
+                run.map { img.getRGB(it, y).let { c -> blue(c) - red(c) } }.sorted()[run.size / 2]
             } else {
                 0
             }
-        return Sample(tMs, red(scrim), top, bottom, blueness)
+        return Sample(tMs, scrimRed, top, bottom, blueness)
+    }
+
+    /** The brightest red channel in the [SCRIM_PATCH_PX] square around ([cx], [cy]). */
+    private fun brightestRed(
+        img: BufferedImage,
+        cx: Int,
+        cy: Int,
+    ): Int {
+        var best = 0
+        for (y in cy - SCRIM_PATCH_PX..cy + SCRIM_PATCH_PX) {
+            for (x in cx - SCRIM_PATCH_PX..cx + SCRIM_PATCH_PX) {
+                if (x in 0 until img.width && y in 0 until img.height) best = maxOf(best, red(img.getRGB(x, y)))
+            }
+        }
+        return best
     }
 
     /** Anything the dialog's blue could look like while fading in over the scrimmed white. */
@@ -815,6 +844,13 @@ internal object DialogAppearanceHeadfulCases {
     private const val WHITE = 255
     private const val SCRIM_PROBE_INSET = 16
     private const val DIALOG_DETECT_THRESHOLD = 40
+
+    /** Half-width of the run around the centre column a dialog row must span, and its sampling step. */
+    private const val DIALOG_RUN_PX = 12
+    private const val DIALOG_RUN_STEP_PX = 6
+
+    /** Half-size of the square the scrim is read from. */
+    private const val SCRIM_PATCH_PX = 4
     private const val SETTLE_BEFORE_MILLIS = 600L
     private const val WARMUP_MILLIS = 200L
     private const val FILM_MILLIS = 700L
