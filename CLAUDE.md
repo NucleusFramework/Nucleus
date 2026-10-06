@@ -147,7 +147,7 @@ Gradle Plugin Portal **without running `preMerge`** — no tests, no `apiCheck`,
 the compile/javadoc/sign graph the publish tasks themselves pull in. Natives are still built and
 verified, since the JARs would be unusable otherwise. Dev tags are also excluded from
 `release-desktop` / `release-graalvm`, so they burn no packaging matrix. Their only GitHub release
-is a pre-release (never marked latest, notes generated since the previous dev tag) created by
+is a pre-release (never marked latest, generic notes) created by
 `publish-maven.yaml`'s `github-prerelease` job once the Central publish succeeds.
 
 `.github/actions/release-tag-info` is the single place that classifies a tag: it rejects anything

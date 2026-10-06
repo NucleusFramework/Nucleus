@@ -232,41 +232,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
+      # Generic notes on purpose: the changelog belongs to the real release.
       - name: Create GitHub pre-release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-          VERSION: ${{ needs.validate-release-ref.outputs.version }}
         run: |
-          set -euo pipefail
-
-          # Notes cover the commits since the previous dev tag of the same line.
-          line="${TAG%%-dev*}"
-          previous=$(git tag -l "${line}-dev-*" --sort=-v:refname | grep -vx "$TAG" | head -n1 || true)
-
-          cat > notes.md <<NOTES
-          Unverified dev build of \`$VERSION\`: published without \`preMerge\`, for testing only.
-
-          \`\`\`kotlin
-          plugins {
-              id("dev.nucleusframework") version "$VERSION"
-          }
-
-          dependencies {
-              implementation("dev.nucleusframework:nucleus.nucleus-application:$VERSION")
-          }
-          \`\`\`
-
-          Maven Central can take ~15 minutes to expose the version.
-          NOTES
-
-          args=(--title "$TAG" --prerelease --latest=false --notes-file notes.md --generate-notes)
-          if [[ -n "$previous" ]]; then
-            args+=(--notes-start-tag "$previous")
-          fi
-          gh release create "$TAG" "${args[@]}"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
+            --prerelease --latest=false \
+            --notes "Development build, not verified. Release notes will come with the final release."
