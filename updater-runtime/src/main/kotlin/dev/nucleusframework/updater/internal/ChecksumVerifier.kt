@@ -16,7 +16,7 @@ internal object ChecksumVerifier {
     private const val BUFFER_SIZE = 8192
 
     fun computeSha512Base64(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-512")
+        val digest = newSha512Digest()
         file.inputStream().buffered().use { input ->
             val buffer = ByteArray(BUFFER_SIZE)
             var bytesRead: Int
@@ -24,6 +24,12 @@ internal object ChecksumVerifier {
                 digest.update(buffer, 0, bytesRead)
             }
         }
-        return Base64.getEncoder().encodeToString(digest.digest())
+        return encode(digest)
     }
+
+    /** A fresh SHA-512 digest, to hash a download while it is written instead of reading it back. */
+    fun newSha512Digest(): MessageDigest = MessageDigest.getInstance("SHA-512")
+
+    /** Completes [digest] in the Base64 form the update manifest uses. */
+    fun encode(digest: MessageDigest): String = Base64.getEncoder().encodeToString(digest.digest())
 }

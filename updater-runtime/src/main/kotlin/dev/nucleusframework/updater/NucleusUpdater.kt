@@ -37,6 +37,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.http.HttpClient
 import java.nio.file.Files
+import java.security.DigestOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -268,8 +269,9 @@ public class NucleusUpdater(
         val totalBytes = targetFile.size
         var bytesDownloaded = 0L
 
+        val digest = ChecksumVerifier.newSha512Digest()
         fetcher.open(targetFile.url).use { inputStream ->
-            tempFile.outputStream().use { outputStream ->
+            DigestOutputStream(tempFile.outputStream(), digest).use { outputStream ->
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 var bytesRead: Int
                 while (inputStream.read(buffer).also { bytesRead = it } != -1) {
@@ -280,9 +282,9 @@ public class NucleusUpdater(
             }
         }
 
-        // Verify checksum
-        if (!ChecksumVerifier.verify(tempFile, targetFile.sha512)) {
-            val actual = ChecksumVerifier.computeSha512Base64(tempFile)
+        // Verify checksum (hashed while writing, so the artifact is not read back)
+        val actual = ChecksumVerifier.encode(digest)
+        if (actual != targetFile.sha512) {
             tempFile.delete()
             throw ChecksumException(targetFile.sha512, actual)
         }

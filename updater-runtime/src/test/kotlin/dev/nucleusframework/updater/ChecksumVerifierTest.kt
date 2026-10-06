@@ -1,12 +1,14 @@
 package dev.nucleusframework.updater
 
 import dev.nucleusframework.updater.internal.ChecksumVerifier
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.Base64
 
@@ -74,5 +76,15 @@ class ChecksumVerifierTest {
             )
 
         assertTrue(ChecksumVerifier.verify(file, expectedHash))
+    }
+
+    @Test
+    fun `hashing while writing matches hashing the written file`() {
+        val file = tempFolder.newFile("test.bin")
+        val content = ByteArray(3 * 8192 + 17) { it.toByte() }
+        val digest = ChecksumVerifier.newSha512Digest()
+        DigestOutputStream(file.outputStream(), digest).use { it.write(content) }
+
+        assertEquals(ChecksumVerifier.computeSha512Base64(file), ChecksumVerifier.encode(digest))
     }
 }
