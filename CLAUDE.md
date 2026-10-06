@@ -4,6 +4,8 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 
 Published releases are `2.5.x` (latest tag `v2.5.0`). Do not treat `IDEAL_API.md` as current — that file is gone; the real entry point is `nucleusApplication(args) { }` in `nucleus-application`. Plugin-injected strings are `NucleusApp`, not a generated `NucleusGenerated` object.
 
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR or reviewing one: PRs target `nucleus-3.0` (never `main`), every fix needs a minimal failing example, and every feature needs a prior GitHub discussion.
+
 ## Project Structure
 
 - `nucleus-application` - `nucleusApplication`, `DecoratedWindow` / `HostedWindow`, `onDeepLink`, `aotTraining`
