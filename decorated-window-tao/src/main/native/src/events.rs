@@ -392,6 +392,9 @@ pub(crate) enum UserEvent {
     },
     Focus {
         handle: u64,
+        /// xdg-activation token handed out by the compositor (a portal global
+        /// shortcut, a notification action, …), or `None` (#739).
+        activation_token: Option<String>,
     },
     SetMinInnerSize {
         handle: u64,

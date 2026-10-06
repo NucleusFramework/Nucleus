@@ -14,6 +14,9 @@
  *     persists grants by (app_id, shortcut_id) across launches (issue #264).
  *   - nativeRegister only stores; nativeBindShortcuts performs BindShortcuts so a
  *     burst of register() calls can share a single system dialog.
+ *   - Activated / Deactivated carry an `activation_token` in their options since
+ *     xdg-desktop-portal 1.21 (GNOME 50 fills it in): it is the only way a Wayland
+ *     window may take focus in response to the hotkey, so it is forwarded as is (#739).
  */
 
 #include <jni.h>
@@ -63,7 +66,7 @@ typedef struct {
 
 static JavaVM      *g_jvm            = NULL;
 static jclass       g_bridgeClass    = NULL;
-static jmethodID    g_onHotKeyMethod = NULL;
+static jmethodID    g_onHotKeyMethod = NULL;   /* onHotKeyEvent(JIIZJLjava/lang/String;)V */
 
 static BackendType  g_backend  = BACKEND_NONE;
 static volatile int g_running  = 0;
@@ -83,6 +86,7 @@ static GMainContext     *g_portal_ctx    = NULL;
 static GMainLoop        *g_portal_loop   = NULL;
 static char             *g_session_handle = NULL;
 static guint             g_activated_sub  = 0;
+static guint             g_deactivated_sub = 0;
 static JNIEnv           *g_portal_env    = NULL;   /* permanently attached */
 
 /* Portal init handshake */
@@ -112,7 +116,17 @@ typedef struct {
 /* JNI callback                                                        */
 /* ------------------------------------------------------------------ */
 
-static void fireHotKey(jlong id, jint keyCode, jint modifiers) {
+static void callHotKeyEvent(JNIEnv *env, jlong id, jint keyCode, jint modifiers,
+                            jboolean pressed, jlong timestamp, const char *token) {
+    jstring jtoken = (token && token[0]) ? (*env)->NewStringUTF(env, token) : NULL;
+    nucleus_jni_clear_exception(env);
+    (*env)->CallStaticVoidMethod(env, g_bridgeClass, g_onHotKeyMethod,
+                                 id, keyCode, modifiers, pressed, timestamp, jtoken);
+    nucleus_jni_clear_exception(env);
+    if (jtoken) (*env)->DeleteLocalRef(env, jtoken);
+}
+
+static void fireHotKey(jlong id, jint keyCode, jint modifiers, jboolean pressed, jlong timestamp) {
     if (!g_jvm || !g_bridgeClass || !g_onHotKeyMethod) return;
 
     JNIEnv *env = NULL;
@@ -123,17 +137,16 @@ static void fireHotKey(jlong id, jint keyCode, jint modifiers) {
         didAttach = 1;
     } else if (st != JNI_OK) return;
 
-    (*env)->CallStaticVoidMethod(env, g_bridgeClass, g_onHotKeyMethod, id, keyCode, modifiers);
-    nucleus_jni_clear_exception(env);
+    /* X11 hands out no activation token: the X server time is what focus needs there. */
+    callHotKeyEvent(env, id, keyCode, modifiers, pressed, timestamp, NULL);
     if (didAttach) (*g_jvm)->DetachCurrentThread(g_jvm);
 }
 
 /* Portal thread uses the permanently-attached env */
-static void fireHotKeyPortal(jlong id, jint keyCode, jint modifiers) {
+static void fireHotKeyPortal(jlong id, jint keyCode, jint modifiers, jboolean pressed,
+                             jlong timestamp, const char *token) {
     if (!g_portal_env || !g_bridgeClass || !g_onHotKeyMethod) return;
-    (*g_portal_env)->CallStaticVoidMethod(g_portal_env, g_bridgeClass, g_onHotKeyMethod,
-                                          id, keyCode, modifiers);
-    nucleus_jni_clear_exception(g_portal_env);
+    callHotKeyEvent(g_portal_env, id, keyCode, modifiers, pressed, timestamp, token);
 }
 
 /* awtToKeySym() and buildTrigger() live in nucleus_hotkey_keys.h so the
@@ -185,25 +198,42 @@ static void x11_ungrab(HotKeyEntry *e) {
 
 #define X11_MODMASK (ShiftMask|ControlMask|Mod1Mask|Mod4Mask)
 
+/* The grab that is down: its KeyRelease is matched on the keycode alone, since the
+ * user may lift the modifiers first (the release's state then no longer matches).
+ * Only touched by x11_loop. */
+static jlong        g_x11_held_id      = 0;
+static unsigned int g_x11_held_keycode = 0;
+
 static void *x11_loop(void *arg) {
     (void)arg;
     XEvent ev;
     while (g_running) {
         while (XPending(g_display) > 0) {
             XNextEvent(g_display, &ev);
-            if (ev.type != KeyPress) continue;
+            if (ev.type != KeyPress && ev.type != KeyRelease) continue;
+            int press = ev.type == KeyPress;
             unsigned int kc = ev.xkey.keycode, st = ev.xkey.state & X11_MODMASK;
+            if (!press && (!g_x11_held_id || kc != g_x11_held_keycode)) continue;
             pthread_mutex_lock(&g_mutex);
             for (int i = 0; i < g_hotkeyCount; i++) {
-                if (g_hotkeys[i].x11_keycode == kc && g_hotkeys[i].x11_modifiers == st) {
+                int match = press
+                    ? (g_hotkeys[i].x11_keycode == kc && g_hotkeys[i].x11_modifiers == st)
+                    : (g_hotkeys[i].id == g_x11_held_id);
+                if (match) {
                     jlong id = g_hotkeys[i].id;
                     jint k = g_hotkeys[i].keyCode, m = g_hotkeys[i].modifiers;
                     pthread_mutex_unlock(&g_mutex);
-                    fireHotKey(id, k, m);
+                    /* Detectable auto-repeat is on: a held chord repeats KeyPress
+                     * alone, and releases once. */
+                    g_x11_held_id = press ? id : 0;
+                    g_x11_held_keycode = press ? kc : 0;
+                    fireHotKey(id, k, m, press ? JNI_TRUE : JNI_FALSE, (jlong)ev.xkey.time);
                     goto next;
                 }
             }
             pthread_mutex_unlock(&g_mutex);
+            /* Released after its hotkey was unregistered. */
+            if (!press) { g_x11_held_id = 0; g_x11_held_keycode = 0; }
             next:;
         }
         usleep(10000);
@@ -239,16 +269,21 @@ static void on_response(GDBusConnection *c, const gchar *s, const gchar *p,
     g_resp_done = 1;
 }
 
-/* Activated signal handler (runs on portal thread) */
-static void on_activated(GDBusConnection *c, const gchar *s, const gchar *p,
-                          const gchar *ifc, const gchar *sig, GVariant *params, gpointer ud) {
-    (void)c;(void)s;(void)p;(void)ifc;(void)sig;(void)ud;
+/* Activated / Deactivated signal handler (runs on portal thread). user_data is
+ * non-NULL for Activated. Both carry `activation_token` in their options on
+ * xdg-desktop-portal 1.21+; older portals send an empty vardict. */
+static void on_shortcut_signal(GDBusConnection *c, const gchar *s, const gchar *p,
+                               const gchar *ifc, const gchar *sig, GVariant *params, gpointer ud) {
+    (void)c;(void)s;(void)p;(void)ifc;(void)sig;
+    jboolean pressed = ud != NULL ? JNI_TRUE : JNI_FALSE;
+    if (!g_variant_is_of_type(params, G_VARIANT_TYPE("(osta{sv})"))) return;
     const gchar *sh = NULL, *sid = NULL;
     guint64 ts = 0;
     GVariant *opts = NULL;
     g_variant_get(params, "(&o&st@a{sv})", &sh, &sid, &ts, &opts);
-    if (opts) g_variant_unref(opts);
-    if (!sid) return;
+    const gchar *token = NULL;
+    if (opts) g_variant_lookup(opts, "activation_token", "&s", &token);
+    if (!sid) goto done;
 
     pthread_mutex_lock(&g_mutex);
     for (int i = 0; i < g_hotkeyCount; i++) {
@@ -256,11 +291,13 @@ static void on_activated(GDBusConnection *c, const gchar *s, const gchar *p,
             jlong id = g_hotkeys[i].id;
             jint kc = g_hotkeys[i].keyCode, m = g_hotkeys[i].modifiers;
             pthread_mutex_unlock(&g_mutex);
-            fireHotKeyPortal(id, kc, m);
-            return;
+            fireHotKeyPortal(id, kc, m, pressed, (jlong)ts, token);
+            goto done;
         }
     }
     pthread_mutex_unlock(&g_mutex);
+done:
+    if (opts) g_variant_unref(opts);   /* token points into opts */
 }
 
 /**
@@ -450,11 +487,15 @@ static void *portal_thread(void *arg) {
     g_portal_ctx = g_main_context_new();
     g_main_context_push_thread_default(g_portal_ctx);
 
-    /* Subscribe to Activated (and Deactivated) signals once — survives session recreation */
+    /* Subscribe to Activated and Deactivated once — survives session recreation */
     g_activated_sub = g_dbus_connection_signal_subscribe(
         g_dbus_conn, PORTAL_BUS, PORTAL_IFACE, "Activated",
         PORTAL_PATH, NULL, G_DBUS_SIGNAL_FLAGS_NONE,
-        on_activated, NULL, NULL);
+        on_shortcut_signal, GINT_TO_POINTER(1), NULL);
+    g_deactivated_sub = g_dbus_connection_signal_subscribe(
+        g_dbus_conn, PORTAL_BUS, PORTAL_IFACE, "Deactivated",
+        PORTAL_PATH, NULL, G_DBUS_SIGNAL_FLAGS_NONE,
+        on_shortcut_signal, NULL, NULL);
 
     g_portal_loop = g_main_loop_new(g_portal_ctx, FALSE);
 
@@ -514,6 +555,10 @@ static void portal_shutdown(void) {
         g_dbus_connection_signal_unsubscribe(g_dbus_conn, g_activated_sub);
         g_activated_sub = 0;
     }
+    if (g_deactivated_sub > 0) {
+        g_dbus_connection_signal_unsubscribe(g_dbus_conn, g_deactivated_sub);
+        g_deactivated_sub = 0;
+    }
     if (g_portal_loop) g_main_loop_quit(g_portal_loop);
     pthread_join(g_thread, NULL);
     if (g_portal_loop) { g_main_loop_unref(g_portal_loop); g_portal_loop = NULL; }
@@ -550,10 +595,12 @@ Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeInit(
     if (g_running) return NULL;
 
     g_bridgeClass = (*env)->NewGlobalRef(env, clazz);
-    g_onHotKeyMethod = (*env)->GetStaticMethodID(env, clazz, "onHotKey", "(JII)V");
+    g_onHotKeyMethod = (*env)->GetStaticMethodID(env, clazz, "onHotKeyEvent",
+                                                 "(JIIZJLjava/lang/String;)V");
     if (!g_onHotKeyMethod) {
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, g_bridgeClass); g_bridgeClass = NULL;
-        return (*env)->NewStringUTF(env, "onHotKey method not found");
+        return (*env)->NewStringUTF(env, "onHotKeyEvent method not found");
     }
 
     g_backend = detectBackend();

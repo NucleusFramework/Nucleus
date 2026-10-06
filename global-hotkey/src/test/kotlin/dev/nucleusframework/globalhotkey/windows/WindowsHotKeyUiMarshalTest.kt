@@ -1,7 +1,8 @@
 package dev.nucleusframework.globalhotkey.windows
 
 import dev.nucleusframework.core.runtime.NucleusUiThread
-import dev.nucleusframework.globalhotkey.HotKeyListener
+import dev.nucleusframework.globalhotkey.HotKeyEventListener
+import dev.nucleusframework.globalhotkey.HotKeyState
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -33,8 +34,10 @@ class WindowsHotKeyUiMarshalTest {
         NucleusUiThread.setExecutor { runnable -> thread(name = UI_THREAD_NAME) { runnable.run() } }
         val id =
             NativeWindowsHotKeyBridge.registerListener(
-                HotKeyListener { keyCode, modifiers ->
-                    received.set(keyCode to modifiers)
+                HotKeyEventListener { event ->
+                    assertEquals(HotKeyState.PRESSED, event.state)
+                    assertNull(event.activationToken)
+                    received.set(event.keyCode to event.modifiers)
                     ranOn.set(Thread.currentThread().name)
                     latch.countDown()
                 },
@@ -53,7 +56,7 @@ class WindowsHotKeyUiMarshalTest {
         val queued = ConcurrentLinkedQueue<Runnable>()
         NucleusUiThread.setExecutor { queued += it }
         val fired = AtomicReference<Int?>(null)
-        val id = NativeWindowsHotKeyBridge.registerListener(HotKeyListener { keyCode, _ -> fired.set(keyCode) })
+        val id = NativeWindowsHotKeyBridge.registerListener(HotKeyEventListener { fired.set(it.keyCode) })
 
         NativeWindowsHotKeyBridge.onHotKey(id, 0x7B, 0)
         NativeWindowsHotKeyBridge.removeListener(id)

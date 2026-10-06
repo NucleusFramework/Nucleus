@@ -747,6 +747,16 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeFocus(handle: Long)
 
+    /**
+     * [nativeFocus] with an xdg-activation token from the compositor. Wayland only: hands the
+     * token to `xdg_activation_v1.activate` through GDK; ignored elsewhere.
+     */
+    @JvmStatic
+    external fun nativeFocusWithActivationToken(
+        handle: Long,
+        activationToken: String,
+    )
+
     /** [width]/[height] in logical pixels; pass negative values to clear. */
     @JvmStatic
     external fun nativeSetMinInnerSize(

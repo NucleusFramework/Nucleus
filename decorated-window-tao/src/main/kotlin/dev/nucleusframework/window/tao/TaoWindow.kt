@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntRect
+import dev.nucleusframework.core.runtime.ActivationToken
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.core.runtime.UpdateHandoff
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
@@ -1273,9 +1274,21 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetVisible(handle, false)
     }
 
-    /** Raises the window, restores it if minimized, and gives it keyboard focus. */
+    /**
+     * Raises the window, restores it if minimized, and gives it keyboard focus.
+     *
+     * On Wayland a window may only take focus with an `xdg-activation` token the compositor
+     * handed out for a user action; this uses the one a global hotkey or a notification click
+     * just delivered ([ActivationToken]), so focusing a window in response to either works
+     * (#739). Without one, the compositor may refuse and flag the window instead.
+     */
     public fun focus() {
-        NativeTaoBridge.nativeFocus(handle)
+        val token = if (Platform.Current == Platform.Linux) ActivationToken.take() else null
+        if (token != null) {
+            NativeTaoBridge.nativeFocusWithActivationToken(handle, token)
+        } else {
+            NativeTaoBridge.nativeFocus(handle)
+        }
     }
 
     /**

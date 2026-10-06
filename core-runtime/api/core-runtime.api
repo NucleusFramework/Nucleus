@@ -1,3 +1,9 @@
+public final class dev/nucleusframework/core/runtime/ActivationToken {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/ActivationToken;
+	public static final fun offer (Ljava/lang/String;)V
+	public static final fun take ()Ljava/lang/String;
+}
+
 public final class dev/nucleusframework/core/runtime/AppRestarter {
 	public static final field INSTANCE Ldev/nucleusframework/core/runtime/AppRestarter;
 	public static final fun getApplicationExecutablePath ()Ljava/lang/String;

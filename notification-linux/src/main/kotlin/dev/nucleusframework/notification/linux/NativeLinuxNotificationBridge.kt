@@ -1,5 +1,6 @@
 package dev.nucleusframework.notification.linux
 
+import dev.nucleusframework.core.runtime.ActivationToken
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.core.runtime.NucleusUiThread
 import java.util.concurrent.ConcurrentHashMap
@@ -104,6 +105,9 @@ internal object NativeLinuxNotificationBridge {
         id: Int,
         token: String,
     ) {
+        // Before ActionInvoked (the server sends the token first): a window focused from the
+        // action handler then takes it, with nothing for the app to pass along.
+        ActivationToken.offer(token)
         NucleusUiThread.post {
             listeners.forEach { it.onActivationToken(id, token) }
         }
