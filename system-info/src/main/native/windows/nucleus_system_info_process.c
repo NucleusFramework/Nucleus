@@ -320,101 +320,115 @@ Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativ
 
 // --- Single process by PID ---
 
+// Thread-local entry for process(pid): Kotlin reads one process through a dozen
+// nativeProcessByPid* calls and always calls nativeProcessByPidName first, which
+// refreshes this entry; the other calls reuse it (same pattern as the battery cache).
+static __declspec(thread) process_entry_t g_pid_entry;
+static __declspec(thread) BOOL g_pid_entry_valid = FALSE;
+
+static const process_entry_t *pid_entry(DWORD pid) {
+    if (!g_pid_entry_valid || g_pid_entry.pid != pid) {
+        g_pid_entry_valid = fill_single_process(pid, &g_pid_entry) ? TRUE : FALSE;
+    }
+    return g_pid_entry_valid ? &g_pid_entry : NULL;
+}
+
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidName(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.name);
+    g_pid_entry_valid = FALSE; // first call of process(pid): take a fresh reading
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return NULL;
+    return to_jstring(env, p->name);
 }
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidExe(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.exe);
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return NULL;
+    return to_jstring(env, p->exe);
 }
 
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidMemory(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0;
-    return (jlong)p.memory;
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return 0;
+    return (jlong)p->memory;
 }
 
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidVirtualMemory(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0;
-    return (jlong)p.virtual_mem;
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return 0;
+    return (jlong)p->virtual_mem;
 }
 
 JNIEXPORT jfloat JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCpuUsage(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0.0f;
-    return p.cpu_usage;
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return 0.0f;
+    return p->cpu_usage;
 }
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidStatus(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.status);
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return NULL;
+    return to_jstring(env, p->status);
 }
 
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidStartTime(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0;
-    return (jlong)p.start_time;
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return 0;
+    return (jlong)p->start_time;
 }
 
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidRunTime(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0;
-    return (jlong)p.run_time;
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return 0;
+    return (jlong)p->run_time;
 }
 
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidParentPid(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return -1;
-    return (jlong)p.ppid;
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return -1;
+    return (jlong)p->ppid;
 }
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCmd(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.cmd);
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return NULL;
+    return to_jstring(env, p->cmd);
 }
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCwd(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.cwd);
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return NULL;
+    return to_jstring(env, p->cwd);
 }
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidRoot(
     JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    if (p.exe[0] && p.exe[1] == ':') {
-        char root[4] = { p.exe[0], ':', '\\', '\0' };
+    const process_entry_t *p = pid_entry((DWORD)pid);
+    if (!p) return NULL;
+    if (p->exe[0] && p->exe[1] == ':') {
+        char root[4] = { p->exe[0], ':', '\\', '\0' };
         return to_jstring(env, root);
     }
     return NULL;
