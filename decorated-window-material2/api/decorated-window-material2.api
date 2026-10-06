@@ -1,14 +1,14 @@
 public final class dev/nucleusframework/window/material2/ComposableSingletons$MaterialDialogTitleBarKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/material2/ComposableSingletons$MaterialDialogTitleBarKt;
 	public fun <init> ()V
-	public final fun getLambda$668256364$Nucleus_decorated_window_material2 ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$1886049735$Nucleus_decorated_window_material2 ()Lkotlin/jvm/functions/Function4;
 }
 
 public final class dev/nucleusframework/window/material2/ComposableSingletons$MaterialTitleBarKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/material2/ComposableSingletons$MaterialTitleBarKt;
 	public fun <init> ()V
-	public final fun getLambda$-590117222$Nucleus_decorated_window_material2 ()Lkotlin/jvm/functions/Function2;
-	public final fun getLambda$-694589845$Nucleus_decorated_window_material2 ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-1895321258$Nucleus_decorated_window_material2 ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-85011321$Nucleus_decorated_window_material2 ()Lkotlin/jvm/functions/Function2;
 }
 
 public final class dev/nucleusframework/window/material2/MaterialDecoratedDialogKt {
@@ -20,10 +20,10 @@ public final class dev/nucleusframework/window/material2/MaterialDecoratedWindow
 }
 
 public final class dev/nucleusframework/window/material2/MaterialDialogTitleBarKt {
-	public static final fun MaterialDialogTitleBar-FU0evQE (Ldev/nucleusframework/window/DecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+	public static final fun MaterialDialogTitleBar-TgFrcIs (Ldev/nucleusframework/window/DecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class dev/nucleusframework/window/material2/MaterialTitleBarKt {
-	public static final fun MaterialTitleBar-TgFrcIs (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+	public static final fun MaterialTitleBar-lVb_Clg (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
 }
 
