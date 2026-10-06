@@ -123,7 +123,6 @@ public abstract interface class dev/nucleusframework/application/NucleusWindow {
 	public abstract fun isMaximized ()Z
 	public abstract fun isMinimized ()Z
 	public abstract fun requestFocus ()V
-	public fun requestFocus (Ljava/lang/String;)V
 	public abstract fun setAlwaysOnTop (Z)V
 	public abstract fun setFullscreen (Z)V
 	public abstract fun setIcon (Landroidx/compose/ui/graphics/painter/Painter;)V
@@ -136,7 +135,6 @@ public abstract interface class dev/nucleusframework/application/NucleusWindow {
 
 public final class dev/nucleusframework/application/NucleusWindow$DefaultImpls {
 	public static fun boundsOnScreen (Ldev/nucleusframework/application/NucleusWindow;)Ldev/nucleusframework/application/NucleusWindowBounds;
-	public static fun requestFocus (Ldev/nucleusframework/application/NucleusWindow;Ljava/lang/String;)V
 }
 
 public final class dev/nucleusframework/application/NucleusWindowBounds {

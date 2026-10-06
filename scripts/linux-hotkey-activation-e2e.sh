@@ -10,8 +10,8 @@
 # restored on exit).
 #
 #   scripts/linux-hotkey-activation-e2e.sh            # token mode (the fix) and plain mode
-#   scripts/linux-hotkey-activation-e2e.sh token      # the window focuses with the activation token
-#   scripts/linux-hotkey-activation-e2e.sh plain      # requestFocus() without the token: the bug
+#   scripts/linux-hotkey-activation-e2e.sh token      # requestFocus() takes the activation token
+#   scripts/linux-hotkey-activation-e2e.sh plain      # the token is dropped first: the bug
 #
 # HOTKEY_E2E_START=visible (default) keeps the app's window mapped while a zenity window takes
 # focus — the case Mutter's focus-stealing prevention refuses without a token. =hidden hides it
@@ -167,7 +167,7 @@ for MODE in "${MODES[@]}"; do
             ;;
         plain)
             if [[ $PRESSES -ge 1 && $FOCUSED -eq 0 ]]; then
-                echo "REPRODUCED: plain mode — requestFocus() without the token leaves the window without keyboard focus (#739)"
+                echo "REPRODUCED: plain mode — focusing without the token leaves the window without keyboard focus (#739)"
             elif [[ $PRESSES -ge 1 ]]; then
                 echo "NOTE: plain mode — the compositor let the window focus without a token"
             else

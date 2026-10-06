@@ -28,10 +28,10 @@ public enum class HotKeyState {
  *   Only meaningful relative to other events of the same backend.
  * @property activationToken the `xdg-activation` token the Wayland compositor handed out
  *   with this event (`org.freedesktop.portal.GlobalShortcuts`, xdg-desktop-portal 1.21+), or
- *   null. A Wayland compositor only lets a window take focus with such a token: pass it to
- *   `TaoWindow.focus(activationToken)` / `NucleusWindow.requestFocus(activationToken)` to bring
- *   a window to the front in response to the hotkey. A token is single-use and short-lived —
- *   use it right away. Always null on X11, Windows and macOS, where none is needed.
+ *   null. A Wayland compositor only lets a window take focus with such a token; Nucleus windows
+ *   use it on their own, so `requestFocus()` from the listener brings a window to the front.
+ *   Exposed for an app that must hand it on itself (another process, its own windowing). A token
+ *   is single-use and short-lived. Always null on X11, Windows and macOS, where none is needed.
  */
 public class HotKeyEvent(
     public val keyCode: Int,
