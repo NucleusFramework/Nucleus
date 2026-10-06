@@ -3,11 +3,16 @@
 ## Description
 <!-- What changed and why. Link the issue, or for a feature, the discussion it was agreed in. -->
 
-## Minimal failing example
-<!-- Bug fixes only: the smallest code (ideally a test) that fails without this change and passes with it. -->
+## Minimal reproduction
+<!-- Bug fixes only. The smallest self-contained code (ideally a test) that triggers the bug, the setup it fails on
+(Nucleus version or commit, OS, desktop environment), and the actual result: exception with stack trace, or measured value. -->
+
+## Root cause and fix
+<!-- Bug fixes only. Why it happens and how the change fixes it. -->
 
 ## Testing
-<!-- How you tested it: OS, desktop environment (X11/Wayland, compositor), JVM and/or GraalVM. List the platforms you did not test. -->
+<!-- How you tested it: OS, desktop environment (X11/Wayland, compositor), JVM and/or GraalVM.
+For a fix, the reproduction's result before and after. List what you did not test. -->
 
 ## Checklist
 - [ ] Targets `nucleus-3.0`

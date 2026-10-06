@@ -15,11 +15,21 @@ Open pull requests against `nucleus-3.0`. Pull requests against `main` are not a
 
 - One change per pull request. Split unrelated changes.
 - No unrelated reformatting, renames or dependency bumps.
-- Bug fixes must include a minimal example that fails without the fix, ideally as a test.
 - Describe how you tested, on which OS and desktop environment.
 - Changes must work on macOS, Windows and Linux, and in both the JVM and GraalVM pipelines.
   Document any platform limitation in KDoc.
 - Keep the description in sync with the code.
+
+## Bug fixes
+
+The pull request body must contain a minimal reproduction:
+
+- the smallest self-contained code that triggers the bug, ideally a test, not your app;
+- the setup it fails on (Nucleus version or commit, OS, desktop environment);
+- what happens (exception and stack trace, or measured result) and what should happen.
+
+Then explain the root cause and the fix, and give the result before and after. Say what you did
+not test. Commit the reproduction as a regression test when the area allows it.
 
 ## AI tools
 
