@@ -62,7 +62,7 @@ jobs:
           # Open-source cache on GitHub Actions cache; v6's default provider is proprietary.
           cache-provider: basic
 
-      # Dev tags (`v2.6.0-dev-<timestamp>`) go out unverified on purpose; real
+      # Dev tags (`v3.0.0-dev-<timestamp>`) go out unverified on purpose; real
       # release tags still have to pass preMerge before reaching the portal.
       - name: Run Gradle tasks
         if: needs.validate-release-ref.outputs.is-dev != 'true'

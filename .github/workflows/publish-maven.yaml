@@ -206,7 +206,7 @@ jobs:
           curl -s https://api.ipify.org; echo
           curl -s https://api64.ipify.org; echo
 
-      # Dev builds (`v2.6.0-dev-<timestamp>`) publish straight from the tag: the whole
+      # Dev builds (`v3.0.0-dev-<timestamp>`) publish straight from the tag: the whole
       # point is a throwaway version a downstream app can consume today. Every other tag
       # is a real release and still has to pass preMerge.
       - name: Run pre-merge checks

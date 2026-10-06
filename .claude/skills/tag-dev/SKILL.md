@@ -20,8 +20,7 @@ orders below `3.0.0` for Gradle and Maven, so a dev build can never shadow the r
 
 ## Procedure
 
-1. **Verify the branch is on the 3.0 line** — `nucleus-2.6` (the 3.0 release is cut from it),
-   `nucleus-3.0` if it exists, or a feature branch cut from either. A dev tag on `main` or on the
+1. **Verify the branch is on the 3.0 line** — `nucleus-3.0` or a feature branch cut from it. A dev tag on `main` or on the
    2.5 line would publish a `3.0.0-dev-*` version from the wrong code; abort and say so.
 2. **Verify the working tree is clean** — `git status --porcelain` empty. If dirty, ask the user
    whether to commit first or abort. Never tag a dirty tree: the tag is what CI builds.

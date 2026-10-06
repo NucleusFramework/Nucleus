@@ -139,7 +139,7 @@ Published tags are `v2.4.x`. The `v` prefix is stripped for the Maven version.
 
 ## Dev releases (unverified)
 
-A tag `v<major>.<minor>.<patch>-dev-<id>` (convention: `v2.6.0-dev-YYYYMMDDHHMM`, UTC, the
+A tag `v<major>.<minor>.<patch>-dev-<id>` (convention: `v3.0.0-dev-YYYYMMDDHHMM`, UTC, the
 `tag-dev` skill cuts it) publishes the runtime modules to Maven Central and the plugin to the
 Gradle Plugin Portal **without running `preMerge`** — no tests, no `apiCheck`, no detekt; only
 the compile/javadoc/sign graph the publish tasks themselves pull in. Natives are still built and
@@ -152,9 +152,9 @@ that is not `v<semver>` (every publish task derives its version with
 literally named `refs/tags/dev-2026…`) and exposes `is-dev`, which gates the `preMerge` step in
 both publish workflows. Dev tags can be cut from any branch — `validate-release-ref` only
 constrains `alpha`/`beta`/`rc`, and it derives the branch they must live on from the tag itself
-(`v2.6.0-rc.1` → `nucleus-2.6`) rather than pinning one that goes stale each release line.
+(`v3.0.0-rc.1` → `nucleus-3.0`) rather than pinning one that goes stale each release line.
 
-`2.6.0-dev-<ts>` orders below `2.6.0` for Gradle and Maven, so a dev build never shadows the real
+`3.0.0-dev-<ts>` orders below `3.0.0` for Gradle and Maven, so a dev build never shadows the real
 release. The versions are immutable on Central: never retag, bump the timestamp.
 
 ## GraalVM Native Image
