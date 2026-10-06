@@ -18,6 +18,7 @@ site
 
 # Claude Code per-user settings
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Native libraries (built on CI via build-natives.yaml)
 **/src/main/resources/nucleus/native/
