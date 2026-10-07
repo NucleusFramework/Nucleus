@@ -154,8 +154,8 @@ class ConsumerProguardRulesTest {
                 "META-INF/proguard/global.pro" to "uses -dontobfuscate",
                 "META-INF/proguard/ignore.pro" to "uses -ignorewarnings",
                 "META-INF/proguard/include.pro" to "uses -include",
-                "META-INF/proguard/inline.pro" to "uses -repackageclasses",
-                "META-INF/proguard/io.pro" to "uses -injars",
+                "META-INF/proguard/inline.pro" to "uses quotes, -repackageclasses",
+                "META-INF/proguard/io.pro" to "uses quotes, -injars",
             ),
             result.skipped.associate { it.entry to it.reason },
         )
@@ -167,7 +167,7 @@ class ConsumerProguardRulesTest {
             mapOf(
                 "-keep class a.B { *; }-dontobfuscate" to listOf("-dontobfuscate"),
                 "-keep class a.B;-include /etc/x.pro" to listOf("-include"),
-                "-keep class a.B {*;}-repackageclasses''" to listOf("-repackageclasses"),
+                "-keep class a.B {*;}-repackageclasses''" to listOf("quotes", "-repackageclasses"),
                 "-keep,allowobfuscation class a.B(-injars)" to listOf("-injars"),
                 "@/etc/other.pro" to listOf("@file"),
                 "@other.pro\n-keep class a.B" to listOf("@file"),
@@ -176,17 +176,25 @@ class ConsumerProguardRulesTest {
                 // ProGuard accepts any prefix of an option, and a bare `-` is `-include`.
                 "-incl /etc/other.pro" to listOf("-incl"),
                 "-dontob" to listOf("-dontob"),
-                "-keep class a.B\n-repack ''" to listOf("-repack"),
+                "-keep class a.B\n-repack ''" to listOf("quotes", "-repack"),
                 "- /etc/other.pro" to listOf("-"),
                 "-dontw a.**" to listOf("-dontw"),
                 // Options a deny-list missed: aliases, whole-build switches, keystores, output.
-                "-defaultpackage ''" to listOf("-defaultpackage"),
+                "-defaultpackage ''" to listOf("quotes", "-defaultpackage"),
                 "-optimizeaggressively" to listOf("-optimizeaggressively"),
                 "-dontprocesskotlinmetadata" to listOf("-dontprocesskotlinmetadata"),
                 "-keystore k.jks\n-keystorepassword x" to listOf("-keystore", "-keystorepassword"),
                 "-dontcompress" to listOf("-dontcompress"),
                 "-zipalign 4" to listOf("-zipalign"),
                 "-Keep class a.B" to listOf("-Keep"),
+                // ProGuard ends a word at a quote and unquotes it: quotes are refused outright.
+                "-keep class 'a.B'-printconfiguration" to listOf("quotes"),
+                "'-printconfiguration'" to listOf("quotes"),
+                "-keep class \"a.B\"" to listOf("quotes"),
+                "-keep class 'a#'-dontshrink" to listOf("quotes"),
+                // A quoted brace hides the include from the brace count; the quote rejects the file anyway.
+                "-keep class a.B { '{' }\n@other.pro" to listOf("quotes"),
+                "# it's a comment\n-keep class a.B" to emptyList(),
             )
         for ((rules, expected) in cases) {
             assertEquals(rules, expected, ConsumerProguardRules.disallowedOptions(rules))

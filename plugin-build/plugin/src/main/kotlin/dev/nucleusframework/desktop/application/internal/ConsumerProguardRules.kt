@@ -128,21 +128,21 @@ internal object ConsumerProguardRules {
 
     /**
      * The options of [rules] outside [ALLOWED_OPTIONS], comments ignored, plus `@file` for ProGuard's
-     * `@file` include. Tokens are split the way ProGuard's word reader splits them — on whitespace and
-     * on `{ } ( ) ; ,`, a word ending at a quote too — so an option glued to a delimiter
-     * (`{ *; }-dontobfuscate`, `-repackageclasses''`) is still seen. A `-` followed by a digit is a
-     * value (`-assumevalues … return -1..5`). An `@word` outside a class body is an include when
-     * what follows is another option or the end of the file; anywhere else it is an annotation
-     * (`-keep @a.Ann class *`).
+     * `@file` include and `quotes` for any quote outside a comment. Tokens are split on whitespace
+     * and on `{ } ( ) ; ,` as ProGuard's word reader does, so an option glued to a delimiter
+     * (`{ *; }-dontobfuscate`) is still seen. Quotes are refused rather than parsed: ProGuard ends a
+     * word at a quote, unquotes it, and stops honouring `#` and `{` inside one, so `'a.B'-dontshrink`
+     * or `'-printconfiguration'` would otherwise slip past; no library rule file checked uses them.
+     * A `-` followed by a digit is a value (`-assumevalues … return -1..5`). An `@word` outside a
+     * class body is an include when what follows is another option or the end of the file;
+     * anywhere else it is an annotation (`-keep @a.Ann class *`).
      */
     fun disallowedOptions(rules: String): List<String> {
-        val tokens =
-            rules
-                .lineSequence()
-                .map { it.substringBefore('#') }
-                .flatMap { line -> TOKEN.findAll(line).map { it.value } }
-                .toList()
+        val code = rules.lineSequence().map { it.substringBefore('#') }.toList()
         val found = LinkedHashSet<String>()
+        // A `#` inside quotes is no comment for ProGuard, but the quote before it is still caught here.
+        if (code.any { '\'' in it || '"' in it }) found += "quotes"
+        val tokens = code.flatMap { line -> TOKEN.findAll(line).map { it.value } }
         var depth = 0
         for ((index, token) in tokens.withIndex()) {
             when {
