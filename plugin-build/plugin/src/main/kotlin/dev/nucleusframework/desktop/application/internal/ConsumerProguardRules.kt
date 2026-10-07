@@ -115,8 +115,10 @@ internal object ConsumerProguardRules {
 
     /**
      * Extracts the rule files of [jars] into [destinationDir], in [jars] order. JARs for which
-     * [isExcluded] answers `true` contribute nothing; a file whose content was already extracted
-     * (shaded JARs embed copies of their dependencies' rules) is written once.
+     * [isExcluded] answers `true` contribute no rule file — their `META-INF/services` providers are
+     * still kept: those rules are generated here, and dropping them would silently lose a JDBC
+     * driver or a logging binding. A file whose content was already extracted (shaded JARs embed
+     * copies of their dependencies' rules) is written once.
      */
     fun extract(
         jars: List<File>,
@@ -128,8 +130,7 @@ internal object ConsumerProguardRules {
         val skipped = mutableListOf<Skipped>()
         val seen = HashSet<String>()
         val providers = LinkedHashMap<String, MutableSet<String>>()
-        for (jar in jars) {
-            if (!jar.isFile || isExcluded(jar)) continue
+        for (jar in jars.filter { it.isFile }) {
             val (ruleEntries, serviceEntries) = readEntries(jar, skipped).partition { it.first.startsWith(DIRECTORY) }
             for ((entry, bytes) in serviceEntries) {
                 val service = entry.removePrefix(ServiceProviderRules.DIRECTORY)
@@ -141,6 +142,7 @@ internal object ConsumerProguardRules {
                         providers.getOrPut(service) { LinkedHashSet() } += names
                 }
             }
+            if (isExcluded(jar)) continue
             for ((entry, bytes) in ruleEntries) {
                 val content = bytes.withoutBom()
                 val rejected = disallowedOptions(content.toString(Charsets.ISO_8859_1))
@@ -201,26 +203,31 @@ internal object ConsumerProguardRules {
                     if (word !in ALLOWED_OPTIONS) found += word
                     if (depth == 0) option = word
                 }
-                token.startsWith("@") && depth == 0 && token != "@interface" ->
-                    if (!isClassAnnotation(token, tokens.getOrNull(index + 1))) found += "@file"
+                token.startsWith("@") && depth == 0 && token != "@interface" -> {
+                    val previous = tokens.getOrNull(index - 1)
+                    if (!isClassAnnotation(previous, token, tokens.getOrNull(index + 1))) found += "@file"
+                }
             }
         }
         return found.toList()
     }
 
     /**
-     * Whether [token], an `@word` outside a class body, annotates the class specification that
-     * follows: a name glued to the `@` (wildcards allowed) and then what can only come after a class
-     * annotation. Anything else — a bare `@` (ProGuard reads it as a word of its own, so `@ x.pro`
-     * includes `x.pro`), or `@x.pro` followed by an option or a path — is ProGuard's `@file` include.
+     * Whether [token], an `@word` outside a class body, is an annotation: a name glued to the `@`
+     * (wildcards allowed), then either what can only follow a class annotation, or — on a supertype
+     * (`implements @a.Marker **`, [previous] being `extends` / `implements`) — a class name. Anything
+     * else — a bare `@` (ProGuard reads it as a word of its own, so `@ x.pro` includes `x.pro`), or
+     * `@x.pro` followed by an option or a path — is ProGuard's `@file` include.
      */
     private fun isClassAnnotation(
+        previous: String?,
         token: String,
         next: String?,
-    ): Boolean =
-        token.drop(1).matches(ANNOTATION_NAME) &&
-            next != null &&
-            (next in CLASS_SPEC_WORDS || next.startsWith("@") || next.startsWith("!"))
+    ): Boolean {
+        if (!token.drop(1).matches(ANNOTATION_NAME) || next == null) return false
+        if (previous == "extends" || previous == "implements") return next.matches(ANNOTATION_NAME)
+        return next in CLASS_SPEC_WORDS || next.startsWith("@") || next.startsWith("!")
+    }
 
     /**
      * `group:module` of a resolved module, or the project path (`:shared`) of a project dependency;

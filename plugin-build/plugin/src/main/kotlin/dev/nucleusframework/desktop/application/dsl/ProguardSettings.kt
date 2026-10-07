@@ -39,7 +39,8 @@ abstract class ProguardSettings
 
         /**
          * Dependencies whose embedded rules are ignored, as `group:module` or a project path such as
-         * `:shared`; `*` matches any run of characters (`com.squareup.*:*`).
+         * `:shared`; `*` matches any run of characters (`com.squareup.*:*`). The providers their
+         * `META-INF/services` files declare are still kept.
          */
         val consumerRulesExclusions: SetProperty<String> = objects.setProperty(String::class.java)
 

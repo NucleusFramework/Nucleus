@@ -202,6 +202,7 @@ class ConsumerProguardRulesTest {
                 "@ other.pro" to listOf("@file"),
                 "-keep class a.B\n@other.pro c.D" to listOf("@file"),
                 "@C:/x/other.pro\n-keep class a.B" to listOf("@file"),
+                "-keep class * implements @evil.pro\n-dontwarn a.**" to listOf("@file"),
                 // ProGuard splits on Character.isWhitespace and reads UTF-8; only ASCII code is allowed.
                 "-dontwarn a\u001C-dontshrink" to listOf("non-ASCII"),
                 "-dontwarn a\u001F-include x" to listOf("non-ASCII"),
@@ -250,6 +251,8 @@ class ConsumerProguardRulesTest {
             -keepclasseswithmembers @a.** !final class * { <init>(); }
             -keep @a.Ann interface *
             -keep @a.Ann enum *
+            -keep class * implements @com.foo.Marker **
+            -keep @a.B class * extends @c.D com.x.Base
             -keep class a.D { void m(java.lang.String, int); }
             """.trimIndent()
         assertEquals(emptyList<String>(), ConsumerProguardRules.disallowedOptions(rules))
@@ -302,6 +305,22 @@ class ConsumerProguardRulesTest {
             """.trimIndent(),
             rules,
         )
+    }
+
+    @Test
+    fun `an excluded JAR loses its rule files but keeps its service providers`() {
+        val driver =
+            jar(
+                "driver.jar",
+                "META-INF/proguard/driver.pro" to "-keep class org.d.Internal",
+                "META-INF/services/java.sql.Driver" to "org.d.Driver\n",
+            )
+
+        val result = ConsumerProguardRules.extract(listOf(driver), out) { true }
+
+        val rules = result.files.single().readText()
+        assertTrue(rules.contains("-keep class org.d.Driver { public <init>(); public static ** provider(); }"))
+        assertFalse(rules.contains("org.d.Internal"))
     }
 
     @Test

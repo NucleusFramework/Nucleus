@@ -197,8 +197,8 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
         val coordinates = artifactCoordinates.get()
         if (exclusions.isNotEmpty() && coordinates.isEmpty()) {
             logger.warn(
-                "w: proguard.consumerRulesExclusions ignored: the application's runtime files have no Gradle " +
-                    "coordinates (fromFiles). Use consumerRules = false to leave every embedded rule out.",
+                "w: proguard.consumerRulesExclusions ignored: no Gradle coordinates are known for the input " +
+                    "JARs, so none can be matched (a fromFiles application, or no external dependency).",
             )
         }
         val result =
