@@ -47,6 +47,9 @@ fun runStreaming(command: List<String>): Flow<ProcessUpdate> =
                     awaitClose()
                     return@callbackFlow
                 }
+        // The read below blocks until the child exits, so awaitClose's cleanup alone would only run
+        // after it did: kill it as soon as the collector goes away, which also ends the read.
+        invokeOnClose { if (process.isAlive) process.destroy() }
         trySend(ProcessUpdate.Started(process.pid(), command, process))
         process.inputStream.bufferedReader().useLines { lines -> lines.forEach { trySend(ProcessUpdate.Output(it)) } }
         trySend(ProcessUpdate.Exited(process.waitFor(), System.currentTimeMillis() - startedAt))
