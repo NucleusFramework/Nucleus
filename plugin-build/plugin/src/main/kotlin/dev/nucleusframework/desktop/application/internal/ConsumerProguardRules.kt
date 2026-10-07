@@ -60,6 +60,24 @@ internal object ConsumerProguardRules {
     private val UTF8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
     /** A delimiter, or a run of anything else. */
     private val TOKEN = Regex("""[{}();,]|[^\s{}();,]+""")
+    /** An annotation class name in a ProGuard pattern: a binary name, `*` and `?` wildcards allowed. */
+    private val ANNOTATION_NAME = Regex("""[\p{L}_$*?][\p{L}\p{N}_$*?]*(\.[\p{L}_$*?][\p{L}\p{N}_$*?]*)*""")
+
+    /** Words that can follow a class annotation in a class specification. */
+    private val CLASS_SPEC_WORDS =
+        setOf(
+            "class",
+            "interface",
+            "enum",
+            "public",
+            "private",
+            "protected",
+            "final",
+            "abstract",
+            "static",
+            "synthetic",
+        )
+
     /** An option word: `-` and its letters, possibly none (a bare `-` is ProGuard's `-include`). */
     private val OPTION_PREFIX = Regex("^-[A-Za-z]*")
     private val UNSAFE_NAME_CHARS = Regex("[^A-Za-z0-9._-]")
@@ -152,14 +170,26 @@ internal object ConsumerProguardRules {
                     val option = OPTION_PREFIX.find(token)?.value.orEmpty()
                     if (option !in ALLOWED_OPTIONS) found += option
                 }
-                token.startsWith("@") && depth == 0 -> {
-                    val next = tokens.getOrNull(index + 1)
-                    if (next == null || next.startsWith("-")) found += "@file"
-                }
+                token.startsWith("@") && depth == 0 && token != "@interface" ->
+                    if (!isClassAnnotation(token, tokens.getOrNull(index + 1))) found += "@file"
             }
         }
         return found.toList()
     }
+
+    /**
+     * Whether [token], an `@word` outside a class body, annotates the class specification that
+     * follows: a name glued to the `@` (wildcards allowed) and then what can only come after a class
+     * annotation. Anything else — a bare `@` (ProGuard reads it as a word of its own, so `@ x.pro`
+     * includes `x.pro`), or `@x.pro` followed by an option or a path — is ProGuard's `@file` include.
+     */
+    private fun isClassAnnotation(
+        token: String,
+        next: String?,
+    ): Boolean =
+        token.drop(1).matches(ANNOTATION_NAME) &&
+            next != null &&
+            (next in CLASS_SPEC_WORDS || next.startsWith("@") || next.startsWith("!"))
 
     /**
      * `group:module` of a resolved module, or the project path (`:shared`) of a project dependency;

@@ -195,6 +195,11 @@ class ConsumerProguardRulesTest {
                 // A quoted brace hides the include from the brace count; the quote rejects the file anyway.
                 "-keep class a.B { '{' }\n@other.pro" to listOf("quotes"),
                 "# it's a comment\n-keep class a.B" to emptyList(),
+                // A bare `@` is a word of its own for ProGuard: `@ x.pro` includes x.pro.
+                "-dontwarn a.B\n@ /some/abs/path.pro\n-keep class c.D" to listOf("@file"),
+                "@ other.pro" to listOf("@file"),
+                "-keep class a.B\n@other.pro c.D" to listOf("@file"),
+                "@C:/x/other.pro\n-keep class a.B" to listOf("@file"),
             )
         for ((rules, expected) in cases) {
             assertEquals(rules, expected, ConsumerProguardRules.disallowedOptions(rules))
@@ -223,6 +228,11 @@ class ConsumerProguardRulesTest {
             -keepclasseswithmembernames class * { native <methods>; }
             -assumenosideeffects class a.F { void log(...); }
             -adaptclassstrings a.**
+            -keep @a.Ann @b.Other public class *
+            -keep @interface a.B
+            -keepclasseswithmembers @a.** !final class * { <init>(); }
+            -keep @a.Ann interface *
+            -keep @a.Ann enum *
             -keep class a.D { void m(java.lang.String, int); }
             """.trimIndent()
         assertEquals(emptyList<String>(), ConsumerProguardRules.disallowedOptions(rules))
