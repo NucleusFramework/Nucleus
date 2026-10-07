@@ -109,8 +109,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        sudo apt-get update
-        sudo apt-get install -y xvfb rpm fakeroot libarchive-tools libdbus-1-dev libglib2.0-dev libx11-dev libgtk-3-dev patchelf
+        "${{ github.action_path }}/../../scripts/apt-install.sh" xvfb rpm fakeroot libarchive-tools libdbus-1-dev libglib2.0-dev libx11-dev libgtk-3-dev patchelf
         if ! pgrep -x Xvfb >/dev/null 2>&1; then
           Xvfb :99 -screen 0 1280x1024x24 >/tmp/xvfb.log 2>&1 &
         fi
@@ -122,8 +121,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        sudo apt-get update
-        sudo apt-get install -y flatpak flatpak-builder
+        "${{ github.action_path }}/../../scripts/apt-install.sh" flatpak flatpak-builder
         # Install runtimes for the current user — flatpak-builder (via @malept/flatpak-bundler)
         # defaults to --user mode and won't find system-only runtimes.
         flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
@@ -135,8 +133,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        sudo apt-get update
-        sudo apt-get install -y snapd
+        "${{ github.action_path }}/../../scripts/apt-install.sh" snapd
         sudo systemctl enable --now snapd.socket || true
         sudo systemctl start snapd || true
         sudo snap wait system seed.loaded || true

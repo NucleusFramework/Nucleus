@@ -41,7 +41,8 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Linux build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libdbus-1-dev libglib2.0-dev
+        timeout-minutes: 10
+        run: .github/scripts/apt-install.sh libx11-dev libdbus-1-dev libglib2.0-dev
 
       - name: Download native artifacts
         uses: actions/download-artifact@v8
