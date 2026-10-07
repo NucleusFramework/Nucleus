@@ -467,6 +467,9 @@ public object TaoSceneTestBattery {
         run("TaoSceneTrackpadScaleTest: host-shaped magnify stream zooms transformable without slop") {
             TaoSceneTrackpadScaleTest().`host-shaped magnify stream zooms transformable without slop`()
         }
+        run("TaoTrackpadScaleSessionTest: cancellationRunsAfterScaleEndAndOnlyForAnActiveGesture") {
+            TaoTrackpadScaleSessionTest().cancellationRunsAfterScaleEndAndOnlyForAnActiveGesture()
+        }
         run("TaoTrackpadScaleSessionTest: startChangeEndEmitsScaleSequence") {
             TaoTrackpadScaleSessionTest().startChangeEndEmitsScaleSequence()
         }

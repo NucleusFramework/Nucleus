@@ -96,6 +96,30 @@ class TaoTrackpadScaleSessionTest {
         assertEquals(listOf(PointerEventType.ScaleStart to 1f), h.sent)
     }
 
+    @Test
+    fun cancellationRunsAfterScaleEndAndOnlyForAnActiveGesture() {
+        val sent = mutableListOf<PointerEventType>()
+        var cancellations = 0
+        val session =
+            TaoTrackpadScaleSession(cancelPointerInput = {
+                assertEquals(PointerEventType.ScaleEnd, sent.last())
+                cancellations++
+            }) { type, _ -> sent += type }
+        session.end(cancelled = true)
+        assertEquals(0, cancellations)
+        session.start()
+        session.change(1.05f)
+        session.end(cancelled = true)
+        session.end(cancelled = true)
+        assertEquals(1, cancellations)
+        assertFalse(session.active)
+        assertEquals(listOf(PointerEventType.ScaleStart, PointerEventType.ScaleChange, PointerEventType.ScaleEnd), sent)
+        session.start()
+        session.end()
+        assertEquals(1, cancellations)
+        assertEquals(listOf(PointerEventType.ScaleStart, PointerEventType.ScaleEnd), sent.takeLast(2))
+    }
+
     private class Harness {
         val sent = mutableListOf<Pair<PointerEventType, Float>>()
         val session = TaoTrackpadScaleSession { type, factor -> sent += type to factor }

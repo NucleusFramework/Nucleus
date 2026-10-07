@@ -1351,7 +1351,7 @@ internal class TaoComposeSceneHostLinux(
     private var gestureCenterX = 0f
     private var gestureCenterY = 0f
     private val scaleSession =
-        TaoTrackpadScaleSession { type, factor ->
+        TaoTrackpadScaleSession(cancelPointerInput = { scene?.cancelPointerInput() }) { type, factor ->
             scene?.dispatchTrackpadScale(
                 x = gestureCenterX,
                 y = gestureCenterY,
@@ -1437,7 +1437,7 @@ internal class TaoComposeSceneHostLinux(
             }
             TaoTrackpadPhase.ENDED, TaoTrackpadPhase.CANCELLED -> {
                 pinchActive = false
-                scaleSession.end()
+                scaleSession.end(cancelled = phase == TaoTrackpadPhase.CANCELLED)
             }
         }
     }
