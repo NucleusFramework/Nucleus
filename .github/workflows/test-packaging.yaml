@@ -77,7 +77,7 @@ jobs:
 
       - name: Build packages
         shell: bash
-        run: ./gradlew :examples:nucleus-demo:packageReleaseDistributionForCurrentOS --stacktrace --no-daemon
+        run: ./gradlew :examples:lab:app:packageReleaseDistributionForCurrentOS --stacktrace --no-daemon
 
       - name: Upload packaged artifacts
         if: always()
@@ -85,25 +85,25 @@ jobs:
         with:
           name: test-packages-${{ runner.os }}-${{ matrix.arch }}
           path: |
-            examples/nucleus-demo/build/compose/binaries/**/*.deb
-            examples/nucleus-demo/build/compose/binaries/**/*.rpm
+            examples/lab/app/build/compose/binaries/**/*.deb
+            examples/lab/app/build/compose/binaries/**/*.rpm
             # Detached signatures (<pkg>.asc) for silent update + public keys (<pkg>.pub.asc)
-            examples/nucleus-demo/build/compose/binaries/**/*.asc
-            examples/nucleus-demo/build/compose/binaries/**/*.pacman
-            examples/nucleus-demo/build/compose/binaries/**/*.snap
-            examples/nucleus-demo/build/compose/binaries/**/*.flatpak
-            examples/nucleus-demo/build/compose/binaries/**/*.AppImage
-            examples/nucleus-demo/build/compose/binaries/**/*.appimage
-            examples/nucleus-demo/build/compose/binaries/**/*.msi
-            examples/nucleus-demo/build/compose/binaries/**/*.exe
-            examples/nucleus-demo/build/compose/binaries/**/*.appx
-            !examples/nucleus-demo/build/compose/binaries/**/runtime/**
-            examples/nucleus-demo/build/compose/binaries/**/*.7z
-            examples/nucleus-demo/build/compose/binaries/**/*.pkg
-            examples/nucleus-demo/build/compose/binaries/**/*.dmg
-            examples/nucleus-demo/build/compose/binaries/**/*.zip
-            examples/nucleus-demo/build/compose/binaries/**/*.tar
-            examples/nucleus-demo/build/compose/binaries/**/*.tar.gz
-            examples/nucleus-demo/build/compose/binaries/**/*.blockmap
-            !examples/nucleus-demo/build/compose/binaries/**/app/**
+            examples/lab/app/build/compose/binaries/**/*.asc
+            examples/lab/app/build/compose/binaries/**/*.pacman
+            examples/lab/app/build/compose/binaries/**/*.snap
+            examples/lab/app/build/compose/binaries/**/*.flatpak
+            examples/lab/app/build/compose/binaries/**/*.AppImage
+            examples/lab/app/build/compose/binaries/**/*.appimage
+            examples/lab/app/build/compose/binaries/**/*.msi
+            examples/lab/app/build/compose/binaries/**/*.exe
+            examples/lab/app/build/compose/binaries/**/*.appx
+            !examples/lab/app/build/compose/binaries/**/runtime/**
+            examples/lab/app/build/compose/binaries/**/*.7z
+            examples/lab/app/build/compose/binaries/**/*.pkg
+            examples/lab/app/build/compose/binaries/**/*.dmg
+            examples/lab/app/build/compose/binaries/**/*.zip
+            examples/lab/app/build/compose/binaries/**/*.tar
+            examples/lab/app/build/compose/binaries/**/*.tar.gz
+            examples/lab/app/build/compose/binaries/**/*.blockmap
+            !examples/lab/app/build/compose/binaries/**/app/**
           if-no-files-found: warn

@@ -24,8 +24,8 @@ import kotlin.test.assertTrue
  * what an app run outside the plugin gets.
  *
  * The tracker on a patched Compose is covered end to end, against a full
- * render of every frame: `examples/partial-redraw-demo` with
- * `-Dnucleus.tao.partialRedraw.verify=true`.
+ * render of every frame: the Lab's `partial-redraw` fixture in its `verify`
+ * variants (`-Dnucleus.tao.partialRedraw.verify=true`).
  */
 class PartialRedrawTest {
     private val a = IntRect(10, 10, 20, 20)

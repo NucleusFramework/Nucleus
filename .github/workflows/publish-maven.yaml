@@ -238,6 +238,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
+          # The only creator of a dev pre-release: release-desktop waits for it, then attaches the Lab.
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
             --prerelease --latest=false \
             --notes "Development build, not verified. Release notes will come with the final release."

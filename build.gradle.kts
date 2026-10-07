@@ -14,6 +14,7 @@ plugins {
     alias(libs.plugins.androidKotlinMultiplatformLibrary) apply false
     alias(libs.plugins.vanniktechMavenPublish) apply false
     alias(libs.plugins.graalvmNative) apply false
+    alias(libs.plugins.metro) apply false
     // Freezes public ABI for every published library module: `apiCheck` fails on
     // any change to public FQNs/signatures vs the checked-in `api/*.api` dumps
     // (same harness as decorated-window-tao — see README project status).
@@ -267,7 +268,7 @@ tasks.register<Exec>("publishDevToMavenLocal") {
 
 tasks.register("preMerge") {
     description =
-        "Runs verification for every published library module plus the flagship demo " +
+        "Runs verification for every published library module plus the Lab " +
         "and the included Gradle plugin. New library modules are picked up automatically."
 
     // Every non-example subproject: compile + unit tests + detekt/ktlint + apiCheck
@@ -279,15 +280,23 @@ tasks.register("preMerge") {
             subprojects
                 // Skip the examples umbrella and every demo under it. The
                 // umbrella project has no `check` task; demos are opt-in
-                // (only nucleus-demo is wired below as a consumer smoke).
+                // (only the Lab is wired below as a consumer smoke).
                 .filter { !it.path.startsWith(":examples") }
                 .filter { it.tasks.findByName("check") != null }
                 .map { it.tasks.named("check") }
         },
     )
 
-    // Flagship demo as a consumer smoke check (compile/test).
-    dependsOn(":examples:nucleus-demo:check")
+    // The Lab (examples/lab): every module compiled, tested and ktlinted. The app's check is the
+    // one that matters most: the Metro graph of all probes is only assembled (and validated) there.
+    dependsOn(
+        provider {
+            subprojects
+                .filter { it.path.startsWith(":examples:lab:") }
+                .filter { it.tasks.findByName("check") != null }
+                .map { it.tasks.named("check") }
+        },
+    )
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:check"))
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:validatePlugins"))
 }

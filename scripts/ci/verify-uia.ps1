@@ -1,5 +1,5 @@
 ﻿# CI probe: verifies the Tao Windows UIA provider end-to-end against a
-# running tao-demo (launched with NUCLEUS_DEMO_TAB=A11y).
+# running Lab a11y-surface fixture (`:examples:lab:app:run -Dlab.fixture=a11y-surface`, opens on A11y).
 #
 # Asserts, through the OS accessibility API only (no app internals):
 #   1. the window exposes the expected named elements,
@@ -11,7 +11,7 @@
 # tool scripts/dump-uia-tree.ps1 - the filtered control view may not descend
 # into the custom provider. Exit 0 = all assertions hold.
 param(
-    [string]$Title = "Tao Backend Demo",
+    [string]$Title = "Nucleus A11y Surface",
     [int]$TimeoutSec = 120
 )
 $ErrorActionPreference = "Stop"
@@ -83,7 +83,7 @@ Write-Host "-- UIA a11y verification --"
 $win = Find-Window $Title $TimeoutSec
 Write-Host "window: '$($win.Current.Name)'"
 
-# The demo should start on the A11y tab (NUCLEUS_DEMO_TAB). Belt-and-braces:
+# The fixture starts on the A11y tab (-Dlab.a11y.tab, default A11y). Belt-and-braces:
 # if the tab content isn't there, click the 'A11y' tab through UIA itself.
 if ($null -eq (Find-ByName $win "Increment" 30)) {
     Write-Host "A11y content not visible yet - dumping tree and trying the 'A11y' tab"

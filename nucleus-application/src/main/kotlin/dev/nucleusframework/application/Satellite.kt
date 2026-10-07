@@ -10,6 +10,7 @@ package dev.nucleusframework.application
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.ui.UiComposable
+import androidx.compose.ui.unit.Dp
 import dev.nucleusframework.application.internal.TaoSatelliteWorkspaceAdapter
 import dev.nucleusframework.window.ControlButtonsDirection
 import dev.nucleusframework.window.ExperimentalNucleusApi
@@ -57,6 +58,11 @@ import dev.nucleusframework.window.tao.SatelliteWorkspace
  * @param reorderable whether the user may change its rank on its side;
  *   `false` pins it to the rank it was declared with. Requires a docked
  *   [initialPlacement].
+ * @param minExtent the thinnest the panel may be docked (its width on a left or
+ *   right side, its height on a top or bottom one), never below
+ *   [SatelliteWorkspace.MinDockExtent]; see [dev.nucleusframework.window.tao.Satellite].
+ * @param maxExtent the thickest the panel may be docked; unbounded by default.
+ *   Neither limit constrains the floating window.
  * @param floatingCaption composed in the strip of the floating title bar left
  *   to the compositor's window move, where the window is placed by the
  *   compositor; see [dev.nucleusframework.window.tao.Satellite].
@@ -79,6 +85,8 @@ public fun NucleusApplicationScope.Satellite(
     floatable: Boolean = true,
     reorderable: Boolean = true,
     resizable: Boolean = true,
+    minExtent: Dp = SatelliteWorkspace.MinDockExtent,
+    maxExtent: Dp = Dp.Infinity,
     hideWhileOwnerFullscreenOrMaximized: Boolean = true,
     nativeContextMenu: Boolean = true,
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
@@ -99,6 +107,8 @@ public fun NucleusApplicationScope.Satellite(
                 floatable = floatable,
                 reorderable = reorderable,
                 resizable = resizable,
+                minExtent = minExtent,
+                maxExtent = maxExtent,
                 hideWhileOwnerFullscreenOrMaximized = hideWhileOwnerFullscreenOrMaximized,
                 nativeContextMenu = nativeContextMenu,
                 header = header,
@@ -127,6 +137,8 @@ public fun Satellite(
     floatable: Boolean = true,
     reorderable: Boolean = true,
     resizable: Boolean = true,
+    minExtent: Dp = SatelliteWorkspace.MinDockExtent,
+    maxExtent: Dp = Dp.Infinity,
     hideWhileOwnerFullscreenOrMaximized: Boolean = true,
     nativeContextMenu: Boolean = true,
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
@@ -144,6 +156,8 @@ public fun Satellite(
         floatable = floatable,
         reorderable = reorderable,
         resizable = resizable,
+        minExtent = minExtent,
+        maxExtent = maxExtent,
         hideWhileOwnerFullscreenOrMaximized = hideWhileOwnerFullscreenOrMaximized,
         nativeContextMenu = nativeContextMenu,
         header = header,

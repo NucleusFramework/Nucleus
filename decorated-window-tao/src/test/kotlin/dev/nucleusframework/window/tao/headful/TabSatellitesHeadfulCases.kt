@@ -6,7 +6,7 @@ import kotlin.math.abs
 /**
  * The two archetypes composed, on real windows: Chrome-like tabs where **each
  * tab window** owns a satellite workspace whose palette draws the tab that
- * window is showing — the shape of `examples/tab-satellites-demo`.
+ * window is showing — the shape of the Lab's `workspace.tab-satellites` probe.
  *
  * Neither workspace knows about the other, which is exactly why they can go
  * wrong together:

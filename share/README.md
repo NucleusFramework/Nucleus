@@ -94,4 +94,4 @@ from the top-left corner of the window content.
   `isSupported = false` and `Unsupported`. Demo: `./gradlew :examples:share-web-demo:jsBrowserDevelopmentRun`.
 - MIME type hints matter on Android and the web.
 
-Demo: `./gradlew :examples:share-demo:run`.
+Demo: the `system.share` probe of the Lab, `./gradlew :examples:lab:app:run -Dlab.probe=system.share`.
