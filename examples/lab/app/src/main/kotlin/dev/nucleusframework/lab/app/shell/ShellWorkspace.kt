@@ -40,6 +40,15 @@ private val ShellPane.homeExtent: Dp
             ShellPane.Timeline -> 220.dp
         }
 
+/** How thin and how thick a pane may be docked: below, its content no longer reads. */
+private val ShellPane.extentRange: ClosedRange<Dp>
+    get() =
+        when (this) {
+            ShellPane.Probes -> 200.dp..480.dp
+            ShellPane.Checks -> 240.dp..560.dp
+            ShellPane.Timeline -> 120.dp..480.dp
+        }
+
 private val ShellPane.dockSides: Set<DockSide>
     get() =
         when (this) {
@@ -143,6 +152,8 @@ fun NucleusApplicationScope.ShellPanes(
                 initialPlacement = pane.home,
                 initiallyOpen = pane in state.openPanes,
                 dockSides = pane.dockSides,
+                minExtent = pane.extentRange.start,
+                maxExtent = pane.extentRange.endInclusive,
                 // A pane is a tool window, not a palette: it stays when the main window fills the screen.
                 hideWhileOwnerFullscreenOrMaximized = false,
                 header = {
