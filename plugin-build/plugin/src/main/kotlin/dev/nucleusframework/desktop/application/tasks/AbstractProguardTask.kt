@@ -201,10 +201,19 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
                     "JARs, so none can be matched (a fromFiles application, or no external dependency).",
             )
         }
+        val matched = HashSet<String>()
         val result =
             ConsumerProguardRules.extract(jars, consumerRulesDir.ioFile) { jar ->
-                ConsumerProguardRules.isExcluded(coordinates[jar.absoluteFile.normalize().path], exclusions)
+                val coordinate = coordinates[jar.absoluteFile.normalize().path]
+                val hits = ConsumerProguardRules.matchingExclusions(coordinate, exclusions)
+                matched += hits
+                hits.isNotEmpty()
             }
+        if (coordinates.isNotEmpty()) {
+            for (pattern in exclusions - matched) {
+                logger.warn("w: proguard.consumerRulesExclusions: '$pattern' matches no input JAR.")
+            }
+        }
         for (skipped in result.skipped) {
             logger.warn(
                 "w: ProGuard rules '${skipped.entry}' of '${skipped.jar.name}' not applied (${skipped.reason}). " +

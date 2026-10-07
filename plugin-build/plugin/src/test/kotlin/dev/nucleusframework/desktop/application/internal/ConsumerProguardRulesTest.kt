@@ -361,4 +361,20 @@ class ConsumerProguardRulesTest {
         assertFalse(ConsumerProguardRules.isExcluded(null, listOf("*")))
         assertFalse(ConsumerProguardRules.isExcluded("a:b", emptyList()))
     }
+
+    @Test
+    fun `a Kotlin Multiplatform library matches by its declared module too`() {
+        val declared = listOf("org.jetbrains.kotlinx:kotlinx-coroutines-core", "io.ktor:ktor-client-core", "x:y")
+        assertEquals(
+            listOf("org.jetbrains.kotlinx:kotlinx-coroutines-core"),
+            ConsumerProguardRules.matchingExclusions("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm", declared),
+        )
+        assertEquals(
+            listOf("io.ktor:ktor-client-core"),
+            ConsumerProguardRules.matchingExclusions("io.ktor:ktor-client-core-desktop", declared),
+        )
+        assertTrue(ConsumerProguardRules.isExcluded("a:lib-jvm", listOf("a:lib-jvm")))
+        assertFalse(ConsumerProguardRules.isExcluded("a:lib-jvmx", listOf("a:lib")))
+        assertFalse(ConsumerProguardRules.isExcluded("a:other-jvm", listOf("a:lib")))
+    }
 }

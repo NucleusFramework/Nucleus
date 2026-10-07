@@ -30,6 +30,9 @@ internal object ConsumerProguardRules {
 
     private val UTF8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
     private val UNSAFE_NAME_CHARS = Regex("[^A-Za-z0-9._-]")
+
+    /** Platform module suffixes of the JVM variant of a Kotlin Multiplatform library ("" = as is). */
+    private val PLATFORM_SUFFIXES = listOf("", "-jvm", "-desktop")
     private const val MAX_NAME_LENGTH = 80
 
     /** A rule file left out of the pass, and why. */
@@ -107,23 +110,29 @@ internal object ConsumerProguardRules {
             else -> null
         }
 
-    /**
-     * Whether [coordinate] matches one of [exclusions]: `group:module` or a project path, `*`
-     * matching any run of characters (`com.squareup.*:*`, `*:okhttp`).
-     */
+    /** Whether [coordinate] matches one of [exclusions] ([matchingExclusions]). */
     fun isExcluded(
         coordinate: String?,
         exclusions: Collection<String>,
-    ): Boolean =
-        coordinate != null &&
-            exclusions.any { pattern ->
-                pattern
-                    .trim()
-                    .split('*')
-                    .joinToString(".*") { Regex.escape(it) }
-                    .toRegex()
-                    .matches(coordinate)
-            }
+    ): Boolean = matchingExclusions(coordinate, exclusions).isNotEmpty()
+
+    /**
+     * The [exclusions] matching [coordinate]: `group:module` or a project path, `*` matching any run
+     * of characters (`com.squareup.*:*`, `*:okhttp`). A Kotlin Multiplatform library resolves to its
+     * platform module (`kotlinx-coroutines-core` → `kotlinx-coroutines-core-jvm`), so the module as
+     * declared in `dependencies { }` — without its `-jvm` / `-desktop` suffix — matches too.
+     */
+    fun matchingExclusions(
+        coordinate: String?,
+        exclusions: Collection<String>,
+    ): List<String> {
+        if (coordinate == null) return emptyList()
+        val candidates = PLATFORM_SUFFIXES.map { coordinate.removeSuffix(it) }.toSet()
+        return exclusions.filter { pattern ->
+            val regex = pattern.trim().split('*').joinToString(".*") { Regex.escape(it) }.toRegex()
+            candidates.any { regex.matches(it) }
+        }
+    }
 
     private fun readEntries(
         jar: File,
