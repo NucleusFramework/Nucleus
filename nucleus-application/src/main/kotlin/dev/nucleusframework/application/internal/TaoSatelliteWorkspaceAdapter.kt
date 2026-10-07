@@ -3,6 +3,7 @@ package dev.nucleusframework.application.internal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.internal.TaoSatelliteWindowAdapter.NucleusSatelliteScene
 import dev.nucleusframework.window.ControlButtonsDirection
@@ -32,6 +33,8 @@ internal object TaoSatelliteWorkspaceAdapter {
         floatable: Boolean,
         reorderable: Boolean,
         resizable: Boolean,
+        minExtent: Dp,
+        maxExtent: Dp,
         hideWhileOwnerFullscreenOrMaximized: Boolean,
         nativeContextMenu: Boolean,
         header: @Composable SatelliteScope.() -> Unit,
@@ -52,6 +55,8 @@ internal object TaoSatelliteWorkspaceAdapter {
                 floatable = floatable,
                 reorderable = reorderable,
                 resizable = resizable,
+                minExtent = minExtent,
+                maxExtent = maxExtent,
                 hideWhileOwnerFullscreenOrMaximized = hideWhileOwnerFullscreenOrMaximized,
                 compositionLocalContext = outerLocals,
                 floatingContentWrapper = { inner ->

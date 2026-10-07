@@ -297,9 +297,8 @@ jobs:
 
       - name: Install display stack (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
+        timeout-minutes: 10
+        run: .github/scripts/apt-install.sh xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
 
       - name: Run headful suite (Linux, under Xvfb + openbox)
         if: runner.os == 'Linux'
@@ -321,7 +320,9 @@ jobs:
         # cycle — the standalone-popup native chain has no other CI coverage.
         run: ./gradlew :decorated-window-tao:smokeStandalonePanelMac
 
-  # Native accessibility protocol: launches tao-demo on its A11y tab and
+  # Native accessibility protocol: launches the Lab's `a11y-surface` fixture
+  # (examples/lab/probes/input — the A11y / Complex
+  # surfaces alone in a "Nucleus A11y Surface" window, no Lab chrome) and
   # verifies the OS-level projection from the OUTSIDE, through the same client
   # APIs assistive tech uses — UIA on Windows (hard gate), AT-SPI via pyatspi
   # on Linux (hard gate), the AX client API on macOS (self-skips on runners:
@@ -376,19 +377,16 @@ jobs:
       # on runners), never through WGL/opengl32, so Mesa had no effect. The
       # real cause of the empty UIA tree (idle-activation race) is fixed in
       # the a11y sync scheduler — see the job comment above.
-      - name: Build tao-demo (so the probe timeout is not spent compiling)
-        run: ./gradlew :examples:tao-demo:jar
+      - name: Build the Lab (so the probe timeout is not spent compiling)
+        run: ./gradlew :examples:lab:app:jar
 
       - name: Install display + AT-SPI stack (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 10
+        # No libwebkit2gtk: the a11y-surface fixture hosts no WebView (the old
+        # tao-demo sweep visited its WebView tab and needed it).
         run: |
-          sudo apt-get update
-          # libwebkit2gtk: tao-demo's WebView tab now hosts ComposeNativeWebView,
-          # whose Linux backend dlopens libwebkit2gtk-4.1. The multi-tab a11y
-          # probe (verify-atspi-all-tabs.py) visits that tab and would crash the
-          # app on runners, which don't ship webkit2gtk by default.
-          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
-            libwebkit2gtk-4.1-0 \
+          .github/scripts/apt-install.sh xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
             at-spi2-core python3-pyatspi dbus-x11 xdotool
 
       - name: Verify AT-SPI projection (Linux)
@@ -405,7 +403,7 @@ jobs:
           dbus-send --session --dest=org.a11y.Bus --type=method_call --print-reply \
             /org/a11y/bus org.freedesktop.DBus.Properties.Set \
             string:org.a11y.Status string:IsEnabled variant:boolean:true
-          NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          ./gradlew --no-daemon :examples:lab:app:run -Dlab.fixture=a11y-surface > /tmp/a11y-surface.log 2>&1 &
           status=0
           # Ordered so the mutation-sensitive probe runs on a pristine tree:
           # verify-atspi.py asserts the exact 'click counter 1' transition.
@@ -418,42 +416,44 @@ jobs:
           python3 scripts/ci/verify-atspi-events.py || status=$?
           python3 scripts/ci/verify-atspi-keyboard.py || status=$?
           if [ $status -ne 0 ]; then
-            echo "── tao-demo log ($(wc -l < /tmp/tao-demo.log) lines) ──"
-            cat /tmp/tao-demo.log || true
+            echo "── a11y-surface log ($(wc -l < /tmp/a11y-surface.log) lines) ──"
+            cat /tmp/a11y-surface.log || true
           fi
-          pkill -f dev.nucleusframework.sampletao.MainKt || true
+          pkill -f lab.fixture=a11y-surface || true
           exit $status
 
       - name: Verify UIA projection (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          NUCLEUS_DEMO_TAB=A11y NUCLEUS_A11Y_DEBUG=1 \
-            ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          NUCLEUS_A11Y_DEBUG=1 \
+            ./gradlew --no-daemon :examples:lab:app:run -Dlab.fixture=a11y-surface > /tmp/a11y-surface.log 2>&1 &
           status=0
-          pwsh -File scripts/ci/verify-uia.ps1 -Title "Tao Backend Demo" -TimeoutSec 300 || status=$?
+          pwsh -File scripts/ci/verify-uia.ps1 -Title "Nucleus A11y Surface" -TimeoutSec 300 || status=$?
           echo "── java processes ──"
           tasklist | grep -i java || true
           echo "── proven dump-uia-tree.ps1 -Process java ──"
           pwsh -File scripts/dump-uia-tree.ps1 -Process java -MaxDepth 5 || true
-          echo "── tao-demo full log ($(wc -l < /tmp/tao-demo.log) lines) ──"
-          cat /tmp/tao-demo.log || true
+          echo "── a11y-surface full log ($(wc -l < /tmp/a11y-surface.log) lines) ──"
+          cat /tmp/a11y-surface.log || true
           taskkill //F //IM java.exe //T 2>/dev/null || true
           exit $status
 
       - name: Verify AX projection (macOS, self-skips without TCC trust)
         if: runner.os == 'macOS'
         run: |
-          NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          ./gradlew --no-daemon :examples:lab:app:run -Dlab.fixture=a11y-surface > /tmp/a11y-surface.log 2>&1 &
           for i in $(seq 1 90); do
-            APP_PID=$(pgrep -f dev.nucleusframework.sampletao.MainKt || true)
+            # The fixture JVM carries -Dlab.fixture=a11y-surface on its command line; Gradle's does too
+            # but runs no AX tree, so take the java process (the newest match).
+            APP_PID=$(pgrep -n -f "lab.fixture=a11y-surface.*dev.nucleusframework.lab.app.MainKt" || true)
             [ -n "$APP_PID" ] && break
             sleep 2
           done
-          if [ -z "$APP_PID" ]; then echo "tao-demo never started"; tail -50 /tmp/tao-demo.log; exit 1; fi
+          if [ -z "$APP_PID" ]; then echo "a11y-surface never started"; tail -50 /tmp/a11y-surface.log; exit 1; fi
           status=0
           swift scripts/ci/verify-ax.swift "$APP_PID" || status=$?
-          pkill -f dev.nucleusframework.sampletao.MainKt || true
+          pkill -f lab.fixture=a11y-surface || true
           exit $status
 
   # ── Expensive PR-only stages ───────────────────────────────────────────

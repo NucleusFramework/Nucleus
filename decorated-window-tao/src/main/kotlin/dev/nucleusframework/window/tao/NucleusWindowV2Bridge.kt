@@ -147,10 +147,10 @@ internal fun BindNucleusWindowState(
     val latestV1 = v1
     val latestNativeWindow by rememberUpdatedState(nativeWindow)
     LaunchedEffect(v2, v1) {
-        // When the last placement was handed to v1. Both consumers below run on
-        // this effect's dispatcher (the Tao main thread), so a plain var is the
-        // whole synchronisation story.
-        var placementAppliedNs = Long.MIN_VALUE
+        // When the last placement was handed to v1, null while none was. Both
+        // consumers below run on this effect's dispatcher (the Tao main thread),
+        // so a plain var is the whole synchronisation story.
+        var placementAppliedNs: Long? = null
         launch {
             for (placement in latestV2.placementRequests) {
                 latestV1.placement = placement
@@ -181,8 +181,13 @@ internal fun BindNucleusWindowState(
                 // with nobody watching, because `leftPlacement` said there was
                 // nothing to leave. A placement applied moments ago is therefore
                 // its own reason to confirm the result.
+                // Not a `Long.MIN_VALUE` "never": `nanoTime() - MIN_VALUE`
+                // overflows negative, which read as in flight forever, so every
+                // request of a window that never changed placement was confirmed
+                // — a burst crawled through its queue one settle at a time, each
+                // confirmation re-asserting its own stale target.
                 val placementInFlight =
-                    System.nanoTime() - placementAppliedNs < PLACEMENT_IN_FLIGHT_GRACE_NS
+                    placementAppliedNs?.let { System.nanoTime() - it < PLACEMENT_IN_FLIGHT_GRACE_NS } == true
                 if (leftPlacement) {
                     // Bounds on a non-floating window make it floating (the v2
                     // contract) — but the restore is asynchronous, and on macOS

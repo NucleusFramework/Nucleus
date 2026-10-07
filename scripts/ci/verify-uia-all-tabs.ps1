@@ -1,15 +1,15 @@
-﻿# Enterprise multi-tab UIA probe for tao-demo.
+﻿# Enterprise multi-tab UIA probe for the Lab a11y-surface fixture.
 #
 # Walks every main navigation tab via RawView, asserts key accessible names
 # exist, and exercises activation patterns (Invoke / Toggle / ExpandCollapse /
-# SelectionItem / RangeValue) where applicable. Does NOT require
-# NUCLEUS_DEMO_TAB - switches tabs through UIA like a real AT.
+# SelectionItem / RangeValue) where applicable. Switches tabs through UIA
+# like a real AT, whatever tab the fixture opened on.
 #
-# Prerequisites: tao-demo running, window title "Tao Backend Demo".
+# Prerequisites: the a11y-surface fixture running, window title "Nucleus A11y Surface".
 # Exit 0 = all tab trees navigable + key actions succeed.
 
 param(
-    [string]$Title = "Tao Backend Demo",
+    [string]$Title = "Nucleus A11y Surface",
     [int]$TimeoutSec = 90
 )
 
@@ -150,10 +150,8 @@ $win = Find-Window $Title $TimeoutSec
 Write-Host "window: '$($win.Current.Name)'"
 
 # -- Tab bar itself --------------------------------------------------------
-$tabLabels = @(
-    "Demo", "Scroll", "Zoom", "Window actions", "A11y", "Complex",
-    "Events", "WebView", "SwiftUI", "Texture"
-)
+# The fixture's page tabs (SurfaceTab in examples/lab/probes/input).
+$tabLabels = @("A11y", "Complex")
 Write-Host "`n-- Tab bar --"
 foreach ($t in $tabLabels) {
     Assert ($null -ne (Find-ByName $win $t 6)) "tab '$t' exposed"
@@ -161,10 +159,6 @@ foreach ($t in $tabLabels) {
 
 # Per-tab expectations: names that must appear after selecting the tab.
 $tabChecks = [ordered]@{
-    "Demo"            = @{ must = @("Demo"); minNamed = 8; action = $null }
-    "Scroll"          = @{ must = @("Scroll"); minNamed = 15; action = $null }  # many list rows
-    "Zoom"            = @{ must = @("Zoom"); minNamed = 8; action = $null }
-    "Window actions"  = @{ must = @("Window actions"); minNamed = 10; action = $null }
     "A11y"            = @{
         must   = @("Increment", "Tri-state checkbox", "Notifications switch", "Volume", "Cannot press")
         minNamed = 25
@@ -175,11 +169,6 @@ $tabChecks = [ordered]@{
         minNamed = 30
         action = "complex"
     }
-    "Events"          = @{ must = @("Events"); minNamed = 8; action = $null }
-    "WebView"         = @{ must = @("WebView"); minNamed = 6; action = $null }
-    "SwiftUI"         = @{ must = @("SwiftUI"); minNamed = 6; action = $null }
-    # Only the contentScale / filterQuality labels are platform-independent here.
-    "Texture"         = @{ must = @("FillBounds", "Crop", "None (nearest)"); minNamed = 8; action = $null }
 }
 
 $report = New-Object System.Collections.Generic.List[string]

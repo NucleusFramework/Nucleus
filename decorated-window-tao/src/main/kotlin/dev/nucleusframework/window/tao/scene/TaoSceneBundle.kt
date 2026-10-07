@@ -169,9 +169,14 @@ internal class TaoSceneBundle(
         nanoTime: Long,
         beforeDraw: ((Canvas) -> Unit)? = null,
     ) {
+        if (closed.get()) return
         var swallowed = true
         exceptionHandler.catchExceptions {
-            renderingScope.render(scene, frameRecomposer, canvas, nanoTime, beforeDraw)
+            // Closed by its own recomposition: nothing was drawn, nothing to account for — the
+            // same outcome as a frame whose exception the handler swallowed (#621).
+            if (!renderingScope.render(scene, frameRecomposer, canvas, nanoTime, beforeDraw) { closed.get() }) {
+                return@catchExceptions
+            }
             // A layer recorded where the damage tracker could not see it change:
             // the next frame repaints in full, so there has to be one.
             if (damageTracker.afterDraw()) requestFrame()
@@ -255,11 +260,15 @@ internal class TaoSceneRenderingScope(
         canvas: Canvas,
         nanoTime: Long,
         beforeDraw: ((Canvas) -> Unit)?,
-    ) {
+        isClosed: () -> Boolean = { false },
+    ): Boolean {
         check(!isRendering)
         isRendering = true
         try {
             frameRecomposer.performFrame(nanoTime)
+            // The frame's own recomposition may close this scene (its window or popup left the
+            // composition); laying it out then throws "RootNodeOwner is already disposed".
+            if (isClosed()) return false
             // `scene.draw` applies the global snapshot again before it draws:
             // a write since the frame's apply (another thread, a layout
             // callback) would invalidate a layer after [beforeDraw] measured
@@ -273,6 +282,7 @@ internal class TaoSceneRenderingScope(
             isRendering = false
         }
         if (scene.hasInvalidations()) scheduleFrame()
+        return true
     }
 }
 

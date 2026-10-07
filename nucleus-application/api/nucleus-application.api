@@ -6,10 +6,10 @@ public final class dev/nucleusframework/application/AotTrainingKt {
 public final class dev/nucleusframework/application/ComposableSingletons$SatelliteKt {
 	public static final field INSTANCE Ldev/nucleusframework/application/ComposableSingletons$SatelliteKt;
 	public fun <init> ()V
-	public final fun getLambda$-792611191$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$122667984$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$457742482$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$623182041$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-1011931751$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$1525042834$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$1633915728$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$1886967625$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
 }
 
 public final class dev/nucleusframework/application/ComposableSingletons$TabKt {
@@ -188,8 +188,8 @@ public final class dev/nucleusframework/application/NucleusWindowUnsafe$DefaultI
 }
 
 public final class dev/nucleusframework/application/SatelliteKt {
-	public static final fun Satellite (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZZZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
-	public static final fun Satellite (Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZZZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Satellite-flGUB14 (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZFFZZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Satellite-zXhUaTo (Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZFFZZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 	public static final fun pinTo (Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ldev/nucleusframework/application/NucleusWindow;)V
 }
 

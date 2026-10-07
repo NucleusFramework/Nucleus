@@ -338,6 +338,7 @@ internal object NativeViewMonkeyHeadfulCases {
         }
         HeadfulRobot.inject { robot ->
             robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
+            HeadfulRobot.noteRelease()
             true
         }
     }
@@ -388,6 +389,13 @@ private class NativeViewFixture {
 
     /** Where the caret sits, or the start of the selection. */
     val caret: Int get() = fieldValue.selection.start
+
+    /**
+     * The text the field last laid out. `onValueChange` updates [fieldValue] at
+     * once, but the field handles keys against the value it last composed.
+     */
+    @Volatile
+    var laidOutText: String? = null
 
     var fieldFocused by mutableStateOf(false)
     var headerClicks by mutableIntStateOf(0)
@@ -474,6 +482,7 @@ private class NativeViewFixture {
                         BasicTextField(
                             value = fieldValue,
                             onValueChange = { fieldValue = it },
+                            onTextLayout = { laidOutText = it.layoutInput.text.text },
                             modifier =
                                 Modifier
                                     .fillMaxSize()
@@ -644,9 +653,10 @@ private class ResponsivenessProbe(
         // embed's focus can cut. The caret itself is what moves, so that is
         // what is asserted: where the next letter lands then depends on the
         // field's own editing behaviour, not on the key having arrived.
-        // A frame on either side: a real keyboard never delivers two keys
-        // inside one frame, and the field applies the move on recomposition.
-        scope.settle(KEY_SETTLE_MILLIS)
+        // The field moves the caret within the value it last composed: an
+        // arrow sent before it laid out the letter moves nothing. A fixed
+        // wait did not cover a slow CI frame.
+        converge("$moment: the field laid out the typed letter") { fixture.laidOutText == fixture.fieldText }
         val caretBefore = fixture.caret
         driver.arrowLeft()
         // "Back", not "back exactly one": the field clamps a caret the value

@@ -107,8 +107,9 @@ public object ExecutableRuntime {
         System.getProperty("org.graalvm.nativeimage.imagecode") != null
 
     /**
-     * Whether the process runs inside an OS application sandbox: the macOS App Sandbox, an AppX
-     * container or a Flatpak.
+     * Whether the process runs inside an OS application sandbox: the macOS App Sandbox or a Flatpak.
+     * An AppX/MSIX package is not one: electron-builder declares `runFullTrust`, so the app runs
+     * as a packaged Win32 process, not in an AppContainer — check [type] for `APPX` instead.
      *
      * The App Sandbox is detected through the `APP_SANDBOX_CONTAINER_ID` environment variable the
      * sandbox runtime sets in every sandboxed process, whatever the installer format. Prefer this
@@ -123,7 +124,6 @@ public object ExecutableRuntime {
         appSandboxContainerId: String?,
     ): Boolean =
         !appSandboxContainerId.isNullOrEmpty() ||
-            type == ExecutableType.APPX ||
             type == ExecutableType.FLATPAK
 
     public fun parseType(rawValue: String?): ExecutableType =

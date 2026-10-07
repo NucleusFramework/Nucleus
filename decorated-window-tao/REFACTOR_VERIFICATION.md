@@ -21,8 +21,8 @@ Inspired by JetBrains practice:
 | I1 | Public ABI frozen: every public FQN, member and signature identical to the baseline | BCV `apiCheck` against `api/decorated-window-tao.api` (zero diff in phases 1–2; additive-only never allowed either) |
 | I2 | JNI linkage consistent: every `Java_*` symbol defined in native sources (`.rs`/`.c`/`.m`, vendor excluded) maps to a compiled Kotlin `external fun`, and every Kotlin `external fun` has a native definition; macOS dylibs in `src/main/resources` export no stale symbols | `scripts/check-tao-refactor-invariants.sh` (sections 1–2) |
 | I3 | Reflective FQNs resolve: `FindClass`/method-signature literals in native sources, `Class.forName` literals in Kotlin, `META-INF/services/*`, ProGuard `-keep` rules, GraalVM `reachability-metadata.json` (module **and** plugin `platform-metadata/*.json`) all point at classes that exist in the compiled output | `scripts/check-tao-refactor-invariants.sh` (sections 3–6) |
-| I4 | Consumers compile **without any source change**: `nucleus-application`, `taskbar-progress-tao`, `examples/tao-demo`, `examples/swing-tao-demo` | Gradle compile of the four modules; `git diff --stat` on them must be empty (exceptions must be listed in the phase commit message — e.g. a test doing reflection on an `internal` bridge) |
-| I5 | Runtime intact on the host OS: unit tests, dispatcher handoff tests, real-window smoke test, and a manual/scripted launch of `tao-demo` (window opens, first frame renders, popups & titlebar OK) | `:decorated-window-tao:test` + `:examples:tao-demo:run` |
+| I4 | Consumers compile **without any source change**: `nucleus-application`, `taskbar-progress-tao`, `examples/lab` (every probe module, the swing-tao fixture included) | Gradle compile of the consumers; `git diff --stat` on them must be empty (exceptions must be listed in the phase commit message — e.g. a test doing reflection on an `internal` bridge) |
+| I5 | Runtime intact on the host OS: unit tests, dispatcher handoff tests, real-window smoke test, and a manual/scripted launch of the Lab (window opens, first frame renders, popups & titlebar OK) | `:decorated-window-tao:test` + `:examples:lab:app:run` |
 | I6 | Other OSes: natives rebuild from the renamed sources and the full matrix passes | CI on the PR branch: `build-natives.yaml` + `pre-merge.yaml` (Windows/Linux/macOS, x64+aarch64 verify arrays) |
 
 ## One-time setup (baseline)
@@ -61,11 +61,11 @@ rm -rf ~/.cache/nucleus/native
 
 # 4. Consumers compile, sources untouched
 ./gradlew :nucleus-application:compileKotlin :taskbar-progress-tao:compileKotlin \
-          :examples:tao-demo:compileKotlin :examples:swing-tao-demo:compileKotlin
+          :examples:lab:app:compileKotlin
 git diff --stat nucleus-application taskbar-progress-tao examples   # expected: empty
 
 # 5. Live run (host OS) — window must open, render, close cleanly
-./gradlew :examples:tao-demo:run --no-configuration-cache          # inspect, then quit
+./gradlew :examples:lab:app:run --no-configuration-cache           # inspect, then quit
 
 # 6. Commit the phase, push, let CI run the 3-OS matrix before the next phase
 ```
@@ -75,7 +75,7 @@ git diff --stat nucleus-application taskbar-progress-tao examples   # expected: 
 - **Phase 1 (FFI quarantine, `window.tao.ffi`)** — the only phase touching native
   sources. Extra gates: `nm -gU` on the freshly built `darwin-*` dylibs shows only
   `Java_dev_nucleusframework_window_tao_ffi_*` symbols (script section 2 enforces
-  this); `tao-demo` must be exercised beyond startup: resize, fullscreen, popup,
+  this); the Lab must be exercised beyond startup (window state, popups, drag & drop and keyboard & IME probes): resize, fullscreen, popup,
   drag-and-drop, IME. Linux/Windows symbol renames are textual and cannot be
   linked locally — CI is the authority (I6): do not merge before `build-natives`
   + `pre-merge` are green.

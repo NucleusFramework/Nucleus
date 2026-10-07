@@ -338,6 +338,7 @@ internal object ChromeReviewHeadfulCases {
         HeadfulRobot.inject { robot ->
             robot.mouseMove(startX, startY)
             Thread.sleep(PRESS_SETTLE_MILLIS)
+            HeadfulRobot.notePress()
             robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
             // Several moves — some hosts only arm after a threshold.
             for (step in 1..DRAG_STEPS) {
@@ -345,6 +346,7 @@ internal object ChromeReviewHeadfulCases {
                 Thread.sleep(DRAG_STEP_MILLIS)
             }
             robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
+            HeadfulRobot.noteRelease()
         }
 
     /**

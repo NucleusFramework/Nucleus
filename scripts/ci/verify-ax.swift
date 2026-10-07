@@ -1,6 +1,6 @@
 // CI probe: verifies the Tao macOS NSAccessibility projection end-to-end.
 //
-// Locates the tao-demo process (launched with NUCLEUS_DEMO_TAB=A11y), dumps
+// Locates the Lab a11y-surface fixture process (opens on its A11y tab), dumps
 // its AX tree through the ApplicationServices client API — the same path
 // VoiceOver uses — and asserts the expected elements are exposed. The first
 // AX attribute read is also what flips the app's a11y pipeline active

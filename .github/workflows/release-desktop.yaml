@@ -1,12 +1,12 @@
-name: Release Desktop App (All Platforms)
+name: Release Nucleus Lab (native image, JVM on Windows ARM)
 
 on:
   push:
     tags:
-      # Dev builds (`v3.0.0-dev-<timestamp>`) only publish libraries to Maven —
-      # they must not cut a GitHub release or burn the per-OS packaging matrix.
+      # Dev tags (`v3.0.0-dev-<timestamp>`) too: the Lab is attached to the GitHub pre-release
+      # publish-maven creates once Central accepted the version. This workflow runs beside
+      # publish-maven, never in its path, so the Maven deploy does not wait for any of it.
       - "v*"
-      - "!v*-dev*"
   workflow_dispatch:
 
 permissions:
@@ -19,11 +19,18 @@ concurrency:
 jobs:
   validate-release-ref:
     runs-on: ubuntu-22.04
+    outputs:
+      is-dev: ${{ steps.tag.outputs.is-dev }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Classify release tag
+        id: tag
+        if: github.ref_type == 'tag'
+        uses: ./.github/actions/release-tag-info
 
       - name: Validate release ref
         uses: ./.github/actions/validate-release-ref
@@ -33,7 +40,9 @@ jobs:
     uses: ./.github/workflows/build-natives.yaml
 
   build:
-    name: Build (${{ matrix.os }} / ${{ matrix.arch }})
+    # The Lab is released as a GraalVM native image everywhere native-image runs. Windows on
+    # ARM has no native-image toolchain: that one leg ships the JVM build (all its formats).
+    name: Build (${{ matrix.os }} / ${{ matrix.arch }} / ${{ matrix.native && 'native' || 'jvm' }})
     needs: [validate-release-ref, build-natives]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
@@ -43,21 +52,36 @@ jobs:
         include:
           - os: ubuntu-22.04
             arch: amd64
+            native: true
+            tasks: packageGraalvmDeb packageGraalvmRpm packageGraalvmAppImage packageGraalvmPacman packageGraalvmSnap
           - os: ubuntu-22.04-arm
             arch: arm64
+            native: true
+            tasks: packageGraalvmDeb packageGraalvmRpm packageGraalvmAppImage packageGraalvmPacman packageGraalvmSnap
           - os: windows-latest
             arch: amd64
+            native: true
+            tasks: packageGraalvmNsis packageGraalvmMsi packageGraalvmPortable
           - os: windows-11-arm
             arch: arm64
+            native: false
+            tasks: packageReleaseDistributionForCurrentOS
           - os: macos-latest
             arch: arm64
+            native: true
+            tasks: packageGraalvmDmg packageGraalvmZip
+          # Intel macs fall back to Liberica NIK 25.0.x (both GraalVM distributions dropped macos-x64).
           - os: macos-15-intel
             arch: amd64
+            native: true
+            tasks: packageGraalvmDmg packageGraalvmZip
 
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_VERSION: ${{ github.ref_name }}
+      HAS_SIGNING_CERTS: ${{ secrets.MAC_CERTIFICATES_P12 != '' }}
+      HAS_NOTARIZATION: ${{ secrets.MAC_NOTARIZATION_APPLE_ID != '' }}
 
     steps:
       - name: Checkout Repo
@@ -77,8 +101,8 @@ jobs:
         uses: ./.github/actions/setup-nucleus
         with:
           packaging-tools: 'true'
-          flatpak: 'true'
-          snap: 'true'
+          graalvm: ${{ matrix.native && 'true' || 'false' }}
+          snap: ${{ runner.os == 'Linux' && 'true' || 'false' }}
           setup-gradle: 'true'
 
       - name: Download native artifacts
@@ -109,31 +133,56 @@ jobs:
             echo "compose.desktop.linux.signing.silentUpdate=true"
           } >> gradle.properties
 
+      - name: Setup macOS signing
+        id: signing
+        if: runner.os == 'macOS' && env.HAS_SIGNING_CERTS == 'true'
+        uses: ./.github/actions/setup-macos-signing
+        with:
+          certificate-base64: ${{ secrets.MAC_CERTIFICATES_P12 }}
+          certificate-password: ${{ secrets.MAC_CERTIFICATES_PASSWORD }}
+
+      - name: Configure macOS signing
+        if: runner.os == 'macOS' && env.HAS_SIGNING_CERTS == 'true'
+        shell: bash
+        env:
+          IDENTITY: ${{ secrets.MAC_DEVELOPER_ID_APPLICATION }}
+        run: |
+          # electron-builder takes the bare "NAME (TEAMID)" and adds the certificate type itself.
+          {
+            echo "compose.desktop.mac.sign=true"
+            echo "compose.desktop.mac.signing.identity=${IDENTITY#Developer ID Application: }"
+            echo "compose.desktop.mac.signing.keychain=${{ steps.signing.outputs.keychain-path }}"
+          } >> gradle.properties
+
       - name: Build packages
         shell: bash
-        run: ./gradlew :examples:nucleus-demo:packageReleaseDistributionForCurrentOS --stacktrace --no-daemon
+        run: |
+          set -euo pipefail
+          TASKS=""
+          for task in ${{ matrix.tasks }}; do TASKS="$TASKS :examples:lab:app:$task"; done
+          ./gradlew $TASKS -PnativeMarch=compatibility --stacktrace --no-daemon
 
-      - name: Create sandboxed app ZIP (macOS only)
-        if: runner.os == 'macOS'
+      - name: Notarize DMG and ZIP
+        if: runner.os == 'macOS' && env.HAS_NOTARIZATION == 'true'
         shell: bash
         run: |
-          SANDBOXED_APP="$(find examples/nucleus-demo/build/compose/binaries -path '*/app-sandboxed/*.app' -type d | head -1)"
-          if [[ -n "$SANDBOXED_APP" ]]; then
-            APP_NAME="$(basename "$SANDBOXED_APP")"
-            # Derive name from existing ZIP to keep consistent naming
-            EXISTING_ZIP="$(find examples/nucleus-demo/build/compose/binaries -name '*.zip' -type f | head -1)"
-            if [[ -n "$EXISTING_ZIP" ]]; then
-              BASE="$(basename "$EXISTING_ZIP" .zip)"
-              SANDBOXED_ZIP="examples/nucleus-demo/build/compose/binaries/sandboxed-${BASE}.zip"
-            else
-              ARCH="$(uname -m | sed 's/x86_64/x64/;s/arm64/arm64/')"
-              SANDBOXED_ZIP="examples/nucleus-demo/build/compose/binaries/sandboxed-${APP_NAME%.app}-${ARCH}.zip"
-            fi
-            echo "==> Zipping sandboxed .app: $SANDBOXED_APP → $SANDBOXED_ZIP"
-            ditto -c -k --keepParent "$SANDBOXED_APP" "$SANDBOXED_ZIP"
-          else
-            echo "==> No sandboxed .app found (no PKG target?), skipping"
-          fi
+          set -euo pipefail
+          for ARTIFACT in $(find examples/lab/app/build/compose/binaries -type f \( -name '*.dmg' -o -name '*.zip' \)); do
+            echo "==> Submitting for notarization: $ARTIFACT"
+            xcrun notarytool submit "$ARTIFACT" \
+              --apple-id "${{ secrets.MAC_NOTARIZATION_APPLE_ID }}" \
+              --password "${{ secrets.MAC_NOTARIZATION_PASSWORD }}" \
+              --team-id "${{ secrets.MAC_NOTARIZATION_TEAM_ID }}" \
+              --wait
+            # Only the DMG is stapled: re-zipping would invalidate the ZIP's blockmap and break
+            # differential auto-updates. Gatekeeper checks a ZIP's notarization online anyway.
+            if [[ "$ARTIFACT" == *.dmg ]]; then xcrun stapler staple "$ARTIFACT"; fi
+          done
+
+      - name: Cleanup keychain
+        if: ${{ always() && runner.os == 'macOS' && env.HAS_SIGNING_CERTS == 'true' }}
+        shell: bash
+        run: security delete-keychain "${{ steps.signing.outputs.keychain-path }}" || true
 
       - name: Upload packaged artifacts
         if: always()
@@ -141,203 +190,30 @@ jobs:
         with:
           name: release-assets-${{ runner.os }}-${{ matrix.arch }}
           path: |
-            examples/nucleus-demo/build/compose/binaries/**/*.deb
-            examples/nucleus-demo/build/compose/binaries/**/*.rpm
+            examples/lab/app/build/compose/binaries/**/*.deb
+            examples/lab/app/build/compose/binaries/**/*.rpm
             # Detached signatures (<pkg>.asc) for silent update + public keys (<pkg>.pub.asc)
-            examples/nucleus-demo/build/compose/binaries/**/*.asc
-            examples/nucleus-demo/build/compose/binaries/**/*.pacman
-            examples/nucleus-demo/build/compose/binaries/**/*.snap
-            examples/nucleus-demo/build/compose/binaries/**/*.flatpak
-            examples/nucleus-demo/build/compose/binaries/**/*.AppImage
-            examples/nucleus-demo/build/compose/binaries/**/*.appimage
-            examples/nucleus-demo/build/compose/binaries/**/*.msi
-            examples/nucleus-demo/build/compose/binaries/**/*.exe
-            examples/nucleus-demo/build/compose/binaries/**/*.appx
-            !examples/nucleus-demo/build/compose/binaries/**/runtime/**
-            examples/nucleus-demo/build/compose/binaries/**/*.7z
-            examples/nucleus-demo/build/compose/binaries/**/*.pkg
-            examples/nucleus-demo/build/compose/binaries/**/*.dmg
-            examples/nucleus-demo/build/compose/binaries/**/*.zip
-            examples/nucleus-demo/build/compose/binaries/sandboxed-*.zip
-            examples/nucleus-demo/build/compose/binaries/**/*.tar
-            examples/nucleus-demo/build/compose/binaries/**/*.tar.gz
-            examples/nucleus-demo/build/compose/binaries/**/*.blockmap
-            examples/nucleus-demo/build/compose/binaries/**/signing-metadata.json
-            examples/nucleus-demo/build/compose/binaries/**/packaging-metadata.json
-            !examples/nucleus-demo/build/compose/binaries/**/app/**
-          if-no-files-found: error
-
-  universal-macos:
-    name: Universal macOS Binary
-    needs: [build]
-    if: needs.build.result == 'success'
-    runs-on: macos-latest
-    timeout-minutes: 45
-
-    env:
-      HAS_SIGNING_CERTS: ${{ secrets.MAC_CERTIFICATES_P12 != '' }}
-      HAS_PROVISIONING: ${{ secrets.MAC_PROVISIONING_PROFILE != '' }}
-      HAS_NOTARIZATION: ${{ secrets.MAC_NOTARIZATION_APPLE_ID != '' }}
-
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v7
-        with:
-          sparse-checkout: |
-            .github/actions
-            examples/nucleus-demo/packaging/macos
-            plugin-build/plugin/src/main/resources/nucleus/electron-builder
-          fetch-depth: 1
-
-      - name: Setup macOS signing
-        id: signing
-        if: env.HAS_SIGNING_CERTS == 'true'
-        uses: ./.github/actions/setup-macos-signing
-        with:
-          certificate-base64: ${{ secrets.MAC_CERTIFICATES_P12 }}
-          certificate-password: ${{ secrets.MAC_CERTIFICATES_PASSWORD }}
-
-      - name: Decode provisioning profiles
-        if: env.HAS_PROVISIONING == 'true'
-        shell: bash
-        run: |
-          echo "${{ secrets.MAC_PROVISIONING_PROFILE }}" | base64 -d > "$RUNNER_TEMP/embedded.provisionprofile"
-          echo "PROVISIONING=$RUNNER_TEMP/embedded.provisionprofile" >> "$GITHUB_ENV"
-          if [[ -n "${{ secrets.MAC_RUNTIME_PROVISIONING_PROFILE }}" ]]; then
-            echo "${{ secrets.MAC_RUNTIME_PROVISIONING_PROFILE }}" | base64 -d > "$RUNNER_TEMP/runtime-embedded.provisionprofile"
-            echo "RUNTIME_PROVISIONING=$RUNNER_TEMP/runtime-embedded.provisionprofile" >> "$GITHUB_ENV"
-          fi
-
-      - name: Download macOS arm64 artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: release-assets-macOS-arm64
-          path: artifacts/release-assets-macOS-arm64
-
-      - name: Download macOS amd64 artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: release-assets-macOS-amd64
-          path: artifacts/release-assets-macOS-amd64
-
-      - name: Build universal binary
-        uses: ./.github/actions/build-macos-universal
-        with:
-          arm64-path: artifacts/release-assets-macOS-arm64
-          x64-path: artifacts/release-assets-macOS-amd64
-          output-path: artifacts/release-assets-macOS-universal
-          signing-identity: ${{ secrets.MAC_DEVELOPER_ID_APPLICATION }}
-          app-store-identity: ${{ secrets.MAC_APP_STORE_APPLICATION }}
-          installer-identity: ${{ secrets.MAC_APP_STORE_INSTALLER }}
-          keychain-path: ${{ steps.signing.outputs.keychain-path }}
-          entitlements-file: examples/nucleus-demo/packaging/macos/entitlements.plist
-          runtime-entitlements-file: examples/nucleus-demo/packaging/macos/runtime-entitlements.plist
-          sandboxed-entitlements-file: examples/nucleus-demo/packaging/macos/entitlements-sandbox.plist
-          sandboxed-runtime-entitlements-file: examples/nucleus-demo/packaging/macos/runtime-entitlements-sandbox.plist
-          provisioning-profile: ${{ env.PROVISIONING }}
-          runtime-provisioning-profile: ${{ env.RUNTIME_PROVISIONING }}
-
-      - name: Notarize DMG
-        if: env.HAS_NOTARIZATION == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          DMG="$(find artifacts/release-assets-macOS-universal -name '*.dmg' -type f | head -1)"
-          if [[ -z "$DMG" ]]; then
-            echo "::warning::No DMG found to notarize"
-            exit 0
-          fi
-
-          echo "==> Submitting DMG for notarization: $DMG"
-          xcrun notarytool submit "$DMG" \
-            --apple-id "${{ secrets.MAC_NOTARIZATION_APPLE_ID }}" \
-            --password "${{ secrets.MAC_NOTARIZATION_PASSWORD }}" \
-            --team-id "${{ secrets.MAC_NOTARIZATION_TEAM_ID }}" \
-            --wait
-
-          echo "==> Stapling DMG"
-          xcrun stapler staple "$DMG"
-
-      - name: Notarize ZIP
-        if: env.HAS_NOTARIZATION == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ZIP="$(find artifacts/release-assets-macOS-universal -name '*.zip' -type f | head -1)"
-          if [[ -z "$ZIP" ]]; then
-            echo "::warning::No ZIP found to notarize"
-            exit 0
-          fi
-
-          echo "==> Submitting ZIP for notarization: $ZIP"
-          xcrun notarytool submit "$ZIP" \
-            --apple-id "${{ secrets.MAC_NOTARIZATION_APPLE_ID }}" \
-            --password "${{ secrets.MAC_NOTARIZATION_PASSWORD }}" \
-            --team-id "${{ secrets.MAC_NOTARIZATION_TEAM_ID }}" \
-            --wait
-
-          # ZIP is NOT stapled: re-zipping would invalidate the blockmap and break
-          # differential auto-updates. Gatekeeper verifies notarization online anyway.
-          echo "==> Skipping staple for ZIP (preserves blockmap for auto-update)"
-
-      - name: Cleanup keychain
-        if: ${{ always() && env.HAS_SIGNING_CERTS == 'true' }}
-        shell: bash
-        run: security delete-keychain "${{ steps.signing.outputs.keychain-path }}" || true
-
-      - name: Upload universal macOS artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-assets-macOS-universal
-          path: artifacts/release-assets-macOS-universal
-          if-no-files-found: error
-
-  bundle-windows:
-    name: Windows APPX Bundle
-    needs: [build]
-    if: needs.build.result == 'success'
-    runs-on: windows-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v7
-        with:
-          sparse-checkout: |
-            .github/actions
-            examples/nucleus-demo/packaging
-          fetch-depth: 1
-
-      - name: Download Windows amd64 artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: release-assets-Windows-amd64
-          path: artifacts/release-assets-Windows-amd64
-
-      - name: Download Windows arm64 artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: release-assets-Windows-arm64
-          path: artifacts/release-assets-Windows-arm64
-
-      - name: Build APPX Bundle
-        uses: ./.github/actions/build-windows-appxbundle
-        with:
-          amd64-path: artifacts/release-assets-Windows-amd64
-          arm64-path: artifacts/release-assets-Windows-arm64
-          output-path: artifacts/release-assets-Windows-bundle
-          certificate-password: 'ChangeMe-Temp123!'
-
-      - name: Upload Windows bundle artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-assets-Windows-bundle
-          path: artifacts/release-assets-Windows-bundle
+            examples/lab/app/build/compose/binaries/**/*.asc
+            examples/lab/app/build/compose/binaries/**/*.pacman
+            examples/lab/app/build/compose/binaries/**/*.snap
+            examples/lab/app/build/compose/binaries/**/*.AppImage
+            examples/lab/app/build/compose/binaries/**/*.appimage
+            examples/lab/app/build/compose/binaries/**/*.msi
+            examples/lab/app/build/compose/binaries/**/*.exe
+            examples/lab/app/build/compose/binaries/**/*.appx
+            !examples/lab/app/build/compose/binaries/**/runtime/**
+            examples/lab/app/build/compose/binaries/**/*.dmg
+            examples/lab/app/build/compose/binaries/**/*.zip
+            examples/lab/app/build/compose/binaries/**/*.blockmap
+            examples/lab/app/build/compose/binaries/**/signing-metadata.json
+            examples/lab/app/build/compose/binaries/**/packaging-metadata.json
+            !examples/lab/app/build/compose/binaries/**/app/**
+            !examples/lab/app/build/compose/binaries/**/graalvm-app/**
           if-no-files-found: error
 
   publish:
     name: Publish Release
-    needs: [build, universal-macos, bundle-windows]
+    needs: [validate-release-ref, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -368,7 +244,11 @@ jobs:
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-          if [[ "$VERSION" == *"-alpha"* ]]; then
+          if [[ "${{ needs.validate-release-ref.outputs.is-dev }}" == "true" ]]; then
+            # Dev builds sit on a pre-release (never "latest"); their feed is the alpha channel,
+            # so a stable install never sees them.
+            echo "CHANNEL=alpha" >> "$GITHUB_ENV"
+          elif [[ "$VERSION" == *"-alpha"* ]]; then
             echo "CHANNEL=alpha" >> "$GITHUB_ENV"
           elif [[ "$VERSION" == *"-beta"* ]]; then
             echo "CHANNEL=beta" >> "$GITHUB_ENV"
@@ -376,7 +256,7 @@ jobs:
             echo "CHANNEL=latest" >> "$GITHUB_ENV"
           fi
 
-          if [[ "$VERSION" == *"-alpha"* ]] || [[ "$VERSION" == *"-beta"* ]]; then
+          if [[ "$VERSION" == *"-alpha"* ]] || [[ "$VERSION" == *"-beta"* ]] || [[ "$VERSION" == *"-dev-"* ]]; then
             echo "RELEASE_TYPE=prerelease" >> "$GITHUB_ENV"
           else
             echo "RELEASE_TYPE=release" >> "$GITHUB_ENV"
@@ -402,6 +282,25 @@ jobs:
             cat "$f"
             echo
           done
+
+      # A dev pre-release is publish-maven's to create, once Central accepted the version: a
+      # failed or cancelled Maven deploy must not leave a release for a version that does not
+      # exist. Wait for it (the Maven deploy is normally done long before the Lab builds are),
+      # and publish nothing if it never comes.
+      - name: Wait for the dev pre-release
+        if: needs.validate-release-ref.outputs.is-dev == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Pre-release $TAG exists."
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::No pre-release $TAG after 60 min: the Maven deploy failed or is still running. Nothing published."
+          exit 1
 
       - name: Publish release
         uses: ./.github/actions/publish-release

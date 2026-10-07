@@ -6,9 +6,8 @@ on:
   workflow_call:
 
 jobs:
-  # One job per OS. Order matters: e2e first (the only place we actually RUN a
-  # native image), then package nucleus-demo. If the test image fails to build
-  # or run, we skip the demo package and save a second native-image compile.
+  # One job per OS: builds and RUNS the tao-native-test image (battery + headful), then builds
+  # the Lab's native image, which is what every release publishes.
   # fail-fast cancels the other OSes when one is broken (typical: shared plugin
   # / reachability / Kotlin regression), so we don't burn three runners for the
   # same root cause.
@@ -55,11 +54,10 @@ jobs:
 
       - name: Install display stack (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          # Xvfb itself comes from setup-nucleus, which also starts it. x11-utils provides
-          # xdpyinfo, which the next step uses to wait for and check the X server.
-          sudo apt-get install -y openbox mesa-utils x11-utils libegl1 libgl1-mesa-dri libgtk-3-0
+        timeout-minutes: 10
+        # Xvfb itself comes from setup-nucleus, which also starts it. x11-utils provides
+        # xdpyinfo, which the next step uses to wait for and check the X server.
+        run: .github/scripts/apt-install.sh openbox mesa-utils x11-utils libegl1 libgl1-mesa-dri libgtk-3-0
 
       - name: Run native test pyramid (Linux, under Xvfb + openbox)
         if: runner.os == 'Linux'
@@ -80,6 +78,7 @@ jobs:
           "$BIN" battery
           "$BIN" headful
 
+
       - name: Run native test pyramid
         if: runner.os != 'Linux'
         shell: bash
@@ -98,20 +97,11 @@ jobs:
           "$BIN" battery
           "$BIN" headful
 
-      # ── Stage 2: package nucleus-demo (only if e2e passed) ──────────────
-      - name: Build GraalVM native image (nucleus-demo)
+      # ── Stage 2: the Lab's native image (what every release ships), only once the test image ran ──
+      - name: Build GraalVM native image (Nucleus Lab)
         shell: bash
         # GraalVM CE is resolved through the GitHub releases API. Hosted runners share an IP,
         # so the 60/hour anonymous limit is routinely exhausted — authenticate the call.
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: ./gradlew :examples:nucleus-demo:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace
-
-      - name: Upload GraalVM artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: graalvm-${{ runner.os }}
-          path: |
-            examples/nucleus-demo/build/compose/binaries/**/graalvm-app/**
-          if-no-files-found: warn
+        run: ./gradlew :examples:lab:app:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace

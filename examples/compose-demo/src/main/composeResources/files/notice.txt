@@ -1,6 +1,0 @@
-ComposeNativeSDL3 — raw resource demo
-
-This file lives in composeResources/files/ and is loaded verbatim through
-Res.readBytes("files/notice.txt") — no decoding, just the bytes on disk.
-
-Drop any binary or text asset under files/ and read it back the same way.
