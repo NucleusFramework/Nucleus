@@ -81,7 +81,11 @@ Download URL: `{protocol}://{host}/{owner}/{repo}/releases/download/v{version}/{
 A pre-release channel (`channel = "beta"`) resolves its newest tag from the public
 `{protocol}://{host}/{owner}/{repo}/releases.atom` feed, like electron-updater — no REST API call, so no
 rate limit. A tag's channel is its first pre-release identifier (`v2.3.5-beta.8` → `beta`), matched
-exactly (case-insensitive).
+exactly (case-insensitive); a tag that is not a SemVer version is on no channel. The feed lists only
+the 10 most recent releases, so a channel with none among them is not found (stable is unaffected).
+
+The third argument is never a token: `GitHubProvider(owner, repo, token)` does not compile. Pass a
+host by name.
 
 These are GitHub's anonymous web routes. They take no token, so they only work for a public
 repository on an instance that is not in private mode.
@@ -97,6 +101,15 @@ provider = PrivateGitHubProvider(
     protocol = "https"        // Optional; "http" is accepted for a loopback host only (local testing)
 )
 ```
+
+Everything goes through the REST API (`https://api.github.com`, or `{protocol}://{host}/api/v3`): the
+release is looked up there (stable: `releases/latest`; another channel: the newest non-draft release
+on it among the 100 most recent) and every file is downloaded as a release asset.
+
+The token's quota, 5,000 requests an hour, is shared by every installation of the app. A check costs
+one request; a download costs one per file (manifest, artifact, block map, signature) plus one per
+range request of a differential download. For a large install base, consider
+`differentialDownload = false`.
 
 ### Generic HTTP server
 

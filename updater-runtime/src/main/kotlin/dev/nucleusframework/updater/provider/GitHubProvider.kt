@@ -2,18 +2,25 @@ package dev.nucleusframework.updater.provider
 
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.updater.exception.NetworkException
+import dev.nucleusframework.updater.provider.GitHubReleases.FEED_RELEASES
+import dev.nucleusframework.updater.provider.GitHubReleases.feedTags
 import dev.nucleusframework.updater.provider.GitHubReleases.isOnChannel
+import dev.nucleusframework.updater.provider.GitHubReleases.isReleaseTag
 import dev.nucleusframework.updater.provider.GitHubReleases.isStable
 import dev.nucleusframework.updater.provider.GitHubReleases.metadataFileName
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import javax.xml.stream.XMLStreamException
 
 /**
  * Updates from the releases of a public GitHub repository, read through GitHub's anonymous web
  * routes (no REST API, so no rate limit). Stable uses the `releases/latest` redirect; other
  * channels take the newest matching tag from `releases.atom`, as electron-updater does.
+ *
+ * The feed lists only the 10 most recent releases: a channel with none among them is not found
+ * (stable is unaffected). Tags that are not SemVer versions are on no channel.
  *
  * Private and internal repositories, and Enterprise Servers in private mode, need
  * [PrivateGitHubProvider].
@@ -27,6 +34,19 @@ public class GitHubProvider(
     public val host: String = GitHubReleases.DEFAULT_HOST,
     public val protocol: String = GitHubReleases.DEFAULT_PROTOCOL,
 ) : UpdateProvider {
+    /**
+     * Kept so that a call passing a token, `GitHubProvider(owner, repo, token)`, fails to compile
+     * instead of taking the token as [host]. Any three positional arguments resolve here, so a host
+     * is passed by name: `GitHubProvider(owner, repo, host = "github.example.com")`.
+     */
+    @Deprecated(
+        "GitHubProvider reads public repositories only and takes no token. Use PrivateGitHubProvider.",
+        ReplaceWith("PrivateGitHubProvider(owner, repo, token)"),
+        DeprecationLevel.ERROR,
+    )
+    @Suppress("UNUSED_PARAMETER")
+    public constructor(owner: String, repo: String, token: String) : this(owner, repo)
+
     private val baseUrl: String = GitHubReleases.baseUrl(protocol, host, "GitHubProvider")
 
     override fun getUpdateMetadataUrl(
@@ -57,17 +77,23 @@ public class GitHubProvider(
         channel: String,
         httpClient: HttpClient,
     ): String {
-        // Entries link to `.../releases/tag/<tag>`, newest first.
-        val tags = TAG_HREF_REGEX.findAll(fetchFeed(httpClient)).map { it.groupValues[1] }.toList()
+        val tags = readFeedTags(httpClient).filter(::isReleaseTag)
         if (tags.isEmpty()) {
             throw NoSuchElementException("No published versions for $owner/$repo on GitHub.")
         }
         return tags.firstOrNull { isOnChannel(it, channel) }
             ?: throw NoSuchElementException(
-                "No release found for channel '$channel' in the GitHub releases feed for $owner/$repo. " +
-                    "Publish a release on this channel.",
+                "No release found for channel '$channel' among the $FEED_RELEASES most recent releases " +
+                    "of $owner/$repo (the GitHub releases feed lists no more). Publish a release on this channel.",
             )
     }
+
+    private fun readFeedTags(httpClient: HttpClient): List<String> =
+        try {
+            feedTags(fetchFeed(httpClient))
+        } catch (e: XMLStreamException) {
+            throw NetworkException("GitHub releases feed for $owner/$repo is not valid Atom", e)
+        }
 
     /** Reads `/<owner>/<repo>/releases.atom`. */
     private fun fetchFeed(httpClient: HttpClient): String {
@@ -88,4 +114,3 @@ public class GitHubProvider(
 }
 
 private const val HTTP_OK = 200
-private val TAG_HREF_REGEX = Regex("""/releases/tag/([^"]+)""")

@@ -3,6 +3,7 @@ package dev.nucleusframework.updater.provider
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.updater.exception.NetworkException
 import dev.nucleusframework.updater.provider.GitHubReleases.isOnChannel
+import dev.nucleusframework.updater.provider.GitHubReleases.isReleaseTag
 import dev.nucleusframework.updater.provider.GitHubReleases.isStable
 import dev.nucleusframework.updater.provider.GitHubReleases.metadataFileName
 import kotlinx.serialization.SerialName
@@ -24,7 +25,10 @@ import java.util.concurrent.ConcurrentHashMap
  * the JDK `HttpClient` drops `Authorization` on redirect, so the token stays with GitHub.
  *
  * The token ships inside the app: give it read access to the repository's contents and nothing
- * more.
+ * more. Its REST quota (5,000 requests an hour) is shared by every installation. A check costs one
+ * request; a download costs one per file (manifest, artifact, block map, signature) and one per
+ * range request of a differential download, since each request to an asset goes through the API.
+ * For a large install base, consider `differentialDownload = false`.
  *
  * @property host e.g. `github.example.com` for GitHub Enterprise Server (API at `/api/v3`); may
  *   include a port.
@@ -128,7 +132,7 @@ public class PrivateGitHubProvider(
         }
         val releases = json.decodeFromString<List<ApiRelease>>(getJson("$releasesUrl?per_page=$PER_PAGE", httpClient))
         val match =
-            releases.firstOrNull { !it.draft && isOnChannel(it.tagName, channel) }
+            releases.firstOrNull { !it.draft && isReleaseTag(it.tagName) && isOnChannel(it.tagName, channel) }
                 ?: throw NoSuchElementException(
                     "No release found for channel '$channel' within the most recent $PER_PAGE releases of " +
                         "$owner/$repo. Publish a release on this channel.",

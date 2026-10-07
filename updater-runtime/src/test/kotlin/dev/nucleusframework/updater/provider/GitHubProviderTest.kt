@@ -7,19 +7,25 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.updater.exception.NetworkException
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import java.net.InetSocketAddress
 import java.net.http.HttpClient
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class GitHubProviderTest {
+    @get:Rule
+    val tmp = TemporaryFolder()
+
     private lateinit var server: HttpServer
     private lateinit var httpClient: HttpClient
     private lateinit var serverBaseUrl: String
@@ -176,6 +182,64 @@ class GitHubProviderTest {
     }
 
     @Test
+    fun `links in release notes are not releases`() {
+        // GitHub escapes the notes' HTML into <content>; a regex over the raw feed read a junk tag
+        // out of this link (`v1.9.0-beta.4&quot;&gt;…`, on channel "beta") before the real entry.
+        val notes = "&lt;a href=&quot;https://github.com/acme/tool/releases/tag/v1.9.0-beta.4&quot;&gt;x&lt;/a&gt;"
+        feedBody = atomFeed("v2.0.0", "v1.9.0-beta.3", notes = notes)
+        val url = newProvider().resolveMetadataUrl("beta", Platform.Linux, httpClient)
+        assertEquals("$serverBaseUrl/acme/tool/releases/download/v1.9.0-beta.3/beta-linux.yml", url)
+    }
+
+    @Test
+    fun `feed tags come from each entry's own link only`() {
+        val notes = "&lt;a href=&quot;https://github.com/acme/tool/releases/tag/v0.1.0&quot;&gt;old&lt;/a&gt;"
+        assertEquals(
+            listOf("v3.0.0", "v2.0.0", "v1.0.0"),
+            GitHubReleases.feedTags(atomFeed("v3.0.0", "v2.0.0", "v1.0.0", notes = notes)),
+        )
+    }
+
+    @Test
+    fun `tags that are not versions are on no channel`() {
+        feedBody = atomFeed(".", "..", "nightly", "beta", "v2.0.0-beta.1")
+        val url = newProvider().resolveMetadataUrl("beta", Platform.Linux, httpClient)
+        assertEquals("$serverBaseUrl/acme/tool/releases/download/v2.0.0-beta.1/beta-linux.yml", url)
+    }
+
+    @Test
+    fun `a release tag is a SemVer version, optionally prefixed with v`() {
+        for (tag in listOf("v1.2.3", "1.2.3", "v1.2.3-beta.1", "1.0.0-rc.1+build.5")) {
+            assertTrue(tag, GitHubReleases.isReleaseTag(tag))
+        }
+        for (tag in listOf(".", "..", "nightly", "v1.2", "01.2.3", "v1.2.3&quot;&gt;", "v../1.0.0")) {
+            assertFalse(tag, GitHubReleases.isReleaseTag(tag))
+        }
+    }
+
+    @Test
+    fun `a feed that is not XML becomes a NetworkException`() {
+        feedBody = "<feed><entry>"
+        val e =
+            assertThrows(
+                NetworkException::class.java,
+            ) { newProvider().resolveMetadataUrl("beta", Platform.Linux, httpClient) }
+        assertTrue(e.message!!, e.message!!.contains("acme/tool is not valid Atom"))
+    }
+
+    @Test
+    fun `a feed cannot pull in external entities`() {
+        val secret = tmp.newFile("secret.txt").apply { writeText("v6.6.6-beta.1") }
+        feedBody =
+            """<?xml version="1.0"?><!DOCTYPE feed [<!ENTITY x SYSTEM "${secret.toURI()}">]>""" +
+            """<feed xmlns="http://www.w3.org/2005/Atom"><entry>""" +
+            """<link href="https://github.com/acme/tool/releases/tag/&x;"/></entry></feed>"""
+        assertThrows(
+            NetworkException::class.java,
+        ) { newProvider().resolveMetadataUrl("beta", Platform.Linux, httpClient) }
+    }
+
+    @Test
     fun `throws when no release matches the channel`() {
         feedBody = atomFeed("v1.0.0-alpha.1", "v1.0.0")
         try {
@@ -184,6 +248,7 @@ class GitHubProviderTest {
         } catch (e: NoSuchElementException) {
             assertNotNull(e.message)
             assertTrue("message should name the channel", e.message!!.contains("No release found for channel 'beta'"))
+            assertTrue("message should name the feed's limit", e.message!!.contains("10 most recent releases"))
         }
     }
 
@@ -219,7 +284,11 @@ class GitHubProviderTest {
         assertEquals(emptyMap<String, String>(), provider.authHeaders())
     }
 
-    private fun atomFeed(vararg tags: String): String =
+    /** A releases feed, newest first; [notes] is each entry's `<content>`, already escaped as GitHub does. */
+    private fun atomFeed(
+        vararg tags: String,
+        notes: String = "",
+    ): String =
         buildString {
             append("""<?xml version="1.0" encoding="UTF-8"?>""")
             append("""<feed xmlns="http://www.w3.org/2005/Atom">""")
@@ -228,6 +297,7 @@ class GitHubProviderTest {
                 append("<entry>")
                 append("""<link rel="alternate" type="text/html" """)
                 append("""href="https://github.com/acme/tool/releases/tag/$tag"/>""")
+                append("""<content type="html">$notes</content>""")
                 append("</entry>")
             }
             append("</feed>")

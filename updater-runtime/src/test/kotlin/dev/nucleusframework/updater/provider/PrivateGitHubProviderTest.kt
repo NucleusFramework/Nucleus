@@ -85,6 +85,20 @@ class PrivateGitHubProviderTest {
     }
 
     @Test
+    fun `a tag that is not a version is on no channel`() {
+        // `release-beta.9` reads as channel "beta" by its suffix, but it is no SemVer version.
+        api.releases =
+            listOf(
+                FakeRelease("release-beta.9", prerelease = true, assets = mapOf("beta.yml" to "not a version")),
+                FakeRelease("v3.0.0-beta.2", prerelease = true, assets = mapOf("beta.yml" to "this one")),
+            )
+
+        val url = newProvider().resolveMetadataUrl("beta", Platform.Windows, httpClient)
+
+        assertEquals(api.assetUrl("v3.0.0-beta.2", "beta.yml"), url)
+    }
+
+    @Test
     fun `download urls are the asset urls of the resolved release`() {
         api.releases =
             listOf(

@@ -1,7 +1,11 @@
 package dev.nucleusframework.updater.provider
 
 import dev.nucleusframework.core.runtime.Platform
+import java.io.StringReader
 import java.net.URI
+import javax.xml.stream.XMLInputFactory
+import javax.xml.stream.XMLStreamConstants
+import javax.xml.stream.XMLStreamReader
 
 /** Shared by [GitHubProvider] and [PrivateGitHubProvider]. */
 internal object GitHubReleases {
@@ -10,6 +14,22 @@ internal object GitHubReleases {
     const val DEFAULT_HOST = "github.com"
     const val DEFAULT_PROTOCOL = HTTPS
     const val LATEST_CHANNEL = "latest"
+
+    /** How many releases `releases.atom` lists: the newest ten. */
+    const val FEED_RELEASES = 10
+
+    private const val ATOM_NS = "http://www.w3.org/2005/Atom"
+
+    /** electron-updater's `hrefRegExp`. */
+    private val TAG_HREF = Regex("""/tag/([^/]+)$""")
+
+    /** semver.org's SemVer 2.0 grammar. */
+    private val SEMVER =
+        Regex(
+            """^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)""" +
+                """(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?""" +
+                """(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$""",
+        )
 
     fun isStable(channel: String): Boolean = channel.equals(LATEST_CHANNEL, ignoreCase = true)
 
@@ -40,6 +60,65 @@ internal object GitHubReleases {
             .substringAfter('-', missingDelimiterValue = "")
             .substringBefore('.')
             .equals(channel, ignoreCase = true)
+
+    /**
+     * Whether [tag] is a SemVer 2.0 version, optionally prefixed with `v`. Feeds carry other tags
+     * too (`nightly`); those are on no channel. `.` and `..` never match, so a tag cannot step out
+     * of `releases/download/`.
+     */
+    fun isReleaseTag(tag: String): Boolean = tag != "." && tag != ".." && SEMVER.matches(tag.removePrefix("v"))
+
+    /**
+     * The tag of each `<entry>` of a releases Atom feed, newest first, read from the `href` of the
+     * entry's first `<link>` (`…/releases/tag/<tag>`), as electron-updater reads it. Release notes
+     * are escaped text inside `<content>`, so the links they contain are never read.
+     *
+     * @throws javax.xml.stream.XMLStreamException when [xml] is not well-formed.
+     */
+    fun feedTags(xml: String): List<String> {
+        val reader = feedReader(xml)
+        try {
+            val tags = mutableListOf<String>()
+            var depth = 0
+            // Depth of the open <entry>, or -1 outside one; and whether its link was read.
+            var entryDepth = -1
+            var linkRead = false
+            while (reader.hasNext()) {
+                when (reader.next()) {
+                    XMLStreamConstants.START_ELEMENT -> {
+                        depth++
+                        if (reader.isAtom("entry") && entryDepth < 0) {
+                            entryDepth = depth
+                            linkRead = false
+                        } else if (reader.isAtom("link") && depth == entryDepth + 1 && !linkRead) {
+                            linkRead = true
+                            entryTag(reader.getAttributeValue(null, "href"))?.let(tags::add)
+                        }
+                    }
+                    XMLStreamConstants.END_ELEMENT -> {
+                        if (depth == entryDepth) entryDepth = -1
+                        depth--
+                    }
+                }
+            }
+            return tags
+        } finally {
+            reader.close()
+        }
+    }
+
+    private fun entryTag(href: String?): String? = href?.let { TAG_HREF.find(it)?.groupValues?.get(1) }
+
+    private fun XMLStreamReader.isAtom(name: String): Boolean = localName == name && namespaceURI == ATOM_NS
+
+    /** The JDK's own StAX parser, with no DTDs and no external entities: the feed is remote input. */
+    private fun feedReader(xml: String): XMLStreamReader =
+        XMLInputFactory
+            .newDefaultFactory()
+            .apply {
+                setProperty(XMLInputFactory.SUPPORT_DTD, false)
+                setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false)
+            }.createXMLStreamReader(StringReader(xml))
 
     /**
      * Validates [protocol] and [host] and returns `<protocol>://<host>`. Plain http is accepted for

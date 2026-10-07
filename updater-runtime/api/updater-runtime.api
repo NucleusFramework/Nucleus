@@ -261,6 +261,7 @@ public final class dev/nucleusframework/updater/provider/GenericProvider : dev/n
 }
 
 public final class dev/nucleusframework/updater/provider/GitHubProvider : dev/nucleusframework/updater/provider/UpdateProvider {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun authHeaders ()Ljava/util/Map;
