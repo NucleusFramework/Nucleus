@@ -93,6 +93,7 @@ nucleus.application {
                 isEnabled = true
                 optimize = true
                 obfuscate = true
+                consumerRules = true
             }
         }
     }

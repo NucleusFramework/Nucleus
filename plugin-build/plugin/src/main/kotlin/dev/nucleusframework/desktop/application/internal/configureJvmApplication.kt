@@ -840,9 +840,12 @@ private fun JvmApplicationContext.configureProguardTask(
         dontobfuscate.set(settings.obfuscate.map { !it })
         dontoptimize.set(settings.optimize.map { !it })
 
+        // Read outside the lambda: capturing the context would drag the Project and SourceSet into
+        // the configuration cache.
+        val singleJar = app.optSingleJar
         joinOutputJars.set(
             settings.joinOutputJars.map { enabled ->
-                enabled || app.optSingleJar
+                enabled || singleJar
             },
         )
 
@@ -870,10 +873,14 @@ private fun JvmApplicationContext.configureProguardTask(
         destinationDir.set(appTmpDir.dir("proguard"))
         javaHome.set(app.javaHomeProvider)
 
+        consumerRules.set(settings.consumerRules)
+        consumerRulesExclusions.set(settings.consumerRulesExclusions)
+
         useAppRuntimeFiles { files ->
             inputFiles.from(files.allRuntimeJars)
             mainJar.set(files.mainJar)
             mainJarBaseName.set(files.mainJar.map { it.asFile.name })
+            files.artifactCoordinates?.let { artifactCoordinates.set(it) }
         }
     }
 
