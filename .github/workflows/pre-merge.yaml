@@ -297,9 +297,8 @@ jobs:
 
       - name: Install display stack (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
+        timeout-minutes: 10
+        run: .github/scripts/apt-install.sh xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
 
       - name: Run headful suite (Linux, under Xvfb + openbox)
         if: runner.os == 'Linux'
@@ -383,11 +382,11 @@ jobs:
 
       - name: Install display + AT-SPI stack (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 10
+        # No libwebkit2gtk: the a11y-surface fixture hosts no WebView (the old
+        # tao-demo sweep visited its WebView tab and needed it).
         run: |
-          sudo apt-get update
-          # No libwebkit2gtk: the a11y-surface fixture hosts no WebView (the old
-          # tao-demo sweep visited its WebView tab and needed it).
-          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
+          .github/scripts/apt-install.sh xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
             at-spi2-core python3-pyatspi dbus-x11 xdotool
 
       - name: Verify AT-SPI projection (Linux)

@@ -54,11 +54,10 @@ jobs:
 
       - name: Install display stack (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          # Xvfb itself comes from setup-nucleus, which also starts it. x11-utils provides
-          # xdpyinfo, which the next step uses to wait for and check the X server.
-          sudo apt-get install -y openbox mesa-utils x11-utils libegl1 libgl1-mesa-dri libgtk-3-0
+        timeout-minutes: 10
+        # Xvfb itself comes from setup-nucleus, which also starts it. x11-utils provides
+        # xdpyinfo, which the next step uses to wait for and check the X server.
+        run: .github/scripts/apt-install.sh openbox mesa-utils x11-utils libegl1 libgl1-mesa-dri libgtk-3-0
 
       - name: Run native test pyramid (Linux, under Xvfb + openbox)
         if: runner.os == 'Linux'

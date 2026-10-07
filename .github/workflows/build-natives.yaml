@@ -369,7 +369,8 @@ jobs:
 
       - name: Install build dependencies
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libx11-dev libglib2.0-dev libgtk-3-dev
+        timeout-minutes: 10
+        run: .github/scripts/apt-install.sh libdbus-1-dev libx11-dev libglib2.0-dev libgtk-3-dev
 
       - name: Build darkmode-detector Linux native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
