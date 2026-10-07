@@ -41,53 +41,6 @@ import kotlin.test.assertTrue
  * [dispatchTrackpadScale] — the production path after the fix.
  */
 class TaoSceneTrackpadScaleTest {
-    @Test
-    fun `cancelled scale is consumed before release and the next pinch still works`() =
-        runTaoSceneTest(width = 400, height = 200) {
-            var releases = 0
-            var cancellations = 0
-            setContent {
-                TaoTrackpadScaleCancellationHost {
-                    Box(
-                        Modifier.fillMaxSize().pointerInput(Unit) {
-                            var scaling = false
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    when (event.type) {
-                                        PointerEventType.ScaleStart -> scaling = true
-                                        PointerEventType.ScaleEnd -> {
-                                            if (scaling) {
-                                                if (event.changes.any { it.isConsumed }) cancellations++ else releases++
-                                            }
-                                            scaling = false
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                    )
-                }
-            }
-            moveMouse(CURSOR_X, CURSOR_Y)
-            val session =
-                TaoTrackpadScaleSession { type, factor, cancelled ->
-                    scene.dispatchTrackpadScale(CURSOR_X, CURSOR_Y, type, factor, cancelled = cancelled)
-                }
-            session.start()
-            session.change(1.05f)
-            session.end(cancelled = true)
-            frameUntilIdle()
-            assertEquals(0, releases)
-            assertEquals(1, cancellations)
-            session.start()
-            session.change(0.95f)
-            session.end()
-            frameUntilIdle()
-            assertEquals(1, releases)
-            assertEquals(1, cancellations)
-        }
-
     // ── Reproduction of the pre-#660 two-touch synthesis ───────────────────
 
     @Test
@@ -370,7 +323,7 @@ class TaoSceneTrackpadScaleTest {
             }
             moveMouse(CURSOR_X, CURSOR_Y)
             val session =
-                TaoTrackpadScaleSession { type, factor, _ ->
+                TaoTrackpadScaleSession { type, factor ->
                     scene.dispatchTrackpadScale(CURSOR_X, CURSOR_Y, type, factor)
                     frame()
                 }

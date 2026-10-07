@@ -432,12 +432,6 @@ public object TaoSceneTestBattery {
         run("TaoSceneTrackpadPanTest: an orphaned momentum tail scrolls as wheel events instead of stalling") {
             TaoSceneTrackpadPanTest().`an orphaned momentum tail scrolls as wheel events instead of stalling`()
         }
-        run("TaoSceneTrackpadScaleTest: cancelled scale is consumed before release and the next pinch still works") {
-            TaoSceneTrackpadScaleTest().`cancelled scale is consumed before release and the next pinch still works`()
-        }
-        run("TaoTrackpadScaleSessionTest: cancellationIsCarriedOnlyByTheEndEvent") {
-            TaoTrackpadScaleSessionTest().cancellationIsCarriedOnlyByTheEndEvent()
-        }
         run("TaoSceneTrackpadScaleTest: legacy two-touch pinch plants contacts 120 px off the cursor") {
             TaoSceneTrackpadScaleTest().`legacy two-touch pinch plants contacts 120 px off the cursor`()
         }

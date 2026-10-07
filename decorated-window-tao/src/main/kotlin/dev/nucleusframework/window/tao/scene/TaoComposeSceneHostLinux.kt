@@ -1351,13 +1351,12 @@ internal class TaoComposeSceneHostLinux(
     private var gestureCenterX = 0f
     private var gestureCenterY = 0f
     private val scaleSession =
-        TaoTrackpadScaleSession { type, factor, cancelled ->
+        TaoTrackpadScaleSession { type, factor ->
             scene?.dispatchTrackpadScale(
                 x = gestureCenterX,
                 y = gestureCenterY,
                 type = type,
                 scaleFactor = factor,
-                cancelled = cancelled,
                 keyboardModifiers = currentKeyboardModifiers,
             )
         }
@@ -1438,7 +1437,7 @@ internal class TaoComposeSceneHostLinux(
             }
             TaoTrackpadPhase.ENDED, TaoTrackpadPhase.CANCELLED -> {
                 pinchActive = false
-                scaleSession.end(cancelled = phase == TaoTrackpadPhase.CANCELLED)
+                scaleSession.end()
             }
         }
     }
@@ -1544,9 +1543,8 @@ internal class TaoComposeSceneHostLinux(
     // Guarded like AWT's `ComposeSceneMediator.setContent`: the first
     // composition runs inside this call, so content that throws while mounting
     // must reach the window's handler instead of unwinding into the Tao loop.
-    fun setContent(userContent: @Composable () -> Unit) =
+    fun setContent(content: @Composable () -> Unit) =
         exceptionHandler.catchExceptions {
-            val content: @Composable () -> Unit = { TaoTrackpadScaleCancellationHost(userContent) }
             scene?.setContent {
                 // Capture the standard FocusManager from the composition
                 // so the overlay controller can call `clearFocus(force =

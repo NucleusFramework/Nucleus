@@ -96,23 +96,8 @@ class TaoTrackpadScaleSessionTest {
         assertEquals(listOf(PointerEventType.ScaleStart to 1f), h.sent)
     }
 
-    @Test
-    fun cancellationIsCarriedOnlyByTheEndEvent() {
-        val reasons = mutableListOf<Boolean>()
-        val session = TaoTrackpadScaleSession { _, _, cancelled -> reasons += cancelled }
-        session.start()
-        session.change(1.05f)
-        session.end(cancelled = true)
-        session.end(cancelled = true)
-        assertEquals(listOf(false, false, true), reasons)
-        assertFalse(session.active)
-        session.start()
-        session.end()
-        assertEquals(listOf(false, false, true, false, false), reasons)
-    }
-
     private class Harness {
         val sent = mutableListOf<Pair<PointerEventType, Float>>()
-        val session = TaoTrackpadScaleSession { type, factor, _ -> sent += type to factor }
+        val session = TaoTrackpadScaleSession { type, factor -> sent += type to factor }
     }
 }
