@@ -193,7 +193,7 @@ class ConsumerProguardRulesTest {
                 "-keep class 'a.B'-printconfiguration" to listOf("quotes"),
                 "'-printconfiguration'" to listOf("quotes"),
                 "-keep class \"a.B\"" to listOf("quotes"),
-                "-keep class 'a#'-dontshrink" to listOf("quotes"),
+                "-keep class 'a#'-dontshrink" to listOf("#", "quotes"),
                 // A quoted brace hides the include from the brace count; the quote rejects the file anyway.
                 "-keep class a.B { '{' }\n@other.pro" to listOf("quotes"),
                 "# it's a comment\n-keep class a.B" to emptyList(),
@@ -203,6 +203,10 @@ class ConsumerProguardRulesTest {
                 "-keep class a.B\n@other.pro c.D" to listOf("@file"),
                 "@C:/x/other.pro\n-keep class a.B" to listOf("@file"),
                 "-keep class * implements @evil.pro\n-dontwarn a.**" to listOf("@file"),
+                // File filters read file names, where `#` only starts a comment after whitespace.
+                "-keepdirectories a#b -dontobfuscate" to listOf("#"),
+                "-adaptresourcefilenames x#y -dontshrink\n-keep class a.B" to listOf("#"),
+                "-keep class a.B # fine\n#fine too\n\t# and this" to emptyList(),
                 // ProGuard splits on Character.isWhitespace and reads UTF-8; only ASCII code is allowed.
                 "-dontwarn a\u001C-dontshrink" to listOf("non-ASCII"),
                 "-dontwarn a\u001F-include x" to listOf("non-ASCII"),
@@ -220,7 +224,7 @@ class ConsumerProguardRulesTest {
                 "{ *; }" to listOf("{"),
             )
         for ((rules, expected) in cases) {
-            assertEquals(rules, expected, ConsumerProguardRules.disallowedOptions(rules))
+            assertEquals(rules, expected, ConsumerRuleGuard.disallowedOptions(rules))
         }
     }
 
@@ -255,7 +259,7 @@ class ConsumerProguardRulesTest {
             -keep @a.B class * extends @c.D com.x.Base
             -keep class a.D { void m(java.lang.String, int); }
             """.trimIndent()
-        assertEquals(emptyList<String>(), ConsumerProguardRules.disallowedOptions(rules))
+        assertEquals(emptyList<String>(), ConsumerRuleGuard.disallowedOptions(rules))
     }
 
     @Test
@@ -324,21 +328,23 @@ class ConsumerProguardRulesTest {
     }
 
     @Test
-    fun `service files that are not class names are skipped, never pasted into the rules`() {
+    fun `service files that are not provider lists are ignored quietly, never pasted into the rules`() {
         val lib =
             jar(
                 "lib.jar",
                 "META-INF/services/a.Service" to "a.Impl { *; }\n-dontobfuscate\n",
+                "META-INF/services/org.codehaus.groovy.runtime.ExtensionModule" to "moduleName=ext\nmoduleVersion=1\n",
                 "META-INF/services/b.Service" to "b.Impl\n",
             )
 
         val result = ConsumerProguardRules.extract(listOf(lib), out)
 
-        assertEquals(listOf("META-INF/services/a.Service"), result.skipped.map { it.entry })
+        assertTrue(result.skipped.isEmpty())
         val rules = result.files.single().readText()
         assertTrue(rules.contains("-keep class b.Impl"))
         assertFalse(rules.contains("dontobfuscate"))
         assertFalse(rules.contains("a.Impl"))
+        assertFalse(rules.contains("moduleName"))
     }
 
     @Test
