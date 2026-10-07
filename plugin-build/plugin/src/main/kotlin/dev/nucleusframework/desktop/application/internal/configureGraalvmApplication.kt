@@ -2534,19 +2534,34 @@ private fun JvmApplicationContext.collectProjectResourceProjects(runtimeConfigNa
     // `api(project(...))` of a direct dependency) is loaded at run time just the same.
     fun visit(
         owner: Project,
-        configName: String?,
+        configNames: List<String>,
     ) {
-        configName
-            ?.let { owner.configurations.findByName(it) }
-            ?.allDependencies
-            ?.withType(ProjectDependency::class.java)
-            ?.forEach { dep ->
+        configNames
+            .mapNotNull { owner.configurations.findByName(it) }
+            .flatMap { it.allDependencies.withType(ProjectDependency::class.java) }
+            .forEach { dep ->
                 val dependency = runCatching { owner.project(dep.path) }.getOrNull() ?: return@forEach
-                if (projects.add(dependency)) visit(dependency, "runtimeClasspath")
+                if (projects.add(dependency)) visit(dependency, jvmRuntimeConfigurationNames(dependency))
             }
     }
-    visit(project, runtimeConfigName)
+    visit(project, listOfNotNull(runtimeConfigName))
     return projects
+}
+
+/**
+ * The runtime classpath configurations of [p]'s JVM side: `runtimeClasspath` for a Kotlin/JVM or
+ * Java module, the JVM targets' main compilations for a Kotlin Multiplatform one
+ * (`jvmRuntimeClasspath`, `desktopRuntimeClasspath`), which has no `runtimeClasspath` at all.
+ */
+private fun jvmRuntimeConfigurationNames(p: Project): List<String> {
+    val multiplatform =
+        runCatching {
+            p.mppExtOrNull
+                ?.targets
+                ?.filter { it.platformType == KotlinPlatformType.jvm }
+                ?.mapNotNull { it.compilations.findByName("main")?.runtimeDependencyConfigurationName }
+        }.getOrNull()
+    return multiplatform?.takeIf { it.isNotEmpty() } ?: listOf("runtimeClasspath")
 }
 
 /**

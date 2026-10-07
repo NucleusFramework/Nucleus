@@ -79,14 +79,6 @@ jobs:
           "$BIN" battery
           "$BIN" headful
 
-      # ── Stage 2: the Lab's native image (what every release ships) ──────────
-      - name: Build GraalVM native image (Nucleus Lab)
-        shell: bash
-        # GraalVM CE is resolved through the GitHub releases API. Hosted runners share an IP,
-        # so the 60/hour anonymous limit is routinely exhausted — authenticate the call.
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: ./gradlew :examples:lab:app:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace
 
       - name: Run native test pyramid
         if: runner.os != 'Linux'
@@ -105,3 +97,12 @@ jobs:
           test -n "$BIN"
           "$BIN" battery
           "$BIN" headful
+
+      # ── Stage 2: the Lab's native image (what every release ships), only once the test image ran ──
+      - name: Build GraalVM native image (Nucleus Lab)
+        shell: bash
+        # GraalVM CE is resolved through the GitHub releases API. Hosted runners share an IP,
+        # so the 60/hour anonymous limit is routinely exhausted — authenticate the call.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./gradlew :examples:lab:app:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace

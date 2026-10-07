@@ -12,10 +12,6 @@ inputs:
     description: 'Release type: release, draft, or prerelease'
     required: false
     default: 'release'
-  notes:
-    description: 'Release notes; empty generates them from the commits'
-    required: false
-    default: ''
 
 outputs:
   release-url:
@@ -42,12 +38,7 @@ runs:
         SKIP_NAMES='^(java\.exe|javaw\.exe|signing-metadata\.json|packaging-metadata\.json)$'
 
         # Build gh release create flags
-        NOTES="${{ inputs.notes }}"
-        if [ -n "$NOTES" ]; then
-          CREATE_FLAGS=("--title" "$TAG" "--notes" "$NOTES")
-        else
-          CREATE_FLAGS=("--title" "$TAG" "--generate-notes")
-        fi
+        CREATE_FLAGS=("--title" "$TAG" "--generate-notes")
         case "$RELEASE_TYPE" in
           draft)      CREATE_FLAGS+=("--draft") ;;
           prerelease) CREATE_FLAGS+=("--prerelease" "--latest=false") ;;
@@ -60,8 +51,7 @@ runs:
           echo "Release $TAG already exists, will upload assets to it."
         else
           echo "Creating release $TAG..."
-          # Another workflow (publish-maven's dev pre-release) may create it at the same moment.
-          gh release create "$TAG" "${CREATE_FLAGS[@]}" || gh release view "$TAG" >/dev/null
+          gh release create "$TAG" "${CREATE_FLAGS[@]}"
         fi
 
         # Collect all binary files to upload (deduplicated by basename)

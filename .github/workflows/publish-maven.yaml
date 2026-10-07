@@ -238,12 +238,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          NOTES="Development build, not verified. Release notes will come with the final release."
-          # release-desktop attaches the Lab to the same pre-release and may have created it first.
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --notes "$NOTES"
-          else
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
-              --prerelease --latest=false --notes "$NOTES" ||
-              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --notes "$NOTES"
-          fi
+          # The only creator of a dev pre-release: release-desktop waits for it, then attaches the Lab.
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
+            --prerelease --latest=false \
+            --notes "Development build, not verified. Release notes will come with the final release."

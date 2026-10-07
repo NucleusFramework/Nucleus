@@ -3,9 +3,9 @@ name: Release Nucleus Lab (native image, JVM on Windows ARM)
 on:
   push:
     tags:
-      # Dev tags (`v3.0.0-dev-<timestamp>`) too: the Lab is attached to their GitHub pre-release.
-      # This workflow runs beside publish-maven, never in its path, so the Maven deploy does not
-      # wait for any of it.
+      # Dev tags (`v3.0.0-dev-<timestamp>`) too: the Lab is attached to the GitHub pre-release
+      # publish-maven creates once Central accepted the version. This workflow runs beside
+      # publish-maven, never in its path, so the Maven deploy does not wait for any of it.
       - "v*"
   workflow_dispatch:
 
@@ -283,12 +283,28 @@ jobs:
             echo
           done
 
+      # A dev pre-release is publish-maven's to create, once Central accepted the version: a
+      # failed or cancelled Maven deploy must not leave a release for a version that does not
+      # exist. Wait for it (the Maven deploy is normally done long before the Lab builds are),
+      # and publish nothing if it never comes.
+      - name: Wait for the dev pre-release
+        if: needs.validate-release-ref.outputs.is-dev == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Pre-release $TAG exists."
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::No pre-release $TAG after 60 min: the Maven deploy failed or is still running. Nothing published."
+          exit 1
+
       - name: Publish release
         uses: ./.github/actions/publish-release
         with:
           artifacts-path: artifacts
           tag: ${{ env.TAG }}
           release-type: ${{ env.RELEASE_TYPE }}
-          # Same generic notes as publish-maven's pre-release: whichever workflow gets there first
-          # creates it, the other only adds its files.
-          notes: ${{ needs.validate-release-ref.outputs.is-dev == 'true' && 'Development build, not verified. Release notes will come with the final release.' || '' }}
