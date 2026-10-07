@@ -2,6 +2,13 @@
 -keep class org.jetbrains.skia.** { *; }
 -keep class org.jetbrains.skiko.** { *; }
 
+# ProGuard 7.10 return-type specialization can emit a method copy that fails verification:
+# `ParagraphKt__ActualParagraph_skikoKt.Paragraph-czeN-Hc$<n>` is declared to return
+# `SkiaParagraph` but still returns a value it checkcasts to `Paragraph`, so the first text
+# layout throws `VerifyError: Bad return type`. Whether ProGuard specializes depends on the
+# whole program, so a small app may never hit it.
+-optimizations !method/specialization/returntype
+
 -assumenosideeffects public class androidx.compose.runtime.ComposerKt {
     void sourceInformation(androidx.compose.runtime.Composer,java.lang.String);
     void sourceInformationMarkerStart(androidx.compose.runtime.Composer,int,java.lang.String);
