@@ -100,6 +100,7 @@ internal object ResizeSyncHeadfulCases {
                 HeadfulRobot.inject(timeoutMillis = DRAG_TIMEOUT_MILLIS) { robot ->
                     robot.mouseMove(awt(cornerX), awt(cornerY))
                     Thread.sleep(PAUSE_MILLIS)
+                    HeadfulRobot.notePress()
                     robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
                     Thread.sleep(PAUSE_MILLIS)
                     val path = (1..STEPS) + (STEPS - 1 downTo 0)
@@ -108,6 +109,7 @@ internal object ResizeSyncHeadfulCases {
                         Thread.sleep(STEP_MILLIS)
                     }
                     robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
+                    HeadfulRobot.noteRelease()
                     true
                 }
             settle(SETTLE_MILLIS)

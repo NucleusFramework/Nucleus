@@ -338,6 +338,7 @@ internal object NativeViewMonkeyHeadfulCases {
         }
         HeadfulRobot.inject { robot ->
             robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
+            HeadfulRobot.noteRelease()
             true
         }
     }

@@ -199,6 +199,7 @@ internal object UnpaintedFlashHeadfulCases {
                 HeadfulRobot.inject(timeoutMillis = DRAG_TIMEOUT_MILLIS) { robot ->
                     robot.mouseMove(awt(cornerX), awt(cornerY))
                     Thread.sleep(DRAG_PAUSE_MILLIS)
+                    HeadfulRobot.notePress()
                     robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
                     Thread.sleep(DRAG_PAUSE_MILLIS)
                     for (step in 1..DRAG_STEPS) {
@@ -206,6 +207,7 @@ internal object UnpaintedFlashHeadfulCases {
                         Thread.sleep(DRAG_STEP_MILLIS)
                     }
                     robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
+                    HeadfulRobot.noteRelease()
                     true
                 }
             settle(SETTLE_AFTER_MILLIS)
