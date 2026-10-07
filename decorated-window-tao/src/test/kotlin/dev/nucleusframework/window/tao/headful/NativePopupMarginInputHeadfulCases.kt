@@ -305,6 +305,7 @@ internal object NativePopupMarginInputHeadfulCases {
             robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
             Thread.sleep(CLICK_HOLD_MILLIS)
             robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
+            HeadfulRobot.noteRelease()
         }
         settle(POINTER_SETTLE_MILLIS)
     }

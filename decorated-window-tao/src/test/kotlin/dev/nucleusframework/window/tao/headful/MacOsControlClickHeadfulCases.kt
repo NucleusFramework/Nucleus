@@ -140,6 +140,7 @@ internal object MacOsControlClickHeadfulCases {
                     robot.keyRelease(KeyEvent.VK_CONTROL)
                 }
                 robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
+                HeadfulRobot.noteRelease()
                 true
             }
         checkNotNull(ok) { "the AWT Robot became unavailable: ${HeadfulRobot.unavailableReason}" }
