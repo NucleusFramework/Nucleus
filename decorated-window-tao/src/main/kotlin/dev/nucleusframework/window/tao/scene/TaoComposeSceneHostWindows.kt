@@ -740,12 +740,13 @@ internal class TaoComposeSceneHostWindows(
     private var pinchCenterX = 0f
     private var pinchCenterY = 0f
     private val scaleSession =
-        TaoTrackpadScaleSession { type, factor ->
+        TaoTrackpadScaleSession { type, factor, cancelled ->
             scene?.dispatchTrackpadScale(
                 x = pinchCenterX,
                 y = pinchCenterY,
                 type = type,
                 scaleFactor = factor,
+                cancelled = cancelled,
                 keyboardModifiers = currentKeyboardModifiers,
             )
         }
@@ -1001,8 +1002,9 @@ internal class TaoComposeSceneHostWindows(
     // Guarded like AWT's `ComposeSceneMediator.setContent`: the first
     // composition runs inside this call, so content that throws while mounting
     // must reach the window's handler instead of unwinding into the Tao loop.
-    fun setContent(content: @Composable () -> Unit) =
+    fun setContent(userContent: @Composable () -> Unit) =
         exceptionHandler.catchExceptions {
+            val content: @Composable () -> Unit = { TaoTrackpadScaleCancellationHost(userContent) }
             scene?.setContent {
                 val fm = androidx.compose.ui.platform.LocalFocusManager.current
                 androidx.compose.runtime.SideEffect { capturedFocusManager = fm }
