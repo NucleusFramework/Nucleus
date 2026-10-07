@@ -195,6 +195,12 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
         if (!consumerRules.get()) return emptySequence()
         val exclusions = consumerRulesExclusions.get()
         val coordinates = artifactCoordinates.get()
+        if (exclusions.isNotEmpty() && coordinates.isEmpty()) {
+            logger.warn(
+                "w: proguard.consumerRulesExclusions ignored: the application's runtime files have no Gradle " +
+                    "coordinates (fromFiles). Use consumerRules = false to leave every embedded rule out.",
+            )
+        }
         val result =
             ConsumerProguardRules.extract(jars, consumerRulesDir.ioFile) { jar ->
                 ConsumerProguardRules.isExcluded(coordinates[jar.absoluteFile.normalize().path], exclusions)

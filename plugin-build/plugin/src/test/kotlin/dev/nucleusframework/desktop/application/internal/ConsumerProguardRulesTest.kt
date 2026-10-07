@@ -162,6 +162,44 @@ class ConsumerProguardRulesTest {
     }
 
     @Test
+    fun `options glued to delimiters and file includes are caught`() {
+        val cases =
+            mapOf(
+                "-keep class a.B { *; }-dontobfuscate" to listOf("-dontobfuscate"),
+                "-keep class a.B;-include /etc/x.pro" to listOf("-include"),
+                "-keep class a.B {*;}-repackageclasses''" to listOf("-repackageclasses"),
+                "-keep,allowobfuscation class a.B(-injars)" to listOf("-injars"),
+                "@/etc/other.pro" to listOf("@file"),
+                "@other.pro\n-keep class a.B" to listOf("@file"),
+                "-keep class a.B\n@other.pro" to listOf("@file"),
+                "-addconfigurationdebugging" to listOf("-addconfigurationdebugging"),
+            )
+        for ((rules, expected) in cases) {
+            assertEquals(rules, expected, ConsumerProguardRules.forbiddenOptions(rules))
+        }
+    }
+
+    @Test
+    fun `annotations and keep modifiers are not mistaken for options`() {
+        val rules =
+            """
+            -keep @a.Ann class *
+            -keep
+                @a.Ann class * { *; }
+            -keepclassmembers,allowobfuscation,includedescriptorclasses class * {
+                @com.google.gson.annotations.SerializedName <fields>;
+                @a.Ann
+                <methods>;
+            }
+            -if @a.Ann class **
+            -keep class <1>
+            -assumevalues class a.C { int f return -1..5; }
+            -keep class a.D { void m(java.lang.String, int); }
+            """.trimIndent()
+        assertEquals(emptyList<String>(), ConsumerProguardRules.forbiddenOptions(rules))
+    }
+
+    @Test
     fun `excluded, missing and corrupt JARs contribute nothing and do not fail`() {
         val excluded = jar("excluded.jar", "META-INF/proguard/a.pro" to "-keep class a.A")
         val corrupt = tmp.root.resolve("corrupt.jar").apply { writeText("not a zip") }

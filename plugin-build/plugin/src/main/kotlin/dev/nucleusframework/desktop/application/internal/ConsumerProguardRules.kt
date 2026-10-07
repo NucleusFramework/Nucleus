@@ -72,10 +72,13 @@ internal object ConsumerProguardRules {
             "-skipnonpubliclibraryclasses",
             "-dontskipnonpubliclibraryclasses",
             "-dontskipnonpubliclibraryclassmembers",
+            "-addconfigurationdebugging",
         )
 
     private val UTF8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
-    private val OPTION = Regex("""(?:^|\s)(-[A-Za-z]+)""")
+    /** A delimiter, or a run of anything else. */
+    private val TOKEN = Regex("""[{}();,]|[^\s{}();,]+""")
+    private val OPTION_PREFIX = Regex("^-[A-Za-z]+")
     private val UNSAFE_NAME_CHARS = Regex("[^A-Za-z0-9._-]")
     private const val MAX_NAME_LENGTH = 80
 
@@ -140,15 +143,42 @@ internal object ConsumerProguardRules {
         return Result(files, skipped)
     }
 
-    /** The [IO_OPTIONS] and [GLOBAL_OPTIONS] used by [rules], comments ignored. */
-    fun forbiddenOptions(rules: String): List<String> =
-        rules
-            .lineSequence()
-            .map { it.substringBefore('#') }
-            .flatMap { line -> OPTION.findAll(line).map { it.groupValues[1].lowercase() } }
-            .filter { it in IO_OPTIONS || it in GLOBAL_OPTIONS }
-            .distinct()
-            .toList()
+    /**
+     * The [IO_OPTIONS] and [GLOBAL_OPTIONS] used by [rules], comments ignored, plus `@file` for
+     * ProGuard's `@file` include. Tokens are split the way ProGuard's word reader splits them — on whitespace and
+     * on `{ } ( ) ; ,` — so an option glued to a delimiter (`{ *; }-dontobfuscate`) is still seen.
+     * An `@word` outside a class body is an include when what follows is another option or the end
+     * of the file; anywhere else it is an annotation (`-keep @a.Ann class *`).
+     */
+    fun forbiddenOptions(rules: String): List<String> {
+        val tokens =
+            rules
+                .lineSequence()
+                .map { it.substringBefore('#') }
+                .flatMap { line -> TOKEN.findAll(line).map { it.value } }
+                .toList()
+        val found = LinkedHashSet<String>()
+        var depth = 0
+        for ((index, token) in tokens.withIndex()) {
+            when {
+                token == "{" -> depth++
+                token == "}" -> depth = maxOf(0, depth - 1)
+                // ProGuard ends a word at a quote too: `-repackageclasses''` is the option then ''.
+                token.startsWith("-") ->
+                    OPTION_PREFIX
+                        .find(token)
+                        ?.value
+                        ?.lowercase()
+                        ?.takeIf { it in IO_OPTIONS || it in GLOBAL_OPTIONS }
+                        ?.let(found::add)
+                token.startsWith("@") && depth == 0 -> {
+                    val next = tokens.getOrNull(index + 1)
+                    if (next == null || next.startsWith("-")) found += "@file"
+                }
+            }
+        }
+        return found.toList()
+    }
 
     /**
      * `group:module` of a resolved module, or the project path (`:shared`) of a project dependency;
