@@ -10,10 +10,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.contentDescription
@@ -34,9 +32,6 @@ enum class SurfaceTab(
 ) {
     A11y("A11y"),
     Complex("Complex"),
-    Events("Events"),
-    Scroll("Scroll"),
-    Zoom("Zoom"),
     ;
 
     companion object {
@@ -94,41 +89,15 @@ fun SurfaceTabBar(
     }
 }
 
-/** Accent colours of the scroll rows. */
-internal val PALETTE =
-    listOf(
-        Color(0xFF6366F1),
-        Color(0xFFEC4899),
-        Color(0xFF06B6D4),
-        Color(0xFFF59E0B),
-    )
-
-/** Newest-first log line for [EventsSurface], capped at 200 entries. */
-fun logEvent(
-    events: SnapshotStateList<String>,
-    text: String,
-) {
-    val time =
-        java.time.LocalTime
-            .now()
-            .withNano(0)
-    events.add(0, "[$time] $text")
-    if (events.size > 200) events.removeRange(200, events.size)
-}
-
 /** The surface content for [tab]; shared by the fixture window and the in-Lab probe. */
 @Composable
 fun SurfaceContent(
     tab: SurfaceTab,
-    events: SnapshotStateList<String>,
     modifier: Modifier = Modifier,
     onA11yEvent: (String) -> Unit = {},
 ) {
     when (tab) {
         SurfaceTab.A11y -> A11ySurface(modifier, onEvent = onA11yEvent)
         SurfaceTab.Complex -> ComplexSurface(modifier)
-        SurfaceTab.Events -> EventsSurface(modifier, events = events)
-        SurfaceTab.Scroll -> ScrollSurface(modifier)
-        SurfaceTab.Zoom -> ZoomSurface(modifier)
     }
 }

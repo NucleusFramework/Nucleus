@@ -21,9 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import atspi_probe as ap  # noqa: E402
 
-# The fixture hosts the input surfaces only (SurfaceTab in
-# examples/lab/probes/input). tao-demo's Demo / Window actions / WebView /
-# SwiftUI / Texture tabs belong to other Lab probes and are not part of it.
+# The fixture's page tabs (SurfaceTab in examples/lab/probes/input).
 TAB_CHECKS = [
     (
         "A11y",
@@ -31,9 +29,6 @@ TAB_CHECKS = [
         25,
     ),
     ("Complex", ["Add item", "Clear done", "Reset", "Buy milk", "Start"], 30),
-    ("Events", ["Events"], 8),
-    ("Scroll", ["Scroll"], 15),
-    ("Zoom", ["Zoom"], 8),
 ]
 
 

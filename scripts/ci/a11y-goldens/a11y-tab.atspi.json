@@ -3,11 +3,8 @@
   "appName": "Nucleus Lab",
   "tab": "A11y",
   "tabs": [
-    { "name": "Scroll", "role": "page tab", "actionsAll": ["click"] },
-    { "name": "Zoom", "role": "page tab", "actionsAll": ["click"] },
     { "name": "A11y", "role": "page tab", "actionsAll": ["click"], "statesAll": ["selected", "selectable"] },
-    { "name": "Complex", "role": "page tab", "actionsAll": ["click"], "statesAll": ["enabled", "focusable", "sensitive"] },
-    { "name": "Events", "role": "page tab", "actionsAll": ["click"] }
+    { "name": "Complex", "role": "page tab", "actionsAll": ["click"], "statesAll": ["enabled", "focusable", "sensitive"] }
   ],
   "nodes": [
     {

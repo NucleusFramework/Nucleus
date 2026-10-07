@@ -299,7 +299,7 @@ Write-Host ("  visited focus names ({0}): {1}" -f $visited.Count, (($visitedList
 Assert ($visited.Count -ge 3) ("Tab traversal visited >= 3 distinct accessible names (got {0})" -f $visited.Count)
 
 $interesting = @("Increment", "Cannot press", "Tri-state checkbox", "Notifications switch",
-    "Volume", "A11y text field", "Update status", "Bare toggleable", "A11y", "Complex", "Events",
+    "Volume", "A11y text field", "Update status", "Bare toggleable", "A11y", "Complex",
     "Priority Low", "Priority Medium", "Priority High", "Open dialog")
 $hits = @($interesting | Where-Object { $visited.Contains($_) })
 Write-Host ("  interesting hits: {0}" -f ($hits -join ', '))

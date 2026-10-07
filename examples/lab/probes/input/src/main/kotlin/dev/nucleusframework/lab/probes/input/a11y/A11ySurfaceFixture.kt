@@ -6,15 +6,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.rememberWindowState
@@ -26,7 +22,6 @@ import dev.nucleusframework.lab.designsystem.LabTheme
 import dev.nucleusframework.lab.probes.input.a11y.surface.SurfaceContent
 import dev.nucleusframework.lab.probes.input.a11y.surface.SurfaceTab
 import dev.nucleusframework.lab.probes.input.a11y.surface.SurfaceTabBar
-import dev.nucleusframework.lab.probes.input.a11y.surface.logEvent
 import dev.nucleusframework.window.TitleBar
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoSet
@@ -46,7 +41,7 @@ class A11ySurfaceFixture : Fixture {
     override val id: String = ID
     override val title: String = "Accessibility surface"
     override val description: String =
-        "Opens '$WINDOW_TITLE' with the A11y / Complex / Events / Scroll / Zoom page tabs. " +
+        "Opens '$WINDOW_TITLE' with the A11y / Complex page tabs. " +
             "Inspect it with Accessibility Inspector, Accerciser or Inspect.exe; the process exits when the window closes."
 
     override val variants: List<FixtureVariant> =
@@ -55,7 +50,6 @@ class A11ySurfaceFixture : Fixture {
     override fun run(args: Array<String>) {
         val initial = SurfaceTab.parse(System.getProperty(TAB_PROPERTY)) ?: SurfaceTab.A11y
         nucleusApplication(args) {
-            val events = remember { mutableStateListOf<String>() }
             var selected by remember { mutableStateOf(initial) }
             // Dark, as the goldens were recorded; the tree (not the colours) is what CI compares.
             LabTheme(isDark = true) {
@@ -64,10 +58,6 @@ class A11ySurfaceFixture : Fixture {
                     state = rememberWindowState(size = DpSize(1024.dp, 760.dp)),
                     title = WINDOW_TITLE,
                     minimumSize = DpSize(640.dp, 480.dp),
-                    onPreviewKeyEvent = { event ->
-                        if (event.type == KeyEventType.KeyDown) logEvent(events, "preview ${event.key}")
-                        false
-                    },
                 ) {
                     TitleBar { _ ->
                         BasicText(
@@ -78,17 +68,9 @@ class A11ySurfaceFixture : Fixture {
                         )
                     }
                     Column(Modifier.fillMaxSize().background(LabTheme.colors.background)) {
-                        SurfaceTabBar(selected, onSelect = {
-                            selected = it
-                            logEvent(events, "tab -> ${it.label}")
-                        })
+                        SurfaceTabBar(selected, onSelect = { selected = it })
                         Box(Modifier.weight(1f).fillMaxSize()) {
-                            SurfaceContent(
-                                selected,
-                                events,
-                                Modifier.fillMaxSize(),
-                                onA11yEvent = { logEvent(events, it) },
-                            )
+                            SurfaceContent(selected, Modifier.fillMaxSize())
                         }
                     }
                 }

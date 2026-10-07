@@ -12,11 +12,8 @@
     "OS chrome (title bar Minimize/Maximize) is not asserted — only app-owned tree."
   ],
   "tabs": [
-    { "name": "Scroll", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Zoom", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
     { "name": "A11y", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true, "selected": true },
-    { "name": "Complex", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Events", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true }
+    { "name": "Complex", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true }
   ],
   "nodes": [
     {

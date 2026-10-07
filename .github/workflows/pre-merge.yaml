@@ -322,7 +322,7 @@ jobs:
         run: ./gradlew :decorated-window-tao:smokeStandalonePanelMac
 
   # Native accessibility protocol: launches the Lab's `a11y-surface` fixture
-  # (examples/lab/probes/input — the A11y / Complex / Events / Scroll / Zoom
+  # (examples/lab/probes/input — the A11y / Complex
   # surfaces alone in a "Nucleus A11y Surface" window, no Lab chrome) and
   # verifies the OS-level projection from the OUTSIDE, through the same client
   # APIs assistive tech uses — UIA on Windows (hard gate), AT-SPI via pyatspi

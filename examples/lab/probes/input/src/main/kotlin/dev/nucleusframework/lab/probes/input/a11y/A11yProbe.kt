@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -81,7 +79,6 @@ class A11yProbe : Probe {
         val vm = metroViewModel<A11yViewModel>()
         val state by vm.state.collectAsState()
         val runs by vm.isolatedRuns.collectAsState(emptyList())
-        val events = remember { mutableStateListOf<String>() }
 
         ProbeLayout(
             capabilities =
@@ -99,7 +96,7 @@ class A11yProbe : Probe {
                     Column(Modifier.fillMaxSize().background(SURFACE_BACKGROUND)) {
                         SurfaceTabBar(state.tab, onSelect = { vm.onIntent(A11yIntent.SelectTab(it)) })
                         Box(Modifier.weight(1f).fillMaxSize()) {
-                            SurfaceContent(state.tab, events, Modifier.fillMaxSize(), onA11yEvent = vm::onSurfaceEvent)
+                            SurfaceContent(state.tab, Modifier.fillMaxSize(), onA11yEvent = vm::onSurfaceEvent)
                         }
                     }
                 }
