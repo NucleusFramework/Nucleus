@@ -49,14 +49,6 @@ enum class TargetFormat(
     val isCompatibleWithCurrentOS: Boolean by lazy { isCompatibleWith(currentOS) }
 
     /**
-     * Whether this format is always built through the sandboxed (store) pipeline: AppX (Windows
-     * Store) and Flatpak. PKG is sandboxed only when it targets the Mac App Store, which is a DSL
-     * decision — see `JvmApplicationDistributions.isSandboxed`.
-     */
-    internal val isAlwaysSandboxed: Boolean
-        get() = this == AppX || this == Flatpak
-
-    /**
      * Whether this format was always built through the sandboxed pipeline. PKG no longer is: it
      * depends on `macOS { pkg { appStore } }`, which this property cannot see.
      */
@@ -66,7 +58,7 @@ enum class TargetFormat(
         level = DeprecationLevel.ERROR,
     )
     val isStoreFormat: Boolean
-        get() = this == Pkg || isAlwaysSandboxed
+        get() = this == Pkg || this == AppX || this == Flatpak
 
     /**
      * Whether this format supports auto-update but electron-builder does not generate latest-*.yml for it.

@@ -38,17 +38,18 @@ class JvmApplicationDistributionsSandboxTest {
     }
 
     @Test
-    fun `appx and flatpak are always sandboxed`() {
+    fun `flatpak is always sandboxed`() {
         val distributions = newDistributions()
         distributions.macOS.pkg.appStore = false
-        assertTrue(distributions.isSandboxed(TargetFormat.AppX))
         assertTrue(distributions.isSandboxed(TargetFormat.Flatpak))
     }
 
     @Test
     fun `direct distribution formats are never sandboxed`() {
         val distributions = newDistributions()
-        for (format in listOf(TargetFormat.Dmg, TargetFormat.Zip, TargetFormat.Msi, TargetFormat.Nsis, TargetFormat.Deb)) {
+        val formats =
+            listOf(TargetFormat.Dmg, TargetFormat.Zip, TargetFormat.Msi, TargetFormat.Nsis, TargetFormat.AppX, TargetFormat.Deb)
+        for (format in formats) {
             assertFalse(format.name, distributions.isSandboxed(format))
         }
     }

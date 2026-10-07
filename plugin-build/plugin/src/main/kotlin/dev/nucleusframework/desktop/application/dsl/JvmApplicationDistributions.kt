@@ -74,14 +74,17 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         }
 
     /**
-     * Whether [format] is built through the sandboxed (store) pipeline: AppX and Flatpak always
-     * are, PKG only when it targets the Mac App Store (`macOS { pkg { appStore } }`, the default).
-     * A Developer ID PKG shares the non-sandboxed pipeline with DMG.
+     * Whether [format] is built through the sandboxed (store) pipeline: Flatpak always is, PKG
+     * only when it targets the Mac App Store (`macOS { pkg { appStore } }`, the default). A
+     * Developer ID PKG shares the non-sandboxed pipeline with DMG. AppX is not sandboxed:
+     * electron-builder always declares `runFullTrust`, so the app runs as a packaged Win32 process,
+     * not in an AppContainer, and is built like any other Windows format.
      */
     internal fun isSandboxed(format: TargetFormat): Boolean =
         when (format) {
             TargetFormat.Pkg -> macOS.pkg.appStore
-            else -> format.isAlwaysSandboxed
+            TargetFormat.Flatpak -> true
+            else -> false
         }
 
     /**
