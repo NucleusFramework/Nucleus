@@ -11,13 +11,16 @@ enum class ThemeMode { System, Light, Dark }
 
 enum class TimelineScope { Probe, All }
 
+/** The shell's panes: satellites of the main window, docked or floating, each open or closed. */
+enum class ShellPane { Probes, Checks, Timeline }
+
 @Immutable
 data class ShellState(
     val selected: ProbeId = OverviewProbeId,
     val paletteOpen: Boolean = false,
-    val timelineOpen: Boolean = true,
+    /** The panes shown, docked or floating; seeded from the layout saved by the previous run. */
+    val openPanes: Set<ShellPane> = ShellPane.entries.toSet(),
     val timelineScope: TimelineScope = TimelineScope.Probe,
-    val checksOpen: Boolean = true,
     val theme: ThemeMode = ThemeMode.System,
     val book: CheckBook = CheckBook(),
     val environment: EnvironmentSnapshot? = null,
@@ -34,9 +37,15 @@ sealed interface ShellIntent {
         val open: Boolean,
     ) : ShellIntent
 
-    data object ToggleTimeline : ShellIntent
+    data class TogglePane(
+        val pane: ShellPane,
+    ) : ShellIntent
 
-    data object ToggleChecks : ShellIntent
+    /** Also what the workspace reports when a pane is closed from its own window or header. */
+    data class SetPaneOpen(
+        val pane: ShellPane,
+        val open: Boolean,
+    ) : ShellIntent
 
     data class SetTimelineScope(
         val scope: TimelineScope,
@@ -85,9 +94,10 @@ sealed interface ShellEvent {
         val open: Boolean,
     ) : ShellEvent
 
-    data object TimelineToggled : ShellEvent
-
-    data object ChecksToggled : ShellEvent
+    data class PaneChanged(
+        val pane: ShellPane,
+        val open: Boolean,
+    ) : ShellEvent
 
     data class TimelineScopeChanged(
         val scope: TimelineScope,
@@ -131,8 +141,8 @@ object ShellReducer : Reducer<ShellState, ShellEvent> {
         when (event) {
             is ShellEvent.Selected -> state.copy(selected = event.probe, paletteOpen = false)
             is ShellEvent.PaletteChanged -> state.copy(paletteOpen = event.open)
-            ShellEvent.TimelineToggled -> state.copy(timelineOpen = !state.timelineOpen)
-            ShellEvent.ChecksToggled -> state.copy(checksOpen = !state.checksOpen)
+            is ShellEvent.PaneChanged ->
+                state.copy(openPanes = if (event.open) state.openPanes + event.pane else state.openPanes - event.pane)
             is ShellEvent.TimelineScopeChanged -> state.copy(timelineScope = event.scope)
             is ShellEvent.ThemeChanged -> state.copy(theme = event.theme)
             is ShellEvent.BookChanged -> state.copy(book = event.book)

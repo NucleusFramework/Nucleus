@@ -22,6 +22,7 @@ import dev.nucleusframework.lab.core.timeline.EntryKind
 import dev.nucleusframework.lab.core.timeline.UiThread
 import dev.nucleusframework.lab.designsystem.LabDecoratedWindow
 import dev.nucleusframework.lab.designsystem.LabTheme
+import dev.nucleusframework.window.tao.JoinSatelliteWorkspace
 import dev.zacsweers.metrox.viewmodel.LocalMetroViewModelFactory
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 
@@ -31,7 +32,7 @@ private val StartupTheme: ThemeMode? =
         ThemeMode.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
     }
 
-/** Root of the Lab: DI locals, theme, the shell window and every open session window. */
+/** Root of the Lab: DI locals, theme, the shell window, its panes and every open session window. */
 @Composable
 fun NucleusApplicationScope.LabApp(graph: LabGraph) {
     remember {
@@ -69,16 +70,24 @@ fun NucleusApplicationScope.LabApp(graph: LabGraph) {
         LabTheme(isDark = isDark) {
             val windowState =
                 rememberWindowState(size = DpSize(1440.dp, 900.dp), position = WindowPosition.Aligned(Alignment.Center))
+            val panes = rememberShellWorkspace(shell, state)
             LabDecoratedWindow(
                 title = "Nucleus Lab",
-                onCloseRequest = ::exitApplication,
+                onCloseRequest = {
+                    // The debounced save may not have run yet: the layout is written before the exit.
+                    shell.saveLayout(panes.snapshot(), now = true)
+                    exitApplication()
+                },
                 state = windowState,
                 minimumSize = DpSize(960.dp, 600.dp),
                 onPreviewKeyEvent = { shellShortcut(it, shell) },
             ) {
+                // The only member: the owner of the floating panes and the host of the docked ones.
+                JoinSatelliteWorkspace(panes.workspace)
                 LaunchedEffect(Unit) { shell.refreshEnvironment() }
-                LabShell(shell, state)
+                LabShell(shell, state, panes)
             }
+            ShellPanes(panes, shell, state)
 
             val sessions by graph.sessions.sessions.collectAsState()
             sessions.forEach { session ->

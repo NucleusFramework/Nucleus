@@ -16,6 +16,7 @@ plugins {
     alias(libs.plugins.kotlin)
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
+    alias(libs.plugins.kotlinxSerialization)
     alias(libs.plugins.metro)
     id("dev.nucleusframework")
 }
@@ -43,6 +44,8 @@ dependencies {
     implementation(project(":examples:lab:probes:fixtures"))
     implementation(project(":darkmode-detector"))
     implementation(libs.coroutines.swing)
+    // The shell's pane layout, saved across launches.
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(kotlin("test"))
 }

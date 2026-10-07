@@ -2,7 +2,6 @@ package dev.nucleusframework.lab.app.shell
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -10,10 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -47,6 +44,7 @@ import dev.nucleusframework.lab.designsystem.actionsAlignment
 import dev.nucleusframework.lab.designsystem.rememberCopyToClipboard
 import dev.nucleusframework.window.DecoratedWindowScope
 import dev.nucleusframework.window.TitleBarScope
+import dev.nucleusframework.window.tao.DockLayout
 
 /** Cmd/Ctrl+K opens the palette, Esc closes it. */
 fun shellShortcut(
@@ -68,10 +66,15 @@ fun shellShortcut(
     }
 }
 
+/**
+ * The main window: title bar over a `DockLayout` whose content is the selected probe and
+ * whose panels are the shell's panes ([ShellPanes]) while they are docked.
+ */
 @Composable
 fun DecoratedWindowScope.LabShell(
     shell: ShellViewModel,
     state: ShellState,
+    panes: ShellWorkspace,
 ) {
     val copy = rememberCopyToClipboard()
     LaunchedEffect(shell) {
@@ -82,43 +85,33 @@ fun DecoratedWindowScope.LabShell(
         }
     }
 
-    val probes = shell.probes
-    val current = probes.firstOrNull { it.descriptor.id == state.selected } ?: probes.first()
+    val current = shell.probe(state.selected)
 
     LabWindowAppearance()
     Column(Modifier.fillMaxSize().background(LabTheme.colors.panel)) {
         LabTitleBar { _ -> TitleBarContent(shell, state) }
         Divider()
         Box(Modifier.weight(1f)) {
-            Row(Modifier.fillMaxSize()) {
-                Sidebar(probes, state, onSelect = {
-                    shell.onIntent(ShellIntent.Select(it))
-                }, modifier = Modifier.width(264.dp).fillMaxHeight())
-                Divider(Orientation.Vertical)
-                Column(Modifier.weight(1f).fillMaxHeight().background(LabTheme.colors.background)) {
+            DockLayout(
+                workspace = panes.workspace,
+                modifier = Modifier.fillMaxSize(),
+                sideOrder = ShellSideOrder,
+                splitter = { ShellSplitter() },
+            ) {
+                Column(Modifier.fillMaxSize().background(LabTheme.colors.background)) {
                     ProbeHeader(current.descriptor, shell)
                     Divider()
-                    Row(Modifier.weight(1f)) {
-                        Box(Modifier.weight(1f).fillMaxHeight()) {
-                            ProbeHost(
-                                current,
-                                generation = state.generations[current.descriptor.id] ?: 0,
-                                shell = shell,
-                            )
-                        }
-                        if (state.checksOpen && current.descriptor.checks.isNotEmpty()) {
-                            Divider(Orientation.Vertical)
-                            ChecksPanel(current.descriptor, state, shell, Modifier.width(320.dp).fillMaxHeight())
-                        }
-                    }
-                    if (state.timelineOpen) {
-                        Divider()
-                        TimelinePanel(shell, state, current.descriptor.id, Modifier.fillMaxWidth().height(220.dp))
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        ProbeHost(
+                            current,
+                            generation = state.generations[current.descriptor.id] ?: 0,
+                            shell = shell,
+                        )
                     }
                 }
             }
             if (state.paletteOpen) {
-                CommandPalette(probes, shell, Modifier.fillMaxSize())
+                CommandPalette(shell.probes, shell, Modifier.fillMaxSize())
             }
         }
     }
@@ -166,11 +159,10 @@ private fun TitleBarScope.TitleBarContent(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TitleBarButton(LabIcons.Checklist, "Toggle checks", active = state.checksOpen) {
-            shell.onIntent(ShellIntent.ToggleChecks)
-        }
-        TitleBarButton(LabIcons.Terminal, "Toggle timeline", active = state.timelineOpen) {
-            shell.onIntent(ShellIntent.ToggleTimeline)
+        for (pane in ShellPane.entries) {
+            TitleBarButton(pane.icon, "Toggle ${pane.name.lowercase()}", active = pane in state.openPanes) {
+                shell.onIntent(ShellIntent.TogglePane(pane))
+            }
         }
         TitleBarButton(LabIcons.Copy, "Copy full report") { shell.onIntent(ShellIntent.CopyReport(null)) }
         TitleBarButton(
@@ -181,26 +173,5 @@ private fun TitleBarScope.TitleBarContent(
             },
             "Theme: ${state.theme}",
         ) { shell.onIntent(ShellIntent.CycleTheme) }
-    }
-}
-
-/** The header strip of a shell panel (checks, timeline): IntelliJ's tool window header. */
-@Composable
-internal fun PanelTitle(
-    text: String,
-    modifier: Modifier = Modifier,
-    trailing: @Composable () -> Unit = {},
-) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 32.dp)
-            .background(LabTheme.colors.panel)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(text, style = LabTheme.typography.heading, modifier = Modifier.weight(1f))
-        trailing()
     }
 }

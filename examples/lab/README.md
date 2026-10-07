@@ -29,6 +29,25 @@ A packaged Lab registers the `nucleus-lab://` scheme, so
 *Copy report* produces Markdown containing the environment, the check sheet and the timeline
 excerpt.
 
+## The shell
+
+The main window is a `DockLayout` (Nucleus' satellite workspace, dogfooded): its content is the
+selected probe, and the **probe list**, the **checks** and the **timeline** are `Satellite`s of
+one `SatelliteWorkspace`. By default they are docked: probes on the left (full height), checks
+on the right, timeline at the bottom. Each one can float as its own Lab window (*Float* in its
+header, or drag the header out) above the main window, and dock back (*Dock*, or drag it to an
+edge of the main window until a zone lights up). The splitters resize the docks. The title-bar
+buttons show and hide each pane, and so do the pane's *Hide* button and a floating pane's close
+button. On native Wayland, the strip beside a floating pane's window controls (✥) moves the
+window, and the header chip drags the pane into a dock.
+
+The layout (placement, size, open state of each pane, dock extents) is saved to
+`shell-layout.json` in the Lab's data directory half a second after it changes and on exit, and
+restored at startup. A missing or unreadable file means the default layout; delete it to reset.
+`ShellState.openPanes` (`ShellIntent.TogglePane` / `SetPaneOpen`) owns which panes are open.
+`ShellWorkspace` holds the workspace and keeps the two in step. The Cmd/Ctrl+K shortcut is
+handled by the main window only.
+
 ## Architecture
 
 The Lab uses **MVVM + MVI** with **Metro** for compile-time DI (no reflection).
@@ -114,7 +133,7 @@ the subject); Material or Jewel imports are allowed there and nowhere else.
   content under test, `OverlayPill` over native content, `ColorSwatch`.
 - **Windows:** `LabSessionWindow` for every probe window, or `LabDecoratedWindow` /
   `LabWindowFrame` / `LabTitleBar` / `LabWindowAppearance` / `LabTitle` / `TitleBarButton` /
-  `LabPane` when the window type is imposed (`TabWindows`, `DecoratedWindow` with
+  `LabPane` / `LabPaneHeader` when the window type is imposed (`TabWindows`, `DecoratedWindow` with
   `DockLayout`, satellites). `LabTheme` already provides the Jewel window and title bar
   styling to every window below it.
 

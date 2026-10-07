@@ -14,6 +14,7 @@ import dev.nucleusframework.lab.core.session.SessionHost
 import dev.nucleusframework.lab.core.timeline.EntryKind
 import dev.nucleusframework.lab.core.timeline.Timeline
 import dev.nucleusframework.lab.core.timeline.TimelineEntry
+import dev.nucleusframework.window.tao.SatelliteLayoutSnapshot
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
@@ -30,11 +31,20 @@ class ShellViewModel(
     private val environment: EnvironmentProvider,
     commands: LabCommands,
     private val sessions: SessionHost,
+    private val layout: ShellLayoutStore,
     timeline: Timeline,
-) : MviViewModel<ShellState, ShellIntent, ShellEvent, ShellEffect>(ShellState(), ShellReducer, timeline, ShellProbeId) {
+) : MviViewModel<ShellState, ShellIntent, ShellEvent, ShellEffect>(
+        ShellState(openPanes = layout.saved?.openPanes() ?: ShellPane.entries.toSet()),
+        ShellReducer,
+        timeline,
+        ShellProbeId,
+    ) {
     /** Sorted by domain, then title: sidebar and palette order. */
     val probes: List<Probe> =
         BuiltinProbes + probes.sortedWith(compareBy({ it.descriptor.domain.ordinal }, { it.descriptor.title }))
+
+    /** The probe [id] names, or the first one when it names none. */
+    fun probe(id: ProbeId): Probe = probes.firstOrNull { it.descriptor.id == id } ?: probes.first()
 
     val timelineEntries: StateFlow<List<TimelineEntry>> = timeline.entries
 
@@ -56,8 +66,12 @@ class ShellViewModel(
         when (intent) {
             is ShellIntent.Select -> dispatch(ShellEvent.Selected(intent.probe))
             is ShellIntent.SetPalette -> dispatch(ShellEvent.PaletteChanged(intent.open))
-            ShellIntent.ToggleTimeline -> dispatch(ShellEvent.TimelineToggled)
-            ShellIntent.ToggleChecks -> dispatch(ShellEvent.ChecksToggled)
+            is ShellIntent.TogglePane ->
+                dispatch(ShellEvent.PaneChanged(intent.pane, intent.pane !in state.value.openPanes))
+            is ShellIntent.SetPaneOpen ->
+                if ((intent.pane in state.value.openPanes) != intent.open) {
+                    dispatch(ShellEvent.PaneChanged(intent.pane, intent.open))
+                }
             is ShellIntent.SetTimelineScope -> dispatch(ShellEvent.TimelineScopeChanged(intent.scope))
             ShellIntent.ClearTimeline -> timeline.clear()
             ShellIntent.CycleTheme -> {
@@ -102,6 +116,17 @@ class ShellViewModel(
     }
 
     fun refreshEnvironment() = environment.refresh()
+
+    /** The pane layout saved by the previous run, `null` for the default one. */
+    val savedLayout: SatelliteLayoutSnapshot? get() = layout.saved
+
+    /** Persists the pane layout off the UI thread; [now] writes it before returning (exit). */
+    fun saveLayout(
+        snapshot: SatelliteLayoutSnapshot,
+        now: Boolean = false,
+    ) {
+        if (now) layout.save(snapshot) else launch { io { layout.save(snapshot) } }
+    }
 }
 
 val ShellProbeId = ProbeId("lab.shell")
