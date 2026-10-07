@@ -26,10 +26,10 @@ import dev.nucleusframework.lab.designsystem.Hint
 import dev.nucleusframework.lab.designsystem.LabTheme
 import dev.nucleusframework.lab.designsystem.Link
 import dev.nucleusframework.lab.designsystem.ScrollableColumn
+import dev.nucleusframework.lab.designsystem.Segmented
 import dev.nucleusframework.lab.designsystem.Text
 import dev.nucleusframework.lab.designsystem.TextField
 import dev.nucleusframework.lab.designsystem.TimelineView
-import dev.nucleusframework.lab.designsystem.ToggleChip
 import dev.nucleusframework.lab.designsystem.Tone
 
 @Composable
@@ -79,15 +79,13 @@ private fun CheckRow(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(check.description)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            StatusChip("Pass", result.status == CheckStatus.Pass, Tone.Ok) {
-                shell.onIntent(ShellIntent.SetCheck(probe, check.id, toggle(result.status, CheckStatus.Pass)))
-            }
-            StatusChip("Fail", result.status == CheckStatus.Fail, Tone.Error) {
-                shell.onIntent(ShellIntent.SetCheck(probe, check.id, toggle(result.status, CheckStatus.Fail)))
-            }
-            StatusChip("Skip", result.status == CheckStatus.Skipped, Tone.Muted) {
-                shell.onIntent(ShellIntent.SetCheck(probe, check.id, toggle(result.status, CheckStatus.Skipped)))
-            }
+            // Clicking the chosen verdict again clears it back to untested.
+            Segmented(
+                options = Verdicts,
+                selected = result.status.takeIf { it != CheckStatus.Untested },
+                name = { it.label },
+                tone = { it.tone },
+            ) { shell.onIntent(ShellIntent.SetCheck(probe, check.id, toggle(result.status, it))) }
             Link(if (result.note.isBlank()) "Note" else "Edit note") { editingNote = !editingNote }
         }
         if (editingNote) {
@@ -109,15 +107,18 @@ private fun toggle(
     target: CheckStatus,
 ) = if (current == target) CheckStatus.Untested else target
 
-@Composable
-private fun StatusChip(
-    label: String,
-    selected: Boolean,
-    tone: Tone,
-    onClick: () -> Unit,
-) {
-    ToggleChip(label, selected, tone = tone) { onClick() }
-}
+private val Verdicts = listOf(CheckStatus.Pass, CheckStatus.Fail, CheckStatus.Skipped)
+
+private val CheckStatus.label: String
+    get() = if (this == CheckStatus.Skipped) "Skip" else name
+
+private val CheckStatus.tone: Tone
+    get() =
+        when (this) {
+            CheckStatus.Pass -> Tone.Ok
+            CheckStatus.Fail -> Tone.Error
+            else -> Tone.Muted
+        }
 
 @Composable
 fun TimelinePanel(
@@ -136,12 +137,11 @@ fun TimelinePanel(
     Column(modifier.background(LabTheme.colors.background)) {
         PanelTitle("Timeline · ${shown.size}" + if (offUi > 0) " · $offUi off UI thread" else "") {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                ToggleChip("This probe", state.timelineScope == TimelineScope.Probe) {
-                    shell.onIntent(ShellIntent.SetTimelineScope(TimelineScope.Probe))
-                }
-                ToggleChip("All", state.timelineScope == TimelineScope.All) {
-                    shell.onIntent(ShellIntent.SetTimelineScope(TimelineScope.All))
-                }
+                Segmented(
+                    options = TimelineScope.entries,
+                    selected = state.timelineScope,
+                    name = { if (it == TimelineScope.Probe) "This probe" else "All" },
+                ) { shell.onIntent(ShellIntent.SetTimelineScope(it)) }
                 Link("Clear", Modifier.padding(start = 4.dp)) { shell.onIntent(ShellIntent.ClearTimeline) }
             }
         }

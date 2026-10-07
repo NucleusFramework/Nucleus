@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.lab.core.format.fmt
 import org.jetbrains.jewel.ui.component.ListComboBox
@@ -21,7 +22,8 @@ import org.jetbrains.jewel.ui.component.Dropdown as JewelDropdown
 import org.jetbrains.jewel.ui.component.PopupMenu as JewelPopupMenu
 
 private const val SEGMENTED_MAX_OPTIONS = 5
-private const val SEGMENTED_MAX_CHARS = 48
+private const val SEGMENTED_MAX_CHARS = 32
+private const val SEGMENTED_MAX_OPTION_CHARS = 12
 
 /**
  * Single choice among named options: a segmented control for a few short ones, a combo box
@@ -37,21 +39,51 @@ fun <T> ChoiceRow(
 ) {
     val names = options.map(name)
     LabeledRow(label) {
-        if (options.size <= SEGMENTED_MAX_OPTIONS && names.sumOf { it.length } <= SEGMENTED_MAX_CHARS) {
-            SegmentedControl(
-                buttons =
-                    options.mapIndexed { index, option ->
-                        SegmentedControlButtonData(
-                            selected = option == selected,
-                            content = { _ -> Text(names[index], style = LabTheme.typography.label) },
-                            onSelect = { onSelect(option) },
-                        )
-                    },
-            )
+        val fits =
+            options.size <= SEGMENTED_MAX_OPTIONS &&
+                names.sumOf { it.length } <= SEGMENTED_MAX_CHARS &&
+                names.all { it.length <= SEGMENTED_MAX_OPTION_CHARS }
+        if (fits) {
+            Segmented(options, selected, name, onSelect = onSelect)
         } else {
             ChoiceDropdown(options, selected, name, Modifier.widthIn(min = 160.dp, max = 360.dp), onSelect)
         }
     }
+}
+
+/**
+ * IntelliJ's segmented control over a few short [options]. [selected] may be `null` (none
+ * chosen yet); each label keeps one line, and [tone] colours the selected one.
+ */
+@Composable
+fun <T> Segmented(
+    options: List<T>,
+    selected: T?,
+    name: (T) -> String = { it.toString() },
+    modifier: Modifier = Modifier,
+    tone: (T) -> Tone? = { null },
+    onSelect: (T) -> Unit,
+) {
+    SegmentedControl(
+        modifier = modifier,
+        buttons =
+            options.map { option ->
+                val isSelected = option == selected
+                SegmentedControlButtonData(
+                    selected = isSelected,
+                    content = { _ ->
+                        Text(
+                            name(option),
+                            style = LabTheme.typography.label,
+                            color = tone(option)?.takeIf { isSelected }?.color() ?: Color.Unspecified,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    },
+                    onSelect = { onSelect(option) },
+                )
+            },
+    )
 }
 
 /** An IntelliJ combo box over [options]. */

@@ -39,12 +39,14 @@ fun Text(
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
     textAlign: TextAlign = TextAlign.Unspecified,
+    softWrap: Boolean = true,
 ) {
     JewelText(
         text,
         modifier = modifier,
         color = color,
         maxLines = maxLines,
+        softWrap = softWrap,
         overflow = overflow,
         textAlign = textAlign,
         style = style,
