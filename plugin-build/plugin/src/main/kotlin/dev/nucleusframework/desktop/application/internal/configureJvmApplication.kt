@@ -487,7 +487,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
             packageFormat
         }
 
-    // === Sandboxed pipeline (store formats: App Store PKG, AppX, Flatpak) ===
+    // === Sandboxed pipeline (store formats: App Store PKG, Flatpak) ===
 
     val storeNotarizeTasks = mutableListOf<TaskProvider<AbstractNotarizationTask>>()
 
@@ -651,9 +651,9 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     }
 
     // runAppX: sideload and launch AppX package for local testing (Windows only)
-    if (currentOS == OS.Windows && hasStoreFormats) {
+    if (currentOS == OS.Windows) {
         val appxPackageTask =
-            storePackageFormats.firstOrNull { task ->
+            packageFormats.firstOrNull { task ->
                 task.map { it.targetFormat }.orNull == TargetFormat.AppX
             }
         if (appxPackageTask != null) {
@@ -702,7 +702,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
 /**
  * Hands the Windows signing settings to a training task, which signs the DLLs inside JARs before
  * training: a JAR rewritten afterwards would invalidate the cache. Both the regular and the
- * sandboxed (AppX) task need them.
+ * sandboxed task need them.
  */
 private fun JvmApplicationContext.applyWindowsSigningSettings(task: AbstractGenerateAotCacheTask) {
     val distributions = app.nativeDistributions
@@ -1092,7 +1092,7 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         val mac = app.nativeDistributions.macOS
         packageTask.nonValidatedMacSigningSettings = mac.signing
         packageTask.nonValidatedMacBundleID.set(mac.bundleID)
-        // A PKG is sandboxed (App Store) or not (Developer ID) by DSL choice; AppX/Flatpak always are.
+        // A PKG is sandboxed (App Store) or not (Developer ID) by DSL choice; Flatpak always is.
         val sandboxed = app.nativeDistributions.isSandboxed(packageTask.targetFormat)
         packageTask.macAppStore.set(sandboxed)
         // Only the PKG task reads the install scripts. Wiring them everywhere would make a typo in

@@ -19,8 +19,7 @@ class ExecutableRuntimeSandboxTest {
     }
 
     @Test
-    fun `appx and flatpak are sandboxed by construction`() {
-        assertTrue(ExecutableRuntime.isSandboxed(ExecutableType.APPX, null))
+    fun `flatpak is sandboxed by construction`() {
         assertTrue(ExecutableRuntime.isSandboxed(ExecutableType.FLATPAK, null))
     }
 
@@ -30,6 +29,7 @@ class ExecutableRuntimeSandboxTest {
             listOf(
                 ExecutableType.DMG,
                 ExecutableType.NSIS,
+                ExecutableType.APPX,
                 ExecutableType.DEB,
                 ExecutableType.APPIMAGE,
                 ExecutableType.DEV,
