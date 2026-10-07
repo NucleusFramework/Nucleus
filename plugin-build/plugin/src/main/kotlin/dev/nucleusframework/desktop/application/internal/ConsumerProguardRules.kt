@@ -145,21 +145,28 @@ internal object ConsumerProguardRules {
     }
 
     /**
-     * The options of [rules] outside [ALLOWED_OPTIONS], comments ignored, plus `@file` for ProGuard's
-     * `@file` include and `quotes` for any quote outside a comment. Tokens are split on whitespace
-     * and on `{ } ( ) ; ,` as ProGuard's word reader does, so an option glued to a delimiter
-     * (`{ *; }-dontobfuscate`) is still seen. Quotes are refused rather than parsed: ProGuard ends a
-     * word at a quote, unquotes it, and stops honouring `#` and `{` inside one, so `'a.B'-dontshrink`
-     * or `'-printconfiguration'` would otherwise slip past; no library rule file checked uses them.
-     * A `-` followed by a digit is a value (`-assumevalues … return -1..5`). An `@word` outside a
-     * class body is an include when what follows is another option or the end of the file;
-     * anywhere else it is an annotation (`-keep @a.Ann class *`).
+     * The options of [rules] outside [ALLOWED_OPTIONS], comments ignored, plus `@file` for an
+     * include ([isClassAnnotation]), `quotes` and `non-ASCII` for characters refused outside a
+     * comment. Tokens are split on whitespace and on `{ } ( ) ; ,` as ProGuard's word reader does, so
+     * an option glued to a delimiter (`{ *; }-dontobfuscate`) is still seen. Some input is refused
+     * rather than parsed, since the guard must split words exactly as ProGuard does:
+     * - quotes: ProGuard ends a word at a quote, unquotes it, and stops honouring `#` and `{` inside
+     *   one (`'a.B'-dontshrink`, `'-printconfiguration'`);
+     * - anything but printable ASCII and tab: ProGuard reads the file as UTF-8 and splits on
+     *   `Character.isWhitespace`, which also covers U+001C–U+001F and Unicode separators, so
+     *   `a<U+001C>-dontshrink` is two words to ProGuard and one here. [rules] is decoded as
+     *   ISO-8859-1, one char per byte, so a multi-byte character is caught by its bytes.
+     *
+     * Comments stay free: ProGuard ignores them up to the end of the line, and both sides end a
+     * line on `\n` or `\r` only. No library rule file checked uses quotes or non-ASCII code. A `-`
+     * followed by a digit is a value (`-assumevalues … return -1..5`).
      */
     fun disallowedOptions(rules: String): List<String> {
         val code = rules.lineSequence().map { it.substringBefore('#') }.toList()
         val found = LinkedHashSet<String>()
         // A `#` inside quotes is no comment for ProGuard, but the quote before it is still caught here.
         if (code.any { '\'' in it || '"' in it }) found += "quotes"
+        if (code.any { line -> line.any { it != '\t' && it !in ' '..'~' } }) found += "non-ASCII"
         val tokens = code.flatMap { line -> TOKEN.findAll(line).map { it.value } }
         var depth = 0
         for ((index, token) in tokens.withIndex()) {

@@ -161,6 +161,8 @@ class ConsumerProguardRulesTest {
         )
     }
 
+    private fun utf8AsLatin1(text: String): String = String(text.toByteArray(Charsets.UTF_8), Charsets.ISO_8859_1)
+
     @Test
     fun `options glued to delimiters and file includes are caught`() {
         val cases =
@@ -200,6 +202,16 @@ class ConsumerProguardRulesTest {
                 "@ other.pro" to listOf("@file"),
                 "-keep class a.B\n@other.pro c.D" to listOf("@file"),
                 "@C:/x/other.pro\n-keep class a.B" to listOf("@file"),
+                // ProGuard splits on Character.isWhitespace and reads UTF-8; only ASCII code is allowed.
+                "-dontwarn a\u001C-dontshrink" to listOf("non-ASCII"),
+                "-dontwarn a\u001F-include x" to listOf("non-ASCII"),
+                "-dontwarn a\u000B-dontobfuscate" to listOf("non-ASCII", "-dontobfuscate"),
+                "-dontwarn a\u000C-dontobfuscate" to listOf("non-ASCII", "-dontobfuscate"),
+                // U+2028 and U+2003 as their UTF-8 bytes, decoded one char per byte as the guard reads them.
+                "a${utf8AsLatin1(Char(0x2028).toString())}-dontshrink" to listOf("non-ASCII"),
+                "a${utf8AsLatin1(Char(0x2003).toString())}-dontshrink" to listOf("non-ASCII"),
+                "# règles en français, ✓ — comments stay free\n-keep class a.B" to emptyList(),
+                "-keep class a.B\t{ *; }" to emptyList(),
             )
         for ((rules, expected) in cases) {
             assertEquals(rules, expected, ConsumerProguardRules.disallowedOptions(rules))
