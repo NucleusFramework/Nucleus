@@ -9,7 +9,7 @@ import kotlinx.coroutines.launch
 
 private val scope = MainScope()
 
-/** The `share-demo` payloads on the browser; the Web Share API needs HTTPS or localhost. */
+/** The payloads of the Lab's `system.share` probe on the browser; the Web Share API needs HTTPS or localhost. */
 fun main() {
     log("supported: ${ShareSheet.isSupported}")
     button("Text") {

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Multi-tab AT-SPI probe for tao-demo.
+"""Multi-tab AT-SPI probe for the Lab a11y-surface fixture.
 
 Linux counterpart of scripts/ci/verify-uia-all-tabs.ps1.
 
-Walks every main navigation tab through AT-SPI (no NUCLEUS_DEMO_TAB — tabs are
+Walks every page tab of the fixture through AT-SPI (tabs are
 switched with the same Action interface an AT uses), asserts key accessible
 names exist per tab, and exercises the interfaces a screen reader would drive:
 Action (click / custom actions), Value (slider, progress) and the state
@@ -21,11 +21,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import atspi_probe as ap  # noqa: E402
 
+# The fixture hosts the input surfaces only (SurfaceTab in
+# examples/lab/probes/input). tao-demo's Demo / Window actions / WebView /
+# SwiftUI / Texture tabs belong to other Lab probes and are not part of it.
 TAB_CHECKS = [
-    ("Demo", ["Demo"], 8),
-    ("Scroll", ["Scroll"], 15),
-    ("Zoom", ["Zoom"], 8),
-    ("Window actions", ["Window actions"], 10),
     (
         "A11y",
         ["Increment", "Tri-state checkbox", "Notifications switch", "Volume", "Cannot press"],
@@ -33,14 +32,8 @@ TAB_CHECKS = [
     ),
     ("Complex", ["Add item", "Clear done", "Reset", "Buy milk", "Start"], 30),
     ("Events", ["Events"], 8),
-    ("WebView", ["WebView"], 6),
-    ("SwiftUI", ["SwiftUI"], 6),
-    # Texture: the contentScale / filterQuality labels are the only strings that
-    # are identical on every platform. The producer summary line names the
-    # backend (D3D11 / Metal IOSurface / DMA-BUF) and degrades to an
-    # "unavailable" message on a CI runner with no render node, so it is not
-    # something to assert on.
-    ("Texture", ["FillBounds", "Crop", "None (nearest)"], 8),
+    ("Scroll", ["Scroll"], 15),
+    ("Zoom", ["Zoom"], 8),
 ]
 
 

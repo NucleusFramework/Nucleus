@@ -3,7 +3,7 @@
     androidx.compose.ui.test.ExperimentalTestApi::class,
 )
 
-package jewelsample
+package dev.nucleusframework.window.jewel
 
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.ContextMenuRepresentation
@@ -30,8 +30,6 @@ import dev.nucleusframework.application.spellcheck.SpellcheckContextMenu
 import dev.nucleusframework.application.spellcheck.SpellcheckMenuPlacement
 import dev.nucleusframework.spellcheck.SpellcheckMenuModel
 import dev.nucleusframework.spellcheck.SpellcheckSession
-import dev.nucleusframework.window.jewel.JewelContextMenuInterpreter
-import dev.nucleusframework.window.jewel.ProvideJewelSpellcheckMenu
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.ui.component.ContextMenuDivider
 import org.jetbrains.jewel.ui.component.ContextMenuItemOption
