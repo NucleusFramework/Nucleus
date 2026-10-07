@@ -243,6 +243,7 @@ internal object WindowApiV2HeadfulCases {
             // gets a turn, so it must drain to the newest request without
             // applying stale ones after it.
             var last = DpOffset.Zero
+            val sentAt = System.nanoTime()
             repeat(BURST_COUNT) { i ->
                 last = DpOffset(available.left + (STEP_DP * (i + 1)).dp, available.top + (STEP_DP * (i + 1)).dp)
                 state.requestPosition(last)
@@ -250,6 +251,13 @@ internal object WindowApiV2HeadfulCases {
             awaitUntil("outer position landed on the last of the burst") {
                 val outer = outerDp()
                 closeEnough(last.x.value, outer.left) && closeEnough(last.y.value, outer.top)
+            }
+            // Promptly, too: a bridge that applies the queue one by one also ends
+            // within TOLERANCE_DP of the last request, only seconds later — it
+            // crawled 4, 8, 12 … one settle (~250 ms) at a time, and passed.
+            val landedMs = (System.nanoTime() - sentAt) / NANOS_PER_MILLI
+            check(landedMs <= BURST_LAND_BUDGET_MS) {
+                "the burst took ${landedMs}ms to land: it was applied request by request, not drained to the last"
             }
             // ...and stays there: a stale request applied late would move it back.
             settle()
@@ -493,6 +501,14 @@ internal object WindowApiV2HeadfulCases {
     private val MEASURE_BOX = DpSize(400.dp, 300.dp)
 
     private const val BURST_COUNT = 40
+
+    /**
+     * How long a burst may take to land. Drained to the last request it lands in
+     * ~650 ms on Windows (one move plus the wait for the frame); applied request
+     * by request it took ~9 s.
+     */
+    private const val BURST_LAND_BUDGET_MS = 3_000L
+    private const val NANOS_PER_MILLI = 1_000_000L
     private const val BACKGROUND_BURST = 10
     private const val TOGGLE_COUNT = 6
     private const val TOGGLE_GAP_MS = 40L
