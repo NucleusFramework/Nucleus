@@ -31,7 +31,8 @@ abstract class ProguardSettings
         /**
          * Apply the keep rules dependencies ship under `META-INF/proguard/`, and keep the providers
          * their `META-INF/services` files declare, as R8 and the Android Gradle plugin do. A rule file
-         * using a global or file-system option is skipped with a warning. Off by default: it keeps
+         * using anything but keep, attribute, warning or assumption options is skipped with a
+         * warning. Off by default: it keeps
          * more than an existing configuration did, so an application opts in.
          */
         val consumerRules: Property<Boolean> = objects.notNullProperty(false)

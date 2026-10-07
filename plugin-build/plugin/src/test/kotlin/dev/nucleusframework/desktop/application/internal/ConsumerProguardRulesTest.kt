@@ -173,9 +173,23 @@ class ConsumerProguardRulesTest {
                 "@other.pro\n-keep class a.B" to listOf("@file"),
                 "-keep class a.B\n@other.pro" to listOf("@file"),
                 "-addconfigurationdebugging" to listOf("-addconfigurationdebugging"),
+                // ProGuard accepts any prefix of an option, and a bare `-` is `-include`.
+                "-incl /etc/other.pro" to listOf("-incl"),
+                "-dontob" to listOf("-dontob"),
+                "-keep class a.B\n-repack ''" to listOf("-repack"),
+                "- /etc/other.pro" to listOf("-"),
+                "-dontw a.**" to listOf("-dontw"),
+                // Options a deny-list missed: aliases, whole-build switches, keystores, output.
+                "-defaultpackage ''" to listOf("-defaultpackage"),
+                "-optimizeaggressively" to listOf("-optimizeaggressively"),
+                "-dontprocesskotlinmetadata" to listOf("-dontprocesskotlinmetadata"),
+                "-keystore k.jks\n-keystorepassword x" to listOf("-keystore", "-keystorepassword"),
+                "-dontcompress" to listOf("-dontcompress"),
+                "-zipalign 4" to listOf("-zipalign"),
+                "-Keep class a.B" to listOf("-Keep"),
             )
         for ((rules, expected) in cases) {
-            assertEquals(rules, expected, ConsumerProguardRules.forbiddenOptions(rules))
+            assertEquals(rules, expected, ConsumerProguardRules.disallowedOptions(rules))
         }
     }
 
@@ -194,9 +208,16 @@ class ConsumerProguardRulesTest {
             -if @a.Ann class **
             -keep class <1>
             -assumevalues class a.C { int f return -1..5; }
+            -keepattributes Signature,*Annotation*
+            -dontwarn a.**
+            -dontnote a.**
+            -keepnames,allowshrinking class a.E
+            -keepclasseswithmembernames class * { native <methods>; }
+            -assumenosideeffects class a.F { void log(...); }
+            -adaptclassstrings a.**
             -keep class a.D { void m(java.lang.String, int); }
             """.trimIndent()
-        assertEquals(emptyList<String>(), ConsumerProguardRules.forbiddenOptions(rules))
+        assertEquals(emptyList<String>(), ConsumerProguardRules.disallowedOptions(rules))
     }
 
     @Test

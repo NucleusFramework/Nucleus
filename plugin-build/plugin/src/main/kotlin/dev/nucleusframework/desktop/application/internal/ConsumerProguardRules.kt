@@ -22,63 +22,46 @@ import java.util.zip.ZipFile
  * ProGuard rejects (`kotlinx-serialization-r8.pro`: `-keep,allowaccessmodification`).
  *
  * Extracted files are named by the plugin, never after the entry, so a hostile entry name cannot
- * escape the destination directory. A rule file using an option that would change the build as a
- * whole ([GLOBAL_OPTIONS]) or reach the file system ([IO_OPTIONS]) is skipped with a warning: a
- * library may say what to keep, not how the application is shrunk or where it is written.
+ * escape the destination directory. A rule file may only say what to keep: one using any option
+ * outside [ALLOWED_OPTIONS] — spelled in full, since ProGuard also accepts any prefix of an option
+ * (`-incl`, a bare `-`) — or the `@file` include is skipped with a warning. A deny-list would always
+ * miss one: whole-build switches, file and keystore options, aliases (`-defaultpackage`).
  */
 internal object ConsumerProguardRules {
     const val DIRECTORY = "META-INF/proguard/"
 
-    /** Options naming files: inputs, outputs, includes, mappings, dictionaries, reports. */
-    val IO_OPTIONS =
+    /** What a library may declare: keep rules, conditions, attributes, warnings, assumptions. */
+    val ALLOWED_OPTIONS =
         setOf(
-            "-include",
-            "-basedirectory",
-            "-injars",
-            "-outjars",
-            "-libraryjars",
-            "-applymapping",
-            "-obfuscationdictionary",
-            "-classobfuscationdictionary",
-            "-packageobfuscationdictionary",
-            "-printmapping",
-            "-printseeds",
-            "-printusage",
-            "-printconfiguration",
-            "-dump",
-        )
-
-    /** Options that switch a whole pass or change how every class is processed. */
-    val GLOBAL_OPTIONS =
-        setOf(
-            "-dontshrink",
-            "-dontoptimize",
-            "-dontobfuscate",
-            "-dontpreverify",
-            "-optimizations",
-            "-optimizationpasses",
-            "-allowaccessmodification",
-            "-mergeinterfacesaggressively",
-            "-overloadaggressively",
-            "-repackageclasses",
-            "-flattenpackagehierarchy",
-            "-useuniqueclassmembernames",
-            "-dontusemixedcaseclassnames",
-            "-ignorewarnings",
-            "-forceprocessing",
-            "-target",
-            "-microedition",
-            "-android",
-            "-skipnonpubliclibraryclasses",
-            "-dontskipnonpubliclibraryclasses",
-            "-dontskipnonpubliclibraryclassmembers",
-            "-addconfigurationdebugging",
+            "-keep",
+            "-keepclassmembers",
+            "-keepclasseswithmembers",
+            "-keepnames",
+            "-keepclassmembernames",
+            "-keepclasseswithmembernames",
+            "-if",
+            "-keepattributes",
+            "-keeppackagenames",
+            "-keepparameternames",
+            "-keepdirectories",
+            "-keepkotlinmetadata",
+            "-dontwarn",
+            "-dontnote",
+            "-assumenosideeffects",
+            "-assumenoexternalsideeffects",
+            "-assumenoescapingparameters",
+            "-assumenoexternalreturnvalues",
+            "-assumevalues",
+            "-adaptclassstrings",
+            "-adaptresourcefilenames",
+            "-adaptresourcefilecontents",
         )
 
     private val UTF8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
     /** A delimiter, or a run of anything else. */
     private val TOKEN = Regex("""[{}();,]|[^\s{}();,]+""")
-    private val OPTION_PREFIX = Regex("^-[A-Za-z]+")
+    /** An option word: `-` and its letters, possibly none (a bare `-` is ProGuard's `-include`). */
+    private val OPTION_PREFIX = Regex("^-[A-Za-z]*")
     private val UNSAFE_NAME_CHARS = Regex("[^A-Za-z0-9._-]")
     private const val MAX_NAME_LENGTH = 80
 
@@ -125,7 +108,7 @@ internal object ConsumerProguardRules {
             }
             for ((entry, bytes) in ruleEntries) {
                 val content = bytes.withoutBom()
-                val rejected = forbiddenOptions(content.toString(Charsets.ISO_8859_1))
+                val rejected = disallowedOptions(content.toString(Charsets.ISO_8859_1))
                 when {
                     rejected.isNotEmpty() -> skipped += Skipped(jar, entry, "uses ${rejected.joinToString()}")
                     seen.add(content.sha256()) -> {
@@ -144,13 +127,15 @@ internal object ConsumerProguardRules {
     }
 
     /**
-     * The [IO_OPTIONS] and [GLOBAL_OPTIONS] used by [rules], comments ignored, plus `@file` for
-     * ProGuard's `@file` include. Tokens are split the way ProGuard's word reader splits them — on whitespace and
-     * on `{ } ( ) ; ,` — so an option glued to a delimiter (`{ *; }-dontobfuscate`) is still seen.
-     * An `@word` outside a class body is an include when what follows is another option or the end
-     * of the file; anywhere else it is an annotation (`-keep @a.Ann class *`).
+     * The options of [rules] outside [ALLOWED_OPTIONS], comments ignored, plus `@file` for ProGuard's
+     * `@file` include. Tokens are split the way ProGuard's word reader splits them — on whitespace and
+     * on `{ } ( ) ; ,`, a word ending at a quote too — so an option glued to a delimiter
+     * (`{ *; }-dontobfuscate`, `-repackageclasses''`) is still seen. A `-` followed by a digit is a
+     * value (`-assumevalues … return -1..5`). An `@word` outside a class body is an include when
+     * what follows is another option or the end of the file; anywhere else it is an annotation
+     * (`-keep @a.Ann class *`).
      */
-    fun forbiddenOptions(rules: String): List<String> {
+    fun disallowedOptions(rules: String): List<String> {
         val tokens =
             rules
                 .lineSequence()
@@ -163,14 +148,10 @@ internal object ConsumerProguardRules {
             when {
                 token == "{" -> depth++
                 token == "}" -> depth = maxOf(0, depth - 1)
-                // ProGuard ends a word at a quote too: `-repackageclasses''` is the option then ''.
-                token.startsWith("-") ->
-                    OPTION_PREFIX
-                        .find(token)
-                        ?.value
-                        ?.lowercase()
-                        ?.takeIf { it in IO_OPTIONS || it in GLOBAL_OPTIONS }
-                        ?.let(found::add)
+                token.startsWith("-") && token.getOrNull(1)?.isDigit() != true -> {
+                    val option = OPTION_PREFIX.find(token)?.value.orEmpty()
+                    if (option !in ALLOWED_OPTIONS) found += option
+                }
                 token.startsWith("@") && depth == 0 -> {
                     val next = tokens.getOrNull(index + 1)
                     if (next == null || next.startsWith("-")) found += "@file"
