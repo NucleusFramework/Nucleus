@@ -11,8 +11,10 @@ import dev.nucleusframework.desktop.application.internal.files.normalizedPath
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
 import dev.nucleusframework.internal.utils.*
 import org.gradle.api.file.*
+import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
+import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.*
 import org.gradle.api.tasks.Optional
 import org.gradle.work.DisableCachingByDefault
@@ -54,12 +56,25 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
     val joinOutputJars: Property<Boolean> = objects.nullableProperty()
 
     // todo: DSL for excluding default rules
-    // also consider pulling coroutines rules from coroutines artifact
-    // https://github.com/Kotlin/kotlinx.coroutines/blob/master/kotlinx-coroutines-core/jvm/resources/META-INF/proguard/coroutines.pro
     @get:Optional
     @get:InputFile
     @get:PathSensitive(PathSensitivity.NONE)
     val defaultComposeRulesFile: RegularFileProperty = objects.fileProperty()
+
+    /** Apply the keep rules the input JARs ship under `META-INF/proguard/` ([ConsumerProguardRules]). */
+    @get:Input
+    val consumerRules: Property<Boolean> = objects.notNullProperty(false)
+
+    /** Dependencies whose embedded rules are left out: `group:module` or a project path, `*` wildcards. */
+    @get:Input
+    val consumerRulesExclusions: SetProperty<String> = objects.setProperty(String::class.java)
+
+    /**
+     * `group:module` (or project path) of each input JAR, keyed by absolute path, to match
+     * [consumerRulesExclusions]. Derived from [inputFiles], so not an input of its own.
+     */
+    @get:Internal
+    val artifactCoordinates: MapProperty<String, String> = objects.mapProperty(String::class.java, String::class.java)
 
     @get:Input
     val proguardVersion: Property<String> = objects.notNullProperty()
@@ -86,6 +101,8 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
     private val rootConfigurationFile = workingDir.map { it.file("root-config.pro") }
 
     private val jarsConfigurationFile = workingDir.map { it.file("jars-config.pro") }
+
+    private val consumerRulesDir = workingDir.map { it.dir("consumer-rules") }
 
     @TaskAction
     fun execute() {
@@ -146,7 +163,7 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
                 sequenceOf(
                     jarsConfigurationFile.ioFile,
                     defaultComposeRulesFile.ioFile,
-                ) + configurationFiles.files.asSequence()
+                ) + extractConsumerRules(inputToOutputJars.keys.toList()) + configurationFiles.files.asSequence()
             for (configFile in includeFiles.filterNotNull()) {
                 writer.writeLn("-include '${configFile.normalizedPath()}'")
             }
@@ -172,6 +189,24 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
             environment = emptyMap(),
             logToConsole = ExternalToolRunner.LogToConsole.Always,
         ).assertNormalExitValue()
+    }
+
+    private fun extractConsumerRules(jars: List<File>): Sequence<File> {
+        if (!consumerRules.get()) return emptySequence()
+        val exclusions = consumerRulesExclusions.get()
+        val coordinates = artifactCoordinates.get()
+        val result =
+            ConsumerProguardRules.extract(jars, consumerRulesDir.ioFile) { jar ->
+                ConsumerProguardRules.isExcluded(coordinates[jar.absoluteFile.normalize().path], exclusions)
+            }
+        for (skipped in result.skipped) {
+            logger.warn(
+                "w: ProGuard rules '${skipped.entry}' of '${skipped.jar.name}' not applied (${skipped.reason}). " +
+                    "Add the rules you need to proguard.configurationFiles.",
+            )
+        }
+        logger.info("Applying ${result.files.size} ProGuard rule file(s) embedded in the input JARs")
+        return result.files.asSequence()
     }
 
     /**

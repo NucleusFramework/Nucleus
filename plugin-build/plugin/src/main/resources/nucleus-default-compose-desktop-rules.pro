@@ -11,6 +11,14 @@
     void traceEventEnd();
 }
 
+# Enum.valueOf / EnumMap / EnumSet reach values() reflectively (Class.getEnumConstants): without it
+# every EnumMap of a shrunk enum fails with "keyUniverse is null" (Jackson, httpclient5, snakeyaml,
+# OSHI, JLine…). Android's default configuration has carried the same rule forever.
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
 # Kotlinx Coroutines Rules
 # https://github.com/Kotlin/kotlinx.coroutines/blob/master/kotlinx-coroutines-core/jvm/resources/META-INF/proguard/coroutines.pro
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
@@ -66,6 +74,13 @@
 # Androidx
 -keep,allowshrinking,allowobfuscation class androidx.compose.runtime.SnapshotStateKt__DerivedStateKt { *; }
 -keep class androidx.compose.material3.SliderDefaults { *; }
+# ProGuard (7.10.0) recomputes this method's stack map frames wrongly once it touches its code: the
+# Kotlin compiler reuses overlapping long slots (74 / 75 / 76) on different branches, ProGuard merges
+# them into "long at 74", and the class fails verification ("Inconsistent stackmap frames at branch
+# target 2414") as soon as ListItemDefaults loads. includecode leaves the method's code untouched.
+-keepclassmembers,includecode,allowshrinking,allowobfuscation class androidx.compose.material3.ListItemKt {
+    *** InteractiveListItem(...);
+}
 -dontnote androidx.**
 
 # Kotlinx serialization, included by androidx.navigation
