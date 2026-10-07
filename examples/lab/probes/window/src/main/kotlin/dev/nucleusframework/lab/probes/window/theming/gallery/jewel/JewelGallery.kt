@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import org.jetbrains.jewel.foundation.modifier.trackActivation
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.intui.markdown.standalone.ProvideMarkdownStyling
 import org.jetbrains.jewel.intui.standalone.styling.defaults
 import org.jetbrains.jewel.ui.Orientation
 import org.jetbrains.jewel.ui.component.Divider
@@ -67,7 +68,9 @@ fun JewelGallery(modifier: Modifier = Modifier) {
             setCurrentView = { state.currentView = it },
         )
         Divider(Orientation.Vertical, Modifier.fillMaxHeight())
-        ComponentView(state.currentView)
+        // Several pages (banners, tooltips…) render Markdown: the styling must be provided, as
+        // jewel-demo's app root did.
+        ProvideMarkdownStyling { ComponentView(state.currentView) }
     }
 }
 
