@@ -60,6 +60,23 @@ internal object ConsumerProguardRules {
     private val UTF8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
     /** A delimiter, or a run of anything else. */
     private val TOKEN = Regex("""[{}();,]|[^\s{}();,]+""")
+    /** The [ALLOWED_OPTIONS] followed by a class specification, the only place a `{ … }` body opens. */
+    private val CLASS_SPEC_OPTIONS =
+        setOf(
+            "-keep",
+            "-keepclassmembers",
+            "-keepclasseswithmembers",
+            "-keepnames",
+            "-keepclassmembernames",
+            "-keepclasseswithmembernames",
+            "-if",
+            "-assumenosideeffects",
+            "-assumenoexternalsideeffects",
+            "-assumenoescapingparameters",
+            "-assumenoexternalreturnvalues",
+            "-assumevalues",
+        )
+
     /** An annotation class name in a ProGuard pattern: a binary name, `*` and `?` wildcards allowed. */
     private val ANNOTATION_NAME = Regex("""[\p{L}_$*?][\p{L}\p{N}_$*?]*(\.[\p{L}_$*?][\p{L}\p{N}_$*?]*)*""")
 
@@ -169,13 +186,20 @@ internal object ConsumerProguardRules {
         if (code.any { line -> line.any { it != '\t' && it !in ' '..'~' } }) found += "non-ASCII"
         val tokens = code.flatMap { line -> TOKEN.findAll(line).map { it.value } }
         var depth = 0
+        var option: String? = null
         for ((index, token) in tokens.withIndex()) {
             when {
-                token == "{" -> depth++
+                token == "{" -> {
+                    // Only a class specification opens a body. A file filter takes a bare `{` as a
+                    // value (`-adaptresourcefilenames {`), after which ProGuard is back at top level.
+                    if (depth == 0 && option !in CLASS_SPEC_OPTIONS) found += "{"
+                    depth++
+                }
                 token == "}" -> depth = maxOf(0, depth - 1)
                 token.startsWith("-") && token.getOrNull(1)?.isDigit() != true -> {
-                    val option = OPTION_PREFIX.find(token)?.value.orEmpty()
-                    if (option !in ALLOWED_OPTIONS) found += option
+                    val word = OPTION_PREFIX.find(token)?.value.orEmpty()
+                    if (word !in ALLOWED_OPTIONS) found += word
+                    if (depth == 0) option = word
                 }
                 token.startsWith("@") && depth == 0 && token != "@interface" ->
                     if (!isClassAnnotation(token, tokens.getOrNull(index + 1))) found += "@file"

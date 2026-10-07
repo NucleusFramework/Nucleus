@@ -212,6 +212,11 @@ class ConsumerProguardRulesTest {
                 "a${utf8AsLatin1(Char(0x2003).toString())}-dontshrink" to listOf("non-ASCII"),
                 "# règles en français, ✓ — comments stay free\n-keep class a.B" to emptyList(),
                 "-keep class a.B\t{ *; }" to emptyList(),
+                // A file filter takes a bare `{` as a value; ProGuard is then back at top level.
+                "-adaptresourcefilenames {\n@evil.pro" to listOf("{"),
+                "-keepdirectories {\n@evil.pro\n-keep class a.B" to listOf("{"),
+                "-dontwarn a.**\n{ @evil.pro }" to listOf("{"),
+                "{ *; }" to listOf("{"),
             )
         for ((rules, expected) in cases) {
             assertEquals(rules, expected, ConsumerProguardRules.disallowedOptions(rules))
