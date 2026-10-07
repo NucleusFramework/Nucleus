@@ -7,9 +7,21 @@ import dev.nucleusframework.lab.probes.workspace.common.SessionState
 import dev.nucleusframework.lab.probes.workspace.common.TabChange
 import dev.nucleusframework.lab.probes.workspace.common.TabsObservation
 
+/** Which chrome the session's strip wears; both publish the same drop geometry. */
+enum class TabStripChrome(
+    val label: String,
+) {
+    /** IntelliJ's own `TabStrip` / `TabData.Editor` through Jewel, the Lab's design system. */
+    Jewel("Jewel"),
+
+    /** Nucleus' stock `TabStrip` from decorated-window-tao, coloured by the Lab's title bar style. */
+    Stock("Nucleus stock TabStrip"),
+}
+
 /** Declaration-time choices: applied when the session is (re)opened. */
 @Immutable
 data class TabsOptions(
+    val strip: TabStripChrome = TabStripChrome.Jewel,
     val initialTabs: Int = 3,
     /** `TabWorkspace(captureThumbnails)`: a picture of each tab for the hover card. */
     val captureThumbnails: Boolean = true,
@@ -20,7 +32,7 @@ data class TabsOptions(
 data class TabsLive(
     /** The hover card under a resting pointer. */
     val hoverPreview: Boolean = true,
-    /** `TabStrip(reorderAnimation)`; off = tabs jump to their slot. */
+    /** Stock `TabStrip(reorderAnimation)`; off = tabs jump to their slot. Jewel's strip has none. */
     val animateReorder: Boolean = true,
     /** The strip laid out right to left: drop index and motion must mirror. */
     val rightToLeft: Boolean = false,

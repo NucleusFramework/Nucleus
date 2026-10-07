@@ -30,8 +30,46 @@ import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 
-/** Checks both tab probes share: the archetype's behaviour, whatever the chrome. */
-private val WorkspaceChecks =
+@ContributesIntoSet(AppScope::class)
+@Inject
+class TabsProbe : Probe {
+    override val descriptor =
+        ProbeDescriptor(
+            id = ID,
+            title = "Tabs",
+            domain = Domain.Workspace,
+            summary =
+                "Do Chrome-like tabs tear off, merge, reorder and carry their state between windows, " +
+                    "under Jewel's TabStrip or Nucleus' stock one?",
+            modules = listOf("decorated-window-tao", "nucleus-application", "decorated-window-jewel"),
+            checks = TabsChecks,
+            keywords =
+                listOf(
+                    "TabWindows",
+                    "TabWorkspace",
+                    "TabStrip",
+                    "tear off",
+                    "merge",
+                    "snapshot",
+                    "chrome",
+                    "jewel",
+                    "intellij",
+                    "TabData.Editor",
+                    "tabs",
+                ),
+        )
+
+    @Composable
+    override fun Content() {
+        TabsProbeContent(metroViewModel<TabsViewModel>())
+    }
+
+    companion object {
+        val ID = ProbeId("workspace.tabs")
+    }
+}
+
+private val TabsChecks =
     listOf(
         Check(
             "tear-off",
@@ -43,7 +81,7 @@ private val WorkspaceChecks =
         ),
         Check(
             "reorder",
-            "Reordering in a strip: neighbours slide aside, the released tab glides into its slot — no jump, no flicker",
+            "Reordering in a strip (stock strip): neighbours slide aside, the released tab glides into its slot — no jump, no flicker",
         ),
         Check(
             "state",
@@ -55,88 +93,43 @@ private val WorkspaceChecks =
         ),
         Check(
             "rtl",
-            "Right to left: a drag over a strip opens the slot on the pointer's side and the index never flips back and forth",
+            "Right to left (stock strip): a drag over a strip opens the slot on the pointer's side and the index never flips back and forth",
+        ),
+        Check(
+            "grip",
+            "A press anywhere on a Jewel tab — label or padding — selects it and starts the drag (Jewel)",
+        ),
+        Check(
+            "drop-slot",
+            "A tab dragged from another window opens a Jewel-tab-shaped slot holding the ghost card (Jewel)",
+        ),
+        Check(
+            "hover",
+            "Resting on a tab shows the Jewel-coloured card with the draft's first line and a thumbnail (Jewel)",
         ),
         Check("last-window", "Closing the last workspace window ends the session only — the Lab stays up"),
     )
 
-@ContributesIntoSet(AppScope::class)
-@Inject
-class TabsProbe : Probe {
-    override val descriptor =
-        ProbeDescriptor(
-            id = ID,
-            title = "Tabs",
-            domain = Domain.Workspace,
-            summary = "Do Chrome-like tabs tear off, merge, reorder and carry their state between windows?",
-            modules = listOf("decorated-window-tao", "nucleus-application"),
-            checks = WorkspaceChecks,
-            keywords = listOf("TabWindows", "TabWorkspace", "tear off", "merge", "snapshot", "chrome"),
-        )
-
-    @Composable
-    override fun Content() {
-        TabsProbeContent(metroViewModel<TabsViewModel>(), chrome = "stock TabStrip, Lab title bar style")
-    }
-
-    companion object {
-        val ID = ProbeId("workspace.tabs")
-    }
-}
-
-@ContributesIntoSet(AppScope::class)
-@Inject
-class JewelTabsProbe : Probe {
-    override val descriptor =
-        ProbeDescriptor(
-            id = ID,
-            title = "Jewel tabs",
-            domain = Domain.Workspace,
-            summary = "Does the same tab workspace hold up under Jewel TabStrip / TabData.Editor chrome?",
-            modules = listOf("decorated-window-tao", "nucleus-application", "decorated-window-jewel"),
-            checks =
-                listOf(
-                    Check(
-                        "grip",
-                        "A press anywhere on a Jewel tab — label or padding — selects it and starts the drag",
-                    ),
-                    Check(
-                        "drop-slot",
-                        "A tab dragged from another window opens a Jewel-tab-shaped slot holding the ghost card",
-                    ),
-                    Check(
-                        "hover",
-                        "Resting on a tab shows the Jewel-coloured card with the draft's first line and a thumbnail",
-                    ),
-                ) + WorkspaceChecks.filter { it.id in setOf("tear-off", "merge", "state", "snapshot") },
-            keywords = listOf("jewel", "intellij", "TabData.Editor", "tabs"),
-        )
-
-    @Composable
-    override fun Content() {
-        TabsProbeContent(metroViewModel<JewelTabsViewModel>(), chrome = "Jewel TabStrip, editorTabStyle")
-    }
-
-    companion object {
-        val ID = ProbeId("workspace.jewel-tabs")
-    }
-}
-
 @Composable
-private fun TabsProbeContent(
-    vm: TabWorkspaceViewModel,
-    chrome: String,
-) {
+private fun TabsProbeContent(vm: TabsViewModel) {
     val state by vm.state.collectAsState()
     val open = state.open
     val options = state.data.options
     val live = state.live
     val obs = state.data.observation
+    val chrome =
+        when (state.data.appliedOptions?.strip ?: options.strip) {
+            TabStripChrome.Jewel -> "Jewel TabStrip, editorTabStyle"
+            TabStripChrome.Stock -> "stock TabStrip, Lab title bar style"
+        }
     ProbeLayout(
         capabilities = listOf(sessionCapability(open, detail = chrome), placementCapability(obs)),
         controls = {
             SessionActions(state, vm::onIntent, optionsPending = state.optionsPending)
             SubHeading("Declaration (applied on open / reset)")
+            ChoiceRow("Strip", TabStripChrome.entries, options.strip, name = { it.label }) {
+                vm.act(TabsIntent.SetOptions(options.copy(strip = it)))
+            }
             ChoiceRow("Initial tabs", listOf(1, 3, 5, 8), options.initialTabs) {
                 vm.act(TabsIntent.SetOptions(options.copy(initialTabs = it)))
             }
@@ -147,7 +140,7 @@ private fun TabsProbeContent(
             SwitchRow("Hover preview", live.hoverPreview) {
                 vm.onIntent(SessionIntent.SetLive(live.copy(hoverPreview = it)))
             }
-            SwitchRow("Animate reorder", live.animateReorder) {
+            SwitchRow("Animate reorder (stock strip)", live.animateReorder) {
                 vm.onIntent(SessionIntent.SetLive(live.copy(animateReorder = it)))
             }
             SwitchRow("Right to left", live.rightToLeft) {

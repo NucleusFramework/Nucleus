@@ -15,23 +15,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import dev.nucleusframework.application.NucleusApplicationScope
-import dev.nucleusframework.application.Tab
-import dev.nucleusframework.application.TabWindows
-import dev.nucleusframework.lab.probes.workspace.common.DropClosedTab
 import dev.nucleusframework.lab.probes.workspace.common.NewTabButton
-import dev.nucleusframework.lab.probes.workspace.common.SaveableTabBody
-import dev.nucleusframework.lab.probes.workspace.common.WorkspaceWindowFrame
 import dev.nucleusframework.window.tao.TabDropGhost
 import dev.nucleusframework.window.tao.TabDropGhostCard
 import dev.nucleusframework.window.tao.TabEntry
@@ -50,43 +40,15 @@ import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.theme.editorTabStyle
 
 /**
- * The same workspace wearing IntelliJ's tab chrome. Everything a tab archetype needs from
- * its chrome is a modifier contract (`tabStripGeometry`, `tabSlot`, `tabDragHandle`), so
- * swapping the design system is this one strip. `LabTheme` is already Jewel's `IntUiTheme`,
- * light or dark, so the strip reads the Lab's own Jewel theme.
- */
-@Composable
-fun NucleusApplicationScope.JewelTabsSession(
-    model: TabsSessionModel,
-    close: () -> Unit,
-) {
-    TabWindows(
-        workspace = model.workspace,
-        strip = {
-            val direction = if (model.live.rightToLeft) LayoutDirection.Rtl else LayoutDirection.Ltr
-            CompositionLocalProvider(LocalLayoutDirection provides direction) { JewelEditorTabStrip(model) }
-        },
-        windowWrapper = { content -> WorkspaceWindowFrame(content) },
-        onLastWindowClosed = close,
-    )
-    for (document in model.documents.documents) {
-        key(document.id) {
-            Tab(model.workspace, id = document.id, title = document.title) {
-                SaveableTabBody(document, onNewTab = { model.documents.open() })
-            }
-            DropClosedTab(model.workspace, document.id, model.documents::forget)
-        }
-    }
-}
-
-/**
  * Jewel's [TabStrip] with one [TabData.Editor] per tab. Jewel's `TabData` carries no
  * `Modifier`, so slot, grip and click go on the tab's *content*, made to fill the tab —
  * otherwise the padding selects but does not drag. The drop slot is a Jewel tab holding
  * the stock ghost card, so a drag from another window opens a real gap here too.
+ * `LabTheme` is already Jewel's `IntUiTheme`, light or dark, so the strip and the hover
+ * card read the Lab's own Jewel theme.
  */
 @Composable
-private fun TabStripScope.JewelEditorTabStrip(model: TabsSessionModel) {
+internal fun TabStripScope.JewelEditorTabStrip(model: TabsSessionModel) {
     val ghost = dropGhost
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         val tabData = tabs.mapIndexed { index, entry -> editorTab(index, entry) }.toMutableList()

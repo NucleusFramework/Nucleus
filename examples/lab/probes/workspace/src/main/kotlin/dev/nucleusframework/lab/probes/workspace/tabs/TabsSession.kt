@@ -19,18 +19,29 @@ import dev.nucleusframework.window.tao.TabStrip
 import dev.nucleusframework.window.tao.TabStripScope
 
 /**
- * The stock archetype: `TabWindows` composes one window per group, every document is
- * declared once as a `Tab`, and the last window closing ends the session. The strip takes
- * its colours from the title bar style, i.e. the Lab's.
+ * The archetype: `TabWindows` composes one window per group, every document is declared
+ * once as a `Tab`, and the last window closing ends the session. Every window wears the
+ * Lab's frame and title bar ([WorkspaceWindowFrame]); only the strip changes with
+ * [TabsSessionModel.strip] — Jewel's by default, Nucleus' stock one on request. Everything
+ * a tab archetype needs from its chrome is a modifier contract (`tabStripGeometry`,
+ * `tabSlot`, `tabDragHandle`), so swapping the design system is this one slot.
  */
 @Composable
-fun NucleusApplicationScope.StockTabsSession(
+fun NucleusApplicationScope.TabsSession(
     model: TabsSessionModel,
     close: () -> Unit,
 ) {
     TabWindows(
         workspace = model.workspace,
-        strip = { StockTabStrip(model) },
+        strip = {
+            val direction = if (model.live.rightToLeft) LayoutDirection.Rtl else LayoutDirection.Ltr
+            CompositionLocalProvider(LocalLayoutDirection provides direction) {
+                when (model.strip) {
+                    TabStripChrome.Jewel -> JewelEditorTabStrip(model)
+                    TabStripChrome.Stock -> StockTabStrip(model)
+                }
+            }
+        },
         windowWrapper = { content -> WorkspaceWindowFrame(content) },
         onLastWindowClosed = close,
     )
@@ -46,19 +57,16 @@ fun NucleusApplicationScope.StockTabsSession(
 
 /**
  * The stock [TabStrip] — which publishes the drop geometry other windows' drags resolve
- * against — with the live knobs applied and the document's path on the hover card.
+ * against — with the live knobs applied. Its colours come from the title bar style, i.e.
+ * the Lab's; the "+" and the hover card's subtitle are the Lab's own components.
  */
 @Composable
 private fun TabStripScope.StockTabStrip(model: TabsSessionModel) {
     val live = model.live
     val preview = remember(model) { documentHoverPreview { model.documents.document(it)?.subtitle } }
-    CompositionLocalProvider(
-        LocalLayoutDirection provides if (live.rightToLeft) LayoutDirection.Rtl else LayoutDirection.Ltr,
-    ) {
-        TabStrip(
-            hoverPreview = preview.takeIf { live.hoverPreview },
-            reorderAnimation = TabReorderAnimation.takeIf { live.animateReorder },
-            trailing = { NewTabButton { model.documents.open() } },
-        )
-    }
+    TabStrip(
+        hoverPreview = preview.takeIf { live.hoverPreview },
+        reorderAnimation = TabReorderAnimation.takeIf { live.animateReorder },
+        trailing = { NewTabButton { model.documents.open() } },
+    )
 }

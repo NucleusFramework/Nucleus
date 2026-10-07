@@ -16,7 +16,7 @@ kotlin {
 
 dependencies {
     implementation(project(":examples:lab:designsystem"))
-    // Specimen only: the Jewel tabs probe draws IntelliJ's own TabStrip over the same workspace.
+    // Specimen only: the Tabs probe draws IntelliJ's own TabStrip (its default chrome) over the workspace.
     val jewelExclusions =
         Action<ExternalModuleDependency> {
             exclude(group = "org.jetbrains.skiko", module = "skiko-awt-runtime-all")

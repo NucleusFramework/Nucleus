@@ -8,7 +8,6 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import dev.nucleusframework.application.NucleusApplicationScope
-import dev.nucleusframework.lab.core.ProbeId
 import dev.nucleusframework.lab.core.session.SessionHost
 import dev.nucleusframework.lab.core.timeline.Timeline
 import dev.nucleusframework.lab.probes.workspace.common.Document
@@ -38,6 +37,9 @@ class TabsSessionModel(
 ) : SessionModel<TabsLive> {
     override var live: TabsLive by mutableStateOf(live)
 
+    /** Declaration-time: the strip is chosen when the session opens. */
+    val strip: TabStripChrome = options.strip
+
     val workspace =
         TabWorkspace(defaultWindowSize = DpSize(900.dp, 620.dp), captureThumbnails = options.captureThumbnails)
 
@@ -65,42 +67,31 @@ class TabsSessionModel(
     }
 }
 
-/** Which chrome the strip wears: the stock one, or IntelliJ's own `TabStrip` through Jewel. */
-enum class TabsFlavor { Stock, Jewel }
-
 /**
- * Shared by the stock and the Jewel tab probes: same workspace, same controls, same
- * observations — only the session's chrome differs, which is the point of the comparison.
+ * One tab workspace session: same workspace, same controls, same observations whichever
+ * strip it wears ([TabsOptions.strip]).
  */
-abstract class TabWorkspaceViewModel(
-    private val flavor: TabsFlavor,
+@ViewModelKey
+@ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
+@Inject
+class TabsViewModel(
     host: SessionHost,
     timeline: Timeline,
-    source: ProbeId,
 ) : SessionModelViewModel<TabsLive, TabsData, TabsIntent, TabsEvent, TabsSessionModel>(
         SessionState(live = TabsLive(), data = TabsData()),
         TabsReducer,
         host,
         timeline,
-        source,
+        TabsProbe.ID,
     ) {
     private var savedLayout: TabLayoutSnapshot? = null
 
-    override val sessionTitle =
-        when (flavor) {
-            TabsFlavor.Stock -> "Tab workspace"
-            TabsFlavor.Jewel -> "Jewel tab workspace"
-        }
+    override val sessionTitle = "Tab workspace"
 
     override fun createModel(state: TabsState) = TabsSessionModel(state.data.options, state.live)
 
     override fun content(model: TabsSessionModel): @Composable NucleusApplicationScope.(() -> Unit) -> Unit =
-        { close ->
-            when (flavor) {
-                TabsFlavor.Stock -> StockTabsSession(model, close)
-                TabsFlavor.Jewel -> JewelTabsSession(model, close)
-            }
-        }
+        { close -> TabsSession(model, close) }
 
     override fun onOpened(model: TabsSessionModel) {
         var previous = TabsObservation()
@@ -153,19 +144,3 @@ abstract class TabWorkspaceViewModel(
         }
     }
 }
-
-@ViewModelKey
-@ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
-@Inject
-class TabsViewModel(
-    host: SessionHost,
-    timeline: Timeline,
-) : TabWorkspaceViewModel(TabsFlavor.Stock, host, timeline, TabsProbe.ID)
-
-@ViewModelKey
-@ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
-@Inject
-class JewelTabsViewModel(
-    host: SessionHost,
-    timeline: Timeline,
-) : TabWorkspaceViewModel(TabsFlavor.Jewel, host, timeline, JewelTabsProbe.ID)
