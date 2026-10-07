@@ -2,6 +2,7 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import java.util.concurrent.Callable
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
 import dev.nucleusframework.desktop.application.dsl.MacAppExtension
@@ -2528,17 +2529,36 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
  */
 private fun JvmApplicationContext.collectProjectResourceProjects(runtimeConfigName: String?): Set<Project> {
     val projects = linkedSetOf(project)
-    runtimeConfigName?.let { project.configurations.findByName(it) }
-        ?.allDependencies
-        ?.withType(ProjectDependency::class.java)
-        ?.forEach { dep ->
-            runCatching { project.project(dep.path) }.getOrNull()?.let { projects.add(it) }
-        }
+    // Transitive: a resource of a module the app only reaches through another module (an
+    // `api(project(...))` of a direct dependency) is loaded at run time just the same.
+    fun visit(
+        owner: Project,
+        configName: String?,
+    ) {
+        configName
+            ?.let { owner.configurations.findByName(it) }
+            ?.allDependencies
+            ?.withType(ProjectDependency::class.java)
+            ?.forEach { dep ->
+                val dependency = runCatching { owner.project(dep.path) }.getOrNull() ?: return@forEach
+                if (projects.add(dependency)) visit(dependency, "runtimeClasspath")
+            }
+    }
+    visit(project, runtimeConfigName)
     return projects
 }
 
+/**
+ * Resolved lazily: the app project is often evaluated before the modules it depends on (Gradle
+ * configures projects in path order, and `:app` sorts before `:feature-*`), and an unevaluated
+ * module has no source sets yet — read eagerly, its resources were silently left out of the image.
+ */
 private fun JvmApplicationContext.collectProjectResourceDirs(runtimeConfigName: String?): List<FileCollection> =
-    collectProjectResourceProjects(runtimeConfigName).flatMap { resourceSrcDirsOf(it) }
+    listOf(
+        project.files(
+            Callable { collectProjectResourceProjects(runtimeConfigName).flatMap { resourceSrcDirsOf(it) } },
+        ),
+    )
 
 /**
  * The `buildNative<OS>` tasks of the resource-contributing projects. They write the JNI `.so`/
