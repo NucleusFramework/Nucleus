@@ -788,7 +788,6 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
     val generateProjectResourceMetadata =
         if (graalvm.autoIncludeResources.get()) {
             val resolvedResourceDirs = collectProjectResourceDirs(runtimeCfg?.name)
-            val nativeBuildTasks = collectNativeBuildTasks(runtimeCfg?.name)
             project.tasks
                 .register(
                     "generateGraalvmProjectResourceMetadata",
@@ -802,7 +801,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // The native modules write their .so into src/main/resources/nucleus/native
                         // (a resource dir this task reads) — depend on their build tasks so Gradle
                         // doesn't flag the implicit dependency.
-                        nativeBuildTasks.forEach { task.dependsOn(it) }
+                        // Lazy, like the directories: the modules (and their tasks) may not be
+                        // configured yet when the app is.
+                        task.dependsOn(Callable { collectNativeBuildTasks(runtimeCfg?.name) })
                         task.outputDir.set(projectResourceMetadataDir)
                     }
                 }
