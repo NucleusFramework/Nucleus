@@ -328,15 +328,16 @@ public class NucleusUpdater(
     }
 
     /**
-     * Downloads `<url>.asc` to [dest] if present. Failures are swallowed: the detached signature is
-     * optional and only used by the Linux passwordless self-update helper.
+     * Downloads the detached signature ([UpdateProvider.getSignatureUrl]) to [dest] if present.
+     * Failures are swallowed: it is optional and only used by the Linux passwordless self-update
+     * helper.
      */
     private fun downloadDetachedSignature(
         url: String,
         dest: File,
     ) {
         try {
-            fetcher.readBytesOrNull("$url.asc")?.let(dest::writeBytes)
+            fetcher.readBytesOrNull(provider.getSignatureUrl(url))?.let(dest::writeBytes)
         } catch (
             @Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception,
         ) {

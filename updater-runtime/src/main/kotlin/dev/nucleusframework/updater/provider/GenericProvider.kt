@@ -56,7 +56,8 @@ private fun requireSecureBaseUrl(baseUrl: String) {
     }
 }
 
-private fun isLoopbackHost(host: String?): Boolean =
+/** Whether [host], as `URI.getHost()` returns it, is this machine. */
+internal fun isLoopbackHost(host: String?): Boolean =
     host != null &&
         // URI.getHost() keeps the brackets of an IPv6 literal.
         (host.equals("localhost", ignoreCase = true) || host == "[::1]" || isIpv4LoopbackLiteral(host))

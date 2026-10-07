@@ -10,7 +10,7 @@ Auto-update library for JVM desktop applications packaged with the Nucleus plugi
 - Streaming download with progress reporting via Kotlin `Flow`
 - SHA-512 integrity verification (base64-encoded, matching electron-builder format)
 - Platform-specific installer launch (DEB, RPM, DMG, PKG, EXE/NSIS, MSI)
-- Private repository support via GitHub token
+- Private repositories and GitHub Enterprise Server (`PrivateGitHubProvider`, token over the REST API)
 
 ## Setup
 
@@ -64,18 +64,39 @@ NucleusUpdater {
 
 ## Providers
 
-### GitHub Releases
+### GitHub Releases (public repository)
 
 ```kotlin
 provider = GitHubProvider(
     owner = "myorg",
     repo = "myapp",
-    token = "ghp_..."   // Optional, for private repos
+    host = "github.com", // Optional, e.g. "github.example.com" for GitHub Enterprise Server
+    protocol = "https"   // Optional; "http" is accepted for a loopback host only (local testing)
 )
 ```
 
-Metadata URL: `https://github.com/{owner}/{repo}/releases/latest/download/latest-{suffix}.yml`
-Download URL: `https://github.com/{owner}/{repo}/releases/download/v{version}/{fileName}`
+Metadata URL: `{protocol}://{host}/{owner}/{repo}/releases/latest/download/latest-{suffix}.yml`
+Download URL: `{protocol}://{host}/{owner}/{repo}/releases/download/v{version}/{fileName}`
+
+A pre-release channel (`channel = "beta"`) resolves its newest tag from the public
+`{protocol}://{host}/{owner}/{repo}/releases.atom` feed, like electron-updater — no REST API call, so no
+rate limit. A tag's channel is its first pre-release identifier (`v2.3.5-beta.8` → `beta`), matched
+exactly (case-insensitive).
+
+These are GitHub's anonymous web routes. They take no token, so they only work for a public
+repository on an instance that is not in private mode.
+
+### GitHub Releases (private repository, GitHub Enterprise)
+
+```kotlin
+provider = PrivateGitHubProvider(
+    owner = "myorg",
+    repo = "myapp",
+    token = "github_pat_...", // Read access to the repository's contents, nothing more: it ships in the app
+    host = "github.com",      // Optional, e.g. "github.example.com" (API at {protocol}://{host}/api/v3)
+    protocol = "https"        // Optional; "http" is accepted for a loopback host only (local testing)
+)
+```
 
 ### Generic HTTP server
 

@@ -28,6 +28,9 @@ internal class RangeHttpServer(
     /** Every request line received, as `"<method> <path>[ range]"`. */
     val requests = CopyOnWriteArrayList<String>()
 
+    /** Every `Authorization` header received. */
+    val authorizations = CopyOnWriteArrayList<String>()
+
     val baseUrl: String get() = "http://127.0.0.1:${server.address.port}"
 
     init {
@@ -59,6 +62,7 @@ internal class RangeHttpServer(
         val path = exchange.requestURI.path
         val range = exchange.requestHeaders.getFirst("Range")
         requests += listOfNotNull("${exchange.requestMethod} $path", range).joinToString(" ")
+        exchange.requestHeaders["Authorization"]?.let(authorizations::addAll)
 
         val body = resources[path]
         if (body == null) {
