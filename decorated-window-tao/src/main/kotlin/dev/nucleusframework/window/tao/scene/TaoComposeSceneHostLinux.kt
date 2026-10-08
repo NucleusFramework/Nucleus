@@ -577,6 +577,24 @@ internal class TaoComposeSceneHostLinux(
      */
     private val forwardedNativeButtons = mutableSetOf<Int>()
 
+    /**
+     * Buttons whose press a popup layer forwarded from its draw margin
+     * ([TaoPopupHostLinux.forwardMarginPointer]) and whose release has not come
+     * back the same way.
+     *
+     * The display server's implicit grab belongs to the popup surface, so the
+     * release goes there — and when that press closes the popup (a hover card
+     * hides under a tab being clicked), the surface is gone before the release
+     * arrives. On Wayland nothing else delivers it: Compose keeps the button
+     * down and a click on a tab becomes a drag that follows the pointer.
+     * While the grab lives, motion goes to the popup too, so native motion on
+     * this window means the button is up: [releaseOrphanedMarginPresses].
+     */
+    private val marginPressedButtons = mutableSetOf<PointerButton>()
+
+    /** Where the last margin-forwarded event landed, for the release [releaseOrphanedMarginPresses] synthesizes. */
+    private var lastMarginPosition: Offset = Offset.Zero
+
     /** Whether the press being dispatched was handed to a native view — reset at every press. */
     private var nativePointerDispatchedThisEvent = false
 
@@ -2826,6 +2844,7 @@ internal class TaoComposeSceneHostLinux(
         lastPointerX = xPx
         lastPointerY = yPx
         if (forwardedNativeButtons.isNotEmpty()) healStaleNativePresses()
+        if (marginPressedButtons.isNotEmpty()) releaseOrphanedMarginPresses()
         // Real pointer motion resuming means the compositor released any
         // resize/move grab — that's our grab-ended signal (the compositor
         // withholds motion for the whole grab), so drop the focus mask here
@@ -2936,8 +2955,10 @@ internal class TaoComposeSceneHostLinux(
             for (stale in forwardedNativeButtons.toList()) {
                 if (stale != buttonCode && stale in pressedButtons) onPointerButton(stale, pressed = false)
             }
+            if (marginPressedButtons.isNotEmpty()) releaseOrphanedMarginPresses()
         } else {
             forwardedNativeButtons.remove(buttonCode)
+            marginPressedButtons.remove(mapButton(buttonCode))
         }
         if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
         interruptRotation()
@@ -2990,6 +3011,24 @@ internal class TaoComposeSceneHostLinux(
                 forwardedNativeButtons.remove(button)
                 if (button in pressedButtons) onPointerButton(button, pressed = false)
             }
+        }
+    }
+
+    /**
+     * Completes every [marginPressedButtons] entry with the release its popup
+     * surface took with it, at the point the press landed, so a click stays a
+     * click.
+     */
+    private fun releaseOrphanedMarginPresses() {
+        for (button in marginPressedButtons.toList()) {
+            marginPressedButtons.remove(button)
+            scene?.sendPointerEvent(
+                eventType = PointerEventType.Release,
+                position = lastMarginPosition,
+                type = PointerType.Mouse,
+                keyboardModifiers = currentKeyboardModifiers,
+                button = button,
+            )
         }
     }
 
@@ -3300,6 +3339,13 @@ internal class TaoComposeSceneHostLinux(
                 button: PointerButton?,
             ) {
                 if (eventType == PointerEventType.Press) outer.dismissPopupsBeforePress(button)
+                outer.lastMarginPosition = positionPx
+                if (button != null) {
+                    when (eventType) {
+                        PointerEventType.Press -> outer.marginPressedButtons += button
+                        PointerEventType.Release -> outer.marginPressedButtons -= button
+                    }
+                }
                 outer.currentKeyboardModifiers = taoKeyboardModifiers(outer.window.modifierState)
                 outer.windowInfo.keyboardModifiers = outer.currentKeyboardModifiers
                 outer.scene?.sendPointerEvent(
