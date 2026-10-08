@@ -66,6 +66,9 @@ import dev.nucleusframework.window.tao.SatelliteWorkspace
  * @param floatingCaption composed in the strip of the floating title bar left
  *   to the compositor's window move, where the window is placed by the
  *   compositor; see [dev.nucleusframework.window.tao.Satellite].
+ * @param floatingBarMovesWindow where the compositor places the window, the
+ *   whole floating title bar moves it and the satellite is docked from its
+ *   header; see [dev.nucleusframework.window.tao.Satellite].
  * @param controlButtonsDirection the side of the floating window's controls;
  *   see [dev.nucleusframework.window.tao.Satellite].
  * @param nativeContextMenu whether text fields in the floating window get the
@@ -91,6 +94,7 @@ public fun NucleusApplicationScope.Satellite(
     nativeContextMenu: Boolean = true,
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
     floatingCaption: @Composable @UiComposable SatelliteScope.() -> Unit = {},
+    floatingBarMovesWindow: Boolean = false,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
@@ -113,6 +117,7 @@ public fun NucleusApplicationScope.Satellite(
                 nativeContextMenu = nativeContextMenu,
                 header = header,
                 floatingCaption = floatingCaption,
+                floatingBarMovesWindow = floatingBarMovesWindow,
                 controlButtonsDirection = controlButtonsDirection,
                 content = content,
             )
@@ -143,6 +148,7 @@ public fun Satellite(
     nativeContextMenu: Boolean = true,
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
     floatingCaption: @Composable @UiComposable SatelliteScope.() -> Unit = {},
+    floatingBarMovesWindow: Boolean = false,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
@@ -162,6 +168,7 @@ public fun Satellite(
         nativeContextMenu = nativeContextMenu,
         header = header,
         floatingCaption = floatingCaption,
+        floatingBarMovesWindow = floatingBarMovesWindow,
         controlButtonsDirection = controlButtonsDirection,
         content = content,
     )
