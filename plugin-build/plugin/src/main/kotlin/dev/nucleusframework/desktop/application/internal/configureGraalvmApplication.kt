@@ -2337,6 +2337,14 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
             commandLine("bash", "-c", "for f in '$dir'/*.so; do patchelf --set-rpath '\$ORIGIN' \"\$f\"; done")
         }
 
+    val copyAppResources = copyGraalvmAppResources(into = outputDir)
+
+    // strip(1) writes a temporary file next to its target and renames it over it. A tracked Copy
+    // into the same directory that snapshots it meanwhile fails on the vanished file
+    // (NoSuchFileException), so nothing may write the directory while a strip runs. mustRunAfter,
+    // not dependsOn: a headless build has no AWT or libjvm copy to pull in.
+    val writesOutputDir = listOf(copyBinary, copyAwtSoLibs, copyJvmSo, copyNucleusNatives, copyAppResources)
+
     val stripSoLibs =
         tasks.register<Exec>(
             taskNameAction = "strip",
@@ -2344,6 +2352,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
         ) {
             description = "Strip debug symbols from .so libs"
             dependsOn(copyAwtSoLibs, copyJvmSo, copyNucleusNatives, fixSoRpath)
+            mustRunAfter(writesOutputDir)
             commandLine("bash", "-c", "strip --strip-debug '${outputDir.get().asFile.absolutePath}'/*.so")
         }
 
@@ -2358,11 +2367,10 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
         ) {
             description = "Strip symbols from the native image executable"
             dependsOn(copyBinary, fixRpath)
+            mustRunAfter(writesOutputDir)
             val binary = outputDir.map { it.file(imageName.get()) }
             commandLine("strip", binary.get().asFile.absolutePath)
         }
-
-    val copyAppResources = copyGraalvmAppResources(into = outputDir)
 
     return tasks.register<DefaultTask>(
         taskNameAction = "package",
