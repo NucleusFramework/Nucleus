@@ -147,6 +147,9 @@ open class NativeModuleExtension(
                 this.description = description
                 workingDir(nativeDir)
                 commandLine(target.commandLine(nativeDir))
+                if (target == NativeTarget.MACOS) {
+                    environment("PATH", "/usr/bin:/bin:${environment["PATH"]?.toString().orEmpty()}")
+                }
                 inputs
                     .files(nativeSources)
                     .withPropertyName("nativeSources")
