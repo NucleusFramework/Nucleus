@@ -51,7 +51,8 @@
                         "int",
                         "int",
                         "int",
-                        "int"
+                        "int",
+                        "boolean"
                     ]
                 },
                 {
@@ -132,7 +133,8 @@
                         "int",
                         "int",
                         "int",
-                        "int"
+                        "int",
+                        "boolean"
                     ]
                 },
                 {
@@ -310,7 +312,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -326,7 +328,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -342,7 +344,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -358,7 +360,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean","int"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -378,7 +380,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -414,7 +416,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean","int"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {

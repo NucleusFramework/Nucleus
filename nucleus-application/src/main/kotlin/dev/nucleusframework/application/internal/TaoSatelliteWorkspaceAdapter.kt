@@ -39,6 +39,7 @@ internal object TaoSatelliteWorkspaceAdapter {
         nativeContextMenu: Boolean,
         header: @Composable SatelliteScope.() -> Unit,
         floatingCaption: @Composable SatelliteScope.() -> Unit,
+        floatingBarMovesWindow: Boolean,
         controlButtonsDirection: ControlButtonsDirection,
         content: @Composable SatelliteScope.() -> Unit,
     ) {
@@ -64,6 +65,7 @@ internal object TaoSatelliteWorkspaceAdapter {
                 },
                 header = header,
                 floatingCaption = floatingCaption,
+                floatingBarMovesWindow = floatingBarMovesWindow,
                 controlButtonsDirection = controlButtonsDirection,
                 content = content,
             )

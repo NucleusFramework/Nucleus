@@ -577,6 +577,24 @@ internal class TaoComposeSceneHostLinux(
      */
     private val forwardedNativeButtons = mutableSetOf<Int>()
 
+    /**
+     * Buttons whose press a popup layer forwarded from its draw margin
+     * ([TaoPopupHostLinux.forwardMarginPointer]) and whose release has not come
+     * back the same way.
+     *
+     * The display server's implicit grab belongs to the popup surface, so the
+     * release goes there — and when that press closes the popup (a hover card
+     * hides under a tab being clicked), the surface is gone before the release
+     * arrives. On Wayland nothing else delivers it: Compose keeps the button
+     * down and a click on a tab becomes a drag that follows the pointer.
+     * While the grab lives, motion goes to the popup too, so native motion on
+     * this window means the button is up: [releaseOrphanedMarginPresses].
+     */
+    private val marginPressedButtons = mutableSetOf<PointerButton>()
+
+    /** Where the last margin-forwarded event landed, for the release [releaseOrphanedMarginPresses] synthesizes. */
+    private var lastMarginPosition: Offset = Offset.Zero
+
     /** Whether the press being dispatched was handed to a native view — reset at every press. */
     private var nativePointerDispatchedThisEvent = false
 
@@ -1351,13 +1369,12 @@ internal class TaoComposeSceneHostLinux(
     private var gestureCenterX = 0f
     private var gestureCenterY = 0f
     private val scaleSession =
-        TaoTrackpadScaleSession { type, factor, cancelled ->
+        TaoTrackpadScaleSession(cancelPointerInput = { scene?.cancelPointerInput() }) { type, factor ->
             scene?.dispatchTrackpadScale(
                 x = gestureCenterX,
                 y = gestureCenterY,
                 type = type,
                 scaleFactor = factor,
-                cancelled = cancelled,
                 keyboardModifiers = currentKeyboardModifiers,
             )
         }
@@ -1544,9 +1561,8 @@ internal class TaoComposeSceneHostLinux(
     // Guarded like AWT's `ComposeSceneMediator.setContent`: the first
     // composition runs inside this call, so content that throws while mounting
     // must reach the window's handler instead of unwinding into the Tao loop.
-    fun setContent(userContent: @Composable () -> Unit) =
+    fun setContent(content: @Composable () -> Unit) =
         exceptionHandler.catchExceptions {
-            val content: @Composable () -> Unit = { TaoTrackpadScaleCancellationHost(userContent) }
             scene?.setContent {
                 // Capture the standard FocusManager from the composition
                 // so the overlay controller can call `clearFocus(force =
@@ -2828,6 +2844,7 @@ internal class TaoComposeSceneHostLinux(
         lastPointerX = xPx
         lastPointerY = yPx
         if (forwardedNativeButtons.isNotEmpty()) healStaleNativePresses()
+        if (marginPressedButtons.isNotEmpty()) releaseOrphanedMarginPresses()
         // Real pointer motion resuming means the compositor released any
         // resize/move grab — that's our grab-ended signal (the compositor
         // withholds motion for the whole grab), so drop the focus mask here
@@ -2938,8 +2955,10 @@ internal class TaoComposeSceneHostLinux(
             for (stale in forwardedNativeButtons.toList()) {
                 if (stale != buttonCode && stale in pressedButtons) onPointerButton(stale, pressed = false)
             }
+            if (marginPressedButtons.isNotEmpty()) releaseOrphanedMarginPresses()
         } else {
             forwardedNativeButtons.remove(buttonCode)
+            marginPressedButtons.remove(mapButton(buttonCode))
         }
         if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
         interruptRotation()
@@ -2992,6 +3011,24 @@ internal class TaoComposeSceneHostLinux(
                 forwardedNativeButtons.remove(button)
                 if (button in pressedButtons) onPointerButton(button, pressed = false)
             }
+        }
+    }
+
+    /**
+     * Completes every [marginPressedButtons] entry with the release its popup
+     * surface took with it, at the point the press landed, so a click stays a
+     * click.
+     */
+    private fun releaseOrphanedMarginPresses() {
+        for (button in marginPressedButtons.toList()) {
+            marginPressedButtons.remove(button)
+            scene?.sendPointerEvent(
+                eventType = PointerEventType.Release,
+                position = lastMarginPosition,
+                type = PointerType.Mouse,
+                keyboardModifiers = currentKeyboardModifiers,
+                button = button,
+            )
         }
     }
 
@@ -3119,6 +3156,7 @@ internal class TaoComposeSceneHostLinux(
         keyLocation: Int,
         modifiers: Int,
         codePoint: Int,
+        isRepeat: Boolean = false,
     ): Boolean {
         val sc = scene ?: return false
         currentKeyboardModifiers = taoKeyboardModifiers(modifiers)
@@ -3139,6 +3177,7 @@ internal class TaoComposeSceneHostLinux(
                         isAlt = isAlt,
                         isMeta = isMeta,
                         codePoint = codePoint,
+                        isRepeat = isRepeat,
                     )
                 TaoEventCode.KEY_TYPED ->
                     taoTypedKeyEvent(codePoint, keyLocation, isShift, isCtrl, isAlt, isMeta)
@@ -3302,6 +3341,13 @@ internal class TaoComposeSceneHostLinux(
                 button: PointerButton?,
             ) {
                 if (eventType == PointerEventType.Press) outer.dismissPopupsBeforePress(button)
+                outer.lastMarginPosition = positionPx
+                if (button != null) {
+                    when (eventType) {
+                        PointerEventType.Press -> outer.marginPressedButtons += button
+                        PointerEventType.Release -> outer.marginPressedButtons -= button
+                    }
+                }
                 outer.currentKeyboardModifiers = taoKeyboardModifiers(outer.window.modifierState)
                 outer.windowInfo.keyboardModifiers = outer.currentKeyboardModifiers
                 outer.scene?.sendPointerEvent(

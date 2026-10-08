@@ -8,6 +8,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.workspace.HostGeometry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -306,6 +308,77 @@ class TabWorkspaceTest {
 
         assertNull(workspace.tearOff("nope", Rect(0f, 0f, 100f, 100f), scaleFactor = 1f))
         assertEquals(1, workspace.groups.size)
+    }
+
+    // ── Constrained placement ────────────────────────────────────────────
+
+    /** Browser-like pinning: the [pinned] tabs stay ahead of every other one. */
+    private fun TabWorkspace.pinning(vararg pinned: String) {
+        val set = pinned.toSet()
+        constrainIndex = { id, group, index ->
+            val pinnedCount = group.tabIds.count { it in set && it != id }
+            if (id in set) index.coerceAtMost(pinnedCount) else index.coerceAtLeast(pinnedCount)
+        }
+    }
+
+    @Test
+    fun `a constrained reorder or move stops at the boundary`() {
+        val workspace = TabWorkspace()
+        for (id in listOf("a", "b", "c")) workspace.register(id, id.uppercase(), groupId = "left")
+        workspace.register("x", "Xray", groupId = "right")
+        val left = requireNotNull(workspace.group("left"))
+        workspace.pinning("a")
+
+        workspace.reorder("c", 0)
+        assertEquals(listOf("a", "c", "b"), left.ids, "an unpinned tab went ahead of a pinned one")
+        workspace.reorder("a", 2)
+        assertEquals(listOf("a", "c", "b"), left.ids, "a pinned tab left the pinned run")
+
+        workspace.move("x", left, 0)
+        assertEquals(listOf("a", "x", "c", "b"), left.ids, "a tab moved in landed ahead of a pinned one")
+    }
+
+    @Test
+    fun `a drop preview never offers a place the tab cannot take`() {
+        val workspace = TabWorkspace()
+        val (left, _) = workspace.twoStripWindows()
+        workspace.pinning("a")
+        val xray = requireNotNull(workspace.tab("x"))
+        val alpha = requireNotNull(workspace.tab("a"))
+
+        // Over "a"'s first half: index 0 unconstrained, but "a" is pinned.
+        assertEquals(TabDropTarget(left, 1), workspace.dropTargetAt(Offset(20f, 20f), exclude = xray))
+        // "a" carried past "b" stays first.
+        assertEquals(TabDropTarget(left, 0), workspace.dropTargetAt(Offset(180f, 20f), exclude = alpha))
+    }
+
+    @Test
+    fun `a tab carried in its own strip is previewed where it may land`() {
+        val workspace = TabWorkspace()
+        val (left, _) = workspace.twoStripWindows()
+        workspace.pinning("a")
+
+        assertNotNull(workspace.takeInStrip("b"))
+        // Carried back over the whole of "a": the edge rule says 0, the pin says 1.
+        workspace.carryInStrip("b", -100f)
+
+        assertEquals(TabDropTarget(left, 1), workspace.dropPreview)
+    }
+
+    @Test
+    fun `the neighbours only make room up to the allowed index`() {
+        val motion = TabStripMotion(CoroutineScope(Dispatchers.Unconfined)).apply { spec = null }
+        val order = listOf("a", "b", "c")
+        order.forEachIndexed { i, id -> motion.placed(id, Rect(i * 100f, 0f, (i + 1) * 100f, 40f)) }
+
+        // "c" carried left over both neighbours, but allowed no further than index 1.
+        motion.carry("c", order, slidePx = -250f, target = 1)
+        assertEquals(100f, motion.drawnOffsetOf("b"), "the neighbour within reach was not pushed aside")
+        assertEquals(0f, motion.drawnOffsetOf("a"), "a slot the tab cannot take was opened")
+
+        // Unconstrained, both make room.
+        motion.carry("c", order, slidePx = -250f)
+        assertEquals(100f, motion.drawnOffsetOf("a"))
     }
 
     // ── Drop resolution ──────────────────────────────────────────────────

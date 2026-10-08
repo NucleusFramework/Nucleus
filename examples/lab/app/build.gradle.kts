@@ -121,6 +121,7 @@ nucleus.application {
         packageName = "NucleusLab"
         packageVersion = releaseVersion
         homepage = "https://github.com/NucleusFramework/Nucleus"
+        description = "Test bench for every Nucleus runtime module"
         cleanupNativeLibs = true
         // Portable cache (metadata only), safe to build in CI and ship to any CPU.
         enableAotCache = System.getenv("GITHUB_REF") != null

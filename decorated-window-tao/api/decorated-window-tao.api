@@ -217,9 +217,9 @@ public final class dev/nucleusframework/window/tao/ComposableSingletons$NativeVi
 public final class dev/nucleusframework/window/tao/ComposableSingletons$SatelliteKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/ComposableSingletons$SatelliteKt;
 	public fun <init> ()V
-	public final fun getLambda$-47671738$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$1303209590$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$1955396861$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-1658896351$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-2003468182$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$2082414746$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
 }
 
 public final class dev/nucleusframework/window/tao/ComposableSingletons$TabHoverPreviewKt {
@@ -372,6 +372,10 @@ public final class dev/nucleusframework/window/tao/DragGhost {
 	public final fun getScreenRectPx ()Landroidx/compose/ui/geometry/Rect;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/KeyEventRepeatKt {
+	public static final fun isRepeat-ZmokQxo (Ljava/lang/Object;)Z
 }
 
 public final class dev/nucleusframework/window/tao/MacOSStyle : java/lang/Enum {
@@ -565,7 +569,7 @@ public final class dev/nucleusframework/window/tao/SatelliteEntry {
 
 public final class dev/nucleusframework/window/tao/SatelliteKt {
 	public static final fun DefaultSatelliteHeader (Ldev/nucleusframework/window/tao/SatelliteScope;Landroidx/compose/runtime/Composer;I)V
-	public static final fun Satellite-XiQjojk (Ldev/nucleusframework/window/tao/ApplicationScope;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZFFZLandroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Satellite-TWpEAqU (Ldev/nucleusframework/window/tao/ApplicationScope;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZFFZLandroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZLdev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 	public static final fun getSatelliteCaptionStripWidth ()F
 	public static final fun satelliteDragHandle (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/SatelliteScope;)Landroidx/compose/ui/Modifier;
 }
@@ -634,6 +638,7 @@ public abstract interface class dev/nucleusframework/window/tao/SatelliteScope {
 	public fun close ()V
 	public fun dock (Ldev/nucleusframework/window/tao/DockSide;)V
 	public static synthetic fun dock$default (Ldev/nucleusframework/window/tao/SatelliteScope;Ldev/nucleusframework/window/tao/DockSide;ILjava/lang/Object;)V
+	public fun getFloatingBarMovesWindow ()Z
 	public abstract fun getSatellite ()Ldev/nucleusframework/window/tao/SatelliteEntry;
 	public abstract fun getWorkspace ()Ldev/nucleusframework/window/tao/SatelliteWorkspace;
 	public abstract fun isCompositorPlaced ()Z
@@ -645,6 +650,7 @@ public final class dev/nucleusframework/window/tao/SatelliteScope$DefaultImpls {
 	public static fun close (Ldev/nucleusframework/window/tao/SatelliteScope;)V
 	public static fun dock (Ldev/nucleusframework/window/tao/SatelliteScope;Ldev/nucleusframework/window/tao/DockSide;)V
 	public static synthetic fun dock$default (Ldev/nucleusframework/window/tao/SatelliteScope;Ldev/nucleusframework/window/tao/DockSide;ILjava/lang/Object;)V
+	public static fun getFloatingBarMovesWindow (Ldev/nucleusframework/window/tao/SatelliteScope;)Z
 	public static fun undock (Ldev/nucleusframework/window/tao/SatelliteScope;)V
 }
 
@@ -849,11 +855,10 @@ public final class dev/nucleusframework/window/tao/TabHoverPreview {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/TabHoverPreview$Companion;
 	public fun <init> ()V
-	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JJLkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JJLkotlin/jvm/functions/Function3;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getContent ()Lkotlin/jvm/functions/Function3;
 	public final fun getDelay-UwyO8pc ()J
-	public final fun getNativeLayer ()Z
 	public final fun getOffset-RKDOV3M ()J
 }
 
@@ -979,6 +984,7 @@ public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public static synthetic fun dropTargetAt-ubNVwUQ$default (Ldev/nucleusframework/window/tao/TabWorkspace;Landroidx/compose/ui/geometry/Rect;JLdev/nucleusframework/window/tao/TabEntry;Ldev/nucleusframework/window/tao/TabWindowGroup;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/TabDropTarget;
 	public final fun getActiveGroup ()Ldev/nucleusframework/window/tao/TabWindowGroup;
 	public final fun getCaptureThumbnails ()Z
+	public final fun getConstrainIndex ()Lkotlin/jvm/functions/Function3;
 	public final fun getDefaultWindowSize-MYxV2XQ ()J
 	public final fun getDragGhost ()Ldev/nucleusframework/window/tao/TabDragGhost;
 	public final fun getDragKind ()Ldev/nucleusframework/window/tao/WorkspaceDragKind;
@@ -996,6 +1002,7 @@ public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public final fun restore (Ldev/nucleusframework/window/tao/TabLayoutSnapshot;)V
 	public final fun select (Ljava/lang/String;)V
 	public final fun selectedTab (Ldev/nucleusframework/window/tao/TabWindowGroup;)Ldev/nucleusframework/window/tao/TabEntry;
+	public final fun setConstrainIndex (Lkotlin/jvm/functions/Function3;)V
 	public final fun setLinkedWorkspaces (Ljava/util/List;)V
 	public final fun setOnForeignDrop (Lkotlin/jvm/functions/Function3;)V
 	public final fun snapshot ()Ldev/nucleusframework/window/tao/TabLayoutSnapshot;
@@ -1473,6 +1480,11 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 
 public abstract interface class dev/nucleusframework/window/tao/TaoWindow$KeyEventListener {
 	public abstract fun onKey (IIIII)V
+	public fun onKey (IIIIIZ)V
+}
+
+public final class dev/nucleusframework/window/tao/TaoWindow$KeyEventListener$DefaultImpls {
+	public static fun onKey (Ldev/nucleusframework/window/tao/TaoWindow$KeyEventListener;IIIIIZ)V
 }
 
 public abstract interface class dev/nucleusframework/window/tao/TaoWindow$TouchInputListener {

@@ -474,6 +474,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
+            isRepeat: Boolean,
         ) {
             framePump.nonReentrant {
                 scene?.dispatchNativeKeyEvent(
@@ -481,6 +482,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                     vkCode = vkCode,
                     codePoint = codePoint,
                     modifiers = modifiers,
+                    isRepeat = isRepeat,
                     onPreviewKeyEvent = onPreviewKeyEvent,
                     onKeyEvent = onKeyEvent,
                 )

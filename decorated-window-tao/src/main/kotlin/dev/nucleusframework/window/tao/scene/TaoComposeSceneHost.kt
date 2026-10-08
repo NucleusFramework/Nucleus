@@ -688,9 +688,8 @@ internal class TaoComposeSceneHost(
     // Guarded like AWT's `ComposeSceneMediator.setContent`: the first
     // composition runs inside this call, so content that throws while mounting
     // must reach the window's handler instead of unwinding into the Tao loop.
-    fun setContent(userContent: @Composable () -> Unit) =
+    fun setContent(content: @Composable () -> Unit) =
         exceptionHandler.catchExceptions {
-            val content: @Composable () -> Unit = { TaoTrackpadScaleCancellationHost(userContent) }
             scene?.setContent {
                 val fm = androidx.compose.ui.platform.LocalFocusManager.current
                 androidx.compose.runtime.SideEffect { capturedFocusManager = fm }
@@ -1407,13 +1406,12 @@ internal class TaoComposeSceneHost(
     private var gestureCenterY = 0f
 
     private val scaleSession =
-        TaoTrackpadScaleSession { type, factor, cancelled ->
+        TaoTrackpadScaleSession(cancelPointerInput = { scene?.cancelPointerInput() }) { type, factor ->
             scene?.dispatchTrackpadScale(
                 x = gestureCenterX,
                 y = gestureCenterY,
                 type = type,
                 scaleFactor = factor,
-                cancelled = cancelled,
                 keyboardModifiers = currentKeyboardModifiers,
             )
         }
@@ -1596,6 +1594,7 @@ internal class TaoComposeSceneHost(
         keyLocation: Int,
         modifiers: Int,
         codePoint: Int,
+        isRepeat: Boolean = false,
     ): Boolean {
         val sc = scene ?: return false
         currentKeyboardModifiers = taoKeyboardModifiers(modifiers)
@@ -1616,6 +1615,7 @@ internal class TaoComposeSceneHost(
                         isAlt = isAlt,
                         isMeta = isMeta,
                         codePoint = codePoint,
+                        isRepeat = isRepeat,
                     )
                 TaoEventCode.KEY_TYPED ->
                     taoTypedKeyEvent(codePoint, keyLocation, isShift, isCtrl, isAlt, isMeta)

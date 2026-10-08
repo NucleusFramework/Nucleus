@@ -7,6 +7,7 @@ import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
 import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
+import dev.nucleusframework.window.tao.event.TaoKeyRepeatTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSessionTest
@@ -121,6 +122,27 @@ public object TaoSceneTestBattery {
         }
         run("TaoKeyboardModifiersDecodeTest: unknown high bits are ignored") {
             TaoKeyboardModifiersDecodeTest().`unknown high bits are ignored`()
+        }
+        run("TaoKeyRepeatTest: a repeated key-down is a repeat") {
+            TaoKeyRepeatTest().`a repeated key-down is a repeat`()
+        }
+        run("TaoKeyRepeatTest: a fresh key-down is not a repeat") {
+            TaoKeyRepeatTest().`a fresh key-down is not a repeat`()
+        }
+        run("TaoKeyRepeatTest: a key-up is never a repeat") {
+            TaoKeyRepeatTest().`a key-up is never a repeat`()
+        }
+        run("TaoKeyRepeatTest: typed text is never a repeat") {
+            TaoKeyRepeatTest().`typed text is never a repeat`()
+        }
+        run("TaoKeyRepeatTest: an event Nucleus did not produce is not a repeat") {
+            TaoKeyRepeatTest().`an event Nucleus did not produce is not a repeat`()
+        }
+        run("TaoKeyRepeatTest: a repeat keeps the key and type of a plain key-down") {
+            TaoKeyRepeatTest().`a repeat keeps the key and type of a plain key-down`()
+        }
+        run("TaoKeyRepeatTest: a key listener that ignores the flag still hears repeats") {
+            TaoKeyRepeatTest().`a key listener that ignores the flag still hears repeats`()
         }
         run("TaoSyntheticMouseWheelEventTest: syntheticEventCarriesAwtScrollMetadata") {
             TaoSyntheticMouseWheelEventTest().syntheticEventCarriesAwtScrollMetadata()
@@ -303,6 +325,9 @@ public object TaoSceneTestBattery {
         run("TaoSceneKeyboardTest: fallback key handler fires only when the scene does not consume") {
             TaoSceneKeyboardTest().`fallback key handler fires only when the scene does not consume`()
         }
+        run("TaoSceneKeyboardTest: a held key's repeats reach the key handlers as repeats") {
+            TaoSceneKeyboardTest().`a held key's repeats reach the key handlers as repeats`()
+        }
         run("TaoSceneImeTest: IME preedit is shown in the field while composing") {
             TaoSceneImeTest().`IME preedit is shown in the field while composing`()
         }
@@ -432,12 +457,6 @@ public object TaoSceneTestBattery {
         run("TaoSceneTrackpadPanTest: an orphaned momentum tail scrolls as wheel events instead of stalling") {
             TaoSceneTrackpadPanTest().`an orphaned momentum tail scrolls as wheel events instead of stalling`()
         }
-        run("TaoSceneTrackpadScaleTest: cancelled scale is consumed before release and the next pinch still works") {
-            TaoSceneTrackpadScaleTest().`cancelled scale is consumed before release and the next pinch still works`()
-        }
-        run("TaoTrackpadScaleSessionTest: cancellationIsCarriedOnlyByTheEndEvent") {
-            TaoTrackpadScaleSessionTest().cancellationIsCarriedOnlyByTheEndEvent()
-        }
         run("TaoSceneTrackpadScaleTest: legacy two-touch pinch plants contacts 120 px off the cursor") {
             TaoSceneTrackpadScaleTest().`legacy two-touch pinch plants contacts 120 px off the cursor`()
         }
@@ -472,6 +491,9 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneTrackpadScaleTest: host-shaped magnify stream zooms transformable without slop") {
             TaoSceneTrackpadScaleTest().`host-shaped magnify stream zooms transformable without slop`()
+        }
+        run("TaoTrackpadScaleSessionTest: cancellationRunsAfterScaleEndAndOnlyForAnActiveGesture") {
+            TaoTrackpadScaleSessionTest().cancellationRunsAfterScaleEndAndOnlyForAnActiveGesture()
         }
         run("TaoTrackpadScaleSessionTest: startChangeEndEmitsScaleSequence") {
             TaoTrackpadScaleSessionTest().startChangeEndEmitsScaleSequence()
@@ -1236,6 +1258,18 @@ public object TaoSceneTestBattery {
         }
         run("TabWorkspaceTest: a strip with no slots published yet resolves to index zero") {
             TabWorkspaceTest().`a strip with no slots published yet resolves to index zero`()
+        }
+        run("TabWorkspaceTest: a constrained reorder or move stops at the boundary") {
+            TabWorkspaceTest().`a constrained reorder or move stops at the boundary`()
+        }
+        run("TabWorkspaceTest: a drop preview never offers a place the tab cannot take") {
+            TabWorkspaceTest().`a drop preview never offers a place the tab cannot take`()
+        }
+        run("TabWorkspaceTest: a tab carried in its own strip is previewed where it may land") {
+            TabWorkspaceTest().`a tab carried in its own strip is previewed where it may land`()
+        }
+        run("TabWorkspaceTest: the neighbours only make room up to the allowed index") {
+            TabWorkspaceTest().`the neighbours only make room up to the allowed index`()
         }
         run("TabWorkspaceTest: dragging one of several tabs shows a ghost and inserts where it is dropped") {
             TabWorkspaceTest().`dragging one of several tabs shows a ghost and inserts where it is dropped`()

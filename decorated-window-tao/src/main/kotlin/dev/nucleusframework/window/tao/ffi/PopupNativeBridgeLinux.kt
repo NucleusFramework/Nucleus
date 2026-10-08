@@ -155,7 +155,8 @@ internal object PopupNativeBridgeLinux {
         /**
          * [type] = 1 down, 2 up. [vkCode] is an X11 keysym (Latin one when
          * the active layout has none — see `vk_keysym_for` in the C side);
-         * translated by `linuxNativeKeyToAwt`.
+         * translated by `linuxNativeKeyToAwt`. [isRepeat]: a key-down sent
+         * again because the key is held.
          */
         @Suppress("FunctionParameterNaming")
         fun onKeyEvent(
@@ -163,6 +164,7 @@ internal object PopupNativeBridgeLinux {
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
+            isRepeat: Boolean,
         )
     }
 

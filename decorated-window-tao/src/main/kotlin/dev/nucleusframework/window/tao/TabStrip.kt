@@ -376,7 +376,8 @@ private class TabTransferTarget(
         event: DragAndDropEvent,
     ): TabDropTarget? {
         if (drag.entry.group === group && group.tabIds.size == 1) return null
-        return TabDropTarget(group, workspace.insertionIndex(group, event.positionInWindowPx().x, exclude = drag.entry))
+        val index = workspace.insertionIndex(group, event.positionInWindowPx().x, exclude = drag.entry)
+        return TabDropTarget(group, workspace.constrained(drag.entry.id, group, index))
     }
 
     private fun preview(event: DragAndDropEvent) {

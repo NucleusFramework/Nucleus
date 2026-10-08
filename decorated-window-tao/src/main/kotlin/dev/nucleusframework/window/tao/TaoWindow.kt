@@ -327,6 +327,20 @@ public class TaoWindow internal constructor(
             modifiers: Int, // TaoModifierMask bitmask
             codePoint: Int, // First Unicode scalar of typed text (or 0)
         )
+
+        /**
+         * [onKey] with [isRepeat]: whether a key-down is an auto-repeat of a
+         * held key rather than a new press (always `false` for other types).
+         * A listener that cares overrides this one; by default it drops the flag.
+         */
+        public fun onKey(
+            type: Int,
+            vkCode: Int,
+            keyLocation: Int,
+            modifiers: Int,
+            codePoint: Int,
+            isRepeat: Boolean,
+        ): Unit = onKey(type, vkCode, keyLocation, modifiers, codePoint)
     }
 
     public fun setTitle(title: String) {
@@ -1439,6 +1453,31 @@ public class TaoWindow internal constructor(
         keyListener = listener
     }
 
+    /** [onKeyEvent] for a listener that reads [KeyEventListener]'s repeat flag. */
+    internal fun onKeyInput(
+        block: (type: Int, vkCode: Int, keyLocation: Int, modifiers: Int, codePoint: Int, isRepeat: Boolean) -> Unit,
+    ) {
+        keyListener =
+            object : KeyEventListener {
+                override fun onKey(
+                    type: Int,
+                    vkCode: Int,
+                    keyLocation: Int,
+                    modifiers: Int,
+                    codePoint: Int,
+                ) = block(type, vkCode, keyLocation, modifiers, codePoint, false)
+
+                override fun onKey(
+                    type: Int,
+                    vkCode: Int,
+                    keyLocation: Int,
+                    modifiers: Int,
+                    codePoint: Int,
+                    isRepeat: Boolean,
+                ) = block(type, vkCode, keyLocation, modifiers, codePoint, isRepeat)
+            }
+    }
+
     /**
      * Trackpad gesture stream — see [TrackpadGestureListener]. macOS/Linux emit
      * magnify/rotate/smart-magnify; Windows emits magnify only (Ctrl+wheel /
@@ -1515,8 +1554,9 @@ public class TaoWindow internal constructor(
         keyLocation: Int,
         modifiers: Int,
         codePoint: Int,
+        isRepeat: Boolean = false,
     ) {
-        keyListener?.onKey(type, vkCode, keyLocation, modifiers, codePoint)
+        keyListener?.onKey(type, vkCode, keyLocation, modifiers, codePoint, isRepeat)
     }
 
     /**

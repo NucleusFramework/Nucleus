@@ -25,7 +25,6 @@ internal fun ComposeScene.dispatchTrackpadScale(
     type: PointerEventType,
     scaleFactor: Float,
     keyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers(),
-    cancelled: Boolean = false,
 ) {
     sendPointerEvent(
         eventType = type,
@@ -33,7 +32,6 @@ internal fun ComposeScene.dispatchTrackpadScale(
         type = PointerType.Mouse,
         keyboardModifiers = keyboardModifiers,
         scaleGestureFactor = scaleFactor,
-        nativeEvent = if (cancelled) CancelledTrackpadScale else null,
     )
 }
 
@@ -43,7 +41,8 @@ internal fun ComposeScene.dispatchTrackpadScale(
  * Windows / Linux Ctrl+wheel). UI thread only.
  */
 internal class TaoTrackpadScaleSession(
-    private val send: (type: PointerEventType, scaleFactor: Float, cancelled: Boolean) -> Unit,
+    private val cancelPointerInput: () -> Unit = {},
+    private val send: (type: PointerEventType, scaleFactor: Float) -> Unit,
 ) {
     var active: Boolean = false
         private set
@@ -52,7 +51,7 @@ internal class TaoTrackpadScaleSession(
     fun start() {
         if (active) return
         active = true
-        send(PointerEventType.ScaleStart, 1f, false)
+        send(PointerEventType.ScaleStart, 1f)
     }
 
     /**
@@ -62,7 +61,7 @@ internal class TaoTrackpadScaleSession(
     fun change(scaleFactor: Float) {
         if (scaleFactor == 1f) return
         start()
-        send(PointerEventType.ScaleChange, scaleFactor, false)
+        send(PointerEventType.ScaleChange, scaleFactor)
     }
 
     /**
@@ -83,7 +82,9 @@ internal class TaoTrackpadScaleSession(
     fun end(cancelled: Boolean = false) {
         if (!active) return
         active = false
-        send(PointerEventType.ScaleEnd, 1f, cancelled)
+        // Close the native scale stream before resetting Compose's synthetic gesture state.
+        send(PointerEventType.ScaleEnd, 1f)
+        if (cancelled) cancelPointerInput()
     }
 
     internal companion object {
@@ -106,6 +107,3 @@ internal object TaoTrackpadRotationContacts {
 
     fun isContact(id: PointerId): Boolean = id == A || id == B
 }
-
-/** Marks a cancelled ScaleEnd for the scene root to consume before application handlers. */
-internal object CancelledTrackpadScale

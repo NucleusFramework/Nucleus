@@ -225,9 +225,6 @@ internal object MacOsTrackpadScaleHeadfulCases {
             check(recorder.snapshot().filter { it.type.isScale() }.map { it.type } == expectedScaleTypes(1)) {
                 "a cancelled pinch must close with one ScaleEnd; recorded=${recorder.describe()}"
             }
-            check(recorder.snapshot().single { it.type == PointerEventType.ScaleEnd }.consumed) {
-                "a cancelled pinch must consume ScaleEnd before application release work"
-            }
         }
     }
 
@@ -411,7 +408,6 @@ internal object MacOsTrackpadScaleHeadfulCases {
         val scaleFactor: Float,
         val down: Boolean,
         val up: Boolean,
-        val consumed: Boolean,
     ) {
         override fun toString(): String =
             when {
@@ -435,7 +431,6 @@ internal object MacOsTrackpadScaleHeadfulCases {
                         scaleFactor = it.scaleFactor,
                         down = it.changedToDownIgnoreConsumed(),
                         up = it.changedToUpIgnoreConsumed(),
-                        consumed = it.isConsumed,
                     )
             }
         }
