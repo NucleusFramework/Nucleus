@@ -85,18 +85,34 @@ internal object ImeHeadfulCases {
             val handle = window.handle
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("key target focused") { focused.get() }
-            check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = true)) {
-                "keyDown was not delivered"
-            }
-            repeat(2) {
-                check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = true, autorepeat = true)) {
-                    "repeated keyDown was not delivered"
+            // The keys are posted to the session event tap, which hands them to
+            // the active app's key window: Compose focus says nothing about
+            // that, and activation is asynchronous.
+            if (!window.isFocused) window.focus()
+            awaitUntil("window has OS focus") { window.isFocused }
+
+            // One key at a time: of two auto-repeat key-downs posted back to
+            // back, macOS delivers one (on the hosted runners the merged case
+            // lost a repeat every time), so each key waits for the previous one.
+            suspend fun post(
+                down: Boolean,
+                autorepeat: Boolean,
+            ) {
+                val before = seen.size
+                check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down, autorepeat)) {
+                    "posting keyDown=$down autorepeat=$autorepeat was refused"
                 }
+                awaitUntil(
+                    "key event ${before + 1} seen (down=$down, autorepeat=$autorepeat)",
+                    detail = {
+                        "seen=$seen windowFocused=${window.isFocused} " +
+                            "inputSource=${MacOsKotoeriProbe.currentInputSource()}"
+                    },
+                ) { seen.size > before }
             }
-            check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = false)) {
-                "keyUp was not delivered"
-            }
-            awaitUntil("four key events seen") { seen.size >= 4 }
+            post(down = true, autorepeat = false)
+            repeat(2) { post(down = true, autorepeat = true) }
+            post(down = false, autorepeat = false)
             val expected =
                 listOf(
                     KeyEventType.KeyDown to false,
