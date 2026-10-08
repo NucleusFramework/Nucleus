@@ -77,12 +77,21 @@ static jmethodID g_method_on_files      = NULL;
 /* IDropTarget implementation                                              */
 /* ---------------------------------------------------------------------- */
 
+typedef struct NucleusDragPreview {
+    LONG refCount;
+    LONG ready;
+    IStream *stream;
+    jobject files;
+} NucleusDragPreview;
+
 typedef struct NucleusDropTarget {
     IDropTargetVtbl *lpVtbl;
     LONG     refCount;
     HWND     hwnd;
     jobject  callbackRef; /* GlobalRef on the Kotlin callback object */
     BOOL     hasAcceptableData; /* set in DragEnter, used by DragOver */
+    BOOL     entered;
+    NucleusDragPreview *preview;
 } NucleusDropTarget;
 
 static JNIEnv *attach_thread(BOOL *attachedHere) {
@@ -114,14 +123,9 @@ static BOOL data_has_files(IDataObject *pDataObj) {
 
 /* Extracts file paths from a CF_HDROP IDataObject. Returns a Java String[]
  * (NewObjectArray) or NULL on failure. Caller owns the local ref. */
-static jobjectArray extract_files(JNIEnv *env, IDataObject *pDataObj) {
-    if (!pDataObj) return NULL;
-    FORMATETC fmt = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-    STGMEDIUM stg = { 0 };
-    if (IDataObject_GetData(pDataObj, &fmt, &stg) != S_OK) return NULL;
-
+static jobjectArray extract_hdrop(JNIEnv *env, HGLOBAL handle) {
     jobjectArray result = NULL;
-    HDROP hdrop = (HDROP)stg.hGlobal;
+    HDROP hdrop = (HDROP)handle;
     if (hdrop) {
         UINT count = DragQueryFileW(hdrop, 0xFFFFFFFF, NULL, 0);
         jclass strClass = (*env)->FindClass(env, "java/lang/String");
@@ -145,8 +149,109 @@ static jobjectArray extract_files(JNIEnv *env, IDataObject *pDataObj) {
         }
         if (strClass) (*env)->DeleteLocalRef(env, strClass);
     }
+    return result;
+}
+
+static jobjectArray extract_files(JNIEnv *env, IDataObject *pDataObj) {
+    if (!pDataObj) return NULL;
+    FORMATETC fmt = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+    STGMEDIUM stg = { 0 };
+    if (IDataObject_GetData(pDataObj, &fmt, &stg) != S_OK) return NULL;
+    jobjectArray result = extract_hdrop(env, stg.hGlobal);
     ReleaseStgMedium(&stg);
     return result;
+}
+
+static void release_preview(NucleusDragPreview *preview) {
+    if (!preview || InterlockedDecrement(&preview->refCount) != 0) return;
+    if (preview->files) {
+        BOOL attached = FALSE;
+        JNIEnv *env = attach_thread(&attached);
+        if (env) (*env)->DeleteGlobalRef(env, preview->files);
+        detach_if_needed(attached);
+    }
+    HeapFree(GetProcessHeap(), 0, preview);
+}
+
+static void clear_preview(NucleusDropTarget *target) {
+    NucleusDragPreview *preview = target->preview;
+    target->preview = NULL;
+    release_preview(preview);
+}
+
+static DWORD WINAPI read_preview(LPVOID parameter) {
+    NucleusDragPreview *preview = (NucleusDragPreview *)parameter;
+    HRESULT initialized = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (SUCCEEDED(initialized)) {
+        IDataObject *data = NULL;
+        HRESULT hr = CoGetInterfaceAndReleaseStream(
+            preview->stream, &IID_IDataObject, (void **)&data);
+        if (SUCCEEDED(hr)) {
+            FORMATETC fmt = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+            STGMEDIUM stg = { 0 };
+            if (IDataObject_GetData(data, &fmt, &stg) == S_OK) {
+                BOOL attached = FALSE;
+                JNIEnv *env = attach_thread(&attached);
+                if (env) {
+                    jobjectArray files = extract_hdrop(env, stg.hGlobal);
+                    if (files) {
+                        preview->files = (*env)->NewGlobalRef(env, files);
+                        (*env)->DeleteLocalRef(env, files);
+                    }
+                    nucleus_jni_clear_exception(env);
+                }
+                detach_if_needed(attached);
+                ReleaseStgMedium(&stg);
+            }
+            IDataObject_Release(data);
+        }
+        CoUninitialize();
+    } else {
+        IStream_Release(preview->stream);
+    }
+    InterlockedExchange(&preview->ready, TRUE);
+    release_preview(preview);
+    return 0;
+}
+
+static void start_preview(NucleusDropTarget *target, IDataObject *data) {
+    NucleusDragPreview *preview = (NucleusDragPreview *)HeapAlloc(
+        GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(NucleusDragPreview));
+    if (!preview) return;
+    HRESULT hr = CoMarshalInterThreadInterfaceInStream(
+        &IID_IDataObject, (IUnknown *)data, &preview->stream);
+    if (FAILED(hr)) {
+        HeapFree(GetProcessHeap(), 0, preview);
+        return;
+    }
+    preview->refCount = 2;
+    HANDLE thread = CreateThread(NULL, 0, read_preview, preview, 0, NULL);
+    if (!thread) {
+        CoReleaseMarshalData(preview->stream);
+        IStream_Release(preview->stream);
+        HeapFree(GetProcessHeap(), 0, preview);
+        return;
+    }
+    target->preview = preview;
+    CloseHandle(thread);
+}
+
+static void dispatch_files(JNIEnv *env, NucleusDropTarget *target, jobject files) {
+    if (g_method_on_files) {
+        (*env)->CallVoidMethod(env, target->callbackRef, g_method_on_files,
+                              (jlong)(intptr_t)target->hwnd, files);
+        nucleus_jni_clear_exception(env);
+    }
+}
+
+static jint dispatch_enter(JNIEnv *env, NucleusDropTarget *target,
+                           jint x, jint y, DWORD keyState) {
+    target->entered = TRUE;
+    if (!g_method_on_enter) return DROPEFFECT_NONE_LOCAL;
+    jint effect = (*env)->CallIntMethod(
+        env, target->callbackRef, g_method_on_enter,
+        (jlong)(intptr_t)target->hwnd, x, y, (jint)keyState, JNI_TRUE);
+    return nucleus_jni_clear_exception(env) ? DROPEFFECT_NONE_LOCAL : effect;
 }
 
 /* ---- IUnknown ---- */
@@ -171,6 +276,7 @@ static ULONG STDMETHODCALLTYPE NDT_Release(IDropTarget *self) {
     NucleusDropTarget *t = (NucleusDropTarget *)self;
     LONG n = InterlockedDecrement(&t->refCount);
     if (n == 0) {
+        clear_preview(t);
         if (t->callbackRef && g_vm) {
             BOOL attached = FALSE;
             JNIEnv *env = attach_thread(&attached);
@@ -197,42 +303,13 @@ static HRESULT STDMETHODCALLTYPE NDT_DragEnter(
     IDropTarget *self, IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect)
 {
     NucleusDropTarget *t = (NucleusDropTarget *)self;
+    clear_preview(t);
+    t->entered = FALSE;
     t->hasAcceptableData = data_has_files(pDataObj);
-    if (!t->hasAcceptableData) {
-        *pdwEffect = DROPEFFECT_NONE;
-        return S_OK;
+    if (t->hasAcceptableData) {
+        start_preview(t, pDataObj);
     }
-
-    BOOL attached = FALSE;
-    JNIEnv *env = attach_thread(&attached);
-    if (!env) {
-        *pdwEffect = DROPEFFECT_NONE;
-        return S_OK;
-    }
-
-    jint x, y;
-    to_client(t->hwnd, pt, &x, &y);
-
-    jobjectArray files = extract_files(env, pDataObj);
-    if (g_method_on_files) {
-        (*env)->CallVoidMethod(env, t->callbackRef, g_method_on_files,
-                              (jlong)(intptr_t)t->hwnd, files);
-        nucleus_jni_clear_exception(env);
-    }
-    if (files) (*env)->DeleteLocalRef(env, files);
-
-    jint effect = DROPEFFECT_COPY_LOCAL;
-    if (g_method_on_enter) {
-        effect = (*env)->CallIntMethod(
-            env, t->callbackRef, g_method_on_enter,
-            (jlong)(intptr_t)t->hwnd, x, y, (jint)grfKeyState, JNI_TRUE);
-        if (nucleus_jni_clear_exception(env)) {
-            effect = DROPEFFECT_NONE_LOCAL;
-        }
-    }
-
-    detach_if_needed(attached);
-    *pdwEffect = (effect == DROPEFFECT_COPY_LOCAL) ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+    *pdwEffect = t->hasAcceptableData ? DROPEFFECT_COPY : DROPEFFECT_NONE;
     return S_OK;
 }
 
@@ -255,8 +332,13 @@ static HRESULT STDMETHODCALLTYPE NDT_DragOver(
     jint x, y;
     to_client(t->hwnd, pt, &x, &y);
 
-    jint effect = DROPEFFECT_COPY_LOCAL;
-    if (g_method_on_over) {
+    jint effect = t->entered ? DROPEFFECT_NONE_LOCAL : DROPEFFECT_COPY_LOCAL;
+    if (!t->entered && (!t->preview ||
+        InterlockedCompareExchange(&t->preview->ready, 0, 0))) {
+        dispatch_files(env, t, t->preview ? t->preview->files : NULL);
+        effect = dispatch_enter(env, t, x, y, grfKeyState);
+        clear_preview(t);
+    } else if (t->entered && g_method_on_over) {
         effect = (*env)->CallIntMethod(
             env, t->callbackRef, g_method_on_over,
             (jlong)(intptr_t)t->hwnd, x, y, (jint)grfKeyState, JNI_TRUE);
@@ -274,13 +356,16 @@ static HRESULT STDMETHODCALLTYPE NDT_DragLeave(IDropTarget *self) {
     NucleusDropTarget *t = (NucleusDropTarget *)self;
     BOOL attached = FALSE;
     JNIEnv *env = attach_thread(&attached);
-    if (env && g_method_on_leave) {
+    clear_preview(t);
+    if (env) dispatch_files(env, t, NULL);
+    if (env && t->entered && g_method_on_leave) {
         (*env)->CallVoidMethod(env, t->callbackRef, g_method_on_leave,
                                (jlong)(intptr_t)t->hwnd);
         nucleus_jni_clear_exception(env);
     }
     detach_if_needed(attached);
     t->hasAcceptableData = FALSE;
+    t->entered = FALSE;
     return S_OK;
 }
 
@@ -288,6 +373,7 @@ static HRESULT STDMETHODCALLTYPE NDT_Drop(
     IDropTarget *self, IDataObject *pDataObj, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect)
 {
     NucleusDropTarget *t = (NucleusDropTarget *)self;
+    clear_preview(t);
     BOOL attached = FALSE;
     JNIEnv *env = attach_thread(&attached);
     if (!env) {
@@ -300,6 +386,11 @@ static HRESULT STDMETHODCALLTYPE NDT_Drop(
     jint x, y;
     to_client(t->hwnd, pt, &x, &y);
 
+    if (!t->entered && data_has_files(pDataObj)) {
+        dispatch_files(env, t, files);
+        dispatch_enter(env, t, x, y, grfKeyState);
+    }
+
     jint effect = DROPEFFECT_NONE_LOCAL;
     if (g_method_on_drop) {
         effect = (*env)->CallIntMethod(
@@ -311,7 +402,9 @@ static HRESULT STDMETHODCALLTYPE NDT_Drop(
     }
     if (files) (*env)->DeleteLocalRef(env, files);
 
+    dispatch_files(env, t, NULL);
     detach_if_needed(attached);
+    t->entered = FALSE;
     t->hasAcceptableData = FALSE;
     *pdwEffect = (effect == DROPEFFECT_COPY_LOCAL) ? DROPEFFECT_COPY : DROPEFFECT_NONE;
     return S_OK;

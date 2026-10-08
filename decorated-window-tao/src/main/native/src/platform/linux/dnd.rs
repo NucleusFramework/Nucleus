@@ -325,14 +325,19 @@ fn dispatch_files(handle: u64, callback: &GlobalRef, files: &[String]) {
     let _ = env.with_local_frame(
         files.len() as i32 + 6,
         |env| -> Result<(), jni::errors::Error> {
-            if let Some(arr) = build_string_array(env, files) {
-                let _ = env.call_method(
-                    callback.as_obj(),
-                    "onDragFiles",
-                    "(J[Ljava/lang/String;)V",
-                    &[JValue::Long(handle as jlong), JValue::Object(&arr)],
-                );
-            }
+            let arr = if files.is_empty() {
+                JObject::null()
+            } else if let Some(arr) = build_string_array(env, files) {
+                arr.into()
+            } else {
+                return Ok(());
+            };
+            let _ = env.call_method(
+                callback.as_obj(),
+                "onDragFiles",
+                "(J[Ljava/lang/String;)V",
+                &[JValue::Long(handle as jlong), JValue::Object(&arr)],
+            );
             if env.exception_check().unwrap_or(false) {
                 let _ = env.exception_describe();
                 let _ = env.exception_clear();

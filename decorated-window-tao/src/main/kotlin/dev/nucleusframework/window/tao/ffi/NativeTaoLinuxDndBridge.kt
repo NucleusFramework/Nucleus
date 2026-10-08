@@ -33,6 +33,7 @@ internal object NativeTaoLinuxDndBridge {
     val isLoaded: Boolean get() = loaded
 
     interface Callback {
+        /** Updates the file preview for this drag; null clears the preview. */
         fun onDragFiles(
             handle: Long,
             files: Array<String>?,

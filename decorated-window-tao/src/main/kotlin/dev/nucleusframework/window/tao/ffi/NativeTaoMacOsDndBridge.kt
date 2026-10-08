@@ -32,6 +32,7 @@ internal object NativeTaoMacOsDndBridge {
      *   - [DROP_EFFECT_COPY] — accept as a copy
      */
     interface Callback {
+        /** Updates the file preview for this drag; null clears the preview. */
         fun onDragFiles(
             nsView: Long,
             files: Array<String>?,
