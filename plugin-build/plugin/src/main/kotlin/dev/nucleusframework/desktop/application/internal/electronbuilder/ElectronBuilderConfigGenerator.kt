@@ -663,7 +663,7 @@ internal class ElectronBuilderConfigGenerator {
                 appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
                 appendFpmArgs(yaml, fpmArgs(distributions, rpmAutoAddDirectories = false))
             }
-            TargetFormat.Snap -> generateSnapConfig(yaml, distributions.linux.snap)
+            TargetFormat.Snap -> generateSnapConfig(yaml, distributions.linux.snap, distributions.appName)
             TargetFormat.Flatpak -> generateFlatpakConfig(yaml, distributions.linux.flatpak)
             else -> {}
         }
@@ -676,6 +676,12 @@ internal class ElectronBuilderConfigGenerator {
     ) {
         val entryOverrides = linkedMapOf<String, String>()
         entryOverrides.putAll(distributions.linux.appImage.desktopEntries)
+        // On Linux productName is the filesystem-safe executable name (see generate), and
+        // electron-builder derives the desktop entry's Name from it: put the display name back.
+        val hasNameOverride = entryOverrides.keys.any { it.equals("Name", ignoreCase = true) }
+        if (!hasNameOverride) {
+            distributions.appName?.takeIf { it.isNotBlank() }?.let { entryOverrides["Name"] = it }
+        }
         val hasStartupWMClassOverride =
             entryOverrides.keys.any { it.equals("StartupWMClass", ignoreCase = true) }
         if (!hasStartupWMClassOverride) {
@@ -717,9 +723,12 @@ internal class ElectronBuilderConfigGenerator {
     private fun generateSnapConfig(
         yaml: StringBuilder,
         snap: SnapSettings,
+        appName: String?,
     ) {
         yaml.appendLine("snap:")
         yaml.appendLine("  confinement: ${snap.confinement.id}")
+        // electron-builder defaults the title to productName, the executable name on Linux.
+        appendIfNotNull(yaml, "  title", appName?.takeIf { it.isNotBlank() })
         yaml.appendLine("  grade: ${snap.grade.id}")
         appendIfNotNull(yaml, "  summary", snap.summary)
         appendIfNotNull(yaml, "  base", snap.base)
