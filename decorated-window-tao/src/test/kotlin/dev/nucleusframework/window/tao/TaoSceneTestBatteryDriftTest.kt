@@ -139,6 +139,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneRectManagerRaceTest::class.java to
                 "races the real AWT EDT against wall-clock frames; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
+            TaoReachabilityMetadataDriftTest::class.java to
+                "reads the source tree's metadata file and resolves its classes reflectively",
             TaoScrollWireDriftTest::class.java to
                 "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
             TaoMouseButtonWireDriftTest::class.java to
