@@ -1081,6 +1081,24 @@ unsafe fn public_window_callback_inner<T: 'static>(
       result = ProcResult::Value(LRESULT(0));
     }
 
+    // PATCH(nucleus): session messages (#751), handed over like the thread
+    // target's — an app window answering TRUE on its own lets the Restart Manager
+    // treat the app as agreeing and end it while the real answer is pending.
+    win32wm::WM_QUERYENDSESSION => {
+      if let Some(hook) = crate::platform::windows::QUERY_END_SESSION_HOOK.get() {
+        let runner = &subclass_input.event_loop_runner;
+        let may_end = hook(runner.thread_msg_target().0 as isize, lparam.0, runner.should_buffer());
+        result = ProcResult::Value(LRESULT(may_end as isize));
+      }
+    }
+    win32wm::WM_ENDSESSION => {
+      if let Some(hook) = crate::platform::windows::END_SESSION_HOOK.get() {
+        let runner = &subclass_input.event_loop_runner;
+        hook(runner.thread_msg_target().0 as isize, wparam.0 != 0, runner.should_buffer());
+        result = ProcResult::Value(LRESULT(0));
+      }
+    }
+
     win32wm::WM_EXITSIZEMOVE => {
       let mut state = subclass_input.window_state.lock();
       if state.dragging {
@@ -2495,9 +2513,28 @@ unsafe extern "system" fn thread_event_target_callback<T: 'static>(
       DefSubclassProc(window, msg, wparam, lparam)
     }
 
-    // We don't process `WM_QUERYENDSESSION` yet until we introduce the same mechanism as Tauri's `ExitRequested` event
-    // win32wm::WM_QUERYENDSESSION => {}
+    // PATCH(nucleus): logoff / restart / shutdown / Restart Manager (#751). Every
+    // tao window — app windows too, see `public_window_callback_inner` — hands the
+    // session messages to the embedder with the thread target as the window that
+    // carries a shutdown block reason (it lives as long as the loop). `nested`
+    // tells the hooks the event handler is already on this thread's stack (a sent
+    // message delivered inside a nested pump), where the embedder must not be
+    // re-entered. Without hooks: upstream's behaviour.
+    win32wm::WM_QUERYENDSESSION => match crate::platform::windows::QUERY_END_SESSION_HOOK.get() {
+      Some(hook) => {
+        let nested = subclass_input.event_loop_runner.should_buffer();
+        LRESULT(hook(window.0 as isize, lparam.0, nested) as isize)
+      }
+      None => DefSubclassProc(window, msg, wparam, lparam),
+    },
     win32wm::WM_ENDSESSION => {
+      if let Some(hook) = crate::platform::windows::END_SESSION_HOOK.get() {
+        let nested = subclass_input.event_loop_runner.should_buffer();
+        hook(window.0 as isize, wparam.0 != 0, nested);
+        // The embedder owns the session end: a loop destroyed here would stop
+        // delivering events to an app that is still finishing its exit.
+        return LRESULT(0);
+      }
       // `wParam` is `FALSE` is for if the shutdown gets canceled,
       // and we don't need to handle that case since we didn't do anything prior in response to `WM_QUERYENDSESSION`
       if wparam.0 == TRUE.0 as usize {

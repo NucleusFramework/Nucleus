@@ -108,6 +108,18 @@
                         "long",
                         "java.lang.String"
                     ]
+                },
+                {
+                    "name": "onQueryEndSession",
+                    "parameterTypes": [
+                        "int"
+                    ]
+                },
+                {
+                    "name": "onEndSession",
+                    "parameterTypes": [
+                        "boolean"
+                    ]
                 }
             ]
         },
@@ -189,6 +201,18 @@
                     "parameterTypes": [
                         "long",
                         "java.lang.String"
+                    ]
+                },
+                {
+                    "name": "onQueryEndSession",
+                    "parameterTypes": [
+                        "int"
+                    ]
+                },
+                {
+                    "name": "onEndSession",
+                    "parameterTypes": [
+                        "boolean"
                     ]
                 }
             ]
