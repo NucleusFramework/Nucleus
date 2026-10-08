@@ -7,6 +7,7 @@ import dev.nucleusframework.window.tao.dnd.TaoTransferableAccessGuardTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
 import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
+import dev.nucleusframework.window.tao.event.TaoKeyRepeatTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSessionTest
@@ -65,6 +66,7 @@ class TaoSceneTestBatteryDriftTest {
             NativePopupLayersTest::class.java,
             dev.nucleusframework.window.tao.popup.MacPopupPictureCullTest::class.java,
             TaoKeyboardModifiersDecodeTest::class.java,
+            TaoKeyRepeatTest::class.java,
             TaoSyntheticMouseWheelEventTest::class.java,
             Win32WheelDeltaTest::class.java,
             LinuxWheelDeltaTest::class.java,
@@ -137,6 +139,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneRectManagerRaceTest::class.java to
                 "races the real AWT EDT against wall-clock frames; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
+            TaoReachabilityMetadataDriftTest::class.java to
+                "reads the source tree's metadata file and resolves its classes reflectively",
             TaoScrollWireDriftTest::class.java to
                 "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
             TaoMouseButtonWireDriftTest::class.java to

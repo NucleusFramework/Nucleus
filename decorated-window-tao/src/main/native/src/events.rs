@@ -2,7 +2,7 @@
 // constants and dispatch helpers that bridge native events back to Kotlin.
 
 use jni::objects::JValue;
-use jni::sys::{jint, jlong};
+use jni::sys::{jint, jlong, JNI_FALSE, JNI_TRUE};
 
 use tao::event::MouseButton;
 use tao::keyboard::ModifiersState;
@@ -483,6 +483,7 @@ pub(crate) fn dispatch_key(
     location: jint,
     modifiers: jint,
     code_point: jint,
+    repeat: bool,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(guard) = EVENT_CALLBACK.lock() else {
@@ -497,7 +498,7 @@ pub(crate) fn dispatch_key(
     let _ = env.call_method(
         callback.as_obj(),
         "onKeyEvent",
-        "(JIIIII)V",
+        "(JIIIIIZ)V",
         &[
             JValue::Long(handle as jlong),
             JValue::Int(type_code),
@@ -505,6 +506,7 @@ pub(crate) fn dispatch_key(
             JValue::Int(location),
             JValue::Int(modifiers),
             JValue::Int(code_point),
+            JValue::Bool(if repeat { JNI_TRUE } else { JNI_FALSE }),
         ],
     );
     if env.exception_check().unwrap_or(false) {

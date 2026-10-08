@@ -493,8 +493,9 @@ public object TaoApplication {
             keyLocation: Int,
             modifiers: Int,
             codePoint: Int,
+            isRepeat: Boolean,
         ) {
-            guarded { lookup(handle)?.dispatchKey(type, vkCode, keyLocation, modifiers, codePoint) }
+            guarded { lookup(handle)?.dispatchKey(type, vkCode, keyLocation, modifiers, codePoint, isRepeat) }
         }
 
         override fun onTrackpadGesture(

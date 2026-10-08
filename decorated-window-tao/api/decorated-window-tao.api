@@ -374,6 +374,10 @@ public final class dev/nucleusframework/window/tao/DragGhost {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class dev/nucleusframework/window/tao/KeyEventRepeatKt {
+	public static final fun isRepeat-ZmokQxo (Ljava/lang/Object;)Z
+}
+
 public final class dev/nucleusframework/window/tao/MacOSStyle : java/lang/Enum {
 	public static final field Auto Ldev/nucleusframework/window/tao/MacOSStyle;
 	public static final field Classic Ldev/nucleusframework/window/tao/MacOSStyle;
@@ -1476,6 +1480,11 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 
 public abstract interface class dev/nucleusframework/window/tao/TaoWindow$KeyEventListener {
 	public abstract fun onKey (IIIII)V
+	public fun onKey (IIIIIZ)V
+}
+
+public final class dev/nucleusframework/window/tao/TaoWindow$KeyEventListener$DefaultImpls {
+	public static fun onKey (Ldev/nucleusframework/window/tao/TaoWindow$KeyEventListener;IIIIIZ)V
 }
 
 public abstract interface class dev/nucleusframework/window/tao/TaoWindow$TouchInputListener {

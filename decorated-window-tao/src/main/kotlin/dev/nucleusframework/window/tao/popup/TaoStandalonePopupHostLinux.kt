@@ -473,6 +473,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
+            isRepeat: Boolean,
         ) {
             TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
                 if (disposed) return@dispatch
@@ -482,6 +483,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
                         vkCode = vkCode,
                         codePoint = codePoint,
                         modifiers = modifiers,
+                        isRepeat = isRepeat,
                         onPreviewKeyEvent = onPreviewKeyEvent,
                         onKeyEvent = onKeyEvent,
                     )

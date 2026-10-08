@@ -174,7 +174,7 @@ static int ensure_libs_loaded(void) {
     X11_SYM(XInternAtom);        X11_SYM(XGetWindowProperty);
     X11_SYM(XChangeProperty);    X11_SYM(XDeleteProperty);
     X11_SYM(XSendEvent);         X11_SYM(XConvertSelection);
-    X11_SYM(XSetSelectionOwner);
+    X11_SYM(XSetSelectionOwner);  X11_SYM(XkbSetDetectableAutoRepeat);
 #undef X11_SYM
 
     if (libxi != NULL) {
@@ -244,7 +244,7 @@ JavaVM *g_jvm = NULL;
  * implementors are the same named classes — GraalVM metadata requirement). */
 static jmethodID g_on_pointer_event = NULL; /* (IFFII)V  */
 static jmethodID g_on_scroll        = NULL; /* (FFFF)V   */
-static jmethodID g_on_key_event     = NULL; /* (IIII)V   */
+static jmethodID g_on_key_event     = NULL; /* (IIIIZ)V  */
 static jmethodID g_on_outside_click = NULL; /* (II)V     */
 
 static JNIEnv *attach_jvm_thread(void) {
@@ -278,7 +278,7 @@ static void cache_event_callback_ids(JNIEnv *env, jobject callback) {
     if (cls == NULL) return;
     g_on_pointer_event = (*env)->GetMethodID(env, cls, "onPointerEvent", "(IFFII)V");
     g_on_scroll        = (*env)->GetMethodID(env, cls, "onScroll", "(FFFF)V");
-    g_on_key_event     = (*env)->GetMethodID(env, cls, "onKeyEvent", "(IIII)V");
+    g_on_key_event     = (*env)->GetMethodID(env, cls, "onKeyEvent", "(IIIIZ)V");
     (*env)->DeleteLocalRef(env, cls);
     nucleus_jni_clear_exception(env);
 }
@@ -406,13 +406,14 @@ static void forward_scroll(JNIEnv *env, Panel *p, float x, float y,
 }
 
 static void forward_key(JNIEnv *env, Panel *p, int type, int vk, int codepoint,
-                        int mods) {
+                        int mods, int repeat) {
     pthread_mutex_lock(&p->lock);
     jobject cb = p->event_cb;
     pthread_mutex_unlock(&p->lock);
     if (cb == NULL || g_on_key_event == NULL) return;
     (*env)->CallVoidMethod(env, cb, g_on_key_event, (jint) type, (jint) vk,
-                           (jint) codepoint, (jint) mods);
+                           (jint) codepoint, (jint) mods,
+                           repeat ? JNI_TRUE : JNI_FALSE);
     nucleus_jni_clear_exception(env);
 }
 
@@ -453,8 +454,26 @@ static void handle_raw_press(JNIEnv *env, Display *dpy, Panel *p, int button) {
     }
 }
 
+/* Keycodes currently held, one bit per X keycode (8..255). With detectable
+ * auto-repeat on, a held key sends presses and a single release, so a press
+ * whose bit is already set is a repeat. Cleared on FocusOut: a key released
+ * while another window has the focus never reports its release here. */
+typedef struct {
+    unsigned char bits[32];
+} HeldKeys;
+
+static int held_keys_update(HeldKeys *held, unsigned keycode, int pressed) {
+    unsigned char bit = (unsigned char) (1u << (keycode & 7u));
+    unsigned char *byte = &held->bits[(keycode >> 3) & 31u];
+    int was_held = (*byte & bit) != 0;
+    if (pressed) *byte |= bit; else *byte &= (unsigned char) ~bit;
+    return was_held;
+}
+
 static void handle_key_event(JNIEnv *env, Display *dpy, Panel *p, XKeyEvent *ke,
-                             int wire_type) {
+                             int wire_type, HeldKeys *held) {
+    int repeat = held_keys_update(held, ke->keycode, wire_type == WIRE_KEY_DOWN) &&
+                 wire_type == WIRE_KEY_DOWN;
     char buf[8];
     KeySym active_ks = NoSymbol;
     fn.XLookupString(ke, buf, sizeof(buf), &active_ks, NULL);
@@ -462,7 +481,7 @@ static void handle_key_event(JNIEnv *env, Display *dpy, Panel *p, XKeyEvent *ke,
     KeySym vk = vk_keysym_for(dpy, (KeyCode) ke->keycode);
     /* Non-printable actives (arrows, F-keys…) map to codepoint 0 upstream;
      * dispatchSyntheticKeyTyped filters control chars anyway. */
-    forward_key(env, p, wire_type, (int) vk, codepoint, wire_modifiers(ke->state));
+    forward_key(env, p, wire_type, (int) vk, codepoint, wire_modifiers(ke->state), repeat);
 }
 
 static void signal_ready(Panel *p, int ready) {
@@ -492,7 +511,14 @@ static void *event_thread_main(void *arg) {
     fn.XSelectInput(dpy, p->win,
                     ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
                     KeyPressMask | KeyReleaseMask | StructureNotifyMask |
-                    PropertyChangeMask);
+                    PropertyChangeMask | FocusChangeMask);
+    /* Per connection: a held key then repeats as presses only, which is
+     * what tells a repeat from a new press (see HeldKeys). */
+    if (fn.XkbSetDetectableAutoRepeat != NULL) {
+        fn.XkbSetDetectableAutoRepeat(dpy, True, NULL);
+    }
+    HeldKeys held_keys;
+    memset(&held_keys, 0, sizeof(held_keys));
 
     /* XI2 raw buttons on the root for the outside-click monitor. Selected
      * unconditionally (cheap); forwarding is gated on the Java listener. */
@@ -579,10 +605,13 @@ static void *event_thread_main(void *arg) {
                     break;
                 }
                 case KeyPress:
-                    handle_key_event(env, dpy, p, &ev.xkey, WIRE_KEY_DOWN);
+                    handle_key_event(env, dpy, p, &ev.xkey, WIRE_KEY_DOWN, &held_keys);
                     break;
                 case KeyRelease:
-                    handle_key_event(env, dpy, p, &ev.xkey, WIRE_KEY_UP);
+                    handle_key_event(env, dpy, p, &ev.xkey, WIRE_KEY_UP, &held_keys);
+                    break;
+                case FocusOut:
+                    memset(&held_keys, 0, sizeof(held_keys));
                     break;
                 case DestroyNotify:
                     if (ev.xdestroywindow.window == p->win) running = 0;

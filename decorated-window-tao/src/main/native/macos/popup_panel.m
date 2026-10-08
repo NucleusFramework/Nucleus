@@ -52,7 +52,7 @@ static JavaVM *sJVM = NULL;
 static jclass sCallbackClass = NULL;          // global ref to the Java callback interface
 static jmethodID sOnPointerMethod = NULL;     // (IFFII)V — type, x, y, button, modifiers
 static jmethodID sOnScrollMethod = NULL;      // (FFFFZI)V — x, y, dx, dy, precise, gesturePhase
-static jmethodID sOnKeyMethod = NULL;         // (IIII)V  — type, vkCode, codePoint, modifiers
+static jmethodID sOnKeyMethod = NULL;         // (IIIIZ)V — type, vkCode, codePoint, modifiers, isRepeat
 static jclass sOutsideListenerClass = NULL;
 static jmethodID sOutsideOnClickMethod = NULL; // (II)V  — eventType, button
 static atomic_bool sCacheInited = ATOMIC_VAR_INIT(false);
@@ -73,7 +73,7 @@ static void ensureCallbackCache(JNIEnv *env, jobject cbSample, jobject outsideSa
             (*env)->DeleteLocalRef(env, local);
             sOnPointerMethod = (*env)->GetMethodID(env, sCallbackClass, "onPointerEvent", "(IFFII)V");
             sOnScrollMethod  = (*env)->GetMethodID(env, sCallbackClass, "onScroll",       "(FFFFZI)V");
-            sOnKeyMethod     = (*env)->GetMethodID(env, sCallbackClass, "onKeyEvent",     "(IIII)V");
+            sOnKeyMethod     = (*env)->GetMethodID(env, sCallbackClass, "onKeyEvent",     "(IIIIZ)V");
         }
     }
     if (outsideSample != NULL && sOutsideListenerClass == NULL) {
@@ -341,7 +341,9 @@ static jint scrollGesturePhase(NSEvent *event) {
     NSString *chars = event.characters;
     if (chars.length == 0) chars = event.charactersIgnoringModifiers;
     jint cp = (chars.length > 0) ? (jint)[chars characterAtIndex:0] : 0;
-    (*env)->CallVoidMethod(env, cb, sOnKeyMethod, type, vk, cp, [self modifierMaskFor:event]);
+    // `isARepeat` is only meaningful on a key-down; a key-up is never a repeat.
+    jboolean repeat = (type == EVT_KEY_DOWN && [event isARepeat]) ? JNI_TRUE : JNI_FALSE;
+    (*env)->CallVoidMethod(env, cb, sOnKeyMethod, type, vk, cp, [self modifierMaskFor:event], repeat);
     nucleus_jni_clear_exception(env);
 }
 
