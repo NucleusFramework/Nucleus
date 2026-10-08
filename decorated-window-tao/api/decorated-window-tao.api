@@ -980,6 +980,7 @@ public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public static synthetic fun dropTargetAt-ubNVwUQ$default (Ldev/nucleusframework/window/tao/TabWorkspace;Landroidx/compose/ui/geometry/Rect;JLdev/nucleusframework/window/tao/TabEntry;Ldev/nucleusframework/window/tao/TabWindowGroup;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/TabDropTarget;
 	public final fun getActiveGroup ()Ldev/nucleusframework/window/tao/TabWindowGroup;
 	public final fun getCaptureThumbnails ()Z
+	public final fun getConstrainIndex ()Lkotlin/jvm/functions/Function3;
 	public final fun getDefaultWindowSize-MYxV2XQ ()J
 	public final fun getDragGhost ()Ldev/nucleusframework/window/tao/TabDragGhost;
 	public final fun getDragKind ()Ldev/nucleusframework/window/tao/WorkspaceDragKind;
@@ -997,6 +998,7 @@ public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public final fun restore (Ldev/nucleusframework/window/tao/TabLayoutSnapshot;)V
 	public final fun select (Ljava/lang/String;)V
 	public final fun selectedTab (Ldev/nucleusframework/window/tao/TabWindowGroup;)Ldev/nucleusframework/window/tao/TabEntry;
+	public final fun setConstrainIndex (Lkotlin/jvm/functions/Function3;)V
 	public final fun setLinkedWorkspaces (Ljava/util/List;)V
 	public final fun setOnForeignDrop (Lkotlin/jvm/functions/Function3;)V
 	public final fun snapshot ()Ldev/nucleusframework/window/tao/TabLayoutSnapshot;

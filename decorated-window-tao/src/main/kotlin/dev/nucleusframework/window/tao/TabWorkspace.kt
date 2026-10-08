@@ -270,7 +270,7 @@ public data class TabLayoutSnapshot(
  *   of its own rather than into the scene, so it is missing from the picture —
  *   a body built around one is better off without captures.
  */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 @ExperimentalNucleusApi
 public class TabWorkspace(
     public val defaultWindowSize: DpSize = DefaultWindowSize,
@@ -316,6 +316,20 @@ public class TabWorkspace(
      * drop outside every strip does.
      */
     public var onForeignDrop: ((tab: TabEntry, into: TabWorkspace, target: TabDropTarget) -> Unit)? = null
+
+    /**
+     * Narrows where a tab may stand in a group — pinned tabs kept ahead of the
+     * others, say, the way a browser keeps them: given the tab, the group and
+     * the index it would end up at, returns the index it may take instead.
+     *
+     * Every placement goes through it: [move], [reorder], a tab's first
+     * declaration, and the drop preview of a drag — in its own strip, another
+     * window's or a linked workspace's — so the neighbours only make room where
+     * the tab can actually land, and a release never puts it anywhere else.
+     * The tab of a drag from a linked workspace is not one of this workspace's:
+     * the lookup is by id. `null`: any index.
+     */
+    public var constrainIndex: ((tabId: String, group: TabWindowGroup, index: Int) -> Int)? = null
 
     /** `true` when [group] is one of this workspace's own. */
     internal fun owns(group: TabWindowGroup): Boolean = group in groupList
@@ -471,13 +485,13 @@ public class TabWorkspace(
             return
         }
         from?.let { detach(it, tabId) }
-        val at = (index ?: group.tabIds.size).coerceIn(0, group.tabIds.size)
+        val at = constrained(tabId, group, index ?: group.tabIds.size).coerceIn(0, group.tabIds.size)
         group.tabIds.add(at, tabId)
         entry.group = group
         group.selectedId = tabId
     }
 
-    /** Moves [tabId] to [index] within its own group (clamped). */
+    /** Moves [tabId] to [index] within its own group (clamped, then [constrainIndex]ed). */
     public fun reorder(
         tabId: String,
         index: Int,
@@ -485,7 +499,7 @@ public class TabWorkspace(
         val group = entryMap[tabId]?.group ?: return
         val current = group.tabIds.indexOf(tabId)
         if (current < 0) return
-        val at = index.coerceIn(0, group.tabIds.lastIndex)
+        val at = constrained(tabId, group, index).coerceIn(0, group.tabIds.lastIndex)
         if (at == current) return
         group.tabIds.removeAt(current)
         group.tabIds.add(at, tabId)
@@ -691,7 +705,7 @@ public class TabWorkspace(
         val entry = entryMap[tabId] ?: return
         val group = entry.group ?: return
         val index = reorderTarget(group, entry, slidePx) ?: group.tabIds.indexOf(tabId)
-        dropPreview = TabDropTarget(group, index)
+        dropPreview = TabDropTarget(group, constrained(tabId, group, index))
     }
 
     /**
@@ -879,7 +893,7 @@ public class TabWorkspace(
             } else {
                 insertionIndex(group, screenPx.x - client.x, exclude)
             }
-        return TabDropTarget(group, index)
+        return TabDropTarget(group, (exclude ?: draggedTab)?.let { constrained(it.id, group, index) } ?: index)
     }
 
     /**
@@ -1199,6 +1213,13 @@ public class TabWorkspace(
         public val DefaultWindowSize: DpSize = DpSize(960.dp, 640.dp)
     }
 }
+
+/** [index] for [tabId] in [group], as [TabWorkspace.constrainIndex] allows it. */
+internal fun TabWorkspace.constrained(
+    tabId: String,
+    group: TabWindowGroup,
+    index: Int,
+): Int = constrainIndex?.invoke(tabId, group, index) ?: index
 
 /** A tab released inside its own strip, and the place it is sliding to — see [TabWorkspace.pendingReorder]. */
 internal class TabReorderSettle(

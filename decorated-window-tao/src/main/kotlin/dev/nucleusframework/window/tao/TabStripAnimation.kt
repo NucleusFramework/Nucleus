@@ -109,11 +109,16 @@ internal class TabStripMotion(
      * own offset snaps there — it is the pointer — and every other tab of
      * [order] is pushed a slot aside or let back, by where the carried tab's
      * edges now are against their centres.
+     *
+     * [target] is the index the drop preview allows (see
+     * [TabWorkspace.constrainIndex]): no tab past it is pushed, so the strip
+     * never opens a slot the tab cannot take. `null`: no limit.
      */
     fun carry(
         id: String,
         order: List<String>,
         slidePx: Float,
+        target: Int? = null,
     ) {
         held = id
         animating = id
@@ -121,15 +126,24 @@ internal class TabStripMotion(
         scope.launch { offsetOf(id).snapTo(slidePx) }
         val currentStart = own.left + slidePx
         val currentEnd = own.right + slidePx
-        val neighbours = order.filter { it != id }.mapNotNull { other -> slots[other]?.let { other to it.center.x } }
-        for ((other, centre) in neighbours) {
-            val target =
+        val from = order.indexOf(id)
+        val allowed =
+            when {
+                target == null || from < 0 -> order.indices
+                target < from -> target..from
+                else -> from..target
+            }
+        for ((rank, other) in order.withIndex()) {
+            val centre = slots[other]?.center?.x
+            if (other == id || centre == null) continue
+            val shift =
                 when {
+                    rank !in allowed -> 0f
                     currentStart < own.left && centre in currentStart..own.left -> own.width
                     currentStart > own.left && centre in own.right..currentEnd -> -own.width
                     else -> 0f
                 }
-            moveTo(other, target)
+            moveTo(other, shift)
         }
     }
 
@@ -200,6 +214,14 @@ internal class TabStripMotion(
     }
 }
 
+/** One look at the tab in hand: who, how far, among which tabs, and where the drop preview allows it. */
+private data class CarrySample(
+    val id: String,
+    val slidePx: Float,
+    val order: List<String>,
+    val target: Int?,
+)
+
 @Composable
 internal fun TabStripScope.rememberTabStripMotion(spec: AnimationSpec<Float>?): TabStripMotion {
     val scope = rememberCoroutineScope()
@@ -221,10 +243,19 @@ internal fun TabStripScope.rememberTabStripMotion(spec: AnimationSpec<Float>?): 
                     grab != null &&
                     workspace.dragGhost == null &&
                     workspace.dropPreview?.group === group
-            if (inHand) Triple(tab!!.id, pointer!!.x - grab!!.x, workspace.tabsOf(group).map { it.id }) else null
+            if (inHand) {
+                CarrySample(
+                    id = tab!!.id,
+                    slidePx = pointer!!.x - grab!!.x,
+                    order = workspace.tabsOf(group).map { it.id },
+                    target = workspace.dropPreview?.index,
+                )
+            } else {
+                null
+            }
         }.collect { sample ->
             if (sample != null) {
-                motion.carry(sample.first, sample.third, sample.second)
+                motion.carry(sample.id, sample.order, sample.slidePx, sample.target)
             } else if (motion.held != null && workspace.pendingReorder == null) {
                 motion.letGo(workspace.tabsOf(group).map { it.id })
             }

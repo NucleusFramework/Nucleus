@@ -176,8 +176,9 @@ private class TabStripCarry(
     ) {
         if (!live) return
         if (sampleVelocity) velocity.sample(slidePx)
-        motion.carry(tab.id, order(), slidePx)
+        // The preview first: it says how far the neighbours may make room.
         workspace.carryInStrip(tab.id, slidePx)
+        motion.carry(tab.id, order(), slidePx, workspace.dropPreview?.index)
     }
 
     /**
