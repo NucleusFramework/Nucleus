@@ -1,5 +1,16 @@
 package dev.nucleusframework.window.tao
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -98,6 +110,10 @@ internal class TabHoverPreviewScopeImpl(
  * How a strip previews the tab under the pointer: a browser's hover card,
  * shown under the tab after a pause and gone as soon as the pointer leaves it.
  *
+ * It moves the way Chromium's does: it fades in, slides from tab to tab while
+ * the outgoing card fades out over the incoming one, and fades out. Coming
+ * back to the strip just after leaving it skips the pause.
+ *
  * Never for the selected tab, whose body is on screen anyway — see
  * [TabStripScope.hoveredTab] for every case a card is withheld.
  *
@@ -118,15 +134,11 @@ internal class TabHoverPreviewScopeImpl(
  * written from scratch.
  *
  * @property delay how long the pointer has to rest on a tab before the first
- *   card appears. Moving to another tab while one is shown switches at once,
- *   the way a browser does.
+ *   card appears. Moving to another tab while one is shown slides the card
+ *   over at once, the way a browser does.
  * @property offset where the card sits relative to the tab's bottom-left
  *   corner — its bottom-*right* in a right-to-left strip, so the card grows
  *   into the reading direction on both.
- * @property nativeLayer whether the card is hosted on a native popup surface
- *   ([NativePopupLayers]), which is what lets it hang below the window like a
- *   browser's. `false` draws it inside the window's own scene, where it is
- *   kept within the window's bounds and clipped by them.
  * @property content the card. Composed with the hovered tab as receiver.
  */
 @Immutable
@@ -134,7 +146,6 @@ internal class TabHoverPreviewScopeImpl(
 public class TabHoverPreview(
     public val delay: Duration = HoverPreviewDelay,
     public val offset: DpOffset = HoverPreviewOffset,
-    public val nativeLayer: Boolean = true,
     public val content: @Composable TabHoverPreviewScope.() -> Unit = { TabHoverPreviewCard() },
 ) {
     /** The stock hover card, for a strip that wants a browser's behaviour and nothing else. */
@@ -182,73 +193,129 @@ public val TabStripScope.hoveredTab: TabEntry?
  * it away, since reaching it means having left the tab.
  */
 @OptIn(ExperimentalComposeUiApi::class)
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "LongMethod")
 @Composable
 @ExperimentalNucleusApi
 public fun TabStripScope.TabHoverPreviewPopup(preview: TabHoverPreview = TabHoverPreview.Default) {
     val candidate = hoveredTab
-    // The card waits out `delay` on the first tab and then follows the pointer
-    // from tab to tab without a pause, as a browser's does.
+    // The tab the card is for: it waits out `delay` on the first tab and then
+    // follows the pointer from tab to tab without a pause, as a browser's does.
     var shown by remember(group) { mutableStateOf<TabEntry?>(null) }
+    // When the pointer last left the strip with a card up. Back within
+    // [HoverCardRegrace], the pause is skipped: the pointer slipped off the
+    // strip, it did not stop pointing at it (Chromium's
+    // `kShowWithoutDelayTimeBuffer`).
+    val leftAt = remember(group) { longArrayOf(Long.MIN_VALUE) }
     LaunchedEffect(candidate, preview.delay) {
         if (candidate == null) {
+            if (shown != null && group.hoveredId == null) leftAt[0] = System.nanoTime()
             shown = null
             return@LaunchedEffect
         }
-        if (shown == null) delay(preview.delay)
+        val returning =
+            leftAt[0] != Long.MIN_VALUE && System.nanoTime() - leftAt[0] <= HoverCardRegrace.inWholeNanoseconds
+        if (shown == null && !returning) delay(preview.delay)
         shown = candidate
     }
 
-    val tab = shown ?: return
+    // The tab the card on screen is for: [shown], kept through the fade-out.
+    var displayed by remember(group) { mutableStateOf<TabEntry?>(null) }
+    val visibility = remember(group) { Animatable(0f) }
+    // Whether the card has been placed under a tab yet: a card that appears
+    // snaps under its tab, one already up slides to the next (Chromium's
+    // `BubbleSlideAnimator`).
+    var anchored by remember(group) { mutableStateOf(false) }
+    LaunchedEffect(shown) {
+        val target = shown
+        if (target != null) {
+            displayed = target
+            visibility.animateTo(1f, HoverCardFadeIn)
+        } else if (displayed != null) {
+            visibility.animateTo(0f, HoverCardFadeOut)
+            displayed = null
+            anchored = false
+        }
+    }
+    val tab = displayed ?: return
+
     // Read off the settled layout the strip publishes, re-read when the strip
     // order changes: the slots are written from layout and are not snapshot
-    // state, so `ids` is what says the anchor may have moved.
+    // state, so `ids` is what says the anchor may have moved. A tab that has
+    // just closed has no slot any more; its card fades out where it was.
     val order = group.ids
+    val slot = remember(tab, order) { group.slotInWindowPx(tab.id) }
+    val anchor = remember(group) { Animatable(Rect.Zero, Rect.VectorConverter) }
+    LaunchedEffect(slot) {
+        val target = slot ?: return@LaunchedEffect
+        if (anchored) {
+            anchor.animateTo(target, HoverCardSlide)
+        } else {
+            anchor.snapTo(target)
+            anchored = true
+        }
+    }
+    if (!anchored) return
+
     val density = LocalDensity.current
+    val anchorPx = anchor.value
     val position =
-        remember(tab, order, preview.offset, density) {
-            val slot = group.slotInWindowPx(tab.id) ?: return@remember null
+        remember(anchorPx, preview.offset, density) {
             TabHoverPreviewPosition(
-                anchorPx = slot,
+                anchorPx = anchorPx,
                 offsetPx =
                     with(density) {
                         IntOffset(preview.offset.x.roundToPx(), preview.offset.y.roundToPx())
                     },
             )
-        } ?: return
-    val scope = remember(workspace, group, tab) { TabHoverPreviewScopeImpl(workspace, group, tab) }
+        }
 
-    val card =
-        @Composable {
-            Popup(
-                popupPositionProvider = position,
-                properties =
-                    PopupProperties(
-                        // Never takes focus and never eats a pointer event:
-                        // the card appears while the strip is being used, and
-                        // the click that follows belongs to the tab.
-                        focusable = false,
-                        dismissOnBackPress = false,
-                        dismissOnClickOutside = false,
-                        // On a native surface the card may hang below the
-                        // window, which is where a browser's sits; drawn
-                        // in-scene it has to stay inside the window or it is
-                        // cut off at its edge.
-                        clippingEnabled = !preview.nativeLayer,
-                    ),
-            ) {
-                // The card is no target of its own: the moment the pointer
-                // reaches it, the tab it belongs to has been left behind, and
-                // a browser's card goes away. It has to be said here — a popup
-                // surface takes the pointer off the window beneath it, so the
-                // tab never hears the pointer leave and the card would sit
-                // over the content it covers until something else moved.
-                Box(Modifier.onPointerEvent(PointerEventType.Enter) { group.noteHoverExit(tab.id) }) {
-                    preview.content(scope)
-                }
+    // Hosted like every other popup of the window: in its scene, or on native
+    // surfaces when the window runs on them (`nativePopupLayers`).
+    Popup(
+        popupPositionProvider = position,
+        properties =
+            PopupProperties(
+                // Never takes focus and never eats a pointer event:
+                // the card appears while the strip is being used, and
+                // the click that follows belongs to the tab.
+                focusable = false,
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+            ),
+    ) {
+        // The card is no target of its own: the moment the pointer
+        // reaches it, the tab it belongs to has been left behind, and
+        // a browser's card goes away. It has to be said here — a popup
+        // takes the pointer off the window beneath it, so the tab never
+        // hears the pointer leave and the card would sit over the
+        // content it covers until something else moved.
+        Box(
+            Modifier
+                .graphicsLayer { alpha = visibility.value }
+                .onPointerEvent(PointerEventType.Enter) { group.noteHoverExit(tab.id) },
+        ) {
+            // The incoming card is there at once, under the outgoing one
+            // fading out on top — Chromium's `FadeLabel`. Fading both
+            // would show the content through a half-transparent card
+            // midway, since the card draws its own background.
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = {
+                    ContentTransform(
+                        targetContentEnter = EnterTransition.None,
+                        initialContentExit = fadeOut(HoverCardCrossfade),
+                        targetContentZIndex = -1f,
+                        sizeTransform = SizeTransform(clip = false) { _, _ -> HoverCardResize },
+                    )
+                },
+                contentKey = { it.id },
+            ) { cardTab ->
+                val scope =
+                    remember(workspace, group, cardTab) { TabHoverPreviewScopeImpl(workspace, group, cardTab) }
+                preview.content(scope)
             }
         }
-    if (preview.nativeLayer) NativePopupLayers { card() } else card()
+    }
 }
 
 /**
@@ -470,6 +537,20 @@ private val thumbnailLogger: Logger = Logger.getLogger("dev.nucleusframework.win
 private val ThumbnailSettleMillis: Duration = THUMBNAIL_SETTLE_MILLIS.milliseconds
 
 private val HoverPreviewDelay: Duration = HOVER_PREVIEW_DELAY_MILLIS.milliseconds
+
+// Chromium's hover card timings: `WidgetFadeAnimator` fades in over 200 ms and
+// out over 150 ms, `BubbleSlideAnimator` slides over 200 ms, all FAST_OUT_SLOW_IN.
+private val HoverCardFadeIn: AnimationSpec<Float> =
+    tween(HOVER_CARD_FADE_IN_MILLIS, easing = FastOutSlowInEasing)
+private val HoverCardFadeOut: AnimationSpec<Float> =
+    tween(HOVER_CARD_FADE_OUT_MILLIS, easing = FastOutSlowInEasing)
+private val HoverCardSlide: AnimationSpec<Rect> =
+    tween(HOVER_CARD_SLIDE_MILLIS, easing = FastOutSlowInEasing)
+private val HoverCardCrossfade: FiniteAnimationSpec<Float> =
+    tween(HOVER_CARD_SLIDE_MILLIS, easing = FastOutSlowInEasing)
+private val HoverCardResize: FiniteAnimationSpec<IntSize> =
+    tween(HOVER_CARD_SLIDE_MILLIS, easing = FastOutSlowInEasing)
+private val HoverCardRegrace: Duration = HOVER_CARD_REGRACE_MILLIS.milliseconds
 private val HoverPreviewOffset: DpOffset = DpOffset(0.dp, 4.dp)
 private val HoverCardMinWidth: Dp = 160.dp
 private val HoverCardMaxWidth: Dp = 280.dp
@@ -479,6 +560,10 @@ private val HoverCardCornerRadius: Dp = 8.dp
 private val HoverCardPictureRadius: Dp = 4.dp
 private val HoverCardBorderWidth: Dp = 1.dp
 private const val HOVER_PREVIEW_DELAY_MILLIS = 650
+private const val HOVER_CARD_FADE_IN_MILLIS = 200
+private const val HOVER_CARD_FADE_OUT_MILLIS = 150
+private const val HOVER_CARD_SLIDE_MILLIS = 200
+private const val HOVER_CARD_REGRACE_MILLIS = 300
 private const val HOVER_CARD_TITLE_SP = 12
 private const val HOVER_CARD_TITLE_LINES = 2
 private const val THUMBNAIL_SETTLE_MILLIS = 400

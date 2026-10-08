@@ -851,11 +851,10 @@ public final class dev/nucleusframework/window/tao/TabHoverPreview {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/TabHoverPreview$Companion;
 	public fun <init> ()V
-	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JJLkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JJLkotlin/jvm/functions/Function3;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getContent ()Lkotlin/jvm/functions/Function3;
 	public final fun getDelay-UwyO8pc ()J
-	public final fun getNativeLayer ()Z
 	public final fun getOffset-RKDOV3M ()J
 }
 
