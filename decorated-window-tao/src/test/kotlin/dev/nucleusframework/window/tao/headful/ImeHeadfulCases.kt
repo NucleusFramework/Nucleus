@@ -415,18 +415,25 @@ internal object ImeHeadfulCases {
         focused: AtomicBoolean,
     ) {
         val marked = "hello"
-        awaitUntil("window mapped") { bounds() != null }
-        awaitUntil("text field focused") { focused.get() }
-        settle(FOCUS_SETTLE_MILLIS)
         val handle = window.handle
+        // What a timeout reports: the field, the view's NSTextInputClient
+        // answers and the focus and input source the IME path depends on.
+        val state = {
+            "value=${value.get().debug()} composition=${composition.get()} " +
+                "windowFocused=${window.isFocused} client=${MacOsTextInputClientProbe.query(handle)} " +
+                "inputSource=${MacOsKotoeriProbe.currentInputSource()}"
+        }
+        awaitUntil("window mapped") { bounds() != null }
+        awaitUntil("text field focused", detail = state) { focused.get() }
+        settle(FOCUS_SETTLE_MILLIS)
         injectMarked(handle, marked)
-        awaitUntil("preedit reached Compose") { value.get() == marked }
+        awaitUntil("preedit reached Compose", detail = state) { value.get() == marked }
         assertClientSnapshot(handle, marked)
         check(composition.get() != null) {
             "setMarkedText must leave an active composing region"
         }
         injectMarked(handle, marked + "\uF700")
-        awaitUntil("corporate chars stripped from preedit") {
+        awaitUntil("corporate chars stripped from preedit", detail = state) {
             value.get() == marked && '\uF700' !in value.get()
         }
         check(composition.get() != null) {
@@ -445,7 +452,7 @@ internal object ImeHeadfulCases {
         check(MacOsTextInputClientProbe.insertText(handle, marked)) {
             "insertText(\"$marked\") was not delivered"
         }
-        awaitUntil("composition committed") {
+        awaitUntil("composition committed", detail = state) {
             composition.get() == null && value.get() == marked
         }
         val afterCommit = MacOsTextInputClientProbe.query(handle)
@@ -457,11 +464,11 @@ internal object ImeHeadfulCases {
                 "(${afterCommit.markedLocation}, ${afterCommit.markedLength})"
         }
         injectMarked(handle, "xyz")
-        awaitUntil("second preedit") {
+        awaitUntil("second preedit", detail = state) {
             value.get().endsWith("xyz") && composition.get() != null
         }
         injectMarked(handle, "")
-        awaitUntil("empty setMarkedText unmarks") {
+        awaitUntil("empty setMarkedText unmarks", detail = state) {
             composition.get() == null && value.get() == marked
         }
     }
