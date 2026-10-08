@@ -1234,6 +1234,18 @@ public object TaoSceneTestBattery {
         run("TabWorkspaceTest: a strip with no slots published yet resolves to index zero") {
             TabWorkspaceTest().`a strip with no slots published yet resolves to index zero`()
         }
+        run("TabWorkspaceTest: a constrained reorder or move stops at the boundary") {
+            TabWorkspaceTest().`a constrained reorder or move stops at the boundary`()
+        }
+        run("TabWorkspaceTest: a drop preview never offers a place the tab cannot take") {
+            TabWorkspaceTest().`a drop preview never offers a place the tab cannot take`()
+        }
+        run("TabWorkspaceTest: a tab carried in its own strip is previewed where it may land") {
+            TabWorkspaceTest().`a tab carried in its own strip is previewed where it may land`()
+        }
+        run("TabWorkspaceTest: the neighbours only make room up to the allowed index") {
+            TabWorkspaceTest().`the neighbours only make room up to the allowed index`()
+        }
         run("TabWorkspaceTest: dragging one of several tabs shows a ghost and inserts where it is dropped") {
             TabWorkspaceTest().`dragging one of several tabs shows a ghost and inserts where it is dropped`()
         }
