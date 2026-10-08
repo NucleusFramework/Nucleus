@@ -101,6 +101,16 @@ public interface SatelliteScope {
      */
     public val isCompositorPlaced: Boolean
 
+    /**
+     * `true` when this composition is a floating window's title bar given
+     * over to the compositor's window move: [isCompositorPlaced], and the
+     * satellite declared with `floatingBarMovesWindow`. A press anywhere the
+     * header leaves unclaimed moves the window, and only what the header
+     * marks with [Modifier.satelliteDragHandle] — a grip, a button — drags the
+     * satellite back into a dock. `false` while docked.
+     */
+    public val floatingBarMovesWindow: Boolean get() = false
+
     /** Docks the satellite on [side] of the workspace owner; defaults to the last side it was docked on. */
     public fun dock(side: DockSide = satellite.preferredDockSide) {
         workspace.dock(satellite.id, side)
@@ -128,8 +138,12 @@ internal class SatelliteScopeImpl(
      * surface exists.
      */
     private val host: () -> TaoWindow? = { null },
+    /** The `floatingBarMovesWindow` the satellite is declared with, read on every access as [host] is. */
+    private val barMovesWindow: () -> Boolean = { false },
 ) : SatelliteScope {
     override val isCompositorPlaced: Boolean get() = host()?.canPlaceOnScreen == false
+
+    override val floatingBarMovesWindow: Boolean get() = !isDocked && isCompositorPlaced && barMovesWindow()
 }
 
 /**
@@ -214,7 +228,16 @@ internal class SatelliteScopeImpl(
  *   ([SatelliteScope.isCompositorPlaced]). It is *not* a
  *   [Modifier.satelliteDragHandle]: a press in it moves the window, so what
  *   belongs here is the affordance that says so, not a control. Not composed
- *   at all on the platforms where the whole bar drags the satellite.
+ *   at all on the platforms where the whole bar drags the satellite, nor
+ *   with [floatingBarMovesWindow].
+ * @param floatingBarMovesWindow where the compositor places the window, give
+ *   it the whole floating title bar instead of the caption strip: a press on
+ *   the bar moves the window, as on any other window, and the satellite is
+ *   docked from its header — an action calling [SatelliteScope.dock], or a
+ *   grip carrying [Modifier.satelliteDragHandle], which [DefaultSatelliteHeader]
+ *   makes of its drag grip. For apps whose palettes are mostly moved around
+ *   rather than docked. No effect where the app places its windows, where the
+ *   whole bar drags the satellite either way.
  * @param controlButtonsDirection the side of the floating window's controls
  *   (the traffic lights on macOS), as for [BasicTitleBar]: [ControlButtonsDirection.Auto]
  *   follows the content's layout direction, [ControlButtonsDirection.SystemNative]
@@ -245,6 +268,7 @@ public fun ApplicationScope.Satellite(
         { it() },
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
     floatingCaption: @Composable @UiComposable SatelliteScope.() -> Unit = {},
+    floatingBarMovesWindow: Boolean = false,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
@@ -265,7 +289,8 @@ public fun ApplicationScope.Satellite(
     // The satellite's own window, once it has one: the scope is created before
     // it and survives it, so it is read through a lambda.
     var floatingWindow by remember(entry) { mutableStateOf<TaoWindow?>(null) }
-    val scope = remember(entry) { SatelliteScopeImpl(workspace, entry, isDocked = false) { floatingWindow } }
+    val barMoves = rememberUpdatedState(floatingBarMovesWindow)
+    val scope = remember(entry) { SatelliteScopeImpl(workspace, entry, false, { floatingWindow }, barMoves::value) }
     // Published as snapshot state so the DockLayout hosting the panel picks up
     // a new lambda without this composable knowing where the panel lives.
     SideEffect {
@@ -355,7 +380,7 @@ public fun ApplicationScope.Satellite(
                             layoutPolicy = TitleBarLayoutPolicy.FillCenter,
                             nativeWindowDrag = !workspaceDrag,
                         ) {
-                            if (workspaceDrag) {
+                            if (workspaceDrag || barMoves.value) {
                                 Box(Modifier.fillMaxWidth()) { currentHeader(scope) }
                             } else {
                                 Row(Modifier.fillMaxWidth().fillMaxHeight()) {
@@ -530,7 +555,8 @@ public fun SatelliteScope.DefaultSatelliteHeader() {
     val colors = LocalTitleBarStyle.current.colors
     var hovered by remember { mutableStateOf(false) }
     val window = LocalTaoWindow.current
-    val chip = !isDocked && isCompositorPlaced
+    val barMovesWindow = floatingBarMovesWindow
+    val chip = !isDocked && isCompositorPlaced && !barMovesWindow
     val shape = if (chip) RoundedCornerShape(CHIP_CORNER_DP.dp) else RectangleShape
     val background =
         when {
@@ -563,7 +589,9 @@ public fun SatelliteScope.DefaultSatelliteHeader() {
                 .padding(horizontal = HEADER_PADDING_DP.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        DragGrip(colors.content)
+        // The bar moves the window: the grip alone carries the dock drag.
+        val gripDrag = if (barMovesWindow) Modifier.satelliteDragHandle(this@DefaultSatelliteHeader) else Modifier
+        DragGrip(colors.content, gripDrag)
         BasicText(
             text = satellite.title,
             modifier = Modifier.weight(1f).padding(start = GRIP_GAP_DP.dp),
@@ -582,8 +610,11 @@ public fun SatelliteScope.DefaultSatelliteHeader() {
 
 /** Two columns of dots: the "this strip can be dragged" glyph. */
 @Composable
-private fun DragGrip(color: Color) {
-    Canvas(Modifier.size(width = GRIP_WIDTH_DP.dp, height = GRIP_HEIGHT_DP.dp)) {
+private fun DragGrip(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier.size(width = GRIP_WIDTH_DP.dp, height = GRIP_HEIGHT_DP.dp)) {
         val dot = GRIP_DOT_RADIUS_DP.dp.toPx()
         val stepX = size.width - dot * 2
         val stepY = (size.height - dot * 2) / (GRIP_DOT_ROWS - 1)
