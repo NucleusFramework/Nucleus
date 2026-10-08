@@ -18,6 +18,7 @@ import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
 import dev.nucleusframework.window.tao.scene.LcdTextCaptureTest
 import dev.nucleusframework.window.tao.scene.LcdTextTest
 import dev.nucleusframework.window.tao.scene.PartialRedrawTest
+import dev.nucleusframework.window.tao.scene.TaoOutOfFrameExecutorTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
@@ -89,6 +90,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoTrackpadScaleSessionTest::class.java,
             TaoScenePopupTest::class.java,
             TaoSceneOuterLocalsBridgeTest::class.java,
+            TaoOutOfFrameExecutorTest::class.java,
             TaoSceneAnimationTest::class.java,
             TaoSceneContentSwapTest::class.java,
             TaoSceneExceptionHandlerTest::class.java,

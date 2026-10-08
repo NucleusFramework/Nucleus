@@ -18,6 +18,7 @@ import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
 import dev.nucleusframework.window.tao.scene.LcdTextTest
 import dev.nucleusframework.window.tao.scene.PartialRedrawTest
+import dev.nucleusframework.window.tao.scene.TaoOutOfFrameExecutorTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
@@ -586,6 +587,21 @@ public object TaoSceneTestBattery {
         ) {
             TaoSceneOuterLocalsBridgeTest()
                 .`bridged outer locals do not carry the outer layout direction into content`()
+        }
+        run("TaoOutOfFrameExecutorTest: work scheduled outside a frame runs without one") {
+            TaoOutOfFrameExecutorTest().`work scheduled outside a frame runs without one`()
+        }
+        run("TaoOutOfFrameExecutorTest: work scheduled during a frame runs before the next one") {
+            TaoOutOfFrameExecutorTest().`work scheduled during a frame runs before the next one`()
+        }
+        run("TaoOutOfFrameExecutorTest: lazy items scrolled away are deactivated after the frame") {
+            TaoOutOfFrameExecutorTest().`lazy items scrolled away are deactivated after the frame`()
+        }
+        run("TaoOutOfFrameExecutorTest: work deferred by a frame runs on the loop without another frame") {
+            TaoOutOfFrameExecutorTest().`work deferred by a frame runs on the loop without another frame`()
+        }
+        run("TaoOutOfFrameExecutorTest: a block throwing out of a posted drain leaves the rest to the next frame") {
+            TaoOutOfFrameExecutorTest().`a block throwing out of a posted drain leaves the rest to the next frame`()
         }
         run("TaoSceneAnimationTest: tween advances exactly with virtual frames") {
             TaoSceneAnimationTest().`tween advances exactly with virtual frames`()

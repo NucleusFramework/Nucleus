@@ -231,6 +231,10 @@ val taoHeadfulTest =
         System.getProperty("nucleus.tao.headful.filter")?.let {
             systemProperty("nucleus.tao.headful.filter", it)
         }
+        // Out-of-frame executor switch, for OutOfFrameExecutorHeadfulCases' A/B runs.
+        System.getProperty("nucleus.tao.outOfFrameExecutor")?.let {
+            systemProperty("nucleus.tao.outOfFrameExecutor", it)
+        }
         // Opts into the tear-off flash film (TearOffFlashHeadfulCases).
         System.getProperty("nucleus.tao.headful.tearOffFlash")?.let {
             systemProperty("nucleus.tao.headful.tearOffFlash", it)
