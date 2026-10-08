@@ -125,7 +125,7 @@ Existing `build.sh`/`build.bat` scripts also clear the `NativeLibraryLoader` cac
 
 Publishes every runtime module and the plugin with version `dev`. The version is otherwise resolved from `GITHUB_REF` in every `build.gradle.kts` (`refs/tags/v3.0.0` → `3.0.0`, defaults to `1.0.0`); set it yourself and run `publishAllToMavenLocal` for another version.
 
-- Run Gradle with JDK 17 (`JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`): the Kotlin DSL script compiler crashes on JDK 25, and `java-21-openjdk-amd64` on this machine is a JRE
+- Run Gradle with JDK 25 (`JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64`): the Metro Gradle plugin (`dev.zacsweers.metro` 1.4.5) requires a JVM 21+, so JDK 17 fails at configuration, and `java-21-openjdk-amd64` on this machine is a JRE
 - Use `--no-configuration-cache`: the configuration cache can serve a stale version
 - No signing needed locally (signing is conditional on the `signingInMemoryKey` property)
 
