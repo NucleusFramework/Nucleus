@@ -328,15 +328,16 @@ public class NucleusUpdater(
     }
 
     /**
-     * Downloads `<url>.asc` to [dest] if present. Failures are swallowed: the detached signature is
-     * optional and only used by the Linux passwordless self-update helper.
+     * Downloads the detached signature ([UpdateProvider.getSignatureUrl]) to [dest] if present.
+     * Failures are swallowed: it is optional and only used by the Linux passwordless self-update
+     * helper.
      */
     private fun downloadDetachedSignature(
         url: String,
         dest: File,
     ) {
         try {
-            fetcher.readBytesOrNull("$url.asc")?.let(dest::writeBytes)
+            fetcher.readBytesOrNull(provider.getSignatureUrl(url))?.let(dest::writeBytes)
         } catch (
             @Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception,
         ) {
@@ -499,7 +500,14 @@ public class NucleusUpdater(
     private fun doCheckForUpdates(): UpdateResult {
         val platform = PlatformInfo.currentPlatform()
         val arch = PlatformInfo.currentArch()
-        val metadataUrl = provider.resolveMetadataUrl(config.channel, platform, httpClient)
+        val metadataUrl =
+            provider.resolveMetadataUrl(
+                config.channel,
+                platform,
+                httpClient,
+                config.currentVersion,
+                config.resolvedAllowPrerelease(),
+            )
         val metadata = YamlParser.parse(fetcher.readText(metadataUrl))
         val currentVersion = Version.fromString(config.currentVersion)
         val remoteVersion = Version.fromString(metadata.version)
@@ -552,7 +560,7 @@ public class NucleusUpdater(
                 files =
                     metadata.files.map { file ->
                         UpdateFile(
-                            url = provider.getDownloadUrl(file.url, metadata.version),
+                            url = provider.getDownloadUrl(file.url, metadata.version, metadataUrl),
                             sha512 = file.sha512,
                             size = file.size,
                             blockMapSize = file.blockMapSize,
@@ -561,7 +569,7 @@ public class NucleusUpdater(
                     },
                 currentFile =
                     UpdateFile(
-                        url = provider.getDownloadUrl(selectedFile.url, metadata.version),
+                        url = provider.getDownloadUrl(selectedFile.url, metadata.version, metadataUrl),
                         sha512 = selectedFile.sha512,
                         size = selectedFile.size,
                         blockMapSize = selectedFile.blockMapSize,
