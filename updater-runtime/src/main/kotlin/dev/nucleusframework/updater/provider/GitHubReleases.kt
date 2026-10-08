@@ -1,6 +1,9 @@
 package dev.nucleusframework.updater.provider
 
 import dev.nucleusframework.core.runtime.Platform
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.io.StringReader
 import java.net.URI
 import javax.xml.stream.XMLInputFactory
@@ -23,6 +26,8 @@ internal object GitHubReleases {
     /** electron-updater's `hrefRegExp`. */
     private val TAG_HREF = Regex("""/tag/([^/]+)$""")
 
+    private const val SEMVER_PRERELEASE = 4
+
     /** semver.org's SemVer 2.0 grammar. */
     private val SEMVER =
         Regex(
@@ -30,6 +35,14 @@ internal object GitHubReleases {
                 """(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?""" +
                 """(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$""",
         )
+
+    val json: Json = Json { ignoreUnknownKeys = true }
+
+    /** A release as GitHub answers it, reduced to its tag. */
+    @Serializable
+    class TaggedRelease(
+        @SerialName("tag_name") val tagName: String,
+    )
 
     fun isStable(channel: String): Boolean = channel.equals(LATEST_CHANNEL, ignoreCase = true)
 
@@ -49,24 +62,30 @@ internal object GitHubReleases {
     }
 
     /**
-     * Whether [tag]'s first pre-release identifier is [channel], ignoring case (`v2.3.5-beta.8` →
-     * `beta`; `v1.0.0-beta-leftover` is not). Same rule as electron-updater.
-     */
-    fun isOnChannel(
-        tag: String,
-        channel: String,
-    ): Boolean =
-        tag
-            .substringAfter('-', missingDelimiterValue = "")
-            .substringBefore('.')
-            .equals(channel, ignoreCase = true)
-
-    /**
      * Whether [tag] is a SemVer 2.0 version, optionally prefixed with `v`. Feeds carry other tags
      * too (`nightly`); those are on no channel. `.` and `..` never match, so a tag cannot step out
      * of `releases/download/`.
      */
     fun isReleaseTag(tag: String): Boolean = tag != "." && tag != ".." && SEMVER.matches(tag.removePrefix("v"))
+
+    /**
+     * The first pre-release identifier of [version] (`v2.3.5-beta.8` → `beta`), or `null` for a
+     * release, or for anything that is not a SemVer version. Build metadata is not a pre-release:
+     * `v1.0.0+build-5` has none.
+     */
+    fun prereleaseChannel(version: String): String? =
+        SEMVER
+            .matchEntire(version.removePrefix("v"))
+            ?.groups
+            ?.get(SEMVER_PRERELEASE)
+            ?.value
+            ?.substringBefore('.')
+
+    /**
+     * The name under which a manifest's file is published as a release asset: its last path segment,
+     * spaces replaced by dashes, as electron-builder uploads it.
+     */
+    fun assetName(fileUrl: String): String = fileUrl.substringAfterLast('/').replace(' ', '-')
 
     /**
      * The tag of each `<entry>` of a releases Atom feed, newest first, read from the `href` of the

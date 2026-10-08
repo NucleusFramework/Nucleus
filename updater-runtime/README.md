@@ -53,9 +53,9 @@ when (val result = updater.checkForUpdates()) {
 NucleusUpdater {
     currentVersion = "1.0.0"              // Defaults to System.getProperty("jpackage.app-version") or "0.1.0"
     provider = GitHubProvider(...)         // Required — update source
-    channel = "latest"                     // "latest", "beta", or "alpha"
+    channel = "latest"                     // "latest", "beta", "alpha", or a channel of your own
     allowDowngrade = false                 // Allow installing older versions
-    allowPrerelease = false                // Auto-set to true if currentVersion contains "-"
+    allowPrerelease = false                // Also on when currentVersion is a pre-release or channel is not "latest"
     executableType = null                  // Force format (deb, rpm, dmg...), auto-detected if null
     allowLaunchOverrides = false           // Installed app honours NUCLEUS_UPDATER_FEED_URL / _SIMULATE (see below)
     simulation = null                      // Play an UpdateSimulation instead of contacting the provider
@@ -75,14 +75,18 @@ provider = GitHubProvider(
 )
 ```
 
-Metadata URL: `{protocol}://{host}/{owner}/{repo}/releases/latest/download/latest-{suffix}.yml`
-Download URL: `{protocol}://{host}/{owner}/{repo}/releases/download/v{version}/{fileName}`
+Without pre-releases, the release is the repository's latest one: on github.com its tag comes from
+the `{owner}/{repo}/releases/latest` web route, elsewhere from `{protocol}://{host}/api/v3`. With
+pre-releases, the release is picked from the public `{protocol}://{host}/{owner}/{repo}/releases.atom`
+feed (see [Channels on GitHub](#channels-on-github)). Neither route is a rate-limited REST API call on
+github.com.
 
-A pre-release channel (`channel = "beta"`) resolves its newest tag from the public
-`{protocol}://{host}/{owner}/{repo}/releases.atom` feed, like electron-updater — no REST API call, so no
-rate limit. A tag's channel is its first pre-release identifier (`v2.3.5-beta.8` → `beta`), matched
-exactly (case-insensitive); a tag that is not a SemVer version is on no channel. The feed lists only
-the 10 most recent releases, so a channel with none among them is not found (stable is unaffected).
+Metadata URL: `{protocol}://{host}/{owner}/{repo}/releases/download/{tag}/{channel}-{suffix}.yml`
+Download URL: `{protocol}://{host}/{owner}/{repo}/releases/download/{tag}/{fileName}`
+
+Every file is downloaded from the tag the manifest came from, so tags need no `v` prefix. A file name
+is the manifest entry's last path segment with spaces replaced by dashes, as electron-builder uploads
+it.
 
 The third argument is never a token: `GitHubProvider(owner, repo, token)` does not compile. Pass a
 host by name.
@@ -102,14 +106,43 @@ provider = PrivateGitHubProvider(
 )
 ```
 
-Everything goes through the REST API (`https://api.github.com`, or `{protocol}://{host}/api/v3`): the
-release is looked up there (stable: `releases/latest`; another channel: the newest non-draft release
-on it among the 100 most recent) and every file is downloaded as a release asset.
+Everything goes through the REST API (`https://api.github.com` for `github.com`, otherwise
+`{protocol}://{host}/api/v3`). Without pre-releases the release is `releases/latest`; with them, it is
+picked among the 100 most recent non-draft releases by the same rules as the public provider (see
+[Channels on GitHub](#channels-on-github)). Every file is downloaded as a release asset of that
+release.
 
 The token's quota, 5,000 requests an hour, is shared by every installation of the app. A check costs
-one request; a download costs one per file (manifest, artifact, block map, signature) plus one per
-range request of a differential download. For a large install base, consider
-`differentialDownload = false`.
+one request; a download costs one per file (manifest, artifact, block map, signature). A differential
+download asks the API once for the artifact: its asset redirects to signed storage, and the
+remaining ranges go there directly, without the token.
+
+### Channels on GitHub
+
+Both GitHub providers pick a release the way electron-updater's `GitHubProvider` does, with one
+difference (the highest version, below).
+
+- **The client's channel** is `channel`, or for `channel = "latest"` the first pre-release identifier
+  of `currentVersion` (`1.1.0-beta.3` → `beta`); a release version has none.
+- **A tag's channel** is its first pre-release identifier (`v2.3.5-beta.8` → `beta`). Tags that are not
+  SemVer versions are skipped. Channels are compared exactly: `Beta` is not `beta`.
+- **Which tags a client follows:** `alpha` follows `alpha`, `beta` and releases; `beta` follows `beta`
+  and releases; any other channel only its own tags; a client with no channel (a release version
+  with `allowPrerelease = true`) follows every tag.
+- **Which one it takes: the highest version it follows.** electron-updater takes the first one in the
+  feed, which GitHub orders by release date, so a stable hotfix published after a beta hides that
+  beta from beta users ([electron-builder#10287](https://github.com/electron-userland/electron-builder/issues/10287)).
+- **Its manifest** is the tag's own channel's (`beta.yml` for `v1.1.0-beta.4`), or `channel`'s for a
+  release. When the release does not publish it, the client reads its `latest*.yml`: that is how a
+  beta user moves on to the release that follows.
+
+`releases.atom` lists only the 10 most recent releases, so the public provider never sees an older
+one: a channel with none among them is not found. `PrivateGitHubProvider` looks at the 100 most
+recent.
+
+`channel = "beta"` alone enables pre-releases: `allowPrerelease` is on whenever `channel` is not
+`latest`. electron-updater does not do this; there, a release version on `channel = "beta"` reads
+`beta.yml` from the latest release and fails.
 
 ### Generic HTTP server
 

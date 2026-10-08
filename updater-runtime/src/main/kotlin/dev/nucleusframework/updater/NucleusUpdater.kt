@@ -500,7 +500,14 @@ public class NucleusUpdater(
     private fun doCheckForUpdates(): UpdateResult {
         val platform = PlatformInfo.currentPlatform()
         val arch = PlatformInfo.currentArch()
-        val metadataUrl = provider.resolveMetadataUrl(config.channel, platform, httpClient)
+        val metadataUrl =
+            provider.resolveMetadataUrl(
+                config.channel,
+                platform,
+                httpClient,
+                config.currentVersion,
+                config.resolvedAllowPrerelease(),
+            )
         val metadata = YamlParser.parse(fetcher.readText(metadataUrl))
         val currentVersion = Version.fromString(config.currentVersion)
         val remoteVersion = Version.fromString(metadata.version)
@@ -553,7 +560,7 @@ public class NucleusUpdater(
                 files =
                     metadata.files.map { file ->
                         UpdateFile(
-                            url = provider.getDownloadUrl(file.url, metadata.version),
+                            url = provider.getDownloadUrl(file.url, metadata.version, metadataUrl),
                             sha512 = file.sha512,
                             size = file.size,
                             blockMapSize = file.blockMapSize,
@@ -562,7 +569,7 @@ public class NucleusUpdater(
                     },
                 currentFile =
                     UpdateFile(
-                        url = provider.getDownloadUrl(selectedFile.url, metadata.version),
+                        url = provider.getDownloadUrl(selectedFile.url, metadata.version, metadataUrl),
                         sha512 = selectedFile.sha512,
                         size = selectedFile.size,
                         blockMapSize = selectedFile.blockMapSize,

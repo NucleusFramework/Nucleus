@@ -2,13 +2,15 @@ package dev.nucleusframework.updater.provider
 
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.updater.exception.NetworkException
-import dev.nucleusframework.updater.provider.GitHubReleases.isOnChannel
-import dev.nucleusframework.updater.provider.GitHubReleases.isReleaseTag
+import dev.nucleusframework.updater.provider.GitHubReleaseChannels.clientChannel
+import dev.nucleusframework.updater.provider.GitHubReleaseChannels.latestFileName
+import dev.nucleusframework.updater.provider.GitHubReleaseChannels.manifestFileName
+import dev.nucleusframework.updater.provider.GitHubReleaseChannels.selectTag
+import dev.nucleusframework.updater.provider.GitHubReleases.assetName
 import dev.nucleusframework.updater.provider.GitHubReleases.isStable
-import dev.nucleusframework.updater.provider.GitHubReleases.metadataFileName
+import dev.nucleusframework.updater.provider.GitHubReleases.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -19,16 +21,17 @@ import java.util.concurrent.ConcurrentHashMap
  * Updates from a GitHub repository that needs a token to read: private or internal repositories,
  * and Enterprise Servers in private mode. electron-updater's `PrivateGitHubProvider`.
  *
- * GitHub's web routes take no token, so everything goes through the REST API. Stable reads
- * `releases/latest`; other channels take the newest non-draft release on that channel among the
- * 100 most recent. Files are downloaded as release assets, which redirect to a signed storage URL;
- * the JDK `HttpClient` drops `Authorization` on redirect, so the token stays with GitHub.
+ * GitHub's web routes take no token, so everything goes through the REST API. Without pre-releases
+ * the release is `releases/latest`; with them, it is picked among the 100 most recent non-draft
+ * releases by the same rules as [GitHubProvider] ([GitHubReleaseChannels.selectTag]), its manifest
+ * being its own channel's, else `latest*.yml`. Files are downloaded as release assets, which
+ * redirect to a signed storage URL; the JDK `HttpClient` drops `Authorization` on redirect, so the
+ * token stays with GitHub.
  *
  * The token ships inside the app: give it read access to the repository's contents and nothing
  * more. Its REST quota (5,000 requests an hour) is shared by every installation. A check costs one
- * request; a download costs one per file (manifest, artifact, block map, signature) and one per
- * range request of a differential download, since each request to an asset goes through the API.
- * For a large install base, consider `differentialDownload = false`.
+ * request; a download costs one per file (manifest, artifact, block map, signature). A differential
+ * download asks the API once for the artifact: its ranges then go straight to storage.
  *
  * @property host e.g. `github.example.com` for GitHub Enterprise Server (API at `/api/v3`); may
  *   include a port.
@@ -47,14 +50,14 @@ public class PrivateGitHubProvider(
 
     internal val apiBaseUrl: String =
         GitHubReleases.baseUrl(protocol, host, "PrivateGitHubProvider").let { baseUrl ->
-            if (host == GitHubReleases.DEFAULT_HOST) "${GitHubReleases.HTTPS}://api.github.com" else "$baseUrl/api/v3"
+            if (isGitHubDotCom(host)) "${GitHubReleases.HTTPS}://api.github.com" else "$baseUrl/api/v3"
         }
 
-    /** The release [resolveMetadataUrl] picked last. */
-    @Volatile
-    private var resolved: Release? = null
-
-    /** Resolved releases by asset URL, to find an artifact's block map and signature. */
+    /**
+     * Resolved releases by asset URL: a manifest's leads to the release its files are downloaded
+     * from, an artifact's to its block map and signature. Keyed by URL, so concurrent checks on
+     * different channels never see each other's release.
+     */
     private val releasesByAssetUrl = ConcurrentHashMap<String, Release>()
 
     /** Unsupported: the manifest URL comes from the API, through [resolveMetadataUrl]. */
@@ -66,33 +69,44 @@ public class PrivateGitHubProvider(
             "PrivateGitHubProvider locates its manifest through the GitHub API: call resolveMetadataUrl",
         )
 
+    /** As for a client that accepts pre-releases only on a pre-release channel. */
     override fun resolveMetadataUrl(
         channel: String,
         platform: Platform,
         httpClient: HttpClient,
-    ): String {
-        val fileName = metadataFileName(channel, platform)
-        val release = findRelease(channel, httpClient)
-        val url =
-            release.assets[fileName]
-                ?: throw NoSuchElementException(
-                    "Release ${release.tag} of $owner/$repo has no $fileName asset. " +
-                        "Publish the update manifest with the release.",
-                )
-        release.assets.values.forEach { releasesByAssetUrl[it] = release }
-        resolved = release
-        return url
-    }
+    ): String = resolve(channel, platform, httpClient, currentVersion = null, allowPrerelease = !isStable(channel))
 
-    /** The API URL of asset [fileName] in the release [resolveMetadataUrl] picked. */
+    override fun resolveMetadataUrl(
+        channel: String,
+        platform: Platform,
+        httpClient: HttpClient,
+        currentVersion: String,
+        allowPrerelease: Boolean,
+    ): String = resolve(channel, platform, httpClient, currentVersion, allowPrerelease)
+
+    /** Unsupported: an asset is found in the release of its manifest, through the three-argument overload. */
     override fun getDownloadUrl(
         fileName: String,
         version: String,
+    ): String =
+        throw UnsupportedOperationException(
+            "PrivateGitHubProvider finds assets in the release of their manifest: pass its metadataUrl",
+        )
+
+    /** The API URL of asset [fileName] in the release [metadataUrl] belongs to. */
+    override fun getDownloadUrl(
+        fileName: String,
+        version: String,
+        metadataUrl: String,
     ): String {
-        val release = checkNotNull(resolved) { "resolveMetadataUrl must run before getDownloadUrl" }
-        return release.assets[fileName]
+        val release =
+            checkNotNull(releasesByAssetUrl[metadataUrl]) {
+                "$metadataUrl is no manifest resolveMetadataUrl returned"
+            }
+        val name = assetName(fileName)
+        return release.assets[name]
             ?: throw NoSuchElementException(
-                "Release ${release.tag} of $owner/$repo has no $fileName asset, though its update manifest lists it.",
+                "Release ${release.tag} of $owner/$repo has no $name asset, though its update manifest lists it.",
             )
     }
 
@@ -122,22 +136,47 @@ public class PrivateGitHubProvider(
         return name?.let { release.assets["$it$suffix"] } ?: "$fileUrl$suffix"
     }
 
-    private fun findRelease(
+    private fun resolve(
         channel: String,
+        platform: Platform,
+        httpClient: HttpClient,
+        currentVersion: String?,
+        allowPrerelease: Boolean,
+    ): String {
+        val release = findRelease(clientChannel(channel, currentVersion), allowPrerelease, httpClient)
+        val fileName = manifestFileName(release.tag, channel, platform)
+        // A release publishes no pre-release manifest: a pre-release client reads its latest*.yml.
+        val url =
+            release.assets[fileName]
+                ?: release.assets[latestFileName(platform)].takeIf { allowPrerelease }
+                ?: throw NoSuchElementException(
+                    "Release ${release.tag} of $owner/$repo has no $fileName asset. " +
+                        "Publish the update manifest with the release.",
+                )
+        release.assets.values.forEach { releasesByAssetUrl[it] = release }
+        return url
+    }
+
+    private fun findRelease(
+        clientChannel: String?,
+        allowPrerelease: Boolean,
         httpClient: HttpClient,
     ): Release {
         val releasesUrl = "$apiBaseUrl/repos/$owner/$repo/releases"
-        if (isStable(channel)) {
+        if (!allowPrerelease) {
             return json.decodeFromString<ApiRelease>(getJson("$releasesUrl/latest", httpClient)).toRelease()
         }
-        val releases = json.decodeFromString<List<ApiRelease>>(getJson("$releasesUrl?per_page=$PER_PAGE", httpClient))
-        val match =
-            releases.firstOrNull { !it.draft && isReleaseTag(it.tagName) && isOnChannel(it.tagName, channel) }
+        val releases =
+            json
+                .decodeFromString<List<ApiRelease>>(getJson("$releasesUrl?per_page=$PER_PAGE", httpClient))
+                .filterNot { it.draft }
+        val tag =
+            selectTag(releases.map { it.tagName }, clientChannel)
                 ?: throw NoSuchElementException(
-                    "No release found for channel '$channel' within the most recent $PER_PAGE releases of " +
+                    "No release found for channel '$clientChannel' within the most recent $PER_PAGE releases of " +
                         "$owner/$repo. Publish a release on this channel.",
                 )
-        return match.toRelease()
+        return releases.first { it.tagName == tag }.toRelease()
     }
 
     private fun getJson(
@@ -199,4 +238,7 @@ private const val HTTP_FORBIDDEN = 403
 private const val HTTP_NOT_FOUND = 404
 private const val BLOCK_MAP_SUFFIX = ".blockmap"
 private const val SIGNATURE_SUFFIX = ".asc"
-private val json = Json { ignoreUnknownKeys = true }
+
+/** github.com's API is a host of its own, not `/api/v3`. */
+private fun isGitHubDotCom(host: String): Boolean =
+    host.equals(GitHubReleases.DEFAULT_HOST, ignoreCase = true) || host.equals("api.github.com", ignoreCase = true)

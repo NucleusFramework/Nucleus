@@ -115,6 +115,14 @@ class CheckForUpdatesLogicTest {
     }
 
     @Test
+    fun `a pre-release channel implies allowPrerelease`() {
+        publish(version = "1.1.0-beta.1", fileName = "App-1.1.0-beta.1.zip", channel = "beta")
+        val result = check("1.0.0") { channel = "beta" }
+        assertTrue("$result", result is UpdateResult.Available)
+        assertEquals("1.1.0-beta.1", (result as UpdateResult.Available).info.version)
+    }
+
+    @Test
     fun `no matching file becomes an error`() {
         publish(version = "2.0.0", fileName = "App-2.0.0.deb")
         val result = check("1.0.0")
@@ -173,6 +181,7 @@ class CheckForUpdatesLogicTest {
     private fun publish(
         version: String,
         fileName: String,
+        channel: String = "latest",
     ) {
         val yaml =
             """
@@ -183,7 +192,7 @@ class CheckForUpdatesLogicTest {
                 size: 10
             releaseDate: '2026-01-01T00:00:00.000Z'
             """.trimIndent()
-        server.put("/latest.yml", yaml.toByteArray())
+        server.put("/$channel.yml", yaml.toByteArray())
     }
 
     private class LoopbackProvider(

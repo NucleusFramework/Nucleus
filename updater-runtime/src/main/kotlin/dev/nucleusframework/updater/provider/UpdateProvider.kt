@@ -14,6 +14,19 @@ public interface UpdateProvider {
         version: String,
     ): String
 
+    /**
+     * Returns the URL of [fileName], a file of the [version] manifest read from [metadataUrl] (the
+     * URL [resolveMetadataUrl] returned). [dev.nucleusframework.updater.NucleusUpdater] calls this
+     * one; override it when the download location depends on where the manifest came from, as with
+     * the release a GitHub tag names. The default implementation delegates to the two-argument
+     * [getDownloadUrl].
+     */
+    public fun getDownloadUrl(
+        fileName: String,
+        version: String,
+        metadataUrl: String,
+    ): String = getDownloadUrl(fileName, version)
+
     public fun authHeaders(): Map<String, String> = emptyMap()
 
     /**
@@ -62,4 +75,19 @@ public interface UpdateProvider {
         platform: Platform,
         httpClient: HttpClient,
     ): String = getUpdateMetadataUrl(channel, platform)
+
+    /**
+     * [resolveMetadataUrl], knowing the running [currentVersion] and whether the client accepts
+     * pre-releases ([allowPrerelease], as [dev.nucleusframework.updater.UpdaterConfig.allowPrerelease]
+     * resolves it). [dev.nucleusframework.updater.NucleusUpdater] calls this one; override it when
+     * picking the release depends on them, as the GitHub providers do. The default implementation
+     * delegates to the three-argument [resolveMetadataUrl].
+     */
+    public fun resolveMetadataUrl(
+        channel: String,
+        platform: Platform,
+        httpClient: HttpClient,
+        currentVersion: String,
+        allowPrerelease: Boolean,
+    ): String = resolveMetadataUrl(channel, platform, httpClient)
 }

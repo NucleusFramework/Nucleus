@@ -50,6 +50,18 @@ class PrivateGitHubProviderTest {
     private fun newProvider(token: String = TOKEN): PrivateGitHubProvider =
         PrivateGitHubProvider("acme", "tool", token, host = api.host, protocol = "http")
 
+    /**
+     * Resolves as [NucleusUpdater] does: pre-releases allowed on a pre-release [current] version or
+     * another channel than `latest`, unless [allowPrerelease] says.
+     */
+    private fun resolve(
+        channel: String,
+        current: String = "1.0.0",
+        platform: Platform = Platform.Linux,
+        allowPrerelease: Boolean = current.contains('-') || !channel.equals("latest", ignoreCase = true),
+        provider: PrivateGitHubProvider = newProvider(),
+    ): String = provider.resolveMetadataUrl(channel, platform, httpClient, current, allowPrerelease)
+
     @Test
     fun `stable channel reads releases latest and returns the manifest asset`() {
         api.releases =
@@ -68,20 +80,53 @@ class PrivateGitHubProviderTest {
     }
 
     @Test
-    fun `pre-release channel takes the newest non-draft release on that channel`() {
+    fun `beta channel takes the highest non-draft release it follows`() {
         api.releases =
             listOf(
                 FakeRelease("v3.0.0-beta.3", draft = true, assets = mapOf("beta.yml" to "draft")),
                 FakeRelease("v3.0.0-beta-leftover", prerelease = true, assets = mapOf("beta.yml" to "other channel")),
                 FakeRelease("v3.0.0-alpha.1", prerelease = true, assets = mapOf("beta.yml" to "alpha")),
-                FakeRelease("v3.0.0-Beta.2", prerelease = true, assets = mapOf("beta.yml" to "this one")),
-                FakeRelease("v3.0.0-beta.1", prerelease = true, assets = mapOf("beta.yml" to "older")),
+                FakeRelease("v3.0.0-Beta.2", prerelease = true, assets = mapOf("beta.yml" to "channel Beta")),
+                FakeRelease("v2.9.1", assets = mapOf("latest.yml" to "release")),
+                FakeRelease("v3.0.0-beta.1", prerelease = true, assets = mapOf("beta.yml" to "this one")),
             )
 
-        val url = newProvider().resolveMetadataUrl("beta", Platform.Windows, httpClient)
+        val url = resolve("beta", platform = Platform.Windows)
 
-        assertEquals(api.assetUrl("v3.0.0-Beta.2", "beta.yml"), url)
+        assertEquals(api.assetUrl("v3.0.0-beta.1", "beta.yml"), url)
         assertEquals("/api/v3/repos/acme/tool/releases?per_page=100", api.requests.single().pathAndQuery)
+    }
+
+    @Test
+    fun `a stable hotfix published after a beta does not hide that beta`() {
+        api.releases =
+            listOf(
+                FakeRelease("v1.0.4", assets = mapOf("latest-linux.yml" to "hotfix")),
+                FakeRelease("v1.1.0-beta.4", prerelease = true, assets = mapOf("beta-linux.yml" to "next beta")),
+                FakeRelease("v1.1.0-beta.3", prerelease = true, assets = mapOf("beta-linux.yml" to "installed")),
+            )
+
+        assertEquals(api.assetUrl("v1.1.0-beta.4", "beta-linux.yml"), resolve("beta", current = "1.1.0-beta.3"))
+        assertEquals(api.assetUrl("v1.1.0-beta.4", "beta-linux.yml"), resolve("latest", current = "1.1.0-beta.3"))
+    }
+
+    @Test
+    fun `a beta client moves on to a release through its latest manifest`() {
+        api.releases =
+            listOf(
+                FakeRelease("v1.1.0", assets = mapOf("latest-linux.yml" to "release")),
+                FakeRelease("v1.1.0-beta.2", prerelease = true, assets = mapOf("beta-linux.yml" to "beta")),
+            )
+
+        assertEquals(api.assetUrl("v1.1.0", "latest-linux.yml"), resolve("beta", current = "1.1.0-beta.2"))
+    }
+
+    @Test
+    fun `a release that publishes the beta manifest keeps it`() {
+        api.releases =
+            listOf(FakeRelease("v1.1.0", assets = mapOf("latest-linux.yml" to "latest", "beta-linux.yml" to "beta")))
+
+        assertEquals(api.assetUrl("v1.1.0", "beta-linux.yml"), resolve("beta"))
     }
 
     @Test
@@ -93,7 +138,7 @@ class PrivateGitHubProviderTest {
                 FakeRelease("v3.0.0-beta.2", prerelease = true, assets = mapOf("beta.yml" to "this one")),
             )
 
-        val url = newProvider().resolveMetadataUrl("beta", Platform.Windows, httpClient)
+        val url = resolve("beta", platform = Platform.Windows)
 
         assertEquals(api.assetUrl("v3.0.0-beta.2", "beta.yml"), url)
     }
@@ -108,18 +153,61 @@ class PrivateGitHubProviderTest {
                 ),
             )
         val provider = newProvider()
-        provider.resolveMetadataUrl("latest", Platform.MacOS, httpClient)
+        val manifest = resolve("latest", platform = Platform.MacOS, provider = provider)
 
-        assertEquals(api.assetUrl("v1.5.0", "App-1.5.0.dmg"), provider.getDownloadUrl("App-1.5.0.dmg", "1.5.0"))
-        assertEquals(api.assetUrl("v1.5.0", "App-1.5.0.zip"), provider.getDownloadUrl("App-1.5.0.zip", "1.5.0"))
+        assertEquals(
+            api.assetUrl("v1.5.0", "App-1.5.0.dmg"),
+            provider.getDownloadUrl("App-1.5.0.dmg", "1.5.0", manifest),
+        )
+        // The asset name is the file's last path segment, spaces as dashes, as electron-builder uploads it.
+        assertEquals(
+            api.assetUrl("v1.5.0", "App-1.5.0.zip"),
+            provider.getDownloadUrl("App 1.5.0.zip", "1.5.0", manifest),
+        )
+        assertEquals(
+            api.assetUrl("v1.5.0", "App-1.5.0.zip"),
+            provider.getDownloadUrl("https://cdn.example.com/x/App-1.5.0.zip", "1.5.0", manifest),
+        )
         val missing =
-            assertThrows(NoSuchElementException::class.java) { provider.getDownloadUrl("App-1.5.0.exe", "1.5.0") }
+            assertThrows(
+                NoSuchElementException::class.java,
+            ) { provider.getDownloadUrl("App-1.5.0.exe", "1.5.0", manifest) }
         assertTrue(missing.message!!.contains("has no App-1.5.0.exe asset"))
     }
 
     @Test
-    fun `download urls need a resolved release`() {
-        assertThrows(IllegalStateException::class.java) { newProvider().getDownloadUrl("App-1.5.0.dmg", "1.5.0") }
+    fun `download urls need the manifest they come from`() {
+        val provider = newProvider()
+        assertThrows(UnsupportedOperationException::class.java) { provider.getDownloadUrl("App-1.5.0.dmg", "1.5.0") }
+        assertThrows(IllegalStateException::class.java) {
+            provider.getDownloadUrl("App-1.5.0.dmg", "1.5.0", "http://unknown/latest-mac.yml")
+        }
+    }
+
+    @Test
+    fun `two channels resolved on one provider keep their own releases`() {
+        api.releases =
+            listOf(
+                FakeRelease(
+                    "v2.0.0-beta.1",
+                    prerelease = true,
+                    assets =
+                        mapOf(
+                            "beta-linux.yml" to "b",
+                            "App-2.0.0-beta.1.zip" to "z",
+                        ),
+                ),
+                FakeRelease("v1.5.0", assets = mapOf("latest-linux.yml" to "l", "App-1.5.0.zip" to "z")),
+            )
+        val provider = newProvider()
+        val beta = resolve("beta", provider = provider)
+        val stable = resolve("latest", provider = provider)
+
+        assertEquals(
+            api.assetUrl("v2.0.0-beta.1", "App-2.0.0-beta.1.zip"),
+            provider.getDownloadUrl("App-2.0.0-beta.1.zip", "2.0.0-beta.1", beta),
+        )
+        assertEquals(api.assetUrl("v1.5.0", "App-1.5.0.zip"), provider.getDownloadUrl("App-1.5.0.zip", "1.5.0", stable))
     }
 
     @Test
@@ -139,9 +227,9 @@ class PrivateGitHubProviderTest {
                 ),
             )
         val provider = newProvider()
-        provider.resolveMetadataUrl("latest", Platform.Linux, httpClient)
-        val deb = provider.getDownloadUrl("App-1.5.0.deb", "1.5.0")
-        val appImage = provider.getDownloadUrl("App-1.5.0.AppImage", "1.5.0")
+        val manifest = resolve("latest", provider = provider)
+        val deb = provider.getDownloadUrl("App-1.5.0.deb", "1.5.0", manifest)
+        val appImage = provider.getDownloadUrl("App-1.5.0.AppImage", "1.5.0", manifest)
 
         assertEquals(api.assetUrl("v1.5.0", "App-1.5.0.deb.blockmap"), provider.getBlockMapUrl(deb))
         assertEquals(api.assetUrl("v1.5.0", "App-1.5.0.deb.asc"), provider.getSignatureUrl(deb))
@@ -163,13 +251,11 @@ class PrivateGitHubProviderTest {
 
     @Test
     fun `no release on the channel is reported`() {
+        // A custom channel follows only its own tags, never a release.
         api.releases = listOf(FakeRelease("v1.0.0-alpha.1", prerelease = true), FakeRelease("v1.0.0"))
 
-        val e =
-            assertThrows(NoSuchElementException::class.java) {
-                newProvider().resolveMetadataUrl("beta", Platform.Linux, httpClient)
-            }
-        assertTrue(e.message!!, e.message!!.contains("No release found for channel 'beta'"))
+        val e = assertThrows(NoSuchElementException::class.java) { resolve("rc") }
+        assertTrue(e.message!!, e.message!!.contains("No release found for channel 'rc'"))
     }
 
     @Test
@@ -278,7 +364,8 @@ class PrivateGitHubProviderTest {
             assertEquals("signature", File(file.parentFile, "${file.name}.asc").readText())
 
             val assetRequests = api.requests.filter { it.path.contains("/releases/assets/") }
-            assertTrue("assets must be fetched through the API", assetRequests.size >= 4)
+            // Manifest, block map, signature, and the artifact once: its later ranges go straight to storage.
+            assertEquals("asset requests: $assetRequests", 4, assetRequests.size)
             assertTrue(assetRequests.all { it.authorization == "Bearer $TOKEN" })
             assertTrue(assetRequests.all { it.accept == "application/octet-stream" })
             assertTrue("ranged requests must reach storage", storage.requests.any { it.contains("bytes=") })
@@ -304,6 +391,8 @@ class PrivateGitHubProviderTest {
         val accept: String?,
     ) {
         val path: String get() = pathAndQuery.substringBefore('?')
+
+        override fun toString(): String = pathAndQuery
     }
 
     /** The REST API endpoints the provider reads. Assets redirect to [storage] on another host name, like GitHub's. */

@@ -255,9 +255,11 @@ public final class dev/nucleusframework/updater/provider/GenericProvider : dev/n
 	public final fun getBaseUrl ()Ljava/lang/String;
 	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
 	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public fun getSignatureUrl (Ljava/lang/String;)Ljava/lang/String;
 	public fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
 	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;Ljava/lang/String;Z)Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/updater/provider/GitHubProvider : dev/nucleusframework/updater/provider/UpdateProvider {
@@ -267,6 +269,7 @@ public final class dev/nucleusframework/updater/provider/GitHubProvider : dev/nu
 	public fun authHeaders ()Ljava/util/Map;
 	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
 	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public final fun getHost ()Ljava/lang/String;
 	public final fun getOwner ()Ljava/lang/String;
 	public final fun getProtocol ()Ljava/lang/String;
@@ -274,6 +277,7 @@ public final class dev/nucleusframework/updater/provider/GitHubProvider : dev/nu
 	public fun getSignatureUrl (Ljava/lang/String;)Ljava/lang/String;
 	public fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
 	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;Ljava/lang/String;Z)Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/updater/provider/LocalFileProvider : dev/nucleusframework/updater/provider/UpdateProvider {
@@ -282,9 +286,11 @@ public final class dev/nucleusframework/updater/provider/LocalFileProvider : dev
 	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
 	public final fun getDirectory ()Ljava/io/File;
 	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public fun getSignatureUrl (Ljava/lang/String;)Ljava/lang/String;
 	public fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
 	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;Ljava/lang/String;Z)Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/updater/provider/PrivateGitHubProvider : dev/nucleusframework/updater/provider/UpdateProvider {
@@ -293,6 +299,7 @@ public final class dev/nucleusframework/updater/provider/PrivateGitHubProvider :
 	public fun authHeaders ()Ljava/util/Map;
 	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
 	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public final fun getHost ()Ljava/lang/String;
 	public final fun getOwner ()Ljava/lang/String;
 	public final fun getProtocol ()Ljava/lang/String;
@@ -300,21 +307,26 @@ public final class dev/nucleusframework/updater/provider/PrivateGitHubProvider :
 	public fun getSignatureUrl (Ljava/lang/String;)Ljava/lang/String;
 	public fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
 	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;Ljava/lang/String;Z)Ljava/lang/String;
 }
 
 public abstract interface class dev/nucleusframework/updater/provider/UpdateProvider {
 	public fun authHeaders ()Ljava/util/Map;
 	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
 	public abstract fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public fun getSignatureUrl (Ljava/lang/String;)Ljava/lang/String;
 	public abstract fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
 	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;Ljava/lang/String;Z)Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/updater/provider/UpdateProvider$DefaultImpls {
 	public static fun authHeaders (Ldev/nucleusframework/updater/provider/UpdateProvider;)Ljava/util/Map;
 	public static fun getBlockMapUrl (Ldev/nucleusframework/updater/provider/UpdateProvider;Ljava/lang/String;)Ljava/lang/String;
+	public static fun getDownloadUrl (Ldev/nucleusframework/updater/provider/UpdateProvider;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
 	public static fun getSignatureUrl (Ldev/nucleusframework/updater/provider/UpdateProvider;Ljava/lang/String;)Ljava/lang/String;
 	public static fun resolveMetadataUrl (Ldev/nucleusframework/updater/provider/UpdateProvider;Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+	public static fun resolveMetadataUrl (Ldev/nucleusframework/updater/provider/UpdateProvider;Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;Ljava/lang/String;Z)Ljava/lang/String;
 }
 
