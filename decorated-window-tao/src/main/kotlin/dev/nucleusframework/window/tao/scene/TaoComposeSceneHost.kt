@@ -1405,8 +1405,18 @@ internal class TaoComposeSceneHost(
     private var gestureCenterX = 0f
     private var gestureCenterY = 0f
 
+    // A cancelled pinch cancels every gesture in the scene, an open trackpad
+    // pan included: Compose forgets it is in progress, so the pan's next step
+    // would get a synthetic PanStart on top of the real one and the stream
+    // would never balance. Close the pan first, as a click does; the fingers'
+    // next step opens a fresh one, a momentum tail goes down the wheel path.
     private val scaleSession =
-        TaoTrackpadScaleSession(cancelPointerInput = { scene?.cancelPointerInput() }) { type, factor ->
+        TaoTrackpadScaleSession(
+            cancelPointerInput = {
+                scrollRouter.finishPan()
+                scene?.cancelPointerInput()
+            },
+        ) { type, factor ->
             scene?.dispatchTrackpadScale(
                 x = gestureCenterX,
                 y = gestureCenterY,
