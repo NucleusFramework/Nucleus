@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -370,6 +371,7 @@ internal object ImeHeadfulCases {
     private fun textInputClientAnswersAndEmptyCorporateCommit(): TaoWindowTestCase {
         val value = AtomicReference("")
         val composition = AtomicReference<TextRange?>(null)
+        val composed = AtomicReference(TextFieldValue(""))
         val focused = AtomicBoolean(false)
         return TaoWindowTestCase(
             name = "#595 NSTextInputClient answers and empty corporate commit",
@@ -377,9 +379,9 @@ internal object ImeHeadfulCases {
             skip = { macOsOnly() },
             paintDefaultBackground = false,
             size = DpSize(480.dp, 360.dp),
-            content = { focusedImeField(value, composition, focused) },
+            content = { focusedImeField(value, composition, composed, focused) },
         ) {
-            driveTextInputClientCase(value, composition, focused)
+            driveTextInputClientCase(value, composition, composed, focused)
         }
     }
 
@@ -387,10 +389,14 @@ internal object ImeHeadfulCases {
     private fun focusedImeField(
         value: AtomicReference<String>,
         composition: AtomicReference<TextRange?>,
+        composed: AtomicReference<TextFieldValue>,
         focused: AtomicBoolean,
     ) {
         val requester = remember { FocusRequester() }
         var field by remember { mutableStateOf(TextFieldValue("")) }
+        // The value the field was last composed with — not the same as the
+        // last onValueChange, which runs before the recomposition it causes.
+        SideEffect { composed.set(field) }
         LaunchedEffect(Unit) {
             requester.requestFocus()
             focused.set(true)
@@ -412,6 +418,7 @@ internal object ImeHeadfulCases {
     private suspend fun TaoWindowTestScope.driveTextInputClientCase(
         value: AtomicReference<String>,
         composition: AtomicReference<TextRange?>,
+        composed: AtomicReference<TextFieldValue>,
         focused: AtomicBoolean,
     ) {
         val marked = "hello"
@@ -466,6 +473,14 @@ internal object ImeHeadfulCases {
         injectMarked(handle, "xyz")
         awaitUntil("second preedit", detail = state) {
             value.get().endsWith("xyz") && composition.get() != null
+        }
+        // BasicTextField(TextFieldValue) only reports an edit whose result
+        // differs from the value it was last composed with. Cancelling before
+        // the field recomposed with "xyz" yields "hello" — equal to that stale
+        // value — so the cancel would be dropped and the next recomposition
+        // would restore the preedit.
+        awaitUntil("the field composed the second preedit", detail = state) {
+            composed.get().text.endsWith("xyz") && composed.get().composition != null
         }
         injectMarked(handle, "")
         awaitUntil("empty setMarkedText unmarks", detail = state) {
