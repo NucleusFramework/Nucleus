@@ -382,6 +382,7 @@ public object TaoHeadfulTestSuiteMain {
             ChromeCoverageHeadfulCases.all() +
             DisplayScaleHeadfulCases.all() +
             FramePacingHeadfulCases.all() +
+            OutOfFrameExecutorHeadfulCases.all() +
             MacWindowChromeStateHeadfulCases.all() +
             PopupScaleHeadfulCases.all() +
             NativePopupPlacementHeadfulCases.all() +

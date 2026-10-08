@@ -419,6 +419,12 @@ internal class TaoSceneTestScope(
         ).also { lastPicture = it }
     }
 
+    /**
+     * Renders one frame without pumping the dispatcher first — what a host
+     * render does when nothing ran on the loop since the previous one.
+     */
+    fun renderWithoutPumping(): Picture = recordSceneToPicture(sceneBundle, width, height, timeNanos)
+
     /** The damage the last [frame] reported to the partial redraw (#755); `null` = unknown. */
     var lastFrameDamage: androidx.compose.ui.unit.IntRect? = null
         private set

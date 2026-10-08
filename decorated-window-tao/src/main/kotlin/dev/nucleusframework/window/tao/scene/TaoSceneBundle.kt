@@ -7,6 +7,7 @@ import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.platform.FrameRecomposer
 import androidx.compose.ui.platform.PlatformContext
+import androidx.compose.ui.platform.PlatformOutOfFrameExecutor
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeSceneContext
@@ -68,6 +69,8 @@ internal class TaoSceneBundle(
     visualDirty: AtomicBoolean,
     /** Fed the scene's owners through its platform context — see [frameDamage]. */
     private val damageTracker: LayerDamageTracker,
+    /** Handed to the scene through its platform context; drained by [renderingScope] before each frame. */
+    private val outOfFrameExecutor: TaoOutOfFrameExecutor?,
 ) : AutoCloseable {
     /**
      * Set by the scene's `invalidateLayout` / `invalidateDraw` callbacks — i.e.
@@ -210,6 +213,8 @@ internal class TaoSceneBundle(
      */
     fun composeAndLayoutNow() {
         exceptionHandler.catchExceptions {
+            // A frame in all but the draw: what the previous one deferred runs first.
+            outOfFrameExecutor?.onBeforeFrame()
             val nanoTime = System.nanoTime()
             frameRecomposer.performFrame(nanoTime)
             frameRecomposer.performFrame(nanoTime)
@@ -221,6 +226,7 @@ internal class TaoSceneBundle(
     override fun close() {
         closed.set(true)
         guardScope.cancel()
+        outOfFrameExecutor?.dispose()
         // A DisposableEffect onDispose throwing while the scene is being torn
         // down must not escalate to the app-fatal path (closing one window
         // would close the whole app — #622 review) nor skip
@@ -245,6 +251,8 @@ private val bundleLogger: Logger = Logger.getLogger(TaoSceneBundle::class.java.n
 @OptIn(InternalComposeUiApi::class)
 internal class TaoSceneRenderingScope(
     private val scheduleFrame: () -> Unit,
+    /** Drained once the frame has started, so invalidations its work raises are the frame's own. */
+    private val outOfFrameExecutor: TaoOutOfFrameExecutor? = null,
 ) {
     private var isRendering = false
 
@@ -265,6 +273,7 @@ internal class TaoSceneRenderingScope(
         check(!isRendering)
         isRendering = true
         try {
+            outOfFrameExecutor?.onBeforeFrame()
             frameRecomposer.performFrame(nanoTime)
             // The frame's own recomposition may close this scene (its window or popup left the
             // composition); laying it out then throws "RootNodeOwner is already disposed".
@@ -302,7 +311,6 @@ internal fun canvasLayersSceneBundle(
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
     RecompositionCounter.installIfEnabled()
-    val renderingScope = TaoSceneRenderingScope(requestFrame)
     val closed = AtomicBoolean(false)
     // Every coroutine the scene owns carries the router: a recomposition
     // failure is offered to the window's handler first (#621) and falls
@@ -315,13 +323,15 @@ internal fun canvasLayersSceneBundle(
     // Starts true: the first frame must always present. See [TaoSceneBundle.visualDirty].
     val visualDirty = AtomicBoolean(true)
     val damageTracker = LayerDamageTracker()
+    val outOfFrameExecutor = TaoOutOfFrameExecutor.create(guardScope, requestFrame)
+    val renderingScope = TaoSceneRenderingScope(requestFrame, outOfFrameExecutor)
     val scene =
         CanvasLayersComposeScene(
             frameRecomposer = frameRecomposer,
             density = density,
             layoutDirection = layoutDirection,
             size = size,
-            platformContext = platformContext.withOwnerListeners(edtGuard, damageTracker),
+            platformContext = platformContext.withOwnerListeners(edtGuard, damageTracker, outOfFrameExecutor),
             invalidateLayout = {
                 visualDirty.set(true)
                 renderingScope.onSceneInvalidation()
@@ -342,6 +352,7 @@ internal fun canvasLayersSceneBundle(
         requestFrame,
         visualDirty,
         damageTracker,
+        outOfFrameExecutor,
     ).also { bundle -> exceptionRouter.sceneIsAlive = { bundle.isRecomposerAlive } }
 }
 
@@ -359,7 +370,6 @@ internal fun platformLayersSceneBundle(
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
     RecompositionCounter.installIfEnabled()
-    val renderingScope = TaoSceneRenderingScope(requestFrame)
     // See canvasLayersSceneBundle.
     val closed = AtomicBoolean(false)
     val exceptionRouter = TaoSceneExceptionRouter(closed)
@@ -370,6 +380,8 @@ internal fun platformLayersSceneBundle(
     // Starts true: the first frame must always present. See [TaoSceneBundle.visualDirty].
     val visualDirty = AtomicBoolean(true)
     val damageTracker = LayerDamageTracker()
+    val outOfFrameExecutor = TaoOutOfFrameExecutor.create(guardScope, requestFrame)
+    val renderingScope = TaoSceneRenderingScope(requestFrame, outOfFrameExecutor)
     val scene =
         PlatformLayersComposeScene(
             frameRecomposer = frameRecomposer,
@@ -379,7 +391,11 @@ internal fun platformLayersSceneBundle(
             composeSceneContext =
                 object : ComposeSceneContext by composeSceneContext {
                     override val platformContext: PlatformContext =
-                        composeSceneContext.platformContext.withOwnerListeners(edtGuard, damageTracker)
+                        composeSceneContext.platformContext.withOwnerListeners(
+                            edtGuard,
+                            damageTracker,
+                            outOfFrameExecutor,
+                        )
                 },
             invalidateLayout = {
                 visualDirty.set(true)
@@ -401,20 +417,23 @@ internal fun platformLayersSceneBundle(
         requestFrame,
         visualDirty,
         damageTracker,
+        outOfFrameExecutor,
     ).also { bundle -> exceptionRouter.sceneIsAlive = { bundle.isRecomposerAlive } }
 }
 
 /**
  * Returns a [PlatformContext] view whose [PlatformContext.semanticsOwnerListener]
  * additionally registers every announced owner with [edtGuard] and
- * [damageTracker].
+ * [damageTracker], and which hands the scene [outOfFrameExecutor].
  */
 @OptIn(InternalComposeUiApi::class)
 private fun PlatformContext.withOwnerListeners(
     edtGuard: RectManagerEdtGuard,
     damageTracker: LayerDamageTracker,
+    outOfFrameExecutor: TaoOutOfFrameExecutor?,
 ): PlatformContext =
     object : PlatformContext by this {
         override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener =
             damageTracker.wrapListener(edtGuard.wrapListener(this@withOwnerListeners.semanticsOwnerListener))
+        override val outOfFrameExecutor: PlatformOutOfFrameExecutor? = outOfFrameExecutor
     }
