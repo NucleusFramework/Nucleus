@@ -45,6 +45,7 @@ internal object MacOsTrackpadScaleHeadfulCases {
             pinchAtMapEdgeReachesOnlyTheMap(),
             smartMagnifyIsOneDiscreteScaleStep(),
             cancelledPinchClosesTheScaleGesture(),
+            cancelledPinchDuringAPanKeepsThePanBalanced(),
             rotateStillRotatesDetectTransformGestures(),
             pinchFirstOwnsAnInterleavedGesture(),
             rotateFirstOwnsAnInterleavedGesture(),
@@ -229,6 +230,43 @@ internal object MacOsTrackpadScaleHeadfulCases {
     }
 
     /**
+     * A pinch the system cancels while a trackpad pan is open cancels the
+     * scene's input, and Compose forgets the pan with it: the pan's next step
+     * used to get a synthetic PanStart on top of the real one, which no
+     * PanEnd ever matched (the #660 monkeys' "unbalanced pan"). The host
+     * closes the pan before it cancels; the next finger step opens a new one.
+     */
+    private fun cancelledPinchDuringAPanKeepsThePanBalanced(): TaoWindowTestCase {
+        val recorder = EventRecorder()
+        return TaoWindowTestCase(
+            name = "#660 macOS cancelled pinch during a pan keeps PanStart / PanEnd balanced",
+            skip = { macOnly() },
+            paintDefaultBackground = false,
+            content = { Box(Modifier.fillMaxSize().record(recorder)) },
+        ) {
+            awaitUntil("window mapped") { bounds() != null }
+            settle()
+            recorder.reset()
+
+            swipe(MacScrollWheelProbe.Phase.BEGAN, 0f)
+            swipe(MacScrollWheelProbe.Phase.CHANGED, PAN_STEP)
+            magnify(Phase.BEGAN, 0.0)
+            magnify(Phase.CHANGED, ONE_PERCENT)
+            magnify(Phase.CANCELLED, 0.0)
+            swipe(MacScrollWheelProbe.Phase.CHANGED, PAN_STEP)
+            swipe(MacScrollWheelProbe.Phase.ENDED, 0f)
+            awaitUntil("PanEnd recorded") { recorder.count(PointerEventType.PanEnd) >= 1 }
+            settle(PAN_END_MILLIS)
+            check(recorder.count(PointerEventType.PanStart) == recorder.count(PointerEventType.PanEnd)) {
+                "every PanStart must be closed by a PanEnd; recorded=${recorder.describe()}"
+            }
+            check(recorder.snapshot().filter { it.type.isScale() }.map { it.type } == expectedScaleTypes(1)) {
+                "the cancelled pinch must close with one ScaleEnd; recorded=${recorder.describe()}"
+            }
+        }
+    }
+
+    /**
      * Rotation keeps the two-touch synthesis: `detectTransformGestures` sees
      * the angle change (clockwise on screen for AppKit's counter-clockwise
      * `rotation`, flipped into Compose's y-down space) and no zoom, and no
@@ -399,6 +437,23 @@ internal object MacOsTrackpadScaleHeadfulCases {
         settle(STEP_MILLIS)
     }
 
+    /**
+     * A precise (trackpad) scroll step. Flushed on both sides: tao buffers the
+     * events it raises from inside a loop callback while a posted gesture
+     * reaches the host straight from its monitor, so the two streams only
+     * arrive in order with a pause between them.
+     */
+    private suspend fun TaoWindowTestScope.swipe(
+        phase: Int,
+        dy: Float,
+    ) {
+        settle(FLUSH_MILLIS)
+        val delivered =
+            MacScrollWheelProbe.inject(window, TARGET_X, TARGET_Y, 0f, dy, precise = true, phase = phase)
+        check(delivered) { "nativeDiagInjectScrollWheel returned false (injection disabled or window gone?)" }
+        settle(FLUSH_MILLIS)
+    }
+
     // ── Compose content ─────────────────────────────────────────────────────
 
     private class Recorded(
@@ -526,6 +581,13 @@ internal object MacOsTrackpadScaleHeadfulCases {
     private const val FACTOR_TOLERANCE = 1e-3f
     private const val POSITION_TOLERANCE_PX = 1.5f
     private const val STEP_MILLIS = 16L
+    private const val FLUSH_MILLIS = 60L
+
+    /** Past the router's momentum grace (150 ms) after a finger Ended, so a pending PanEnd has landed. */
+    private const val PAN_END_MILLIS = 400L
+
+    /** One finger step of a two-finger swipe, AppKit points. */
+    private const val PAN_STEP = -12f
 
     /** How long a transformable gets to react before the (soft) wait gives up. */
     private const val REACTION_MILLIS = 2_000L

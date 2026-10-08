@@ -865,7 +865,13 @@ private class GestureOracle {
                 change(factor(value))
             }
             WirePhase.CHANGED -> change(factor(value))
-            WirePhase.ENDED, WirePhase.CANCELLED -> close()
+            WirePhase.ENDED -> close()
+            WirePhase.CANCELLED -> {
+                // Cancelling an open pinch cancels the scene's input, so the
+                // host closes its pan first; the next finger step reopens one.
+                if (scaleOpen) panOpen = false
+                close()
+            }
         }
     }
 
