@@ -1594,6 +1594,7 @@ internal class TaoComposeSceneHost(
         keyLocation: Int,
         modifiers: Int,
         codePoint: Int,
+        isRepeat: Boolean = false,
     ): Boolean {
         val sc = scene ?: return false
         currentKeyboardModifiers = taoKeyboardModifiers(modifiers)
@@ -1614,6 +1615,7 @@ internal class TaoComposeSceneHost(
                         isAlt = isAlt,
                         isMeta = isMeta,
                         codePoint = codePoint,
+                        isRepeat = isRepeat,
                     )
                 TaoEventCode.KEY_TYPED ->
                     taoTypedKeyEvent(codePoint, keyLocation, isShift, isCtrl, isAlt, isMeta)

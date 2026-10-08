@@ -1123,6 +1123,9 @@ pub(crate) fn run_event_loop_blocking() {
                                 keymap::LOC_STANDARD,
                                 mods,
                                 ch as jint,
+                                // The text reaches us before its key-down on
+                                // macOS and Linux, so it cannot be matched.
+                                false,
                             );
                         }
                     }
@@ -1187,6 +1190,8 @@ pub(crate) fn run_event_loop_blocking() {
                             location,
                             current_modifier_bits(),
                             code_point,
+                            // A held key's auto-repeat; tao only sets it on a press.
+                            ke.repeat && ke.state == ElementState::Pressed,
                         );
                     }
                     WindowEvent::Touch(touch) => {

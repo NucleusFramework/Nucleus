@@ -603,9 +603,9 @@ internal fun ApplicationScope.openDecoratedWindow(
     window.onPointerExited { exceptionHandler.catchExceptions { if (enabled) host.onPointerExited() } }
     window.onPointerButton { b, p -> exceptionHandler.catchExceptions { if (enabled) host.onPointerButton(b, p) } }
     window.onPointerScroll { event -> exceptionHandler.catchExceptions { if (enabled) host.onPointerScroll(event) } }
-    window.onKeyEvent { type, vk, loc, mods, cp ->
+    window.onKeyInput { type, vk, loc, mods, cp, repeat ->
         exceptionHandler.catchExceptions(fallback = false) {
-            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp, repeat) else false
         }
     }
     window.onRedrawRequested { host.requestFrame() }
@@ -929,9 +929,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     }
     window.onPointerScroll { event -> exceptionHandler.catchExceptions { if (enabled) host.onPointerScroll(event) } }
     window.onDragWindow { host.onNativeWindowDragStarted() }
-    window.onKeyEvent { type, vk, loc, mods, cp ->
+    window.onKeyInput { type, vk, loc, mods, cp, repeat ->
         exceptionHandler.catchExceptions(fallback = false) {
-            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp, repeat) else false
         }
     }
     window.onRedrawRequested { host.onRedrawRequested() }
@@ -1452,9 +1452,9 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         }
         host.onResizeLoopChanged(active)
     }
-    window.onKeyEvent { type, vk, loc, mods, cp ->
+    window.onKeyInput { type, vk, loc, mods, cp, repeat ->
         exceptionHandler.catchExceptions(fallback = false) {
-            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp, repeat) else false
         }
     }
     window.onRedrawRequested { host.onRedrawRequested() }

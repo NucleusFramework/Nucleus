@@ -998,7 +998,7 @@ impl<T: 'static> EventLoop<T> {
 
             let tx_clone = event_tx.clone();
             let modifier_state = Rc::new(RefCell::new(ImeState::new()));
-            let keyboard_handler = Rc::new(move |event_key: EventKey, element_state| {
+            let keyboard_handler = Rc::new(move |event_key: EventKey, element_state, is_repeat| {
               // Nucleus patch: emit the FULL modifier state, not just the
               // pressed key's own bit — upstream sent `{SHIFT}` when Shift
               // was pressed while Ctrl was held, dropping Ctrl from the
@@ -1037,8 +1037,9 @@ impl<T: 'static> EventLoop<T> {
               // Upstream tao stops here, which makes those handlers dead on
               // the Linux backend.
 
-              // todo: implement repeat?
-              let event = keyboard::make_key_event(&event_key, false, None, element_state);
+              // Nucleus patch: report auto-repeat (`ImeState::press_is_repeat`);
+              // upstream always passed `false`.
+              let event = keyboard::make_key_event(&event_key, is_repeat, None, element_state);
 
               if let Some(event) = event {
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
@@ -1138,8 +1139,10 @@ impl<T: 'static> EventLoop<T> {
             }
             {
               let ime = ime.clone();
+              let ime_state = ime_state.clone();
               window.connect_focus_out_event(move |_, _| {
                 ime.focus_out();
+                ime_state.borrow_mut().focus_lost();
                 glib::Propagation::Proceed
               });
             }
@@ -1161,6 +1164,11 @@ impl<T: 'static> EventLoop<T> {
             let ime_ = ime.clone();
             let ime_state_press = ime_state.clone();
             window.connect_key_press_event(move |window, event_key| {
+              // Tracked before the embed check, so a key pressed or released
+              // while an embedded view owns the keyboard is not left stale.
+              let is_repeat = ime_state_press
+                .borrow_mut()
+                .press_is_repeat(event_key.hardware_keycode());
               if embed_owns_keyboard(window) {
                 return glib::Propagation::Proceed;
               }
@@ -1176,7 +1184,7 @@ impl<T: 'static> EventLoop<T> {
               {
                 return glib::Propagation::Stop;
               }
-              handler(event_key.to_owned(), ElementState::Pressed);
+              handler(event_key.to_owned(), ElementState::Pressed, is_repeat);
 
               // Compose owns the keyboard and has the key: stop here so GtkWindow's
               // own bindings do not run on it too — an arrow or a Tab would
@@ -1188,6 +1196,9 @@ impl<T: 'static> EventLoop<T> {
             let handler = keyboard_handler.clone();
             let ime_state_release = ime_state;
             window.connect_key_release_event(move |window, event_key| {
+              ime_state_release
+                .borrow_mut()
+                .release_held(event_key.hardware_keycode());
               if embed_owns_keyboard(window) {
                 return glib::Propagation::Proceed;
               }
@@ -1198,7 +1209,7 @@ impl<T: 'static> EventLoop<T> {
               {
                 return glib::Propagation::Stop;
               }
-              handler(event_key.to_owned(), ElementState::Released);
+              handler(event_key.to_owned(), ElementState::Released, false);
               glib::Propagation::Stop
             });
 

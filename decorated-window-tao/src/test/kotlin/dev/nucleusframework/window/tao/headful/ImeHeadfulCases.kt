@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao.headful
 
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -16,11 +17,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.tao.isRepeat
 import kotlinx.coroutines.delay
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -41,7 +48,65 @@ internal object ImeHeadfulCases {
             textInputClientAnswersAndEmptyCorporateCommit(),
             caretRectDiesWithTheFocusedField(),
             noCaretRectBeforeAnyField(),
+            heldKeyRepeatsAreReported(),
         )
+
+    /**
+     * A held key's auto-repeat reaches Compose as `KeyEvent.isRepeat`: AppKit
+     * marks it `isARepeat`, tao copies it to `KeyEvent.repeat`, and the JNI
+     * key callback carries it to the AWT event Compose sees. A fresh press and
+     * the release report `false`.
+     */
+    private fun heldKeyRepeatsAreReported(): TaoWindowTestCase {
+        val seen = CopyOnWriteArrayList<Pair<KeyEventType, Boolean>>()
+        val focused = AtomicBoolean(false)
+        return TaoWindowTestCase(
+            name = "macOS reports a held key's repeats as repeats",
+            timeoutMillis = CASE_TIMEOUT_MILLIS,
+            skip = { macOsOnly() },
+            paintDefaultBackground = false,
+            size = DpSize(480.dp, 360.dp),
+            content = {
+                val requester = remember { FocusRequester() }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .focusRequester(requester)
+                        .onFocusChanged { focused.set(it.isFocused) }
+                        .focusable()
+                        .onPreviewKeyEvent {
+                            if (it.type != KeyEventType.Unknown) seen += it.type to it.isRepeat
+                            false
+                        },
+                )
+                LaunchedEffect(Unit) { requester.requestFocus() }
+            },
+        ) {
+            val handle = window.handle
+            awaitUntil("window mapped") { bounds() != null }
+            awaitUntil("key target focused") { focused.get() }
+            check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = true)) {
+                "keyDown was not delivered"
+            }
+            repeat(2) {
+                check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = true, autorepeat = true)) {
+                    "repeated keyDown was not delivered"
+                }
+            }
+            check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = false)) {
+                "keyUp was not delivered"
+            }
+            awaitUntil("four key events seen") { seen.size >= 4 }
+            val expected =
+                listOf(
+                    KeyEventType.KeyDown to false,
+                    KeyEventType.KeyDown to true,
+                    KeyEventType.KeyDown to true,
+                    KeyEventType.KeyUp to false,
+                )
+            check(seen.toList() == expected) { "expected $expected, got $seen" }
+        }
+    }
 
     /**
      * Before any field is focused the client must already answer

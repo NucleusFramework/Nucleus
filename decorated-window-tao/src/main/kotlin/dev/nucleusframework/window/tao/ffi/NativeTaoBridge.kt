@@ -79,6 +79,8 @@ internal object NativeTaoBridge {
          * conventions so Compose's `Key(nativeKeyCode, nativeKeyLocation)`
          * works unchanged. [modifiers] is a bitmask: 1=Shift, 2=Ctrl, 4=Alt,
          * 8=Meta. [codePoint] is the UTF-32 code-point produced by the key, or 0.
+         * [isRepeat] is tao's `KeyEvent.repeat`: a key-down sent again because the
+         * key is held. Always `false` for a key-up and for [TaoEventCode.KEY_TYPED].
          */
         @Suppress("LongParameterList", "FunctionParameterNaming")
         fun onKeyEvent(
@@ -88,6 +90,7 @@ internal object NativeTaoBridge {
             keyLocation: Int,
             modifiers: Int,
             codePoint: Int,
+            isRepeat: Boolean,
         )
 
         /**
