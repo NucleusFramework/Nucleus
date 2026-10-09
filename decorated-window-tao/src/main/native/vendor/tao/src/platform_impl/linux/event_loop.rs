@@ -53,6 +53,8 @@ use super::{
 
 use taskbar::TaskbarIndicator;
 
+const MAX_GTK_ITERATIONS_PER_TAO_STEP: usize = 32;
+
 /// Whether GTK focus sits on a widget Nucleus did not create — an embedded
 /// native view (`NativeView`), which the widget bridge never marks with
 /// `nucleus_tao_input_box` the way it marks its own capture boxes. Keys then
@@ -1501,6 +1503,16 @@ impl<T: 'static> EventLoop<T> {
             },
           }
           gtk::main_iteration_do(blocking);
+          // Touch is delivered directly by GTK callbacks, outside `events`.
+          // Drain pending GTK work before the next Tao step can render a frame
+          // for stale input. Bound the batch so continuous GTK work still gives
+          // Tao's event and redraw queues a turn.
+          for _ in 0..MAX_GTK_ITERATIONS_PER_TAO_STEP {
+            if !gtk::events_pending() {
+              break;
+            }
+            gtk::main_iteration_do(false);
+          }
         };
         if let Some(run_device_thread) = run_device_thread {
           run_device_thread.store(false, Ordering::Relaxed);
