@@ -10,6 +10,7 @@ import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyRepeatTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
+import dev.nucleusframework.window.tao.event.TaoTouchEventTimeTest
 import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSessionTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
@@ -519,6 +520,24 @@ public object TaoSceneTestBattery {
         }
         run("TaoTrackpadScaleSessionTest: aSecondStartIsIgnoredWhileActive") {
             TaoTrackpadScaleSessionTest().aSecondStartIsIgnoredWhileActive()
+        }
+        run("TaoTouchEventTimeTest: delayedDeliveryPreservesSampleIntervals") {
+            TaoTouchEventTimeTest().delayedDeliveryPreservesSampleIntervals()
+        }
+        run("TaoTouchEventTimeTest: samplesWithTheSameTimestampRemainSimultaneous") {
+            TaoTouchEventTimeTest().samplesWithTheSameTimestampRemainSimultaneous()
+        }
+        run("TaoTouchEventTimeTest: unsignedClockWraparoundPreservesSampleIntervals") {
+            TaoTouchEventTimeTest().unsignedClockWraparoundPreservesSampleIntervals()
+        }
+        run("TaoTouchEventTimeTest: signedClockBoundaryPreservesSampleIntervals") {
+            TaoTouchEventTimeTest().signedClockBoundaryPreservesSampleIntervals()
+        }
+        run("TaoTouchEventTimeTest: missingTimestampFallsBackAndReanchorsTheNextSample") {
+            TaoTouchEventTimeTest().missingTimestampFallsBackAndReanchorsTheNextSample()
+        }
+        run("TaoTouchEventTimeTest: idleLongerThanTheUnambiguousClockRangeReanchors") {
+            TaoTouchEventTimeTest().idleLongerThanTheUnambiguousClockRangeReanchors()
         }
         run("TaoSceneScrollTest: one wheel unit scrolls ten dp on macOS") {
             TaoSceneScrollTest().`one wheel unit scrolls ten dp on macOS`()
