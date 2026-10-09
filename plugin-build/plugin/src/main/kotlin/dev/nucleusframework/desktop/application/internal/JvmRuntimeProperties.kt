@@ -15,8 +15,7 @@ internal data class JvmRuntimeProperties(
     val availableModules: List<String>,
 ) : Serializable {
     companion object {
-        @Suppress("unused")
-        private val serialVersionUid: Long = 0
+        private const val serialVersionUID: Long = 0L
 
         fun writeToFile(
             properties: JvmRuntimeProperties,

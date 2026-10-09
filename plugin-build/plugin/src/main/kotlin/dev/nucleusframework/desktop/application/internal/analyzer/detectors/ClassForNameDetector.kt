@@ -39,8 +39,8 @@ internal object ClassForNameDetector {
             object : ClassVisitor(Opcodes.ASM9) {
                 override fun visitMethod(
                     access: Int,
-                    name: String,
-                    descriptor: String,
+                    methodName: String,
+                    methodDescriptor: String,
                     signature: String?,
                     exceptions: Array<out String>?,
                 ): MethodVisitor =
@@ -196,12 +196,15 @@ internal object ClassForNameDetector {
     }
 }
 
+// Shortest qualified name: "a.B".
+private const val MIN_CLASS_NAME_LENGTH = 3
+
 /**
  * Basic validation that a string looks like a fully qualified class name.
  * Used for direct Class.forName argument tracking.
  */
 internal fun isValidClassName(name: String): Boolean {
-    if (name.isBlank() || name.length < 3) return false
+    if (name.isBlank() || name.length < MIN_CLASS_NAME_LENGTH) return false
     if (name.contains(' ') || name.contains('\t') || name.contains('\n')) return false
     if (!name.contains('.')) return false
     // Allow array types like "[Ljava.lang.String;"

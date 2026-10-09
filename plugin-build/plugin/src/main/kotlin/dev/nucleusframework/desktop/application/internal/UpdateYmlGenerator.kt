@@ -47,7 +47,7 @@ internal object UpdateYmlGenerator {
                 !f.name.startsWith(".") &&
                 f.extension.lowercase() !in SKIP_EXTENSIONS &&
                 (artifactExtension == null || f.extension.equals(artifactExtension, ignoreCase = true))
-        }?.sortedBy { it.name } ?: emptyList()
+        }?.sortedBy { it.name }.orEmpty()
         val installerFiles = currentArtifacts(candidates, version)
 
         if (installerFiles.isEmpty()) {
@@ -98,7 +98,10 @@ internal object UpdateYmlGenerator {
         candidates: List<File>,
         version: String,
     ): List<File> {
-        val versioned = candidates.filter { VERSION_BOUNDARY.replace("{v}", Regex.escape(version)).toRegex().containsMatchIn(it.name) }
+        val versioned =
+            candidates.filter {
+                VERSION_BOUNDARY.replace("{v}", Regex.escape(version)).toRegex().containsMatchIn(it.name)
+            }
         if (versioned.isNotEmpty()) return versioned
         return listOfNotNull(candidates.maxByOrNull { it.lastModified() })
     }

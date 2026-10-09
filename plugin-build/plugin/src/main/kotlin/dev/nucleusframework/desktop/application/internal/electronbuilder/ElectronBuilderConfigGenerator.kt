@@ -7,7 +7,9 @@ package dev.nucleusframework.desktop.application.internal.electronbuilder
 
 import dev.nucleusframework.desktop.application.dsl.AppXSettings
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.DmgContentEntry
 import dev.nucleusframework.desktop.application.dsl.DmgSettings
+import dev.nucleusframework.desktop.application.dsl.DmgWindowSettings
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.FlatpakSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
@@ -133,7 +135,14 @@ internal class ElectronBuilderConfigGenerator {
         // --- Platform-specific config ---
         when (currentOS) {
             OS.MacOS ->
-                generateMacConfig(yaml, distributions, targetFormat, targetArch, dmgBackgroundOverride, dmgWindowOverride)
+                generateMacConfig(
+                    yaml,
+                    distributions,
+                    targetFormat,
+                    targetArch,
+                    dmgBackgroundOverride,
+                    dmgWindowOverride,
+                )
             OS.Windows ->
                 generateWindowsConfig(
                     yaml,
@@ -269,8 +278,17 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(yaml, "  size", dmg.size)
         dmg.shrink?.let { yaml.appendLine("  shrink: $it") }
 
-        val w = dmg.window
-        val hasWindowConfig = w.x != null || w.y != null || w.width != null || w.height != null || windowOverride != null
+        appendDmgWindow(yaml, dmg.window, windowOverride)
+        appendDmgContents(yaml, dmg.contents)
+    }
+
+    private fun appendDmgWindow(
+        yaml: StringBuilder,
+        w: DmgWindowSettings,
+        windowOverride: DmgWindowOverride?,
+    ) {
+        val hasWindowConfig =
+            w.x != null || w.y != null || w.width != null || w.height != null || windowOverride != null
         if (hasWindowConfig) {
             yaml.appendLine("  window:")
             w.x?.let { yaml.appendLine("    x: $it") }
@@ -280,10 +298,15 @@ internal class ElectronBuilderConfigGenerator {
             overrideWidth?.let { yaml.appendLine("    width: $it") }
             overrideHeight?.let { yaml.appendLine("    height: $it") }
         }
+    }
 
-        if (dmg.contents.isNotEmpty()) {
+    private fun appendDmgContents(
+        yaml: StringBuilder,
+        contents: List<DmgContentEntry>,
+    ) {
+        if (contents.isNotEmpty()) {
             yaml.appendLine("  contents:")
-            for (entry in dmg.contents) {
+            for (entry in contents) {
                 yaml.appendLine("    - x: ${entry.x}")
                 yaml.appendLine("      y: ${entry.y}")
                 entry.type?.let { yaml.appendLine("      type: ${it.id}") }
@@ -588,6 +611,8 @@ internal class ElectronBuilderConfigGenerator {
         }
     }
 
+    // Mirrors generateConfig's inputs one-to-one and is called directly by the unit tests.
+    @Suppress("LongParameterList")
     internal fun generateLinuxConfig(
         yaml: StringBuilder,
         distributions: JvmApplicationDistributions,

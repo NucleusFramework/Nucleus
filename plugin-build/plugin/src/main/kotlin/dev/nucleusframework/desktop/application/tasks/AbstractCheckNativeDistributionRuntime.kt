@@ -19,7 +19,14 @@ import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.RegularFile
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.*
+import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Classpath
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.*
@@ -27,6 +34,11 @@ import java.util.*
 // __COMPOSE_NATIVE_DISTRIBUTIONS_MIN_JAVA_VERSION__
 internal const val MIN_JAVA_RUNTIME_VERSION = 17
 
+/**
+ * Probes the JDK at [jdkHome] used for packaging: checks that `java`, `jlink` and `jpackage` exist, that the
+ * JDK is at least [MIN_JAVA_RUNTIME_VERSION] (and, when [checkJdkVendor] is set, not Homebrew's on macOS), and
+ * writes its major version and module list to [javaRuntimePropertiesFile].
+ */
 @CacheableTask
 abstract class AbstractCheckNativeDistributionRuntime : AbstractNucleusTask() {
     @get:Classpath
@@ -68,6 +80,7 @@ abstract class AbstractCheckNativeDistributionRuntime : AbstractNucleusTask() {
         error(fullErrorMessage)
     }
 
+    /** Runs the JDK probe and writes the resulting [JvmRuntimeProperties]. */
     @TaskAction
     fun run() {
         taskDir.ioFile.mkdirs()

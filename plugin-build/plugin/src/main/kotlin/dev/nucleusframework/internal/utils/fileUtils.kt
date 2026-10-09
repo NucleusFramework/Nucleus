@@ -39,7 +39,9 @@ internal fun FileSystemOperations.mkdirs(vararg dirs: File) {
 }
 
 internal fun FileSystemOperations.mkdirs(vararg dirs: Provider<out FileSystemLocation>) {
-    mkdirs(*dirs.ioFiles())
+    for (dir in dirs) {
+        dir.ioFile.mkdirs()
+    }
 }
 
 internal fun FileSystemOperations.clearDirs(vararg dirs: File) {
@@ -48,11 +50,12 @@ internal fun FileSystemOperations.clearDirs(vararg dirs: File) {
 }
 
 internal fun FileSystemOperations.clearDirs(vararg dirs: Provider<out FileSystemLocation>) {
-    clearDirs(*dirs.ioFiles())
+    val files = dirs.map { it.ioFile }
+    delete { it.delete(files) }
+    for (file in files) {
+        file.mkdirs()
+    }
 }
-
-private fun Array<out Provider<out FileSystemLocation>>.ioFiles(): Array<File> =
-    let { providers -> Array(size) { i -> providers[i].ioFile } }
 
 internal fun lazyLoadProperties(propertiesFile: File): Lazy<Properties> =
     lazy {

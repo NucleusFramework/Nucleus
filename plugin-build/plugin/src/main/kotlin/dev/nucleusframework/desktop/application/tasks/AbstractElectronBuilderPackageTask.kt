@@ -108,7 +108,9 @@ abstract class AbstractElectronBuilderPackageTask
     constructor(
         @get:Input val targetFormat: TargetFormat,
     ) : AbstractNucleusTask() {
+        /** Packaging constants shared by the electron-builder pipeline. */
         companion object {
+            private const val PERCENT = 100.0
             private const val APPX_STORE_LOGO_SIZE = 50
             private const val APPX_SQUARE44_LOGO_SIZE = 44
             private const val APPX_SQUARE150_LOGO_SIZE = 150
@@ -305,6 +307,7 @@ abstract class AbstractElectronBuilderPackageTask
             }
         }
 
+        /** Prepares a private copy of the app image and packages it into [destinationDir] with electron-builder. */
         @TaskAction
         fun run() {
             val dist =
@@ -330,13 +333,14 @@ abstract class AbstractElectronBuilderPackageTask
             // Create a task-private copy of the app image so parallel tasks don't
             // interfere when modifying .cfg files or signing the bundle. On macOS the copy is
             // renamed to the resolved bundle name so every format ships the same .app.
-            val workingAppDir = copyAppImage(originalAppDir, outputDir, resolveWorkingAppDirName(originalAppDir), logger)
+            val workingAppDir =
+                copyAppImage(originalAppDir, outputDir, resolveWorkingAppDirName(originalAppDir), logger)
 
             ensureResourcesDirForElectronBuilder(workingAppDir)
             bundleSilentUpdateArtifacts(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
-            val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir, dist)
+            val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir)
             signWindowsAppImage(workingAppDir, outputDir, dist)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
@@ -368,8 +372,7 @@ abstract class AbstractElectronBuilderPackageTask
                     outputDir = outputDir,
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
-                    linuxAfterInstallTemplate = linuxAfterInstallTemplate,
-                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
+                    linuxScripts = LinuxScriptTemplates(linuxAfterInstallTemplate, linuxAfterRemoveTemplate),
                     hotUpdateLayout = hotUpdateLayout,
                 )
             ensureProjectPackageMetadata(outputDir, dist)
@@ -530,8 +533,7 @@ abstract class AbstractElectronBuilderPackageTask
             outputDir: File,
             linuxIconOverride: File?,
             windowsIconOverride: File?,
-            linuxAfterInstallTemplate: File?,
-            linuxAfterRemoveTemplate: File?,
+            linuxScripts: LinuxScriptTemplates,
             hotUpdateLayout: Boolean,
         ): File {
             val configGenerator = ElectronBuilderConfigGenerator()
@@ -577,8 +579,8 @@ abstract class AbstractElectronBuilderPackageTask
                     startupWMClass = startupWMClass.orNull,
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
-                    linuxAfterInstallTemplate = linuxAfterInstallTemplate,
-                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
+                    linuxAfterInstallTemplate = linuxScripts.afterInstall,
+                    linuxAfterRemoveTemplate = linuxScripts.afterRemove,
                     executableName = resolveExecutableName(),
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
@@ -597,10 +599,7 @@ abstract class AbstractElectronBuilderPackageTask
          * Returns whether the layout was applied, which is what the NSIS include keys its hot
          * update support on.
          */
-        private fun applyWindowsHotUpdateLayout(
-            appDir: File,
-            distributions: JvmApplicationDistributions,
-        ): Boolean {
+        private fun applyWindowsHotUpdateLayout(appDir: File): Boolean {
             if (currentOS != OS.Windows || targetFormat !in NSIS_FORMATS) return false
             val version = packageVersion.orNull?.takeIf { it.isNotBlank() } ?: DEFAULT_PACKAGE_VERSION
             val applied = WindowsHotUpdateLayout.apply(appDir, version)
@@ -1112,10 +1111,10 @@ abstract class AbstractElectronBuilderPackageTask
 
             val plugInsDir = appDir.resolve("Contents/PlugIns")
             for (extension in extensions) {
-                val appexName = extension.appex?.name ?: continue
-                val appex = plugInsDir.resolve(appexName)
-                if (!appex.exists()) continue
-                signBundleInsideOut(appex, extension.entitlements, signer)
+                val appex = extension.appex?.name?.let(plugInsDir::resolve)
+                if (appex != null && appex.exists()) {
+                    signBundleInsideOut(appex, extension.entitlements, signer)
+                }
             }
         }
 
@@ -1311,7 +1310,7 @@ abstract class AbstractElectronBuilderPackageTask
                     processStdout = { output = it },
                 )
             if (output.contains("no signature")) {
-                val keychainHint = settings.keychain?.let { " in keychain ${it.absolutePath}" } ?: ""
+                val keychainHint = settings.keychain?.let { " in keychain ${it.absolutePath}" }.orEmpty()
                 throw GradleException(
                     "${pkgFile.name} is not signed: electron-builder found no \"Developer ID Installer\" " +
                         "certificate matching '${settings.bareIdentityName}'$keychainHint. Import the " +
@@ -1425,7 +1424,7 @@ abstract class AbstractElectronBuilderPackageTask
             verifyDmg(dmg)
 
             val sizeAfter = dmg.length()
-            val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * 100.0 / sizeBefore else 0.0
+            val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * PERCENT / sizeBefore else 0.0
             logger.lifecycle(
                 String.format(
                     Locale.ROOT,
@@ -1502,6 +1501,8 @@ abstract class AbstractElectronBuilderPackageTask
             val blockmap = File(dmg.parentFile, "${dmg.name}.blockmap")
             var newBlockMapSize: Long? = null
             if (appBuilder != null) {
+                // Best effort: whatever app-builder fails with, the stale blockmap is dropped instead.
+                @Suppress("TooGenericExceptionCaught")
                 try {
                     execOperations.exec { spec ->
                         spec.executable = appBuilder.absolutePath
@@ -1647,7 +1648,7 @@ abstract class AbstractElectronBuilderPackageTask
                 refreshDebMetadata(deb)
 
                 val sizeAfter = deb.length()
-                val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * 100.0 / sizeBefore else 0.0
+                val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * PERCENT / sizeBefore else 0.0
                 logger.lifecycle(
                     String.format(
                         Locale.ROOT,
@@ -1856,6 +1857,12 @@ abstract class AbstractElectronBuilderPackageTask
             }
             return iconFile
         }
+
+        /** Prepared Linux package maintainer script templates, `null` when the format has none. */
+        private data class LinuxScriptTemplates(
+            val afterInstall: File?,
+            val afterRemove: File?,
+        )
 
         private data class AppXAsset(
             val targetFileName: String,
@@ -2622,6 +2629,7 @@ internal fun File.deleteRecursivelyClearingReadOnly(): Boolean {
 /**
  * On Windows, kills any running processes whose executable path is inside [dir].
  */
+@Suppress("TooGenericExceptionCaught") // Best effort: any failure to enumerate or kill processes is only logged.
 private fun killProcessesIn(
     dir: File,
     logger: Logger,

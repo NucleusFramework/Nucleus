@@ -25,6 +25,8 @@ import javax.inject.Inject
 // Custom task is used instead of Exec, because Exec does not support
 // lazy configuration yet. Lazy configuration is needed to
 // calculate appImageDir after the evaluation of createApplicationImage
+
+/** Runs the application image produced by `createApplicationImage` with its native launcher. */
 @DisableCachingByDefault(because = "Runs the application, not a cacheable build step")
 abstract class AbstractRunDistributableTask
     @Inject
@@ -42,6 +44,7 @@ abstract class AbstractRunDistributableTask
         @get:Input
         val environment: MapProperty<String, String> = objects.mapProperty(String::class.java, String::class.java)
 
+        /** Locates the single application image in the output directory and runs its launcher. */
         @TaskAction
         fun run() {
             val appDir =
@@ -51,10 +54,13 @@ abstract class AbstractRunDistributableTask
                             .listFiles()
                             // Sometimes ".DS_Store" files are created on macOS, so ignore them.
                             ?.filterNot { it.name == ".DS_Store" }
-                    if (files == null || files.isEmpty()) {
+                    if (files.isNullOrEmpty()) {
                         error("Could not find application image: $appImageRoot is empty!")
                     } else if (files.size > 1) {
-                        error("Could not find application image: $appImageRoot contains multiple children [${files.joinToString(", ")}]")
+                        error(
+                            "Could not find application image: $appImageRoot contains multiple children " +
+                                "[${files.joinToString(", ")}]",
+                        )
                     } else {
                         files.single()
                     }

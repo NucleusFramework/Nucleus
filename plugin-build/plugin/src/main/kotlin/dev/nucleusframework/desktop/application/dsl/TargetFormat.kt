@@ -8,6 +8,7 @@ package dev.nucleusframework.desktop.application.dsl
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
 
+/** The tool that produces a [TargetFormat]. */
 enum class PackagingBackend {
     /** App-image creation only (jpackage). */
     JPACKAGE,
@@ -16,6 +17,7 @@ enum class PackagingBackend {
     ELECTRON_BUILDER,
 }
 
+/** A package format the application can be distributed as, the OS it is built on and the [backend] building it. */
 enum class TargetFormat(
     internal val id: String,
     internal val targetOS: OS,

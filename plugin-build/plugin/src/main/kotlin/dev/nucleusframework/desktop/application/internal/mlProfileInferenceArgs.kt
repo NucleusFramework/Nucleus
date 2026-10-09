@@ -1,3 +1,6 @@
+// Named after its entry point, resolveMlProfileInferenceArgs, rather than the result type it returns.
+@file:Suppress("MatchingDeclarationName")
+
 package dev.nucleusframework.desktop.application.internal
 
 /**

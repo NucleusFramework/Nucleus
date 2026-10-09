@@ -20,8 +20,8 @@ internal object ResourceBundleDetector {
             object : ClassVisitor(Opcodes.ASM9) {
                 override fun visitMethod(
                     access: Int,
-                    name: String,
-                    descriptor: String,
+                    methodName: String,
+                    methodDescriptor: String,
                     signature: String?,
                     exceptions: Array<out String>?,
                 ): MethodVisitor =

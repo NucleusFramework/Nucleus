@@ -85,6 +85,7 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.process.ExecResult
 import org.gradle.work.ChangeType
 import org.gradle.work.DisableCachingByDefault
+import org.gradle.work.FileChange
 import org.gradle.work.InputChanges
 import org.jetbrains.kotlin.gradle.internal.ensureParentDirsCreated
 import java.io.File
@@ -109,7 +110,7 @@ import kotlin.io.path.isRegularFile
  * by electron-builder via [AbstractElectronBuilderPackageTask].
  */
 @DisableCachingByDefault(because = "Depends on external jpackage tool")
-@Suppress("UnnecessaryAbstractClass")
+@Suppress("UnnecessaryAbstractClass", "LargeClass") // Its inputs are public API: splitting it would break them.
 abstract class AbstractJPackageTask
     @Inject
     constructor(
@@ -322,7 +323,8 @@ abstract class AbstractJPackageTask
             objects.notNullProperty(nucleusNativeDir(currentOS, currentArch))
 
         @get:Nested
-        internal val additionalLaunchers: ListProperty<AdditionalLauncher> = objects.listProperty(AdditionalLauncher::class.java)
+        internal val additionalLaunchers: ListProperty<AdditionalLauncher> =
+            objects.listProperty(AdditionalLauncher::class.java)
 
         private val iconMapping by lazy {
             val icons = fileAssociations.get().mapNotNull { it.iconFile }.distinct()
@@ -331,20 +333,7 @@ abstract class AbstractJPackageTask
                 mutableListOf<String>().apply {
                     val usedNames = mutableSetOf("${packageName.get()}.icns")
                     for (icon in icons) {
-                        if (!icon.exists()) continue
-                        if (usedNames.add(icon.name)) {
-                            add(icon.name)
-                            continue
-                        }
-                        val nameWithoutExtension = icon.nameWithoutExtension
-                        val extension = icon.extension
-                        for (n in 1UL..ULong.MAX_VALUE) {
-                            val newName = "$nameWithoutExtension ($n).$extension"
-                            if (usedNames.add(newName)) {
-                                add(newName)
-                                break
-                            }
-                        }
+                        if (icon.exists()) add(uniqueIconName(icon, usedNames))
                     }
                 }
             val iconsDir = macAppDir.resolve("Contents").resolve("Resources")
@@ -368,7 +357,8 @@ abstract class AbstractJPackageTask
             if (currentOS == OS.MacOS) {
                 if (shouldSign) {
                     val validatedSettings =
-                        nonValidatedSettings!!.validate(nonValidatedMacBundleID, project, macAppStore)
+                        checkNotNull(nonValidatedSettings) { "Missing macOS signing settings" }
+                            .validate(nonValidatedMacBundleID, project, macAppStore)
                     MacSignerImpl(validatedSettings, runExternalTool)
                 } else {
                     NoCertificateSigner(runExternalTool)
@@ -384,7 +374,8 @@ abstract class AbstractJPackageTask
         protected val signDir: Provider<Directory> = project.layout.buildDirectory.dir("compose/tmp/sign")
 
         @get:LocalState
-        protected val jpackageResources: Provider<Directory> = project.layout.buildDirectory.dir("compose/tmp/resources")
+        protected val jpackageResources: Provider<Directory> =
+            project.layout.buildDirectory.dir("compose/tmp/resources")
 
         @get:LocalState
         protected val skikoDir: Provider<Directory> = project.layout.buildDirectory.dir("compose/tmp/skiko")
@@ -508,7 +499,12 @@ abstract class AbstractJPackageTask
 
                 additionalLaunchers.get().forEach { launcher ->
                     val propertiesFile = workingDir.ioFile.resolve("launcher_${launcher.name}.properties")
-                    val escapedPath = if (currentTarget.os == OS.Windows) propertiesFile.absolutePath.replace("\\", "\\\\") else propertiesFile.absolutePath
+                    val escapedPath =
+                        if (currentTarget.os == OS.Windows) {
+                            propertiesFile.absolutePath.replace("\\", "\\\\")
+                        } else {
+                            propertiesFile.absolutePath
+                        }
                     cliArg("--add-launcher", "${launcher.name}=${escapedPath}")
                 }
             }
@@ -530,15 +526,10 @@ abstract class AbstractJPackageTask
             if (inputChanges.isIncremental && !layoutChanged) {
                 val allChanges = inputChanges.getFileChanges(files).asSequence()
 
+                // Whatever goes wrong incrementally, a full invalidation is always correct.
+                @Suppress("TooGenericExceptionCaught")
                 try {
-                    for (change in allChanges) {
-                        libsMapping.remove(change.file)?.let { files ->
-                            files.forEach { fileOperations.delete(it) }
-                        }
-                        if (change.changeType != ChangeType.REMOVED) {
-                            outdatedLibs.add(change.file)
-                        }
-                    }
+                    removeChangedLibs(allChanges, outdatedLibs)
                 } catch (e: Exception) {
                     logger.debug("Could remove outdated libs incrementally: ${e.stacktraceToString()}")
                     invalidateAllLibs()
@@ -550,11 +541,39 @@ abstract class AbstractJPackageTask
             return outdatedLibs
         }
 
+        /** Deletes the copies of every changed input and adds the ones still present to [outdatedLibs]. */
+        private fun removeChangedLibs(
+            changes: Sequence<FileChange>,
+            outdatedLibs: MutableSet<File>,
+        ) {
+            for (change in changes) {
+                libsMapping.remove(change.file)?.forEach { fileOperations.delete(it) }
+                if (change.changeType != ChangeType.REMOVED) {
+                    outdatedLibs.add(change.file)
+                }
+            }
+        }
+
+        /** Returns [icon]'s name, or `name (n).ext` with the first free `n`, and records it in [usedNames]. */
+        private fun uniqueIconName(
+            icon: File,
+            usedNames: MutableSet<String>,
+        ): String {
+            if (usedNames.add(icon.name)) return icon.name
+            return generateSequence(1UL) { it + 1UL }
+                .map { n -> "${icon.nameWithoutExtension} ($n).${icon.extension}" }
+                .first { usedNames.add(it) }
+        }
+
         private fun jarCopyingProcessor(): FileCopyingProcessor =
             if (currentOS == OS.MacOS) {
                 val tmpDirForSign = signDir.ioFile
                 fileOperations.clearDirs(tmpDirForSign)
-                MacJarSignFileCopyingProcessor(macSigner!!, tmpDirForSign, jvmRuntimeInfo.majorVersion)
+                MacJarSignFileCopyingProcessor(
+                    checkNotNull(macSigner) { "No macOS signer" },
+                    tmpDirForSign,
+                    jvmRuntimeInfo.majorVersion,
+                )
             } else {
                 SimpleFileCopyingProcessor
             }
@@ -624,6 +643,13 @@ abstract class AbstractJPackageTask
             }
             layoutFile.writeText(layout)
 
+            copyAppResources(libsDir)
+            prepareJpackageResources()
+            writeAdditionalLauncherProperties()
+        }
+
+        /** Copies the app resources into [packagedResourcesDir] (plus Skiko's `icudtl.dat` when sandboxed). */
+        private fun copyAppResources(libsDir: File) {
             // todo: incremental copy
             fileOperations.clearDirs(packagedResourcesDir)
             val destResourcesDir = packagedResourcesDir.ioFile
@@ -649,13 +675,18 @@ abstract class AbstractJPackageTask
                     icudtl.copyTo(destResourcesDir.resolve("icudtl.dat"), overwrite = true)
                 }
             }
+        }
 
+        /** Writes the jpackage resource directory: on macOS the compiled layered icon and `Info.plist`. */
+        private fun prepareJpackageResources() {
             fileOperations.clearDirs(jpackageResources)
             if (currentOS == OS.MacOS) {
                 val systemVersion = macMinimumSystemVersion.orNull ?: "10.13"
 
                 macLayeredIcons.ioFileOrNull?.let { layeredIcon ->
                     if (layeredIcon.exists()) {
+                        // The layered icon is optional: any failure of the external tool keeps the plain icon.
+                        @Suppress("TooGenericExceptionCaught")
                         try {
                             macAssetsTool.compileAssets(
                                 layeredIcon,
@@ -684,7 +715,10 @@ abstract class AbstractJPackageTask
                         .writeToFile(jpackageResources.ioFile.resolve("product-def.plist"))
                 }
             }
+        }
 
+        /** Writes the `--add-launcher` properties file of every additional launcher. */
+        private fun writeAdditionalLauncherProperties() {
             additionalLaunchers.get().forEach { launcher ->
                 val propertiesFile = workingDir.ioFile.resolve("launcher_${launcher.name}.properties")
                 val propertiesFileContent = buildString {
@@ -811,7 +845,7 @@ abstract class AbstractJPackageTask
             val appEntitlementsFile = macEntitlementsFile.ioFileOrNull
             val runtimeEntitlementsFile = macRuntimeEntitlementsFile.ioFileOrNull
 
-            val macSigner = macSigner!!
+            val macSigner = checkNotNull(macSigner) { "No macOS signer" }
             // Resign the runtime completely (and also the app dir only)
             // Sign all libs and executables in runtime
             runtimeDir.walk().forEach { file ->
@@ -1020,6 +1054,8 @@ abstract class AbstractJPackageTask
 
             val mappingFile = libsMappingFile.ioFile
             if (mappingFile.exists()) {
+                // Drops an unreadable mapping file whatever the failure, then rethrows it.
+                @Suppress("TooGenericExceptionCaught")
                 try {
                     libsMapping.loadFrom(mappingFile)
                 } catch (e: Exception) {
@@ -1058,7 +1094,9 @@ abstract class AbstractJPackageTask
             val packageVersion = packageVersion.get()
             plist[PlistKeys.CFBundleShortVersionString] = packageVersion
             // If building for the App Store, use "utilities" as default just like jpackage.
-            val category = macAppCategory.orNull ?: (if (macAppStore.orNull == true) "public.app-category.utilities" else null)
+            val category =
+                macAppCategory.orNull
+                    ?: (if (macAppStore.orNull == true) "public.app-category.utilities" else null)
             plist[PlistKeys.LSApplicationCategoryType] = category ?: "Unknown"
             val packageBuildVersion = packageBuildVersion.orNull ?: packageVersion
             plist[PlistKeys.CFBundleVersion] = packageBuildVersion
@@ -1077,7 +1115,8 @@ abstract class AbstractJPackageTask
                         .groupBy { it.mimeType to it.description }
                         .map { (key, extensions) ->
                             val (mimeType, description) = key
-                            val iconPath = extensions.firstNotNullOfOrNull { it.iconFile }?.let { iconMapping[it]?.name }
+                            val iconPath =
+                                extensions.firstNotNullOfOrNull { it.iconFile }?.let { iconMapping[it]?.name }
                             InfoPlistMapValue(
                                 PlistKeys.CFBundleTypeRole to InfoPlistStringValue("Editor"),
                                 PlistKeys.CFBundleTypeExtensions to
@@ -1111,6 +1150,8 @@ abstract class AbstractJPackageTask
 // Serializable is only needed to avoid breaking configuration cache:
 // https://docs.gradle.org/current/userguide/configuration_cache.html#config_cache:requirements
 private class FilesMapping : Serializable {
+    // A var because readObject reassigns it: deserialization runs no initializer.
+    @Suppress("DoubleMutabilityForCollection")
     private var mapping = HashMap<File, List<File>>()
 
     operator fun get(key: File): List<File>? = mapping[key]
@@ -1154,6 +1195,10 @@ private class FilesMapping : Serializable {
     @Suppress("UNCHECKED_CAST")
     private fun readObject(stream: ObjectInputStream) {
         mapping = stream.readObject() as HashMap<File, List<File>>
+    }
+
+    private companion object {
+        private const val serialVersionUID: Long = 1L
     }
 }
 

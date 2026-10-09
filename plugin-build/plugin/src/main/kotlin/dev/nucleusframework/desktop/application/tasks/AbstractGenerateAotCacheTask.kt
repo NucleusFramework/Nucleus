@@ -37,6 +37,12 @@ private const val MIN_AOT_JDK_VERSION = 25
 private const val MIN_AOT_CPU_FEATURE_CHECK_JDK_VERSION = 27
 private const val DEFAULT_SAFETY_TIMEOUT_SECONDS = 300L
 private const val UNLOCK_DIAGNOSTIC_VM_OPTIONS = "-XX:+UnlockDiagnosticVMOptions"
+private const val BYTES_PER_KIB = 1024
+private const val MILLIS_PER_SECOND = 1000L
+private const val XVFB_STARTUP_DELAY_MS = 1000L
+private const val TRAINING_POLL_INTERVAL_MS = 500L
+private const val TRAINING_OUTPUT_TAIL_CHARS = 3000
+private const val CRASH_LOG_HEAD_CHARS = 2000
 
 /** Extra options the JDK hands to the cache assembly JVM it forks in the single-step workflow. */
 private const val AOT_CHILD_OPTIONS_ENV = "JDK_AOT_VM_OPTIONS"
@@ -175,7 +181,8 @@ internal fun createAotTempFileWithFallback(
     }
 
     throw GradleException(
-        "Failed to create temporary file '$prefix*$suffix' in candidate directories: ${attemptedDirs.joinToString(", ")}",
+        "Failed to create temporary file '$prefix*$suffix' in candidate directories: " +
+            attemptedDirs.joinToString(", "),
         firstFailure,
     )
 }
@@ -258,6 +265,10 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
     @get:Input
     val extraTrainingJvmArgs: ListProperty<String> = objects.listProperty(String::class.java)
 
+    /**
+     * Trains the AOT cache by running the packaged app with the options of its launcher `.cfg`, then adds the
+     * cache to the `.cfg` so the launcher uses it.
+     */
     @TaskAction
     fun execute() {
         checkJdkVersion()
@@ -295,7 +306,8 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
 
         injectAotCacheIntoCfg(cfgFile, runtimeTuningArgs)
 
-        logger.lifecycle("[aotCache] Complete: ${aotCacheFile.absolutePath} (${aotCacheFile.length() / 1024}KB)")
+        val cacheSizeKib = aotCacheFile.length() / BYTES_PER_KIB
+        logger.lifecycle("[aotCache] Complete: ${aotCacheFile.absolutePath} (${cacheSizeKib}KB)")
     }
 
     /**
@@ -355,7 +367,7 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
             baseDir
                 .listFiles()
                 ?.filter { it.isDirectory && it.name != ".DS_Store" }
-                ?: emptyList()
+                .orEmpty()
         return when {
             children.isEmpty() -> throw GradleException("Distributable app directory not found under $baseDir")
             children.size == 1 -> children.single()
@@ -647,16 +659,16 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
                         ProcessBuilder("Xvfb", display, "-screen", "0", "1280x1024x24")
                             .redirectErrorStream(true)
                             .start()
-                    Thread.sleep(1000)
+                    Thread.sleep(XVFB_STARTUP_DELAY_MS)
                     processBuilder.environment()["DISPLAY"] = display
                     logger.lifecycle("[aotCache] Started Xvfb on $display")
                 }
 
                 val process = processBuilder.start()
 
-                val deadline = System.currentTimeMillis() + safetyTimeoutSeconds.get() * 1000
+                val deadline = System.currentTimeMillis() + safetyTimeoutSeconds.get() * MILLIS_PER_SECOND
                 while (process.isAlive && System.currentTimeMillis() < deadline) {
-                    Thread.sleep(500)
+                    Thread.sleep(TRAINING_POLL_INTERVAL_MS)
                 }
                 if (process.isAlive) {
                     logger.warn("[aotCache] App did not self-terminate within safety timeout, forcing kill")
@@ -665,7 +677,7 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
 
                 val exitCode = process.waitFor()
 
-                val output = logFile.readText().takeLast(3000)
+                val output = logFile.readText().takeLast(TRAINING_OUTPUT_TAIL_CHARS)
                 if (output.isNotBlank()) {
                     logger.lifecycle("[aotCache] Output (exit $exitCode):\n$output")
                 }
@@ -676,7 +688,7 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
                     // Only read text-based .log files; .mdmp files are binary minidumps
                     // that can be hundreds of MB and would cause OOM with readText()
                     if (hsErr.extension == "log") {
-                        logger.lifecycle(hsErr.readText().take(2000))
+                        logger.lifecycle(hsErr.readText().take(CRASH_LOG_HEAD_CHARS))
                     }
                     hsErr.delete()
                 }

@@ -34,7 +34,9 @@ internal fun nucleusDebugJvmArgs(
             .orEmpty()
             .toSet()
     (requested - DEBUG_SWITCHES).forEach {
-        logger.warn("Nucleus: unknown -P$NUCLEUS_DEBUG_GRADLE_PROPERTY switch '$it' (known: ${DEBUG_SWITCHES.joinToString()})")
+        logger.warn(
+            "Nucleus: unknown -P$NUCLEUS_DEBUG_GRADLE_PROPERTY switch '$it' (known: ${DEBUG_SWITCHES.joinToString()})",
+        )
     }
     val partialRedraw = app.debug.partialRedraw
     val recomposition = app.debug.recomposition

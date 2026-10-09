@@ -111,6 +111,9 @@ internal object LayerDamageClassPatcher {
     private const val ACCESS = "androidx/compose/ui/node/NucleusLayerDamage"
     private const val ACCESS_ENTRY = "$ACCESS.class"
     private const val VERSION_FIELD = "nucleus\$contentVersion"
+
+    // Stack slots of the injected `this.version++`: this, its DUP, then the constant 1.
+    private const val BUMP_MAX_STACK = 3
     private val BUMPED_METHODS = setOf("invalidate", "triggerRepaint")
 
     /** Whether [jar] holds an unpatched `GraphicsLayerOwnerLayer`. */
@@ -189,7 +192,7 @@ internal object LayerDamageClassPatcher {
                             maxStack: Int,
                             maxLocals: Int,
                         ) {
-                            super.visitMaxs(maxOf(maxStack, 3), maxLocals)
+                            super.visitMaxs(maxOf(maxStack, BUMP_MAX_STACK), maxLocals)
                         }
                     }
                 }
@@ -397,13 +400,24 @@ internal object GraphicsLayerHooksPatcher {
     //   public final class NucleusGraphicsLayerHooks {
     //       public static volatile Consumer recordStart, recordEnd;
     //       public static volatile BiConsumer draw;
-    //       public static void onRecordStart(Object layer) { Consumer c = recordStart; if (c != null) c.accept(layer); }
+    //       public static void onRecordStart(Object layer) {
+    //           Consumer c = recordStart; if (c != null) c.accept(layer);
+    //       }
     //       public static void onRecordEnd(Object layer) { …recordEnd… }
-    //       public static void onDraw(Object layer, Object parent) { BiConsumer c = draw; if (c != null) c.accept(layer, parent); }
+    //       public static void onDraw(Object layer, Object parent) {
+    //           BiConsumer c = draw; if (c != null) c.accept(layer, parent);
+    //       }
     //   }
     private fun generateHooks(): ByteArray {
         val cw = ClassWriter(ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES)
-        cw.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC or Opcodes.ACC_FINAL or Opcodes.ACC_SUPER, HOOKS, null, "java/lang/Object", null)
+        cw.visit(
+            Opcodes.V1_8,
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_FINAL or Opcodes.ACC_SUPER,
+            HOOKS,
+            null,
+            "java/lang/Object",
+            null,
+        )
         val fieldAccess = Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_VOLATILE
         cw.visitField(fieldAccess, "recordStart", "L$CONSUMER;", null, null).visitEnd()
         cw.visitField(fieldAccess, "recordEnd", "L$CONSUMER;", null, null).visitEnd()

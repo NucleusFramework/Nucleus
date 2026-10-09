@@ -9,6 +9,10 @@ import org.gradle.api.Action
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
 
+/**
+ * Where electron-builder publishes release artifacts and update metadata: GitHub Releases, S3
+ * or a generic HTTP server.
+ */
 abstract class PublishSettings {
     @get:Inject
     internal abstract val objects: ObjectFactory
@@ -18,23 +22,27 @@ abstract class PublishSettings {
 
     val github: GitHubPublishSettings = objects.newInstance(GitHubPublishSettings::class.java)
 
+    /** Configures publishing to GitHub Releases. */
     fun github(fn: Action<GitHubPublishSettings>) {
         fn.execute(github)
     }
 
     val s3: S3PublishSettings = objects.newInstance(S3PublishSettings::class.java)
 
+    /** Configures publishing to an S3 bucket. */
     fun s3(fn: Action<S3PublishSettings>) {
         fn.execute(s3)
     }
 
     val generic: GenericPublishSettings = objects.newInstance(GenericPublishSettings::class.java)
 
+    /** Configures publishing to a generic HTTP server. */
     fun generic(fn: Action<GenericPublishSettings>) {
         fn.execute(generic)
     }
 }
 
+/** Publishing to GitHub Releases. */
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class GitHubPublishSettings {
     /** Enable publishing to GitHub Releases. Default: false */
@@ -56,6 +64,7 @@ abstract class GitHubPublishSettings {
     var releaseType: ReleaseType = ReleaseType.Release
 }
 
+/** Publishing to a generic HTTP server serving the update files from [url]. */
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class GenericPublishSettings {
     /** Enable publishing via generic HTTP server. Default: false */
@@ -71,6 +80,7 @@ abstract class GenericPublishSettings {
     var useMultipleRangeRequest: Boolean = true
 }
 
+/** Publishing to an Amazon S3 bucket. */
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class S3PublishSettings {
     /** Enable publishing to S3. Default: false */

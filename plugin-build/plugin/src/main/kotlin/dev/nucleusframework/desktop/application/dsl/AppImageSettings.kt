@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+/** AppImage packaging options (`.desktop` entry metadata and AppImage-specific settings). */
 @Suppress("AbstractClassCanBeConcreteClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class AppImageSettings {
     /** Desktop file category. */

@@ -83,6 +83,7 @@ abstract class AbstractMergeUpdateYmlTask : AbstractNucleusTask() {
     @get:OutputDirectory
     val destinationDir: DirectoryProperty = objects.directoryProperty()
 
+    /** Merges the per-format update manifests into [destinationDir] and uploads them to S3 when publishing. */
     @TaskAction
     fun run() {
         val dirs = perFormatOutputDirs.files.filter { it.isDirectory }
@@ -157,7 +158,10 @@ abstract class AbstractMergeUpdateYmlTask : AbstractNucleusTask() {
                 try {
                     s3.putObject(request, RequestBody.fromFile(file))
                 } catch (e: SdkException) {
-                    throw GradleException("Failed to upload merged update manifest to s3://$bucket/$key: ${e.message}", e)
+                    throw GradleException(
+                        "Failed to upload merged update manifest to s3://$bucket/$key: ${e.message}",
+                        e,
+                    )
                 }
             }
         }

@@ -4,6 +4,9 @@ import dev.nucleusframework.internal.utils.MacUtils
 import org.gradle.api.logging.Logger
 import java.io.File
 
+// Lowest actool (Xcode 26) able to compile Liquid Glass `.icon` assets.
+private const val MIN_ACTOOL_MAJOR_VERSION = 26.0
+
 internal class MacAssetsTool(
     private val runTool: ExternalToolRunner,
     private val logger: Logger,
@@ -55,8 +58,10 @@ internal class MacAssetsTool(
 
     fun assetsFile(workingDir: File): File = workingDir.resolve("Assets.car")
 
+    // The tool runner surfaces failures as arbitrary runtime exceptions; any of them means the version is unknown.
+    @Suppress("TooGenericExceptionCaught")
     private fun checkAssetsToolVersion(): String {
-        val requiredVersion = 26.0
+        val requiredVersion = MIN_ACTOOL_MAJOR_VERSION
         var outputContent = ""
         val result =
             runTool(
@@ -67,7 +72,8 @@ internal class MacAssetsTool(
 
         if (result.exitValue != 0) {
             error(
-                "Could not get actool version: Command `xcrun actool -version` exited with code ${result.exitValue}\nStdOut: $outputContent\n",
+                "Could not get actool version: Command `xcrun actool -version` exited with code " +
+                    "${result.exitValue}\nStdOut: $outputContent\n",
             )
         }
 
@@ -98,7 +104,10 @@ internal class MacAssetsTool(
             }
 
         if (versionString.isNullOrBlank()) {
-            error("Could not extract short-bundle-version from actool output: '$outputContent'. Assuming it meets requirements.")
+            error(
+                "Could not extract short-bundle-version from actool output: '$outputContent'. " +
+                    "Assuming it meets requirements.",
+            )
         }
 
         val majorVersion =
@@ -107,7 +116,8 @@ internal class MacAssetsTool(
                 .firstOrNull()
                 ?.toIntOrNull()
                 ?: error(
-                    "Could not get actool major version from version string '$versionString' . Output was: '$outputContent'. Assuming it meets requirements.",
+                    "Could not get actool major version from version string '$versionString' . " +
+                        "Output was: '$outputContent'. Assuming it meets requirements.",
                 )
 
         if (majorVersion < requiredVersion) {

@@ -15,6 +15,10 @@ import javax.inject.Inject
 
 private const val DEFAULT_PROGUARD_VERSION = "7.10.0"
 
+/**
+ * ProGuard processing of a build type: ProGuard version and heap, extra configuration files,
+ * shrinking / obfuscation / optimization switches and library consumer rules.
+ */
 abstract class ProguardSettings
     @Inject
     constructor(

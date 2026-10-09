@@ -61,6 +61,7 @@ internal fun resolveMetadataRepositoryFromArtifacts(
  * Extracts the metadata repository ZIP to [outputDir].
  * Returns the root directory of the extracted repository, or null on failure.
  */
+@Suppress("TooGenericExceptionCaught") // Any extraction failure degrades to "no repository metadata"
 private fun extractRepository(
     zipFile: File,
     version: String,
@@ -80,18 +81,7 @@ private fun extractRepository(
     outputDir.mkdirs()
 
     try {
-        ZipFile(zipFile).use { zip ->
-            for (entry in zip.entries()) {
-                if (entry.isDirectory) continue
-                val targetFile = File(outputDir, entry.name)
-                targetFile.parentFile.mkdirs()
-                zip.getInputStream(entry).use { input ->
-                    targetFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-        }
+        unzip(zipFile, outputDir)
     } catch (e: Exception) {
         logger.warn("Failed to extract metadata repository ZIP: ${e.message}")
         return null
@@ -99,6 +89,24 @@ private fun extractRepository(
 
     extractedMarker.writeText(version)
     return outputDir
+}
+
+private fun unzip(
+    zipFile: File,
+    outputDir: File,
+) {
+    ZipFile(zipFile).use { zip ->
+        for (entry in zip.entries()) {
+            if (entry.isDirectory) continue
+            val targetFile = File(outputDir, entry.name)
+            targetFile.parentFile.mkdirs()
+            zip.getInputStream(entry).use { input ->
+                targetFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -127,7 +135,8 @@ private fun findMetadataForDependency(
 
     val slurper = JsonSlurper()
 
-    @Suppress("UNCHECKED_CAST")
+    // A malformed index.json (JsonException, IllegalArgumentException, I/O error) skips the module.
+    @Suppress("UNCHECKED_CAST", "TooGenericExceptionCaught")
     val indexEntries =
         try {
             slurper.parseText(indexFile.readText()) as? List<Map<String, Any?>>

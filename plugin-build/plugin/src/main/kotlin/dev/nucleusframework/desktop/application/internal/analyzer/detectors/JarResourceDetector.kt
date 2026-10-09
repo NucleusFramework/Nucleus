@@ -37,16 +37,8 @@ internal object JarResourceDetector {
         val patterns = mutableSetOf<ResourcePattern>()
 
         for (entry in jarFile.entries()) {
-            if (entry.isDirectory) continue
+            if (entry.isDirectory || isSkippedEntry(entry.name)) continue
             val name = entry.name
-
-            // Skip class files and META-INF signatures/manifests
-            if (name.endsWith(".class")) continue
-            if (name.startsWith("META-INF/MANIFEST.MF")) continue
-            if (name.startsWith("META-INF/maven/")) continue
-            if (name.startsWith("META-INF/versions/")) continue
-            if (name.endsWith(".SF") || name.endsWith(".RSA") || name.endsWith(".DSA")) continue
-
             val ext = name.substringAfterLast('.', "")
 
             when {
@@ -70,6 +62,16 @@ internal object JarResourceDetector {
 
         return patterns
     }
+
+    // Class files and META-INF signatures/manifests
+    private fun isSkippedEntry(name: String): Boolean =
+        name.endsWith(".class") ||
+            name.startsWith("META-INF/MANIFEST.MF") ||
+            name.startsWith("META-INF/maven/") ||
+            name.startsWith("META-INF/versions/") ||
+            name.endsWith(".SF") ||
+            name.endsWith(".RSA") ||
+            name.endsWith(".DSA")
 
     /**
      * Checks whether the path belongs to a known framework resource directory

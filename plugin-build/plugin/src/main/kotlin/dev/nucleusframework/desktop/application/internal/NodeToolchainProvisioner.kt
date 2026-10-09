@@ -56,6 +56,8 @@ internal data class NodeInstallation(
  * Unlike the JDK toolchains this one is provisioned at execution time, from the packaging task
  * itself: nothing in the task graph needs the path at configuration time.
  */
+// Small, unit-tested resolution steps; splitting the object would only scatter the provisioning logic.
+@Suppress("TooManyFunctions")
 internal object NodeToolchainProvisioner {
     private const val MARKER_FILE = ".nucleus-provisioned"
     private const val NODE_DIST_BASE = "https://nodejs.org/dist"

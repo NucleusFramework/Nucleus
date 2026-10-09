@@ -36,6 +36,7 @@ abstract class AbstractRunAppXTask : AbstractNucleusTask() {
     @get:Optional
     abstract val applicationId: Property<String>
 
+    /** Reinstalls the `.appx` found in [appxDir] and runs the installed app. */
     @TaskAction
     fun run() {
         val dir = appxDir.get().asFile

@@ -109,7 +109,8 @@ internal open class JvmApplicationInternal
             fn.execute(data.graalvm)
         }
 
-        final override val additionalLaunchers: NamedDomainObjectContainer<AdditionalLauncher> by data::additionalLaunchers
+        final override val additionalLaunchers: NamedDomainObjectContainer<AdditionalLauncher>
+            by data::additionalLaunchers
 
         final override fun additionalLaunchers(action: Action<NamedDomainObjectContainer<AdditionalLauncher>>) {
             action.execute(data.additionalLaunchers)

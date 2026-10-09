@@ -5,6 +5,7 @@ import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import java.io.File
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.zip.ZipException
 import java.util.zip.ZipFile
 
@@ -85,7 +86,8 @@ internal object ConsumerProguardRules {
                     rejected.isNotEmpty() -> skipped += Skipped(jar, entry, "uses ${rejected.joinToString()}")
                     seen.add(content.sha256()) -> {
                         val baseName = entry.substringAfterLast('/').removeSuffix(".pro")
-                        val name = "%03d-%s".format(files.size, safeName("${jar.nameWithoutExtension}-$baseName"))
+                        val name =
+                            "%03d-%s".format(Locale.ROOT, files.size, safeName("${jar.nameWithoutExtension}-$baseName"))
                         files += destinationDir.resolve(name).apply { writeBytes(content) }
                     }
                 }
@@ -93,7 +95,8 @@ internal object ConsumerProguardRules {
         }
         if (providers.isNotEmpty()) {
             val rules = ServiceProviderRules.rules(providers, ServiceProviderRules.programClasses(jars))
-            files += destinationDir.resolve("%03d-service-providers.pro".format(files.size)).apply { writeText(rules) }
+            val name = "%03d-service-providers.pro".format(Locale.ROOT, files.size)
+            files += destinationDir.resolve(name).apply { writeText(rules) }
         }
         return Result(files, skipped)
     }
@@ -165,7 +168,7 @@ internal object ConsumerProguardRules {
     }
 
     private fun ByteArray.sha256(): String =
-        MessageDigest.getInstance("SHA-256").digest(this).joinToString("") { "%02x".format(it) }
+        MessageDigest.getInstance("SHA-256").digest(this).joinToString("") { "%02x".format(Locale.ROOT, it) }
 
     private fun safeName(name: String): String = name.replace(UNSAFE_NAME_CHARS, "_").take(MAX_NAME_LENGTH) + ".pro"
 }

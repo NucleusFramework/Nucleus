@@ -14,6 +14,13 @@ import org.gradle.api.provider.SetProperty
 import org.gradle.jvm.toolchain.JvmVendorSpec
 import javax.inject.Inject
 
+// Same share of physical RAM as HotSpot's default MaxRAMPercentage.
+private const val DEFAULT_MAX_HEAP_SIZE_PERCENT = 25
+
+/**
+ * The `graalvm { }` block: builds the application as a GraalVM native image (opt in with [isEnabled])
+ * and configures the toolchain, `native-image` options, heap and GC defaults, and reachability metadata.
+ */
 abstract class GraalvmSettings
     @Inject
     constructor(
@@ -95,7 +102,7 @@ abstract class GraalvmSettings
         // when set. Both are only defaults — overridable at runtime via `-Xmx` /
         // `-XX:MaximumHeapSizePercent`. Set percent to 80 to restore native-image's own default.
         val maxHeapSize: Property<String> = objects.nullableProperty()
-        val maxHeapSizePercent: Property<Int> = objects.notNullProperty(25)
+        val maxHeapSizePercent: Property<Int> = objects.notNullProperty(DEFAULT_MAX_HEAP_SIZE_PERCENT)
 
         // Garbage collector baked into the image (`--gc=`). Unlike the JVM, the collector is fixed
         // at build time. Leave unset to keep native-image's default (Serial GC, the right fit for a
@@ -161,22 +168,27 @@ abstract class GraalvmSettings
         val metadataRepository: MetadataRepositorySettings = objects.new()
         val pgo: GraalvmPgoSettings = objects.new()
 
+        /** Configures how the GraalVM JDK used by `native-image` is acquired. */
         fun toolchain(fn: Action<GraalvmToolchainSettings>) {
             fn.execute(toolchain)
         }
 
+        /** Configures the macOS-specific native image settings. */
         fun macOS(fn: Action<GraalvmMacOSSettings>) {
             fn.execute(macOS)
         }
 
+        /** Configures the Windows-specific native image settings. */
         fun windows(fn: Action<GraalvmWindowsSettings>) {
             fn.execute(windows)
         }
 
+        /** Configures the GraalVM Reachability Metadata Repository lookup for classpath dependencies. */
         fun metadataRepository(fn: Action<MetadataRepositorySettings>) {
             fn.execute(metadataRepository)
         }
 
+        /** Configures profile-guided optimization (Oracle GraalVM only). */
         fun pgo(fn: Action<GraalvmPgoSettings>) {
             fn.execute(pgo)
         }
@@ -279,6 +291,10 @@ abstract class GraalvmPgoSettings
         val profile: RegularFileProperty = objects.fileProperty()
     }
 
+/**
+ * macOS-specific settings for GraalVM native images: an optional replacement for the built-in C stubs
+ * source, and the minimum system / SDK versions written into the binary.
+ */
 abstract class GraalvmMacOSSettings
     @Inject
     constructor(

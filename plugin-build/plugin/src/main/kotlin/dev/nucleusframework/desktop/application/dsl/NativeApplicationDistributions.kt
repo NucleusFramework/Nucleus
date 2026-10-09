@@ -8,6 +8,7 @@ package dev.nucleusframework.desktop.application.dsl
 import org.gradle.api.Action
 import java.util.*
 
+/** Distribution settings of a Kotlin/Native application; only [TargetFormat.Dmg] is supported. */
 abstract class NativeApplicationDistributions : AbstractDistributions() {
     private val supportedFormats = EnumSet.of(TargetFormat.Dmg)
 
@@ -23,8 +24,10 @@ abstract class NativeApplicationDistributions : AbstractDistributions() {
         super.targetFormats(*formats)
     }
 
-    val macOS: NativeApplicationMacOSPlatformSettings = objects.newInstance(NativeApplicationMacOSPlatformSettings::class.java)
+    val macOS: NativeApplicationMacOSPlatformSettings =
+        objects.newInstance(NativeApplicationMacOSPlatformSettings::class.java)
 
+    /** Configures macOS packaging. */
     open fun macOS(fn: Action<NativeApplicationMacOSPlatformSettings>) {
         fn.execute(macOS)
     }

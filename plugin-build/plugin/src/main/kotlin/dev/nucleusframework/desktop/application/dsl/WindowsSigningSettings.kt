@@ -9,6 +9,10 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
 
+/**
+ * Windows code-signing settings: a certificate file, a certificate from the store (by SHA-1 or subject)
+ * or Azure Trusted Signing, applied to the installers and the app image.
+ */
 abstract class WindowsSigningSettings {
     @get:Inject
     internal abstract val objects: ObjectFactory

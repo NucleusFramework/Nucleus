@@ -12,6 +12,10 @@ import org.gradle.api.model.ObjectFactory
 import java.io.File
 import javax.inject.Inject
 
+/**
+ * Packaging settings shared by every platform: the icon, a platform-specific package version
+ * and file associations.
+ */
 abstract class AbstractPlatformSettings {
     @get:Inject
     internal abstract val objects: ObjectFactory
@@ -21,6 +25,10 @@ abstract class AbstractPlatformSettings {
 
     internal val fileAssociations: MutableSet<FileAssociation> = mutableSetOf()
 
+    /**
+     * Associates files with [extension] / [mimeType] with the application on this platform,
+     * shown with [description] and, optionally, [iconFile].
+     */
     @JvmOverloads
     fun fileAssociation(
         mimeType: String,
@@ -32,6 +40,10 @@ abstract class AbstractPlatformSettings {
     }
 }
 
+/**
+ * macOS packaging settings shared by JVM and Kotlin/Native applications: bundle identity and versions,
+ * signing, notarization and the DMG layout.
+ */
 abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
     var packageName: String? = null
 
@@ -69,25 +81,33 @@ abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
 
     val signing: MacOSSigningSettings = objects.newInstance(MacOSSigningSettings::class.java)
 
+    /** Configures macOS code signing. */
     fun signing(fn: Action<MacOSSigningSettings>) {
         fn.execute(signing)
     }
 
     val notarization: MacOSNotarizationSettings = objects.newInstance(MacOSNotarizationSettings::class.java)
 
+    /** Configures macOS notarization. */
     fun notarization(fn: Action<MacOSNotarizationSettings>) {
         fn.execute(notarization)
     }
 
     val dmg: DmgSettings = objects.newInstance(DmgSettings::class.java)
 
+    /** Configures the DMG installer. */
     fun dmg(fn: Action<DmgSettings>) {
         fn.execute(dmg)
     }
 }
 
+/** macOS packaging settings of a Kotlin/Native application. */
 abstract class NativeApplicationMacOSPlatformSettings : AbstractMacOSPlatformSettings()
 
+/**
+ * macOS packaging settings of a JVM application: on top of the shared ones, the Dock name, PKG channel,
+ * sandboxing entitlements and provisioning, launch agents, app extensions and extra `Info.plist` keys.
+ */
 abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
     var dockName: String? = null
     var setDockNameSameAsPackageName: Boolean = true
@@ -161,6 +181,7 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
      */
     val launchAgents: LaunchAgentSettings = LaunchAgentSettings()
 
+    /** Configures [launchAgents]. */
     fun launchAgents(fn: Action<LaunchAgentSettings>) {
         fn.execute(launchAgents)
     }
@@ -190,15 +211,21 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
 
     internal val infoPlistSettings = InfoPlistSettings()
 
+    /** Configures extra keys added to the bundle's `Info.plist`. */
     fun infoPlist(fn: Action<InfoPlistSettings>) {
         fn.execute(infoPlistSettings)
     }
 }
 
+/** Extra `Info.plist` content: [extraKeysRawXml] is inserted verbatim into the generated plist dictionary. */
 open class InfoPlistSettings {
     var extraKeysRawXml: String? = null
 }
 
+/**
+ * Linux packaging settings: desktop entry, package metadata and maintainer scripts for deb / rpm / pacman,
+ * and the Snap, Flatpak and AppImage targets.
+ */
 abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
     var shortcut: Boolean = false
 
@@ -295,29 +322,37 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
 
     val snap: SnapSettings = objects.newInstance(SnapSettings::class.java)
 
+    /** Configures the Snap package. */
     fun snap(fn: Action<SnapSettings>) {
         fn.execute(snap)
     }
 
     val flatpak: FlatpakSettings = objects.newInstance(FlatpakSettings::class.java)
 
+    /** Configures the Flatpak package. */
     fun flatpak(fn: Action<FlatpakSettings>) {
         fn.execute(flatpak)
     }
 
     val appImage: AppImageSettings = objects.newInstance(AppImageSettings::class.java)
 
+    /** Configures the AppImage package. */
     fun appImage(fn: Action<AppImageSettings>) {
         fn.execute(appImage)
     }
 
     val signing: LinuxSigningSettings = objects.newInstance(LinuxSigningSettings::class.java)
 
+    /** Configures Linux package signing. */
     fun signing(fn: Action<LinuxSigningSettings>) {
         fn.execute(signing)
     }
 }
 
+/**
+ * Windows packaging settings: launcher, shortcuts and upgrade code, plus the NSIS, MSI, AppX and
+ * portable targets and code signing.
+ */
 abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
     var packageName: String? = null
     var console: Boolean = false
@@ -338,30 +373,35 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
 
     val nsis: NsisSettings = objects.newInstance(NsisSettings::class.java)
 
+    /** Configures the NSIS installer. */
     fun nsis(fn: Action<NsisSettings>) {
         fn.execute(nsis)
     }
 
     val msi: MsiSettings = objects.newInstance(MsiSettings::class.java)
 
+    /** Configures the MSI installer. */
     fun msi(fn: Action<MsiSettings>) {
         fn.execute(msi)
     }
 
     val appx: AppXSettings = objects.newInstance(AppXSettings::class.java)
 
+    /** Configures the AppX / MSIX package. */
     fun appx(fn: Action<AppXSettings>) {
         fn.execute(appx)
     }
 
     val portable: PortableSettings = objects.newInstance(PortableSettings::class.java)
 
+    /** Configures the portable executable. */
     fun portable(fn: Action<PortableSettings>) {
         fn.execute(portable)
     }
 
     val signing: WindowsSigningSettings = objects.newInstance(WindowsSigningSettings::class.java)
 
+    /** Configures Windows code signing. */
     fun signing(fn: Action<WindowsSigningSettings>) {
         fn.execute(signing)
     }

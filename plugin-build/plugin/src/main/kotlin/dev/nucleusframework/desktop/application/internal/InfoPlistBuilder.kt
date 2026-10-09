@@ -5,13 +5,15 @@
 
 package dev.nucleusframework.desktop.application.internal
 
-import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.*
+import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
+import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
+import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
 import java.io.File
 import kotlin.reflect.KProperty
 
-private const val indent = "  "
+private const val INDENT = "  "
 
-private fun indentForLevel(level: Int) = indent.repeat(level)
+private fun indentForLevel(level: Int) = INDENT.repeat(level)
 
 internal class InfoPlistBuilder(
     private val extraPlistKeysRawXml: String? = null,
@@ -50,7 +52,8 @@ internal class InfoPlistBuilder(
                         prefix = "${indentForLevel(nestingLevel)}<dict>\n",
                         postfix = "\n${indentForLevel(nestingLevel)}</dict>",
                     ) { (key, value) ->
-                        "${indentForLevel(nestingLevel + 1)}<key>${key.name}</key>\n${value.asPlistEntry(nestingLevel + 1)}"
+                        "${indentForLevel(nestingLevel + 1)}<key>${key.name}</key>\n" +
+                            value.asPlistEntry(nestingLevel + 1)
                     }
                 }
 
@@ -119,7 +122,10 @@ internal class InfoPlistBuilder(
         file.writer().buffered().use { writer ->
             writer.run {
                 appendLine("<?xml version=\"1.0\" ?>")
-                appendLine("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"https://www.apple.com/DTDs/PropertyList-1.0.dtd\">")
+                appendLine(
+                    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" " +
+                        "\"https://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
+                )
                 appendLine("<plist version=\"1.0\">")
                 appendLine("${indentForLevel(1)}<dict>")
                 for ((k, v) in values) {

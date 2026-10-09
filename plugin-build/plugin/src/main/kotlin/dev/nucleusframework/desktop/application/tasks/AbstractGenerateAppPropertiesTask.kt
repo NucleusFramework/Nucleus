@@ -14,6 +14,10 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 import java.util.Properties
 
+/**
+ * Writes `nucleus/nucleus-app.properties` into [outputDir]: the app metadata (id, version, vendor, name, AUMID,
+ * startup identifiers) and the enabled runtime optimizations, read back at run time by the Nucleus runtime.
+ */
 @DisableCachingByDefault(because = "Lightweight task that writes a single properties file")
 abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
     @get:Input
@@ -62,6 +66,7 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    /** Writes the properties file. */
     @TaskAction
     fun generate() {
         val dir = outputDir.get().asFile.resolve("nucleus")
