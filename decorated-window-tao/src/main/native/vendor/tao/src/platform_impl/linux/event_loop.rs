@@ -816,6 +816,15 @@ impl<T: 'static> EventLoop<T> {
 
             let tx_clone = event_tx.clone();
             window.connect_enter_notify_event(move |window, crossing| {
+              // GDK emits crossing events for the first touchscreen contact too.
+              // Nucleus delivers that contact through its touch bridge; it is
+              // not mouse hover and must not become a mouse-only CursorMoved.
+              if crossing
+                .source_device()
+                .is_some_and(|device| device.source() == gdk::InputSource::Touchscreen)
+              {
+                return glib::Propagation::Proceed;
+              }
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::CursorEntered {
@@ -898,7 +907,13 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
-            window.connect_leave_notify_event(move |_, _| {
+            window.connect_leave_notify_event(move |_, crossing| {
+              if crossing
+                .source_device()
+                .is_some_and(|device| device.source() == gdk::InputSource::Touchscreen)
+              {
+                return glib::Propagation::Proceed;
+              }
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::CursorLeft {
