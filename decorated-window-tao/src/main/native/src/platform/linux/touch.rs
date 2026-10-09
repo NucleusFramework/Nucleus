@@ -169,6 +169,7 @@ fn dispatch_touch(
     event_type: jint,
     state: &TouchState,
     released_id: Option<u64>,
+    timestamp: u32,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(mut env) = vm.attach_current_thread_permanently() else { return };
@@ -215,7 +216,7 @@ fn dispatch_touch(
         let _ = env.call_method(
             callback.as_obj(),
             "onTouchEvent",
-            "(JII[J[J[JJ)V",
+            "(JII[J[J[JJJ)V",
             &[
                 JValue::Long(handle as jlong),
                 JValue::Int(event_type),
@@ -224,6 +225,7 @@ fn dispatch_touch(
                 JValue::Object(&xs_arr.into()),
                 JValue::Object(&ys_arr.into()),
                 JValue::Long(pressed_mask),
+                JValue::Long(timestamp as jlong),
             ],
         );
         if env.exception_check().unwrap_or(false) {
@@ -305,7 +307,7 @@ fn handle_touch(
                 ActivePointer { x_fixed, y_fixed },
             );
             state.order.borrow_mut().push(id);
-            dispatch_touch(handle, callback, TOUCH_EVENT_PRESS, state, None);
+            dispatch_touch(handle, callback, TOUCH_EVENT_PRESS, state, None, ev.time());
         }
         EventType::TouchUpdate => {
             let Some(&id) = state.seq_to_id.borrow().get(&seq_ptr) else { return };
@@ -313,7 +315,7 @@ fn handle_touch(
                 p.x_fixed = x_fixed;
                 p.y_fixed = y_fixed;
             }
-            dispatch_touch(handle, callback, TOUCH_EVENT_MOVE, state, None);
+            dispatch_touch(handle, callback, TOUCH_EVENT_MOVE, state, None, ev.time());
         }
         EventType::TouchEnd | EventType::TouchCancel => {
             let id_opt = state.seq_to_id.borrow_mut().remove(&seq_ptr);
@@ -328,7 +330,7 @@ fn handle_touch(
             } else {
                 TOUCH_EVENT_RELEASE
             };
-            dispatch_touch(handle, callback, event_type, state, Some(id));
+            dispatch_touch(handle, callback, event_type, state, Some(id), ev.time());
             // Purge from active set after the dispatch so the JVM saw the
             // released finger one last time with pressed=false.
             state.active.borrow_mut().remove(&id);

@@ -621,7 +621,7 @@
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge$Callback",
             "jniAccessible": true,
             "methods": [
-                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
+                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long","long"] },
                 { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
             ]
         },
@@ -629,7 +629,7 @@
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux$InboundTouchCallback",
             "jniAccessible": true,
             "methods": [
-                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
+                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long","long"] },
                 { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
             ]
         },
