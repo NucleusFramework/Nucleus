@@ -53,6 +53,7 @@ use super::{
 
 use taskbar::TaskbarIndicator;
 
+// Arbitrary batch limit to balance draining GTK work with Tao event and redraw progress.
 const MAX_GTK_ITERATIONS_PER_TAO_STEP: usize = 32;
 
 /// Whether GTK focus sits on a widget Nucleus did not create — an embedded
