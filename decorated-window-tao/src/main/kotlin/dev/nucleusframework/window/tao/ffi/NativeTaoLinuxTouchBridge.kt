@@ -56,6 +56,8 @@ internal object NativeTaoLinuxTouchBridge {
          * @param pressedMask Bit `i` set iff `ids[i]` is currently pressed. The
          *                 finger being released this event has its bit cleared
          *                 even though it is still present in the arrays.
+         * @param timestampMillis Original unsigned GDK event timestamp in milliseconds;
+         *                 zero means no timestamp is available.
          */
         @Suppress("LongParameterList", "FunctionParameterNaming")
         fun onTouchEvent(
@@ -66,6 +68,7 @@ internal object NativeTaoLinuxTouchBridge {
             xsFixed: LongArray,
             ysFixed: LongArray,
             pressedMask: Long,
+            timestampMillis: Long,
         )
 
         /**

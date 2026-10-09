@@ -46,6 +46,7 @@ import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl
 import dev.nucleusframework.window.tao.dispatch.DelayScheduler
+import dev.nucleusframework.window.tao.event.TaoTouchEventTime
 import dev.nucleusframework.window.tao.event.TaoTrackpadRotationContacts
 import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSession
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
@@ -1246,6 +1247,8 @@ internal class TaoComposeSceneHostLinux(
      */
     @OptIn(ExperimentalComposeUiApi::class)
     private inner class InboundTouchCallback : NativeTaoLinuxTouchBridge.Callback {
+        private val eventTime = TaoTouchEventTime()
+
         override fun onTouchEvent(
             handle: Long,
             eventType: Int,
@@ -1254,6 +1257,7 @@ internal class TaoComposeSceneHostLinux(
             xsFixed: LongArray,
             ysFixed: LongArray,
             pressedMask: Long,
+            timestampMillis: Long,
         ) {
             // Touch runs user pointer-input code exactly like the mouse path,
             // but this bridge calls back outside `EventDispatcher.guarded`, so
@@ -1311,6 +1315,7 @@ internal class TaoComposeSceneHostLinux(
                 sc.sendPointerEvent(
                     eventType = composeType,
                     pointers = pointers,
+                    timeMillis = eventTime.toMillis(timestampMillis, System.currentTimeMillis()),
                     keyboardModifiers = currentKeyboardModifiers,
                 )
                 if (eventType == TaoTouchEvent.CANCEL) {
