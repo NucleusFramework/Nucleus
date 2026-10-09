@@ -1,6 +1,11 @@
 package dev.nucleusframework.window.tao.headful
 
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.geometry.Offset
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * The tab workspace under a real mouse, on real windows: every case here is
@@ -283,23 +288,50 @@ internal object TabWorkspaceMouseHeadfulCases {
 
                 val grab = requireNotNull(fixture.tabCenterPx("Beta"))
                 val target = requireNotNull(fixture.stripPointPx(home, STRIP_HEAD_FRACTION))
-                val flicked =
-                    robotPressAndDrag(
-                        grab,
-                        target,
-                        secondWindow.scaleFactor,
-                        steps = FLICK_STEPS,
-                        stepDelayMillis = 0,
-                    )
-                if (flicked == null) {
-                    System.err.println("[tab-mouse] robot became unavailable, nothing to assert")
-                    return@TaoWindowTestCase
-                }
-                awaitUntil("the flick started the window drag — ${robotAim()}") { workspace.draggedTab?.id == beta }
-                checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
 
-                awaitUntil("the flicked tab merged into the first window") {
-                    workspace.groups.size == 1 && fixture.groupOf("Beta") === home
+                // Every pointer sample the drag took and what it previewed: a
+                // flick that never previewed the home strip was released short
+                // of it, one that did was resolved elsewhere at the release.
+                val samples = mutableListOf<String>()
+                val sampler =
+                    CoroutineScope(currentCoroutineContext()).launch {
+                        snapshotFlow {
+                            val pointer = workspace.dragPointerScreenPx ?: return@snapshotFlow null
+                            "(${pointer.x.roundToInt()}, ${pointer.y.roundToInt()})→" +
+                                (workspace.dropPreview?.let { "${it.group.id}@${it.index}" } ?: "none")
+                        }.collect { sample -> if (sample != null) samples += sample }
+                    }
+                val state = {
+                    "target=(${target.x.roundToInt()}, ${target.y.roundToInt()}) home=${home.id} " +
+                        "homeStrip=${fixture.stripRectPx(home)} Beta in ${fixture.groupOf("Beta")?.id} " +
+                        "groups=${workspace.groups.map { group ->
+                            "${group.id}${group.ids}@${group.window?.outerBoundsPx()?.contentToString()}"
+                        }} " +
+                        "dragging=${workspace.draggedTab?.id} " +
+                        "preview=${workspace.dropPreview?.let { "${it.group.id}@${it.index}" }} " +
+                        "samples=$samples ${robotAim()}"
+                }
+                try {
+                    val flicked =
+                        robotPressAndDrag(
+                            grab,
+                            target,
+                            secondWindow.scaleFactor,
+                            steps = FLICK_STEPS,
+                            stepDelayMillis = 0,
+                        )
+                    if (flicked == null) {
+                        System.err.println("[tab-mouse] robot became unavailable, nothing to assert")
+                        return@TaoWindowTestCase
+                    }
+                    awaitUntil("the flick started the window drag", detail = state) { workspace.draggedTab?.id == beta }
+                    checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
+
+                    awaitUntil("the flicked tab merged into the first window", detail = state) {
+                        workspace.groups.size == 1 && fixture.groupOf("Beta") === home
+                    }
+                } finally {
+                    sampler.cancel()
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 check(home.ids.size == 2) { "the merged strip holds ${home.ids}" }
