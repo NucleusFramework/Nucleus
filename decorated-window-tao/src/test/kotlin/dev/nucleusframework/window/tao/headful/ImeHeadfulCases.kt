@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,18 +86,34 @@ internal object ImeHeadfulCases {
             val handle = window.handle
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("key target focused") { focused.get() }
-            check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = true)) {
-                "keyDown was not delivered"
-            }
-            repeat(2) {
-                check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = true, autorepeat = true)) {
-                    "repeated keyDown was not delivered"
+            // The keys are posted to the session event tap, which hands them to
+            // the active app's key window: Compose focus says nothing about
+            // that, and activation is asynchronous.
+            if (!window.isFocused) window.focus()
+            awaitUntil("window has OS focus") { window.isFocused }
+
+            // One key at a time: of two auto-repeat key-downs posted back to
+            // back, macOS delivers one (on the hosted runners the merged case
+            // lost a repeat every time), so each key waits for the previous one.
+            suspend fun post(
+                down: Boolean,
+                autorepeat: Boolean,
+            ) {
+                val before = seen.size
+                check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down, autorepeat)) {
+                    "posting keyDown=$down autorepeat=$autorepeat was refused"
                 }
+                awaitUntil(
+                    "key event ${before + 1} seen (down=$down, autorepeat=$autorepeat)",
+                    detail = {
+                        "seen=$seen windowFocused=${window.isFocused} " +
+                            "inputSource=${MacOsKotoeriProbe.currentInputSource()}"
+                    },
+                ) { seen.size > before }
             }
-            check(MacOsKotoeriProbe.postKey(handle, MacOsKotoeriProbe.KEY_N, "n", down = false)) {
-                "keyUp was not delivered"
-            }
-            awaitUntil("four key events seen") { seen.size >= 4 }
+            post(down = true, autorepeat = false)
+            repeat(2) { post(down = true, autorepeat = true) }
+            post(down = false, autorepeat = false)
             val expected =
                 listOf(
                     KeyEventType.KeyDown to false,
@@ -354,6 +371,7 @@ internal object ImeHeadfulCases {
     private fun textInputClientAnswersAndEmptyCorporateCommit(): TaoWindowTestCase {
         val value = AtomicReference("")
         val composition = AtomicReference<TextRange?>(null)
+        val composed = AtomicReference(TextFieldValue(""))
         val focused = AtomicBoolean(false)
         return TaoWindowTestCase(
             name = "#595 NSTextInputClient answers and empty corporate commit",
@@ -361,9 +379,9 @@ internal object ImeHeadfulCases {
             skip = { macOsOnly() },
             paintDefaultBackground = false,
             size = DpSize(480.dp, 360.dp),
-            content = { focusedImeField(value, composition, focused) },
+            content = { focusedImeField(value, composition, composed, focused) },
         ) {
-            driveTextInputClientCase(value, composition, focused)
+            driveTextInputClientCase(value, composition, composed, focused)
         }
     }
 
@@ -371,10 +389,14 @@ internal object ImeHeadfulCases {
     private fun focusedImeField(
         value: AtomicReference<String>,
         composition: AtomicReference<TextRange?>,
+        composed: AtomicReference<TextFieldValue>,
         focused: AtomicBoolean,
     ) {
         val requester = remember { FocusRequester() }
         var field by remember { mutableStateOf(TextFieldValue("")) }
+        // The value the field was last composed with — not the same as the
+        // last onValueChange, which runs before the recomposition it causes.
+        SideEffect { composed.set(field) }
         LaunchedEffect(Unit) {
             requester.requestFocus()
             focused.set(true)
@@ -396,21 +418,29 @@ internal object ImeHeadfulCases {
     private suspend fun TaoWindowTestScope.driveTextInputClientCase(
         value: AtomicReference<String>,
         composition: AtomicReference<TextRange?>,
+        composed: AtomicReference<TextFieldValue>,
         focused: AtomicBoolean,
     ) {
         val marked = "hello"
-        awaitUntil("window mapped") { bounds() != null }
-        awaitUntil("text field focused") { focused.get() }
-        settle(FOCUS_SETTLE_MILLIS)
         val handle = window.handle
+        // What a timeout reports: the field, the view's NSTextInputClient
+        // answers and the focus and input source the IME path depends on.
+        val state = {
+            "value=${value.get().debug()} composition=${composition.get()} " +
+                "windowFocused=${window.isFocused} client=${MacOsTextInputClientProbe.query(handle)} " +
+                "inputSource=${MacOsKotoeriProbe.currentInputSource()}"
+        }
+        awaitUntil("window mapped") { bounds() != null }
+        awaitUntil("text field focused", detail = state) { focused.get() }
+        settle(FOCUS_SETTLE_MILLIS)
         injectMarked(handle, marked)
-        awaitUntil("preedit reached Compose") { value.get() == marked }
+        awaitUntil("preedit reached Compose", detail = state) { value.get() == marked }
         assertClientSnapshot(handle, marked)
         check(composition.get() != null) {
             "setMarkedText must leave an active composing region"
         }
         injectMarked(handle, marked + "\uF700")
-        awaitUntil("corporate chars stripped from preedit") {
+        awaitUntil("corporate chars stripped from preedit", detail = state) {
             value.get() == marked && '\uF700' !in value.get()
         }
         check(composition.get() != null) {
@@ -429,7 +459,7 @@ internal object ImeHeadfulCases {
         check(MacOsTextInputClientProbe.insertText(handle, marked)) {
             "insertText(\"$marked\") was not delivered"
         }
-        awaitUntil("composition committed") {
+        awaitUntil("composition committed", detail = state) {
             composition.get() == null && value.get() == marked
         }
         val afterCommit = MacOsTextInputClientProbe.query(handle)
@@ -441,11 +471,19 @@ internal object ImeHeadfulCases {
                 "(${afterCommit.markedLocation}, ${afterCommit.markedLength})"
         }
         injectMarked(handle, "xyz")
-        awaitUntil("second preedit") {
+        awaitUntil("second preedit", detail = state) {
             value.get().endsWith("xyz") && composition.get() != null
         }
+        // BasicTextField(TextFieldValue) only reports an edit whose result
+        // differs from the value it was last composed with. Cancelling before
+        // the field recomposed with "xyz" yields "hello" — equal to that stale
+        // value — so the cancel would be dropped and the next recomposition
+        // would restore the preedit.
+        awaitUntil("the field composed the second preedit", detail = state) {
+            composed.get().text.endsWith("xyz") && composed.get().composition != null
+        }
         injectMarked(handle, "")
-        awaitUntil("empty setMarkedText unmarks") {
+        awaitUntil("empty setMarkedText unmarks", detail = state) {
             composition.get() == null && value.get() == marked
         }
     }
