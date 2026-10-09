@@ -4,6 +4,7 @@ import dev.nucleusframework.core.runtime.NucleusUiThread
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.globalhotkey.GlobalHotKeyManager
 import dev.nucleusframework.globalhotkey.HotKeyModifier
+import dev.nucleusframework.globalhotkey.portalRegistrationAllowed
 import java.awt.event.KeyEvent
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
@@ -21,6 +22,7 @@ class NativeLinuxHotKeyBridgeTest {
     @Test
     fun `linux initialize register and native callback reach the listener`() {
         if (Platform.Current != Platform.Linux || !NativeLinuxHotKeyBridge.isLoaded) return
+        if (!portalRegistrationAllowed) return
         if (!GlobalHotKeyManager.initialize()) {
             assertTrue(GlobalHotKeyManager.lastError != null)
             return
