@@ -2403,7 +2403,7 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
     }
 }
 
-/** Copy tasks of the GUI companion libraries of a Linux native image (skipped when headless). */
+/** Copy tasks of the GUI companion libraries of a Linux native image. */
 private class GraalvmLinuxGuiLibCopies(
     val awtSoLibs: TaskProvider<Copy>,
     val jvmSo: TaskProvider<Copy>,
