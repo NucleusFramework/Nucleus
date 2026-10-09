@@ -83,5 +83,5 @@ tasks.named<Delete>("clean") {
 }
 
 tasks.wrapper {
-    distributionType = Wrapper.DistributionType.ALL
+    distributionType = Wrapper.DistributionType.BIN
 }
