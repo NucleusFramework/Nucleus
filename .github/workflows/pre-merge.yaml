@@ -23,8 +23,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build-natives:
+  # build-natives in two calls: `gradle` needs the Linux libraries only, so
+  # it must not wait for a Windows runner or a macOS build. Every job that
+  # runs on (or packages for) the other platforms needs both.
+  natives-linux:
     uses: ./.github/workflows/build-natives.yaml
+    with:
+      platforms: linux
+
+  natives-macos-windows:
+    uses: ./.github/workflows/build-natives.yaml
+    with:
+      platforms: macos,windows
 
   # Decides which tiers this run takes. `gradle` (preMerge) always runs; the
   # rest are scoped to what the change can break:
@@ -140,7 +150,7 @@ jobs:
           scope extended "$EXTENDED_PATHS"
 
   gradle:
-    needs: build-natives
+    needs: natives-linux
     runs-on: ubuntu-22.04
     # `preMerge` normally finishes in 6-10 min. Without an explicit cap a task
     # that blocks on a native call sits until Actions' 6h default and holds the
@@ -234,7 +244,7 @@ jobs:
   # fail-fast stays false here: these are cheap (~2–3 min) and platform-specific
   # native-load failures are common, so we want all three OS results.
   tao-tests:
-    needs: [ci-scope, build-natives]
+    needs: [ci-scope, natives-linux, natives-macos-windows]
     if: needs.ci-scope.outputs.tao == 'true'
     timeout-minutes: 30
     strategy:
@@ -274,7 +284,7 @@ jobs:
   # Gated on gradle + tao-tests so a compile/unit-test failure never burns
   # three display-stack runners for nothing.
   tao-headful:
-    needs: [ci-scope, build-natives, gradle, tao-tests]
+    needs: [ci-scope, natives-linux, natives-macos-windows, gradle, tao-tests]
     if: needs.ci-scope.outputs.tao == 'true'
     # Above the suite's own 45 min watchdog (GLOBAL_WATCHDOG_MILLIS) plus setup
     # and compile, so a hung run is halted with a thread dump, not killed here.
@@ -350,7 +360,7 @@ jobs:
   # AX clients need the TCC Accessibility permission, which CI cannot grant).
   # Gated on gradle + tao-tests — same rationale as tao-headful.
   tao-a11y:
-    needs: [ci-scope, build-natives, gradle, tao-tests]
+    needs: [ci-scope, natives-linux, natives-macos-windows, gradle, tao-tests]
     # tao-tests may be skipped (no Tao change); only a failed or cancelled
     # prerequisite holds this back.
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.ci-scope.outputs.a11y == 'true' }}
@@ -489,7 +499,7 @@ jobs:
   # status checks: a skipped leg reports as skipped, and a PR that skipped
   # them is covered by the push run once it lands.
   test-packaging:
-    needs: [ci-scope, build-natives, gradle, tao-tests]
+    needs: [ci-scope, natives-linux, natives-macos-windows, gradle, tao-tests]
     # tao-tests may be skipped (no Tao change); only a failed or cancelled
     # prerequisite holds this back.
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.ci-scope.outputs.extended == 'true' }}
@@ -497,7 +507,7 @@ jobs:
     secrets: inherit
 
   test-graalvm:
-    needs: [ci-scope, build-natives, gradle, tao-tests]
+    needs: [ci-scope, natives-linux, natives-macos-windows, gradle, tao-tests]
     # tao-tests may be skipped (no Tao change); only a failed or cancelled
     # prerequisite holds this back.
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.ci-scope.outputs.extended == 'true' }}

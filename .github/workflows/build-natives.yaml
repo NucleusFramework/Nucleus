@@ -2,6 +2,15 @@ name: Build Native Libraries
 
 on:
   workflow_call:
+    inputs:
+      platforms:
+        description: >-
+          Comma-separated subset of linux, macos, windows to build. pre-merge
+          splits the call so its `gradle` job, which needs the Linux libraries
+          only, never waits for a Mac or Windows runner.
+        type: string
+        required: false
+        default: linux,macos,windows
 
 # The native binaries are a pure function of the native sources, so each
 # platform job caches its whole output tree keyed on a hash of every
@@ -15,6 +24,7 @@ on:
 
 jobs:
   windows:
+    if: contains(inputs.platforms, 'windows')
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -187,6 +197,7 @@ jobs:
   # so the FILES list below is the one that verified the tree before the macOS
   # job saved it (actions/cache saves only after a successful job).
   macos-cached:
+    if: contains(inputs.platforms, 'macos')
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     outputs:
@@ -213,7 +224,7 @@ jobs:
   # Builds the macOS output on a cache miss only (see macos-cached).
   macos:
     needs: macos-cached
-    if: needs.macos-cached.outputs.hit != 'true'
+    if: contains(inputs.platforms, 'macos') && needs.macos-cached.outputs.hit != 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -367,6 +378,7 @@ jobs:
           retention-days: 1
 
   linux:
+    if: contains(inputs.platforms, 'linux')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
