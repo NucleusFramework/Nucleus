@@ -23,11 +23,134 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build-natives:
+  # build-natives in two calls: `gradle` needs the Linux libraries only, so
+  # it must not wait for a Windows runner or a macOS build. Every job that
+  # runs on (or packages for) the other platforms needs both.
+  natives-linux:
     uses: ./.github/workflows/build-natives.yaml
+    with:
+      platforms: linux
+
+  natives-macos-windows:
+    uses: ./.github/workflows/build-natives.yaml
+    with:
+      platforms: macos,windows
+
+  # Decides which tiers this run takes. `gradle` (preMerge) always runs; the
+  # rest are scoped to what the change can break:
+  #   tao      — tao-tests + tao-headful: decorated-window-tao, the modules it
+  #              builds on, and the build / natives plumbing (TAO_PATHS);
+  #   a11y     — tao-a11y: the above plus what the Lab's a11y-surface fixture
+  #              is built from (A11Y_PATHS);
+  #   extended — test-packaging + test-graalvm (~30–60 min per leg): the
+  #              packaging / native-image surface (EXTENDED_PATHS).
+  # Every tier runs on:
+  #   - a push to main / a release line (post-merge net: whatever a PR
+  #     skipped is checked here, against the merged result);
+  #   - a PR labelled `ci:full`. The label is read live, not from the event
+  #     payload, so "add the label, then Re-run all jobs" works without a push.
+  # Measured on the 32 PRs merged before this landed: tao 19, a11y 20,
+  # extended 12.
+  ci-scope:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      tao: ${{ steps.scope.outputs.tao }}
+      a11y: ${{ steps.scope.outputs.a11y }}
+      extended: ${{ steps.scope.outputs.extended }}
+    steps:
+      - name: Classify the change
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref_name }}
+          # Bash globs (`*` crosses `/`). A miss is not a hole, only a later
+          # catch: the push run on the base branch always takes every tier.
+          TAO_PATHS: |
+            decorated-window-tao/*
+            decorated-window-core/*
+            core-runtime/*
+            energy-manager/*
+            native-common/*
+            buildSrc/*
+            gradle/*
+            build.gradle.kts
+            settings.gradle.kts
+            gradle.properties
+            .github/workflows/pre-merge.yaml
+            .github/workflows/build-natives.yaml
+          # Added to TAO_PATHS for tao-a11y.
+          A11Y_PATHS: |
+            nucleus-application/*
+            spellcheck/*
+            examples/lab/core/*
+            examples/lab/designsystem/*
+            examples/lab/probes/input/*
+            examples/lab/app/*
+            scripts/ci/*
+          EXTENDED_PATHS: |
+            plugin-build/*
+            buildSrc/*
+            graalvm-runtime/*
+            core-runtime/*
+            gradle/*
+            build.gradle.kts
+            settings.gradle.kts
+            gradle.properties
+            */META-INF/native-image/*
+            examples/lab/app/*
+            examples/tao-native-test/*
+            .github/workflows/pre-merge.yaml
+            .github/workflows/build-natives.yaml
+            .github/workflows/test-packaging.yaml
+            .github/workflows/test-graalvm.yaml
+            .github/actions/setup-nucleus/*
+        run: |
+          set -euo pipefail
+          all="" files=""
+          if [ "$EVENT" != pull_request ]; then
+            all="$EVENT to $REF"
+          elif grep -qx 'ci:full' <<< "$(gh pr view "$PR" -R "$REPO" --json labels -q '.labels[].name')"; then
+            all="labelled ci:full"
+          else
+            files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate -q '.[].filename')
+          fi
+
+          # Prints "<file> matches <glob>" for the first changed file matching
+          # one of the newline-separated globs in $1.
+          first_match() {
+            local pattern file
+            while IFS= read -r pattern; do
+              [ -n "$pattern" ] || continue
+              while IFS= read -r file; do
+                # shellcheck disable=SC2053 # $pattern is a glob on purpose
+                if [[ $file == $pattern ]]; then
+                  echo "$file matches $pattern"; return 0
+                fi
+              done <<< "$files"
+            done <<< "$1"
+            return 1
+          }
+
+          # scope <output> <globs>
+          scope() {
+            local run=true why=$all
+            if [ -z "$why" ] && ! why=$(first_match "$2"); then
+              run=false why="no matching path"
+            fi
+            echo "$1=$run" >> "$GITHUB_OUTPUT"
+            echo "- $1: $run ($why)" | tee -a "$GITHUB_STEP_SUMMARY"
+          }
+
+          scope tao "$TAO_PATHS"
+          scope a11y "$TAO_PATHS"$'\n'"$A11Y_PATHS"
+          scope extended "$EXTENDED_PATHS"
 
   gradle:
-    needs: build-natives
+    needs: natives-linux
     runs-on: ubuntu-22.04
     # `preMerge` normally finishes in 6-10 min. Without an explicit cap a task
     # that blocks on a native call sits until Actions' 6h default and holds the
@@ -41,156 +164,15 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v7
 
+      # Only this runner's libraries: the unit tests load them, and without
+      # them (src/main/resources/nucleus/native is git-ignored) every
+      # buildNativeLinux task would compile on a runner with no Rust / GTK
+      # headers. The other platforms' trees are checked by their own
+      # build-natives job and, before a release, by publish-maven.
       - name: Download native artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: 'natives-*'
-          merge-multiple: true
-
-      - name: Verify all natives present
-        run: |
-          EXPECTED=(
-            "darkmode-detector/src/main/resources/nucleus/native/win32-x64/nucleus_windows_theme.dll"
-            "darkmode-detector/src/main/resources/nucleus/native/win32-aarch64/nucleus_windows_theme.dll"
-            "darkmode-detector/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_darkmode.dylib"
-            "darkmode-detector/src/main/resources/nucleus/native/darwin-x64/libnucleus_darkmode.dylib"
-            "darkmode-detector/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_theme.so"
-            "darkmode-detector/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_theme.so"
-            "native-ssl/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_ssl.dylib"
-            "native-ssl/src/main/resources/nucleus/native/darwin-x64/libnucleus_ssl.dylib"
-            "native-ssl/src/main/resources/nucleus/native/win32-x64/nucleus_ssl.dll"
-            "native-ssl/src/main/resources/nucleus/native/win32-aarch64/nucleus_ssl.dll"
-            "linux-hidpi/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_hidpi_jni.so"
-            "linux-hidpi/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_hidpi_jni.so"
-            "spellcheck/src/main/resources/nucleus/native/linux-x64/libnucleus_spellcheck.so"
-            "spellcheck/src/main/resources/nucleus/native/linux-aarch64/libnucleus_spellcheck.so"
-            "spellcheck/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_spellcheck.dylib"
-            "spellcheck/src/main/resources/nucleus/native/darwin-x64/libnucleus_spellcheck.dylib"
-            "spellcheck/src/main/resources/nucleus/native/win32-x64/nucleus_spellcheck.dll"
-            "spellcheck/src/main/resources/nucleus/native/win32-aarch64/nucleus_spellcheck.dll"
-            "system-color/src/main/resources/nucleus/native/linux-x64/libnucleus_systemcolor.so"
-            "system-color/src/main/resources/nucleus/native/linux-aarch64/libnucleus_systemcolor.so"
-            "system-color/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_systemcolor.dylib"
-            "system-color/src/main/resources/nucleus/native/darwin-x64/libnucleus_systemcolor.dylib"
-            "system-color/src/main/resources/nucleus/native/win32-x64/nucleus_systemcolor.dll"
-            "system-color/src/main/resources/nucleus/native/win32-aarch64/nucleus_systemcolor.dll"
-            "energy-manager/src/main/resources/nucleus/native/win32-x64/nucleus_energy_manager.dll"
-            "energy-manager/src/main/resources/nucleus/native/win32-aarch64/nucleus_energy_manager.dll"
-            "energy-manager/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_energy_manager.dylib"
-            "energy-manager/src/main/resources/nucleus/native/darwin-x64/libnucleus_energy_manager.dylib"
-            "energy-manager/src/main/resources/nucleus/native/linux-x64/libnucleus_energy_manager.so"
-            "energy-manager/src/main/resources/nucleus/native/linux-aarch64/libnucleus_energy_manager.so"
-            "taskbar-progress/src/main/resources/nucleus/native/win32-x64/nucleus_taskbar_progress.dll"
-            "taskbar-progress/src/main/resources/nucleus/native/win32-aarch64/nucleus_taskbar_progress.dll"
-            "taskbar-progress/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_taskbar_progress.dylib"
-            "taskbar-progress/src/main/resources/nucleus/native/darwin-x64/libnucleus_taskbar_progress.dylib"
-            "fs-watcher/src/main/resources/nucleus/native/win32-x64/nucleus_fs_watcher.dll"
-            "fs-watcher/src/main/resources/nucleus/native/win32-aarch64/nucleus_fs_watcher.dll"
-            "fs-watcher/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_fs_watcher.dylib"
-            "fs-watcher/src/main/resources/nucleus/native/darwin-x64/libnucleus_fs_watcher.dylib"
-            "fs-watcher/src/main/resources/nucleus/native/linux-x64/libnucleus_fs_watcher.so"
-            "fs-watcher/src/main/resources/nucleus/native/linux-aarch64/libnucleus_fs_watcher.so"
-            "share/src/main/resources/nucleus/native/win32-x64/nucleus_share.dll"
-            "share/src/main/resources/nucleus/native/win32-aarch64/nucleus_share.dll"
-            "share/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_share.dylib"
-            "share/src/main/resources/nucleus/native/darwin-x64/libnucleus_share.dylib"
-            "share/src/main/resources/nucleus/native/linux-x64/libnucleus_share.so"
-            "share/src/main/resources/nucleus/native/linux-aarch64/libnucleus_share.so"
-            "notification-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_notification.dylib"
-            "notification-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_notification.dylib"
-            "service-management-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_service_management.dylib"
-            "service-management-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_service_management.dylib"
-            "notification-linux/src/main/resources/nucleus/native/linux-x64/libnucleus_notification_linux.so"
-            "notification-linux/src/main/resources/nucleus/native/linux-aarch64/libnucleus_notification_linux.so"
-            "notification-windows/src/main/resources/nucleus/native/win32-x64/nucleus_notification_windows.dll"
-            "notification-windows/src/main/resources/nucleus/native/win32-aarch64/nucleus_notification_windows.dll"
-            "autolaunch/src/main/resources/nucleus/native/win32-x64/nucleus_autolaunch.dll"
-            "autolaunch/src/main/resources/nucleus/native/win32-aarch64/nucleus_autolaunch.dll"
-            "autolaunch/src/main/resources/nucleus/native/linux-x64/libnucleus_autolaunch_linux.so"
-            "autolaunch/src/main/resources/nucleus/native/linux-aarch64/libnucleus_autolaunch_linux.so"
-            "launcher-windows/src/main/resources/nucleus/native/win32-x64/nucleus_launcher_windows.dll"
-            "launcher-windows/src/main/resources/nucleus/native/win32-aarch64/nucleus_launcher_windows.dll"
-            "launcher-linux/src/main/resources/nucleus/native/linux-x64/libnucleus_launcher_linux.so"
-            "launcher-linux/src/main/resources/nucleus/native/linux-aarch64/libnucleus_launcher_linux.so"
-            "launcher-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_launcher_macos.dylib"
-            "launcher-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_launcher_macos.dylib"
-            "global-hotkey/src/main/resources/nucleus/native/win32-x64/nucleus_global_hotkey.dll"
-            "global-hotkey/src/main/resources/nucleus/native/win32-aarch64/nucleus_global_hotkey.dll"
-            "global-hotkey/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_global_hotkey.dylib"
-            "global-hotkey/src/main/resources/nucleus/native/darwin-x64/libnucleus_global_hotkey.dylib"
-            "global-hotkey/src/main/resources/nucleus/native/linux-x64/libnucleus_global_hotkey.so"
-            "global-hotkey/src/main/resources/nucleus/native/linux-aarch64/libnucleus_global_hotkey.so"
-            "menu-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_menu_macos.dylib"
-            "menu-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_menu_macos.dylib"
-            "decorated-window-core/src/main/resources/nucleus/native/win32-x64/nucleus_layout_direction.dll"
-            "decorated-window-core/src/main/resources/nucleus/native/win32-aarch64/nucleus_layout_direction.dll"
-            "decorated-window-core/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_layout_direction.dylib"
-            "decorated-window-core/src/main/resources/nucleus/native/darwin-x64/libnucleus_layout_direction.dylib"
-            "decorated-window-core/src/main/resources/nucleus/native/linux-x64/libnucleus_layout_direction.so"
-            "decorated-window-core/src/main/resources/nucleus/native/linux-aarch64/libnucleus_layout_direction.so"
-            "system-info/src/main/resources/nucleus/native/win32-x64/nucleus_system_info.dll"
-            "system-info/src/main/resources/nucleus/native/win32-aarch64/nucleus_system_info.dll"
-            "system-info/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_system_info.dylib"
-            "system-info/src/main/resources/nucleus/native/darwin-x64/libnucleus_system_info.dylib"
-            "system-info/src/main/resources/nucleus/native/linux-x64/libnucleus_system_info.so"
-            "system-info/src/main/resources/nucleus/native/linux-aarch64/libnucleus_system_info.so"
-            "scheduler/src/main/resources/nucleus/native/win32-x64/nucleus_scheduler.dll"
-            "scheduler/src/main/resources/nucleus/native/win32-aarch64/nucleus_scheduler.dll"
-            "scheduler/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_scheduler.dylib"
-            "scheduler/src/main/resources/nucleus/native/darwin-x64/libnucleus_scheduler.dylib"
-            "scheduler/src/main/resources/nucleus/native/linux-x64/libnucleus_scheduler_linux.so"
-            "scheduler/src/main/resources/nucleus/native/linux-aarch64/libnucleus_scheduler_linux.so"
-            "media-control/src/main/resources/nucleus/native/linux-x64/libnucleus_media_control_linux.so"
-            "media-control/src/main/resources/nucleus/native/linux-aarch64/libnucleus_media_control_linux.so"
-            "media-control/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_media_control_macos.dylib"
-            "media-control/src/main/resources/nucleus/native/darwin-x64/libnucleus_media_control_macos.dylib"
-            "media-control/src/main/resources/nucleus/native/win32-x64/nucleus_media_control_windows.dll"
-            "media-control/src/main/resources/nucleus/native/win32-aarch64/nucleus_media_control_windows.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_deco.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_deco.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_gl.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_gl.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_dnd.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_native_view.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_native_view.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_metal.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_metal.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_dnd.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_dnd.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_deco.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_deco.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_popup.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_popup.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_native_view.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_native_view.dylib"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao.so"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao.so"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_egl.so"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_egl.so"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_linux_widget.so"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_widget.so"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_linux_popup.so"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_popup.so"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_linux_clipboard.so"
-            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_clipboard.so"
-            "graalvm-runtime/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_locale.dylib"
-            "graalvm-runtime/src/main/resources/nucleus/native/darwin-x64/libnucleus_locale.dylib"
-          )
-          MISSING=0
-          for f in "${EXPECTED[@]}"; do
-            if [ -f "$f" ]; then
-              echo "OK: $f ($(wc -c < "$f") bytes)"
-            else
-              echo "MISSING: $f" >&2
-              MISSING=1
-            fi
-          done
-          if [ "$MISSING" = "1" ]; then exit 1; fi
+          name: natives-linux-x64
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -204,8 +186,55 @@ jobs:
           # Open-source cache on GitHub Actions cache; v6's default provider is proprietary.
           cache-provider: basic
 
+      # Task outputs (compile, detekt, ktlint, tests…) from earlier runs, so an
+      # unchanged module is a cache hit instead of a rebuild. The directory lives
+      # outside ~/.gradle/caches — see .github/gradle/build-cache.init.gradle.kts
+      # for why. Restored from the newest entry saved on the base branch (a PR
+      # reads its base branch's and the default branch's caches).
+      - name: Locate the build cache
+        run: echo "NUCLEUS_BUILD_CACHE_DIR=$RUNNER_TEMP/gradle-build-cache" >> "$GITHUB_ENV"
+
+      - name: Restore the build cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.NUCLEUS_BUILD_CACHE_DIR }}
+          key: gradle-build-cache-v1-${{ runner.os }}-${{ github.sha }}
+          restore-keys: gradle-build-cache-v1-${{ runner.os }}-
+
       - name: Run Gradle tasks
-        run: ./gradlew preMerge --continue
+        run: ./gradlew preMerge --continue --build-cache --init-script .github/gradle/build-cache.init.gradle.kts
+
+      # Only a push run saves (main / a release line), one entry per commit, so
+      # the next PR starts from the latest merged state. Saved even when a task
+      # failed: everything that succeeded is still a valid entry.
+      # Every save carries the restored entries forward, so the directory is
+      # capped first, newest kept. An entry's mtime is when it was stored —
+      # Gradle records hits in ~/.gradle/caches/journal-1, not on the file —
+      # so this is first-in-first-out, not LRU: an evicted entry that is still
+      # needed is rebuilt by the next push run and stored fresh.
+      - name: Prune the build cache
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        env:
+          # A full preMerge stores ~40 MB (709 entries, measured locally), so this
+          # holds several builds' worth of churn.
+          CAP_MB: 256
+        run: |
+          [ -d "$NUCLEUS_BUILD_CACHE_DIR" ] || exit 0
+          total_kb=0
+          find "$NUCLEUS_BUILD_CACHE_DIR" -type f -name '????????????????????????????????' -printf '%T@ %k %p\n' \
+            | sort -rn \
+            | while read -r _ kb path; do
+                total_kb=$((total_kb + kb))
+                [ "$total_kb" -le $((CAP_MB * 1024)) ] || rm -f "$path"
+              done
+          du -sh "$NUCLEUS_BUILD_CACHE_DIR"
+
+      - name: Save the build cache
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.NUCLEUS_BUILD_CACHE_DIR }}
+          key: gradle-build-cache-v1-${{ runner.os }}-${{ github.sha }}
 
   # Stage-1 offscreen Tao scene tests on the full OS matrix. These tests are
   # headless (CPU-recorded ComposeScene, no display), so plain runners work on
@@ -215,7 +244,8 @@ jobs:
   # fail-fast stays false here: these are cheap (~2–3 min) and platform-specific
   # native-load failures are common, so we want all three OS results.
   tao-tests:
-    needs: build-natives
+    needs: [ci-scope, natives-linux, natives-macos-windows]
+    if: needs.ci-scope.outputs.tao == 'true'
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -254,7 +284,8 @@ jobs:
   # Gated on gradle + tao-tests so a compile/unit-test failure never burns
   # three display-stack runners for nothing.
   tao-headful:
-    needs: [build-natives, gradle, tao-tests]
+    needs: [ci-scope, natives-linux, natives-macos-windows, gradle, tao-tests]
+    if: needs.ci-scope.outputs.tao == 'true'
     # Above the suite's own 45 min watchdog (GLOBAL_WATCHDOG_MILLIS) plus setup
     # and compile, so a hung run is halted with a thread dump, not killed here.
     timeout-minutes: 60
@@ -329,7 +360,10 @@ jobs:
   # AX clients need the TCC Accessibility permission, which CI cannot grant).
   # Gated on gradle + tao-tests — same rationale as tao-headful.
   tao-a11y:
-    needs: [build-natives, gradle, tao-tests]
+    needs: [ci-scope, natives-linux, natives-macos-windows, gradle, tao-tests]
+    # tao-tests may be skipped (no Tao change); only a failed or cancelled
+    # prerequisite holds this back.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.ci-scope.outputs.a11y == 'true' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -456,20 +490,26 @@ jobs:
           pkill -f lab.fixture=a11y-surface || true
           exit $status
 
-  # ── Expensive PR-only stages ───────────────────────────────────────────
+  # ── Extended tier (see ci-scope) ───────────────────────────────────────
   # Packaging and GraalVM used to be independent workflows that each re-ran
   # build-natives and started immediately on every PR push. They now reuse
   # this run's natives artifacts and only start after the cheap JVM gates
   # (gradle + tao-tests) succeed — so a unit-test failure never burns 6
-  # packaging runners + 3 GraalVM runners for nothing.
+  # packaging runners + 3 GraalVM runners for nothing. They are not required
+  # status checks: a skipped leg reports as skipped, and a PR that skipped
+  # them is covered by the push run once it lands.
   test-packaging:
-    if: github.event_name == 'pull_request'
-    needs: [build-natives, gradle, tao-tests]
+    needs: [ci-scope, natives-linux, natives-macos-windows, gradle, tao-tests]
+    # tao-tests may be skipped (no Tao change); only a failed or cancelled
+    # prerequisite holds this back.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.ci-scope.outputs.extended == 'true' }}
     uses: ./.github/workflows/test-packaging.yaml
     secrets: inherit
 
   test-graalvm:
-    if: github.event_name == 'pull_request'
-    needs: [build-natives, gradle, tao-tests]
+    needs: [ci-scope, natives-linux, natives-macos-windows, gradle, tao-tests]
+    # tao-tests may be skipped (no Tao change); only a failed or cancelled
+    # prerequisite holds this back.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && needs.ci-scope.outputs.extended == 'true' }}
     uses: ./.github/workflows/test-graalvm.yaml
     secrets: inherit

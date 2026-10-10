@@ -2,6 +2,15 @@ name: Build Native Libraries
 
 on:
   workflow_call:
+    inputs:
+      platforms:
+        description: >-
+          Comma-separated subset of linux, macos, windows to build. pre-merge
+          splits the call so its `gradle` job, which needs the Linux libraries
+          only, never waits for a Mac or Windows runner.
+        type: string
+        required: false
+        default: linux,macos,windows
 
 # The native binaries are a pure function of the native sources, so each
 # platform job caches its whole output tree keyed on a hash of every
@@ -9,11 +18,13 @@ on:
 # step invalidates the key). On a cache hit every compile/toolchain step is
 # skipped and the job only verifies the restored tree and re-publishes the
 # per-platform artifact that downstream jobs consume with a single
-# `pattern: natives-*` download. Bump the `natives-v1` prefix to force a
-# full rebuild.
+# `pattern: natives-*` download. A macOS hit is served from a Linux runner
+# instead (macos-cached), so no Mac is booked for it. Bump the `natives-v1`
+# prefix to force a full rebuild.
 
 jobs:
   windows:
+    if: contains(inputs.platforms, 'windows')
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -177,7 +188,43 @@ jobs:
           path: '*/src/main/resources/nucleus/native/win32-*/'
           retention-days: 1
 
+  # The macOS output, looked up from Linux: macOS runners are the scarce ones,
+  # and every job of a calling workflow waits for this one, so a cache hit must
+  # not queue for a Mac only to re-upload a tarball. Linux sees the macOS
+  # entries because their cache version has no OS component (paths + zstd,
+  # unlike Windows, whose entries are marked windows-only) and hashFiles agrees
+  # across the two. A hit needs no re-verification: the key covers this file,
+  # so the FILES list below is the one that verified the tree before the macOS
+  # job saved it (actions/cache saves only after a successful job).
+  macos-cached:
+    if: contains(inputs.platforms, 'macos')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      hit: ${{ steps.natives-cache.outputs.cache-hit }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v7
+
+      - name: Restore native output cache
+        id: natives-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: '*/src/main/resources/nucleus/native/darwin-*'
+          key: natives-v1-macos-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
+
+      - name: Upload macOS natives
+        if: steps.natives-cache.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: natives-macos
+          path: '*/src/main/resources/nucleus/native/darwin-*/'
+          retention-days: 1
+
+  # Builds the macOS output on a cache miss only (see macos-cached).
   macos:
+    needs: macos-cached
+    if: contains(inputs.platforms, 'macos') && needs.macos-cached.outputs.hit != 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -331,6 +378,7 @@ jobs:
           retention-days: 1
 
   linux:
+    if: contains(inputs.platforms, 'linux')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
