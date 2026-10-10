@@ -15,6 +15,9 @@ import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPl
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
 import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
+import dev.nucleusframework.desktop.application.internal.files.skikoLibraryFileName
+import dev.nucleusframework.desktop.application.internal.files.shipsSkikoBesideExecutable
+import dev.nucleusframework.desktop.application.internal.files.skikoEntriesDroppedFromImage
 import dev.nucleusframework.desktop.application.tasks.AbstractElectronBuilderPackageTask
 import dev.nucleusframework.desktop.application.tasks.AbstractNotarizationTask
 import dev.nucleusframework.desktop.application.tasks.AbstractUnpackNucleusNativesTask
@@ -275,7 +278,10 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
     val packageUberJar = project.tasks.named(uberJarTaskName, Jar::class.java)
 
     // The image is compiled from a copy without the Nucleus JNI libraries, which ship next to
-    // the executable instead (see AbstractUnpackNucleusNativesTask).
+    // the executable instead (see AbstractUnpackNucleusNativesTask). Skiko's library is left out
+    // too wherever copyGraalvmSkikoLib puts it beside the executable: Skiko loads that copy from
+    // java.home first, and the static analysis registers every native library of the classpath
+    // as a resource (#821).
     val unpackNucleusNatives =
         tasks.register<AbstractUnpackNucleusNativesTask>(
             taskNameAction = "unpack",
@@ -283,6 +289,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         ) {
             uberJar.set(packageUberJar.flatMap { it.archiveFile })
             platformDir.set(nucleusNativeDir(currentOS, currentArch))
+            droppedEntries.set(skikoEntriesDroppedFromImage(currentOS, graalvm.headless.get()))
             strippedJar.set(appTmpDir.map { it.file("graalvm/nucleus-natives/app.jar") })
             libsDir.set(appTmpDir.map { it.dir("graalvm/nucleus-natives/libs") })
         }
@@ -1597,7 +1604,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             into(appBundleDir.map { it.dir("Resources") })
         }
 
-    val skikoLibName = "libskiko-${currentOS.id}-${currentArch.id}.dylib"
+    val skikoLibName = skikoLibraryFileName(currentOS, currentArch)
     val copySkikoLib =
         tasks.register<Copy>(
             taskNameAction = "copy",
@@ -2160,7 +2167,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
 
     // On Windows, Skiko looks for skiko-windows-*.dll in java.home/bin/ (GraalVmInitializer
     // sets java.home = execDir). Also include icudtl.dat which Skiko uses for ICU text data.
-    val skikoLibName = "skiko-${currentOS.id}-${currentArch.id}.dll"
+    val skikoLibName = skikoLibraryFileName(currentOS, currentArch)
     val copySkikoLib =
         tasks.register<Copy>(
             taskNameAction = "copy",
@@ -2209,9 +2216,11 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
     ) {
         description = "Build native image and package with DLLs"
         dependsOn(copyBinary, copyAppResources, copyNucleusNatives)
-        if (!graalvm.headless.get()) {
-            dependsOn(copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib, copyFontConfig)
+        val headless = graalvm.headless.get()
+        if (!headless) {
+            dependsOn(copyAwtDlls, copyJvmDll, copyJawtToBin, copyFontConfig)
         }
+        if (shipsSkikoBesideExecutable(currentOS, headless)) dependsOn(copySkikoLib)
         copyCRuntime?.let { dependsOn(it) }
     }
 }
@@ -2395,11 +2404,11 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
                 copyAwtSoLibs,
                 copyJvmSo,
                 copyJawtToLib,
-                copySkikoLib,
                 fixSoRpath,
                 stripSoLibs,
             )
         }
+        if (shipsSkikoBesideExecutable(currentOS, headless)) dependsOn(copySkikoLib)
     }
 }
 
@@ -2472,10 +2481,10 @@ private fun JvmApplicationContext.registerCopyGraalvmLinuxGuiLibs(
 
     // Skiko's Library.findAndLoad() looks for libskiko-linux-*.so in java.home/lib/.
     // GraalVmInitializer sets java.home to the executable directory, so the library
-    // must be in lib/ alongside the binary. On systems without a ~/.skiko/ cache
-    // (e.g. a fresh Lubuntu install), Skiko falls through to resource extraction which
-    // fails because the .so is not registered as a native image resource → NPE.
-    val skikoLibName = "libskiko-${currentOS.id}-${currentArch.id}.so"
+    // must be in lib/ alongside the binary. This is the only copy: the image is compiled
+    // without it (unpackGraalvmNucleusNatives' droppedEntries, #821), so without it Skiko
+    // falls through to resource extraction, which fails.
+    val skikoLibName = skikoLibraryFileName(currentOS, currentArch)
     val skikoLibFile = packageUberJar.flatMap { it.archiveFile }
     val copySkikoLib =
         tasks.register<Copy>(
