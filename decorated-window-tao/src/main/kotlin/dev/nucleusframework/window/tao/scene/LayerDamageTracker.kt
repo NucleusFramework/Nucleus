@@ -277,6 +277,10 @@ internal class LayerDamageTracker {
         drawn: Boolean,
     ) {
         val isDrawn = drawn && node.isPlaced
+        // Below a node that is not placed nothing is drawn, so nothing can be damaged: its layers only count
+        // towards the check that every live layer is placed, which the GraphicsLayer hooks make unneeded. Lazy
+        // lists keep prefetched and retained items unplaced, often a large part of the tree.
+        if (!isDrawn && explicitTracking) return
         var subtreeClip = clip
         var subtreeForced = forced
         val inner = TaoLayerTreeAccess.innerCoordinator(node)
