@@ -148,6 +148,74 @@ class NucleusNativeLibsTest {
     }
 
     @Test
+    fun `skiko library names follow its runtime jar layout`() {
+        // Entries of skiko-awt-runtime-<os>-<arch> 0.150.x: System.mapLibraryName("skiko-<os>-<arch>")
+        assertEquals("libskiko-linux-x64.so", skikoLibraryFileName(OS.Linux, Arch.X64))
+        assertEquals("libskiko-linux-arm64.so", skikoLibraryFileName(OS.Linux, Arch.Arm64))
+        assertEquals("libskiko-macos-arm64.dylib", skikoLibraryFileName(OS.MacOS, Arch.Arm64))
+        assertEquals("skiko-windows-x64.dll", skikoLibraryFileName(OS.Windows, Arch.X64))
+    }
+
+    @Test
+    fun `skiko is dropped from the image only where it is copied beside the executable`() {
+        // A headless Linux/Windows image gets no copy, so its embedded library is the only one
+        assertEquals(emptySet<String>(), skikoEntriesDroppedFromImage(OS.Linux, headless = true))
+        assertEquals(emptySet<String>(), skikoEntriesDroppedFromImage(OS.Windows, headless = true))
+        assertEquals(skikoLibraryFileNames(OS.Linux), skikoEntriesDroppedFromImage(OS.Linux, headless = false))
+        assertEquals(skikoLibraryFileNames(OS.Windows), skikoEntriesDroppedFromImage(OS.Windows, headless = false))
+        // The .app bundle always gets the copy
+        assertEquals(skikoLibraryFileNames(OS.MacOS), skikoEntriesDroppedFromImage(OS.MacOS, headless = true))
+    }
+
+    @Test
+    fun `every architecture of the os is dropped`() {
+        // 0.150.1's macOS arm64 runtime JAR also packs the x64 dylib, which an arm64 app never loads
+        val skiko =
+            namedJar(
+                "skiko-macos.jar",
+                "libskiko-macos-arm64.dylib",
+                "libskiko-macos-arm64.dylib.sha256",
+                "libskiko-macos-x64.dylib",
+                "libskiko-macos-x64.dylib.sha256",
+            )
+        val out = tmp.newFolder("out")
+
+        val files =
+            unpackNucleusNativeLibs(
+                skiko,
+                out.resolve(skiko.name),
+                out,
+                "darwin-aarch64",
+                nucleusEntries = emptySet(),
+                droppedEntries = skikoLibraryFileNames(OS.MacOS),
+            )
+
+        assertEquals(
+            listOf("libskiko-macos-arm64.dylib.sha256", "libskiko-macos-x64.dylib.sha256"),
+            files.single().entryNames(),
+        )
+    }
+
+    @Test
+    fun `drops the entries shipped beside the executable and keeps the rest`() {
+        // #821: Skiko's library is copied next to the image, its hash still read as a resource
+        val skiko = namedJar("skiko.jar", "libskiko-linux-x64.so", "libskiko-linux-x64.so.sha256")
+        val out = tmp.newFolder("out")
+
+        val files =
+            unpackNucleusNativeLibs(
+                skiko,
+                out.resolve(skiko.name),
+                out,
+                "linux-x64",
+                nucleusEntries = emptySet(),
+                droppedEntries = setOf("libskiko-linux-x64.so"),
+            )
+
+        assertEquals(listOf("libskiko-linux-x64.so.sha256"), files.single().entryNames())
+    }
+
+    @Test
     fun `jars without a manifest declare no nucleus libraries`() {
         assertTrue(jar("nucleus/native/linux-x64/libapp.so").nucleusNativeEntries().isEmpty())
         assertEquals(
