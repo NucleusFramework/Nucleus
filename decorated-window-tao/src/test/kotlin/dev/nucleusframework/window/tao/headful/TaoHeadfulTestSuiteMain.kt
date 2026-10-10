@@ -390,6 +390,7 @@ public object TaoHeadfulTestSuiteMain {
             DialogAppearanceHeadfulCases.all() +
             ClipboardHeadfulCases.all() +
             AnimatedWindowSizeHeadfulCases.all() +
+            MinimumSizeResizeHeadfulCases.all() +
             Issue444HeadfulCases.all() +
             AlwaysOnTopHeadfulCases.all() +
             SatelliteWindowHeadfulCases.all() +
@@ -763,6 +764,7 @@ private fun ApplicationScope.CaseWindow(
             onCloseRequest = { /* cases drive their own lifecycle */ },
             state = case.windowState ?: fallbackState,
             title = "tao-headful: ${case.name}",
+            minimumSize = case.minimumSize?.value,
             transparent = case.transparent,
             nativePopupLayers = case.nativePopupLayers,
             content = windowContent,

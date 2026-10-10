@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao.headful
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
@@ -64,6 +65,11 @@ internal class TaoWindowTestCase(
      * `DecoratedWindow(state)` (#576).
      */
     val windowState: WindowState? = null,
+    /**
+     * When non-null, forwarded to the v1 [dev.nucleusframework.window.tao.DecoratedWindow]'s
+     * `minimumSize`; a driver mutates it to change the constraint at run time (#817).
+     */
+    val minimumSize: State<DpSize?>? = null,
     /**
      * When non-null, the suite drives the window through the AWT-free window
      * API v2 clone ([dev.nucleusframework.window.tao.v2.WindowState]) instead of
