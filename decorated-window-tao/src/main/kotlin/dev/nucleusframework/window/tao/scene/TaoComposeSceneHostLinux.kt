@@ -1166,6 +1166,17 @@ internal class TaoComposeSceneHostLinux(
     private inner class InboundDnDCallback : dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.Callback {
         private fun node() = window.inboundDragAndDropNode?.invoke()
 
+        private val dnd =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                .InboundState()
+
+        override fun onDragFiles(
+            handle: Long,
+            files: Array<String>?,
+        ) {
+            dnd.onDragFiles(files = files)
+        }
+
         // Linux keeps neither the macOS/Windows diagnostic logging nor their
         // `if (!hasFiles) return NONE` guard, so its overrides delegate straight
         // to the shared helper. Folding those in via TaoSceneDnD would change
@@ -1177,8 +1188,8 @@ internal class TaoComposeSceneHostLinux(
             modState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragEnter(node(), x, y)
+            if (dnd
+                    .onDragEnter(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
@@ -1192,17 +1203,18 @@ internal class TaoComposeSceneHostLinux(
             modState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragOver(node(), x, y)
+            if (dnd
+                    .onDragOver(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
 
-        override fun onDragLeave(handle: Long) =
-            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+        override fun onDragLeave(handle: Long) {
+            dnd
                 .onDragLeave(node())
+        }
 
         override fun onDrop(
             handle: Long,
@@ -1211,7 +1223,7 @@ internal class TaoComposeSceneHostLinux(
             modState: Int,
             files: Array<String>?,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            if (dnd
                     .onDrop(node(), x, y, files)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY

@@ -39,6 +39,7 @@ static jmethodID g_method_on_enter      = NULL; // (JIIIZ)I  hwnd, x, y, modStat
 static jmethodID g_method_on_over       = NULL; // (JIIIZ)I
 static jmethodID g_method_on_leave      = NULL; // (J)V
 static jmethodID g_method_on_drop       = NULL; // (JIII[Ljava/lang/String;)I
+static jmethodID g_method_on_files      = NULL;
 
 #define DROP_EFFECT_NONE 0
 #define DROP_EFFECT_COPY 1
@@ -67,7 +68,7 @@ static void detach_if_needed(BOOL attachedHere) {
 
 // Resolves the Kotlin callback class & methods. Idempotent.
 static BOOL ensure_callback_methods(JNIEnv *env, jobject callback) {
-    if (g_callback_class && g_method_on_enter && g_method_on_over &&
+    if (g_callback_class && g_method_on_files && g_method_on_enter && g_method_on_over &&
         g_method_on_leave && g_method_on_drop) return YES;
 
     jclass local = (*env)->GetObjectClass(env, callback);
@@ -77,12 +78,14 @@ static BOOL ensure_callback_methods(JNIEnv *env, jobject callback) {
     if (!g_callback_class) return NO;
 
     g_method_on_enter = (*env)->GetMethodID(env, g_callback_class, "onDragEnter", "(JIIIZ)I");
+    g_method_on_files = (*env)->GetMethodID(env, g_callback_class, "onDragFiles",
+        "(J[Ljava/lang/String;)V");
     g_method_on_over  = (*env)->GetMethodID(env, g_callback_class, "onDragOver",  "(JIIIZ)I");
     g_method_on_leave = (*env)->GetMethodID(env, g_callback_class, "onDragLeave", "(J)V");
     g_method_on_drop  = (*env)->GetMethodID(env, g_callback_class, "onDrop",
         "(JIII[Ljava/lang/String;)I");
 
-    return g_method_on_enter && g_method_on_over &&
+    return g_method_on_files && g_method_on_enter && g_method_on_over &&
            g_method_on_leave && g_method_on_drop;
 }
 
@@ -151,12 +154,16 @@ static jobjectArray extract_files(JNIEnv *env, NSPasteboard *pb) {
     jclass strClass = (*env)->FindClass(env, "java/lang/String");
     if (!strClass) return NULL;
     jobjectArray result = (*env)->NewObjectArray(env, (jsize)paths.count, strClass, NULL);
+    (*env)->DeleteLocalRef(env, strClass);
     if (!result) return NULL;
 
     for (NSUInteger i = 0; i < paths.count; ++i) {
         NSString *p = paths[i];
-        const char *utf8 = [p UTF8String];
-        jstring js = (*env)->NewStringUTF(env, utf8 ? utf8 : "");
+        jchar *characters = malloc(p.length * sizeof(jchar));
+        if (!characters) continue;
+        [p getCharacters:characters range:NSMakeRange(0, p.length)];
+        jstring js = (*env)->NewString(env, characters, (jsize)p.length);
+        free(characters);
         if (js) {
             (*env)->SetObjectArrayElement(env, result, (jsize)i, js);
             (*env)->DeleteLocalRef(env, js);
@@ -204,6 +211,14 @@ static NSDragOperation nucleus_draggingEntered(id self, SEL _cmd, id<NSDraggingI
 
     jint x, y;
     window_point_to_root_pixels(view, [sender draggingLocation], &x, &y);
+
+    jobjectArray files = extract_files(env, pb);
+    if (g_method_on_files) {
+        (*env)->CallVoidMethod(env, st.callbackRef, g_method_on_files,
+                              (jlong)(intptr_t)view, files);
+        nucleus_jni_clear_exception(env);
+    }
+    if (files) (*env)->DeleteLocalRef(env, files);
 
     jint effect = DROP_EFFECT_COPY;
     if (g_method_on_enter) {

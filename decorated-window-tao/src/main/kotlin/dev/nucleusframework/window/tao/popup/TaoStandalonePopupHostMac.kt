@@ -526,6 +526,17 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     private inner class InboundDnDCallback : NativeTaoMacOsDndBridge.Callback {
         private fun node() = scene?.rootDragAndDropNode
 
+        private val dnd =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                .InboundState()
+
+        override fun onDragFiles(
+            nsView: Long,
+            files: Array<String>?,
+        ) {
+            dnd.onDragFiles(files = files)
+        }
+
         override fun onDragEnter(
             nsView: Long,
             x: Int,
@@ -535,7 +546,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
         ): Int {
             TaoDnDDiagnostics.log("standalone popup onDragEnter x=$x y=$y hasFiles=$hasFiles")
             if (!hasFiles) return NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
-            return if (TaoSceneDnD.onDragEnter(node(), x, y)) {
+            return if (dnd.onDragEnter(node = node(), x = x, y = y)) {
                 NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
             } else {
                 NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
@@ -549,7 +560,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             modState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (TaoSceneDnD.onDragOver(node(), x, y)) {
+            if (dnd.onDragOver(node = node(), x = x, y = y)) {
                 NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
             } else {
                 NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
@@ -557,7 +568,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
 
         override fun onDragLeave(nsView: Long) {
             TaoDnDDiagnostics.log("standalone popup onDragLeave")
-            TaoSceneDnD.onDragLeave(node())
+            dnd.onDragLeave(node())
         }
 
         override fun onDrop(
@@ -568,7 +579,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             files: Array<String>?,
         ): Int {
             TaoDnDDiagnostics.log("standalone popup onDrop x=$x y=$y files=${files?.size ?: 0}")
-            return if (TaoSceneDnD.onDrop(node(), x, y, files)) {
+            return if (dnd.onDrop(node(), x, y, files)) {
                 NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
             } else {
                 NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
