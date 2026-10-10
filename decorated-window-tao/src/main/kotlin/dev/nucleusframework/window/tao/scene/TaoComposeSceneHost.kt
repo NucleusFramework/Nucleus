@@ -1842,6 +1842,16 @@ internal class TaoComposeSceneHost(
         // on screen is for the bounds AppKit is committing now.
         withContext(Dispatchers.IO) { NativeMetalBridge.nativeVSyncWait(handle) }
         if (mainPresented) TaoPresentDiagnostics.record(window.handle, IntSize(frameW, frameH))
+        // The window was resized while this frame was in flight (#817): its
+        // timed present of the old size can reach the screen *after* the
+        // same-turn present [onResized] made at the new one, and the
+        // [presentedInDispatch] it set would then skip the next frame — with
+        // static content nothing else would ever repaint, leaving the stale
+        // drawable anchored in a corner of the larger window. Draw again.
+        if (frameW != widthPx || frameH != heightPx) {
+            presentedInDispatch = false
+            requestFrame()
+        }
 
         // ── interop skip-drain (main) ──
         // If the main frame was skipped before its present lambda fired
