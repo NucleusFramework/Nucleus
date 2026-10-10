@@ -39,12 +39,14 @@ internal object MinimumSizeResizeHeadfulCases {
             window.onResized { w, h -> resized.set(IntSize(w, h)) }
             awaitUntil("window mapped") { window.hasRealFramePx() }
             settle()
+            // Kept within a 1024x768 screen (the macOS CI runner): AppKit clamps a taller
+            // window to the visible frame, and the grown size would never be reached.
             Snapshot.withMutableSnapshot {
-                minimumSize.value = DpSize(1000.dp, 700.dp)
-                state.size = DpSize(1200.dp, 800.dp)
+                minimumSize.value = DpSize(760.dp, 520.dp)
+                state.size = DpSize(840.dp, 560.dp)
             }
             val scale = window.scaleFactor
-            val target = IntSize((1200 * scale).toInt(), (800 * scale).toInt())
+            val target = IntSize((840 * scale).toInt(), (560 * scale).toInt())
             awaitUntil("window grown", detail = { "resized=${resized.get()}" }) { resized.get() == target }
             // Nothing in the content changes after the resize: whatever is presented now stays.
             settle(SETTLE_MILLIS)
