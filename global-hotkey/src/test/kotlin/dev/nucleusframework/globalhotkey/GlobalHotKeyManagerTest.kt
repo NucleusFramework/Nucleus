@@ -61,6 +61,7 @@ class GlobalHotKeyManagerTest {
 
     @Test
     fun `initialize register unregister and shutdown on this platform`() {
+        if (!portalRegistrationAllowed) return
         if (!GlobalHotKeyManager.isAvailable) {
             assertFalse(GlobalHotKeyManager.initialize())
             return
@@ -112,6 +113,7 @@ class GlobalHotKeyManagerTest {
 
     @Test
     fun `initialized manager can register alternate modifiers and reject a bogus unregister`() {
+        if (!portalRegistrationAllowed) return
         if (!GlobalHotKeyManager.isAvailable) return
         if (!GlobalHotKeyManager.initialize()) {
             assertTrue(GlobalHotKeyManager.lastError != null)
