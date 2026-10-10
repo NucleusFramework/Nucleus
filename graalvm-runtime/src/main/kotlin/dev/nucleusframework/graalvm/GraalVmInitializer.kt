@@ -4,6 +4,7 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.graalvm.encoding.PlatformEncodingInitializer
 import dev.nucleusframework.graalvm.locale.NativeLocaleBridge
 import dev.nucleusframework.hidpi.applyLinuxHiDpiScale
+import dev.nucleusframework.hidpi.capLinuxMallocArenas
 import java.io.File
 import java.nio.charset.Charset
 import java.util.Locale
@@ -32,7 +33,7 @@ public object GraalVmInitializer {
             // Resolve the executable directory
             val execDir = resolveExecDir()
             System.setProperty("java.home", execDir)
-            // macOS .app bundles ship fontconfig.bfc in Contents/Resources/ rather than next to
+            // macOS .app bundles ship the font config in Contents/Resources/ rather than next to
             // java.home (Contents/MacOS/lib/), so tell the JDK where it actually is.
             if (Platform.Current == Platform.MacOS && System.getProperty("sun.awt.fontconfig").isNullOrBlank()) {
                 resolveMacOsFontConfig(File(execDir))?.let { fontConfig ->
@@ -62,8 +63,13 @@ public object GraalVmInitializer {
             applyMacOsLocale()
         }
 
+        // Linux: cap glibc malloc arenas (#757) before the app, Skia and driver threads exist —
+        // a thread keeps the arena it got. Same JNI library as the HiDPI detection below, so it
+        // too must come after java.library.path is configured.
+        capLinuxMallocArenas()
+
         // Linux HiDPI — must come AFTER java.library.path is configured above,
-        // because applyLinuxHiDpiScale() triggers HiDpiLinuxBridge JNI loading.
+        // because applyLinuxHiDpiScale() triggers LinuxStartupBridge JNI loading.
         // Sets GDK_SCALE via setenv (triggers JDK's native scaling for both
         // rendering AND mouse events) + sun.java2d.uiScale as fallback.
         applyLinuxHiDpiScale()
@@ -110,7 +116,7 @@ public object GraalVmInitializer {
     }
 
     /**
-     * Locate `fontconfig.bfc` inside a macOS `.app` bundle's `Contents/Resources/`.
+     * Locate `fontconfig.properties` inside a macOS `.app` bundle's `Contents/Resources/`.
      *
      * The file cannot be shipped under `Contents/MacOS/`: Gatekeeper treats everything below that
      * directory (subdirectories included) as nested code, and a non-Mach-O file there makes
@@ -118,13 +124,20 @@ public object GraalVmInitializer {
      * stapled. `FontConfiguration` only scans `<java.home>/lib`, so the caller has to hand it the
      * `Contents/Resources/` copy through the `sun.awt.fontconfig` system property.
      *
+     * It must be the text form: the JDK always parses a `sun.awt.fontconfig` file as properties,
+     * so a binary `fontconfig.bfc` given that way yields an empty config and every font manager
+     * construction fails with "Fontconfig head is null".
+     *
      * [execDir] is `Contents/MacOS`, hence the bundle resources one level up. Returns `null` when
      * the file is absent — that covers the legacy `<execDir>/lib/fontconfig.bfc` layout, which
      * `<java.home>/lib` already resolves on its own.
      */
     internal fun resolveMacOsFontConfig(execDir: File): File? =
-        execDir.parentFile
-            ?.resolve("Resources/fontconfig.bfc")
+        // normalize(): execDir can end in "/." (e.g. `./zayit`), whose parent is MacOS/ itself.
+        execDir.absoluteFile
+            .normalize()
+            .parentFile
+            ?.resolve("Resources/fontconfig.properties")
             ?.takeIf { it.isFile }
 
     /**

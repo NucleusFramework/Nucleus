@@ -27,6 +27,7 @@ import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.dispatchTrackpadPan
+import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import kotlinx.coroutines.CoroutineDispatcher
@@ -34,6 +35,7 @@ import kotlinx.coroutines.awaitCancellation
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.Picture
+import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import kotlin.coroutines.CoroutineContext
 
@@ -121,10 +123,29 @@ private class QueueDispatcher :
     @Volatile
     private var nowNanos = 0L
 
+    private val ownerThread: Thread = Thread.currentThread()
+
+    /**
+     * Tasks enqueued from a thread other than the test thread, and which threads they came from.
+     * These run on real time rather than the virtual clock (e.g. a `withTimeout` inside
+     * `FlushCoroutineDispatcher`-wrapped scene code times out on kotlinx's DefaultExecutor), so
+     * they are the first suspect when a scene test is flaky. Reported in failure messages.
+     */
+    val crossThreadDispatches =
+        java.util.concurrent.atomic
+            .AtomicInteger()
+    val crossThreadSources: MutableSet<String> =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet()
+
     override fun dispatch(
         context: CoroutineContext,
         block: Runnable,
     ) {
+        if (Thread.currentThread() !== ownerThread) {
+            crossThreadDispatches.incrementAndGet()
+            crossThreadSources += Thread.currentThread().name
+        }
         queue.add(block)
     }
 
@@ -197,6 +218,9 @@ internal class TaoSceneTestScope(
     private var timeNanos = 0L
     private var invalidated = false
 
+    /** Times [frameUntilIdle] gave up at its frame cap with the scene still busy. */
+    private var idleCapHits = 0
+
     /** Captured through the same PlatformContext hook the host exposes. */
     private val owners = mutableListOf<SemanticsOwner>()
 
@@ -258,6 +282,18 @@ internal class TaoSceneTestScope(
         )
 
     val scene: ComposeScene get() = sceneBundle.scene
+
+    /**
+     * Mirrors [TaoSceneBundle.renderOverlay] — what a popup layer paints into
+     * the same picture *after* its scene (the scrims of the layers stacked
+     * above it). Recorded inside the frame, so it counts towards the picture's
+     * op count exactly as it does in production.
+     */
+    var renderOverlay: ((org.jetbrains.skia.Canvas) -> Unit)?
+        get() = sceneBundle.renderOverlay
+        set(value) {
+            sceneBundle.renderOverlay = value
+        }
 
     /**
      * Mirrors the scene host's `exceptionHandler` field (#621): installed on the
@@ -343,7 +379,18 @@ internal class TaoSceneTestScope(
      * render pass: pump continuations, deliver the frame clock, then record
      * the scene through the production CPU record path.
      */
-    fun frame(deltaMillis: Long = FRAME_DELTA_MILLIS): Picture {
+    fun frame(
+        deltaMillis: Long = FRAME_DELTA_MILLIS,
+        /**
+         * Cull rect handed to the picture recorder. Defaults to the scene size,
+         * as a window host records; a popup layer records the same scene with a
+         * rect rooted at its draw bounds, which is what
+         * `MacPopupPictureCullTest` exercises.
+         */
+        cullRect: Rect? = null,
+    ): Picture {
+        lastFrameDamage = null
+        lastFullFrameReason = null
         timeNanos += deltaMillis * NANOS_PER_MILLI
         // Release virtual-clock timers (delay / withTimeout) due at the new
         // time BEFORE pumping, so their continuations run in this frame.
@@ -358,8 +405,33 @@ internal class TaoSceneTestScope(
         // dispatchers around the tick), so the recompose triggered by this
         // frame's `withFrameNanos` continuations is part of the recorded picture
         // — same guarantee the explicit sendFrame + pump used to give.
-        return recordSceneToPicture(sceneBundle, width, height, timeNanos).also { lastPicture = it }
+        return recordSceneToPicture(
+            bundle = sceneBundle,
+            widthPx = width,
+            heightPx = height,
+            nanoTime = timeNanos,
+            cullRect = cullRect ?: Rect.makeWH(width.toFloat(), height.toFloat()),
+            beforeDraw = {
+                // What the host's partial redraw asks between layout and draw (#755).
+                lastFrameDamage = sceneBundle.frameDamage(width, height)
+                lastFullFrameReason = sceneBundle.fullFrameReason
+            },
+        ).also { lastPicture = it }
     }
+
+    /**
+     * Renders one frame without pumping the dispatcher first — what a host
+     * render does when nothing ran on the loop since the previous one.
+     */
+    fun renderWithoutPumping(): Picture = recordSceneToPicture(sceneBundle, width, height, timeNanos)
+
+    /** The damage the last [frame] reported to the partial redraw (#755); `null` = unknown. */
+    var lastFrameDamage: androidx.compose.ui.unit.IntRect? = null
+        private set
+
+    /** Why [lastFrameDamage] is `null` — see [TaoSceneBundle.fullFrameReason]. */
+    var lastFullFrameReason: String? = null
+        private set
 
     /**
      * Renders frames until the scene stops self-invalidating (animations
@@ -389,8 +461,19 @@ internal class TaoSceneTestScope(
             picture = frame()
             quiet = if (busy()) 0 else quiet + 1
         }
+        if (quiet < quietFrames) idleCapHits++
         return picture
     }
+
+    /**
+     * What, if anything, happened outside the virtual clock during this test — for failure
+     * messages of timing-sensitive scene tests, so a flaky CI failure leaves something to go on.
+     */
+    fun timingDiagnostics(): String =
+        "virtualTime=${timeNanos / NANOS_PER_MILLI}ms, " +
+            "crossThreadResumptions=${dispatcher.crossThreadDispatches.get()} " +
+            "from ${dispatcher.crossThreadSources.sorted()}, " +
+            "frameUntilIdleCapHits=$idleCapHits"
 
     // ── Pointer input (wire-format shaped, host dispatch mirrored) ──────────
 
@@ -522,6 +605,25 @@ internal class TaoSceneTestScope(
             y = pointerDeadband.y,
             type = type,
             panOffset = panOffsetPx,
+            keyboardModifiers = taoKeyboardModifiers(modifierState),
+        )
+        frame()
+    }
+
+    /**
+     * Mirrors the scene host's trackpad pinch dispatch (`dispatchTrackpadScale`,
+     * #660): [scaleFactor] is a multiplicative per-event ratio (`1f` = no
+     * change). The pointer sits at the last cursor position.
+     */
+    fun scale(
+        type: PointerEventType,
+        scaleFactor: Float = 1f,
+    ) {
+        scene.dispatchTrackpadScale(
+            x = pointerDeadband.x,
+            y = pointerDeadband.y,
+            type = type,
+            scaleFactor = scaleFactor,
             keyboardModifiers = taoKeyboardModifiers(modifierState),
         )
         frame()
@@ -680,9 +782,17 @@ internal class TaoSceneTestScope(
     // ── Pixels ──────────────────────────────────────────────────────────────
 
     /** Rasterizes the last recorded frame (CPU) and returns it as a Skia bitmap. */
-    fun renderToBitmap(clearColor: Int = COLOR_WHITE): Bitmap {
+    fun renderToBitmap(
+        clearColor: Int = COLOR_WHITE,
+        surfaceProps: org.jetbrains.skia.SurfaceProps? = null,
+    ): Bitmap {
         val picture = lastPicture ?: frame()
-        val surface = Surface.makeRasterN32Premul(width, height)
+        val surface =
+            Surface.makeRaster(
+                ImageInfo.makeN32Premul(width, height),
+                0,
+                surfaceProps,
+            )
         surface.canvas.clear(clearColor)
         surface.canvas.drawPicture(picture)
         val bitmap = Bitmap()

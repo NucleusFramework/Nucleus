@@ -33,6 +33,7 @@
 #include <windows.data.xml.dom.h>
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 #include <string>
 #include <vector>
@@ -128,7 +129,7 @@ static void releaseEnv(bool didAttach) {
 }
 
 static void clearException(JNIEnv *env) {
-    if (env->ExceptionCheck()) env->ExceptionClear();
+    nucleus_jni_clear_exception(env);
 }
 
 static jstring toJString(JNIEnv *env, const wchar_t *wstr) {

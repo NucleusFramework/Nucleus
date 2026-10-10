@@ -63,7 +63,7 @@ import kotlinx.coroutines.launch
  * where `thisDeadline` was clearly intended). [onScenePulse] is kept as
  * defense-in-depth for the day upstream fixes that assignment: it re-pins as
  * soon as a real (lowered) deadline becomes observable on the scene thread.
- * `examples/rect-stress-demo` is the standing sentinel: it hammers exactly
+ * The Lab's `rect-stress` fixture (`examples/lab/probes/fixtures`) is the standing sentinel: it hammers exactly
  * this path with a wrong-thread detector in the callback and must never
  * trigger it.
  */

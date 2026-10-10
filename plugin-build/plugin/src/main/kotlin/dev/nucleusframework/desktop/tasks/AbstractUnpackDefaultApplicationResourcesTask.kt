@@ -30,6 +30,10 @@ private const val DEFAULT_ENTITLEMENTS_FILE_NAME = "default-entitlements.plist"
 private const val DEFAULT_SANDBOX_ENTITLEMENTS_FILE_NAME = "default-sandbox-entitlements.plist"
 private const val DEFAULT_SANDBOX_RUNTIME_ENTITLEMENTS_FILE_NAME = "default-sandbox-runtime-entitlements.plist"
 
+/**
+ * Unpacks the plugin's bundled default resources (platform icons, default ProGuard rules, macOS entitlements)
+ * into a plugin-versioned directory under the build directory, where the packaging tasks read them.
+ */
 @DisableCachingByDefault(because = "Unpacks bundled resources; fast and not worth caching")
 abstract class AbstractUnpackDefaultApplicationResourcesTask : AbstractNucleusTask() {
     internal class DefaultResourcesProvider(
@@ -38,9 +42,12 @@ abstract class AbstractUnpackDefaultApplicationResourcesTask : AbstractNucleusTa
         val macIcon: Provider<RegularFile> = resourcesRootDir.map { it.file("default-icon-mac.icns") }
         val windowsIcon: Provider<RegularFile> = resourcesRootDir.map { it.file("default-icon-windows.ico") }
         val linuxIcon: Provider<RegularFile> = resourcesRootDir.map { it.file("default-icon-linux.png") }
-        val defaultComposeProguardRules: Provider<RegularFile> = resourcesRootDir.map { it.file(DEFAULT_COMPOSE_PROGUARD_RULES_FILE_NAME) }
-        val obfuscationSafetyRules: Provider<RegularFile> = resourcesRootDir.map { it.file(OBFUSCATION_SAFETY_RULES_FILE_NAME) }
-        val defaultEntitlements: Provider<RegularFile> = resourcesRootDir.map { it.file(DEFAULT_ENTITLEMENTS_FILE_NAME) }
+        val defaultComposeProguardRules: Provider<RegularFile> =
+            resourcesRootDir.map { it.file(DEFAULT_COMPOSE_PROGUARD_RULES_FILE_NAME) }
+        val obfuscationSafetyRules: Provider<RegularFile> =
+            resourcesRootDir.map { it.file(OBFUSCATION_SAFETY_RULES_FILE_NAME) }
+        val defaultEntitlements: Provider<RegularFile> =
+            resourcesRootDir.map { it.file(DEFAULT_ENTITLEMENTS_FILE_NAME) }
         val defaultSandboxEntitlements: Provider<RegularFile> =
             resourcesRootDir.map { it.file(DEFAULT_SANDBOX_ENTITLEMENTS_FILE_NAME) }
         val defaultSandboxRuntimeEntitlements: Provider<RegularFile> =
@@ -56,6 +63,7 @@ abstract class AbstractUnpackDefaultApplicationResourcesTask : AbstractNucleusTa
     @get:Internal
     internal val resources = DefaultResourcesProvider(destinationDir)
 
+    /** Clears [destinationDir] and writes every default resource into it. */
     @TaskAction
     fun run() {
         fileOperations.clearDirs(destinationDir)

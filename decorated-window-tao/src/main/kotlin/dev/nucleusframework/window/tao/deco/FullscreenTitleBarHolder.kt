@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
  * CompositionLocals from the original call site so user-provided values
  * (themes, etc.) remain accessible inside the overlay.
  *
- * Mirrors `decorated-window-jni`'s `FullscreenTitleBarHolder`.
+ * Mirrors the legacy AWT backend's `FullscreenTitleBarHolder`.
  */
 internal class FullscreenTitleBarHolder {
     var content: (@Composable () -> Unit)? by mutableStateOf(null)
@@ -46,7 +46,7 @@ internal val LocalFullscreenTitleBarHolder = compositionLocalOf<FullscreenTitleB
  * the window is fullscreen and the user opted in via `Modifier.newFullscreenControls()`.
  *
  * Pointer Y position near the top edge toggles visibility; the bar slides in
- * via [animateDpAsState]. Mirrors `decorated-window-jni`'s
+ * via [animateDpAsState]. Mirrors the legacy AWT backend's
  * `FullscreenTitleBarOverlay` and the pointer-tracking Box in `DecoratedWindow`.
  *
  * Pointer tracking uses [PointerEventPass.Initial] so it observes events

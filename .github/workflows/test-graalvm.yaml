@@ -6,9 +6,8 @@ on:
   workflow_call:
 
 jobs:
-  # One job per OS. Order matters: e2e first (the only place we actually RUN a
-  # native image), then package nucleus-demo. If the test image fails to build
-  # or run, we skip the demo package and save a second native-image compile.
+  # One job per OS: builds and RUNS the tao-native-test image (battery + headful), then builds
+  # the Lab's native image, which is what every release publishes.
   # fail-fast cancels the other OSes when one is broken (typical: shared plugin
   # / reachability / Kotlin regression), so we don't burn three runners for the
   # same root cause.
@@ -29,10 +28,10 @@ jobs:
 
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: 'natives-*'
           merge-multiple: true
@@ -42,7 +41,6 @@ jobs:
         with:
           graalvm: 'true'
           setup-gradle: 'true'
-          setup-node: 'false'
 
       # ── Stage 1: build + run the Tao native test pyramid ────────────────
       # Compiles examples/tao-native-test, then executes the packaged binary
@@ -56,16 +54,19 @@ jobs:
 
       - name: Install display stack (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
+        timeout-minutes: 10
+        # Xvfb itself comes from setup-nucleus, which also starts it. x11-utils provides
+        # xdpyinfo, which the next step uses to wait for and check the X server.
+        run: .github/scripts/apt-install.sh openbox mesa-utils x11-utils libegl1 libgl1-mesa-dri libgtk-3-0
 
       - name: Run native test pyramid (Linux, under Xvfb + openbox)
         if: runner.os == 'Linux'
         run: |
-          export DISPLAY=:99
-          Xvfb :99 -screen 0 1600x1200x24 &
-          for i in $(seq 1 50); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.2; done
+          # setup-nucleus (packaging-tools) already runs Xvfb and exports DISPLAY; a second
+          # `Xvfb :99` here only failed with "Server is already active for display 99".
+          test -n "${DISPLAY:-}" || { echo "::error::DISPLAY is not set; setup-nucleus should start Xvfb"; exit 1; }
+          for i in $(seq 1 50); do xdpyinfo -display "$DISPLAY" >/dev/null 2>&1 && break; sleep 0.2; done
+          xdpyinfo -display "$DISPLAY" >/dev/null || { echo "::error::No X server on $DISPLAY"; exit 1; }
           openbox &
           sleep 1
           # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
@@ -77,9 +78,15 @@ jobs:
           "$BIN" battery
           "$BIN" headful
 
+
       - name: Run native test pyramid
         if: runner.os != 'Linux'
         shell: bash
+        env:
+          # Arms the macOS scrollWheel: injector the trackpad headful cases drive
+          # (nativeDiagInjectScrollWheel); without it they fail. taoHeadfulTest sets the
+          # same variable for the JVM run.
+          NUCLEUS_TAO_INPUT_INJECTION: '1'
         run: |
           # Use the PACKAGED binary: the plugin extracts skiko/jawt/icudtl
           # next to it, which the bare nativeCompile artifact lacks.
@@ -90,20 +97,11 @@ jobs:
           "$BIN" battery
           "$BIN" headful
 
-      # ── Stage 2: package nucleus-demo (only if e2e passed) ──────────────
-      - name: Build GraalVM native image (nucleus-demo)
+      # ── Stage 2: the Lab's native image (what every release ships), only once the test image ran ──
+      - name: Build GraalVM native image (Nucleus Lab)
         shell: bash
         # GraalVM CE is resolved through the GitHub releases API. Hosted runners share an IP,
         # so the 60/hour anonymous limit is routinely exhausted — authenticate the call.
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: ./gradlew :examples:nucleus-demo:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace
-
-      - name: Upload GraalVM artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graalvm-${{ runner.os }}
-          path: |
-            examples/nucleus-demo/build/compose/binaries/**/graalvm-app/**
-          if-no-files-found: warn
+        run: ./gradlew :examples:lab:app:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace

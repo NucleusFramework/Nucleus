@@ -44,6 +44,7 @@ abstract class AbstractExtractNativeLibsTask : AbstractNucleusTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    /** Clears [outputDir] and extracts into it every native library of [inputJars] built for the target OS/arch. */
     @Suppress("NestedBlockDepth")
     @TaskAction
     fun extract() {

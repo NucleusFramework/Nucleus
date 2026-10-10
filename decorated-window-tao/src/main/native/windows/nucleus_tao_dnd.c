@@ -18,6 +18,7 @@
 #define INITGUID
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 #include <objbase.h>
 #include <ole2.h>
@@ -217,9 +218,7 @@ static HRESULT STDMETHODCALLTYPE NDT_DragEnter(
         effect = (*env)->CallIntMethod(
             env, t->callbackRef, g_method_on_enter,
             (jlong)(intptr_t)t->hwnd, x, y, (jint)grfKeyState, JNI_TRUE);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionDescribe(env);
-            (*env)->ExceptionClear(env);
+        if (nucleus_jni_clear_exception(env)) {
             effect = DROPEFFECT_NONE_LOCAL;
         }
     }
@@ -253,9 +252,7 @@ static HRESULT STDMETHODCALLTYPE NDT_DragOver(
         effect = (*env)->CallIntMethod(
             env, t->callbackRef, g_method_on_over,
             (jlong)(intptr_t)t->hwnd, x, y, (jint)grfKeyState, JNI_TRUE);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionDescribe(env);
-            (*env)->ExceptionClear(env);
+        if (nucleus_jni_clear_exception(env)) {
             effect = DROPEFFECT_NONE_LOCAL;
         }
     }
@@ -272,10 +269,7 @@ static HRESULT STDMETHODCALLTYPE NDT_DragLeave(IDropTarget *self) {
     if (env && g_method_on_leave) {
         (*env)->CallVoidMethod(env, t->callbackRef, g_method_on_leave,
                                (jlong)(intptr_t)t->hwnd);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionDescribe(env);
-            (*env)->ExceptionClear(env);
-        }
+        nucleus_jni_clear_exception(env);
     }
     detach_if_needed(attached);
     t->hasAcceptableData = FALSE;
@@ -303,9 +297,7 @@ static HRESULT STDMETHODCALLTYPE NDT_Drop(
         effect = (*env)->CallIntMethod(
             env, t->callbackRef, g_method_on_drop,
             (jlong)(intptr_t)t->hwnd, x, y, (jint)grfKeyState, files);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionDescribe(env);
-            (*env)->ExceptionClear(env);
+        if (nucleus_jni_clear_exception(env)) {
             effect = DROPEFFECT_NONE_LOCAL;
         }
     }
@@ -701,14 +693,12 @@ static void pump_host(NucleusDropSource *s) {
     JNIEnv *env = attach_thread(&attached);
     if (!env) return;
     (*env)->CallVoidMethod(env, s->pumpRef, s->pumpMethod);
-    if ((*env)->ExceptionCheck(env)) {
+    if (nucleus_jni_clear_exception(env)) {
         /* Must not leave a pending exception across the COM return: the OLE
          * drag loop calls straight back into us and JNI would abort. */
-        (*env)->ExceptionDescribe(env);
-        (*env)->ExceptionClear(env);
         /* Whatever broke (GL context, Skia recording) will break again on the
          * very next mouse-move, and we are called once per move — latch the
-         * pump off so one failure reports once instead of flooding stderr with
+         * pump off so one failure reports once instead of flooding logs with
          * thousands of traces. The drag degrades to the old frozen-but-quiet
          * behaviour and still completes normally. */
         s->pumpMethod = NULL;
@@ -828,7 +818,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDndBridge_nativeStartDr
             src->pumpRef = (*env)->NewGlobalRef(env, pump);
             if (!src->pumpRef) src->pumpMethod = NULL;
         }
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
     }
 
     /* DoDragDrop pumps its own modal loop until the user releases or escapes.

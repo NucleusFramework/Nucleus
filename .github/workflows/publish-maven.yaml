@@ -8,11 +8,19 @@ on:
 jobs:
   validate-release-ref:
     runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+      is-dev: ${{ steps.tag.outputs.is-dev }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Classify release tag
+        id: tag
+        uses: ./.github/actions/release-tag-info
 
       - name: Validate release ref
         uses: ./.github/actions/validate-release-ref
@@ -23,14 +31,14 @@ jobs:
     uses: ./.github/workflows/build-natives.yaml
 
   publish:
-    needs: build-natives
+    needs: [validate-release-ref, build-natives]
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: 'natives-*'
           merge-multiple: true
@@ -48,14 +56,6 @@ jobs:
             "native-ssl/src/main/resources/nucleus/native/darwin-x64/libnucleus_ssl.dylib"
             "native-ssl/src/main/resources/nucleus/native/win32-x64/nucleus_ssl.dll"
             "native-ssl/src/main/resources/nucleus/native/win32-aarch64/nucleus_ssl.dll"
-            "decorated-window-jbr/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos.dylib"
-            "decorated-window-jbr/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos_jni.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos_jni.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_jni.so"
-            "decorated-window-jni/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_jni.so"
-            "decorated-window-jni/src/main/resources/nucleus/native/win32-x64/nucleus_windows_decoration.dll"
-            "decorated-window-jni/src/main/resources/nucleus/native/win32-aarch64/nucleus_windows_decoration.dll"
             "linux-hidpi/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_hidpi_jni.so"
             "linux-hidpi/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_hidpi_jni.so"
             "spellcheck/src/main/resources/nucleus/native/linux-x64/libnucleus_spellcheck.so"
@@ -86,6 +86,12 @@ jobs:
             "fs-watcher/src/main/resources/nucleus/native/darwin-x64/libnucleus_fs_watcher.dylib"
             "fs-watcher/src/main/resources/nucleus/native/linux-x64/libnucleus_fs_watcher.so"
             "fs-watcher/src/main/resources/nucleus/native/linux-aarch64/libnucleus_fs_watcher.so"
+            "share/src/main/resources/nucleus/native/win32-x64/nucleus_share.dll"
+            "share/src/main/resources/nucleus/native/win32-aarch64/nucleus_share.dll"
+            "share/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_share.dylib"
+            "share/src/main/resources/nucleus/native/darwin-x64/libnucleus_share.dylib"
+            "share/src/main/resources/nucleus/native/linux-x64/libnucleus_share.so"
+            "share/src/main/resources/nucleus/native/linux-aarch64/libnucleus_share.so"
             "notification-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_notification.dylib"
             "notification-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_notification.dylib"
             "service-management-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_service_management.dylib"
@@ -146,10 +152,6 @@ jobs:
             "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_native_view.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_native_view.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libEGL.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libEGL.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libGLESv2.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libGLESv2.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao.dylib"
             "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao.dylib"
             "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_metal.dylib"
@@ -187,13 +189,16 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Setup JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # Open-source cache on GitHub Actions cache; v6's default provider is proprietary.
+          cache-provider: basic
 
       - name: Capture runner egress IP
         run: |
@@ -201,7 +206,11 @@ jobs:
           curl -s https://api.ipify.org; echo
           curl -s https://api64.ipify.org; echo
 
+      # Dev builds (`v3.0.0-dev-<timestamp>`) publish straight from the tag: the whole
+      # point is a throwaway version a downstream app can consume today. Every other tag
+      # is a real release and still has to pass preMerge.
       - name: Run pre-merge checks
+        if: needs.validate-release-ref.outputs.is-dev != 'true'
         run: ./gradlew preMerge --continue
 
       - name: Publish to Maven Central
@@ -213,3 +222,23 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNINGINMEMORYKEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNINGKEYID }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNINGPASSWORD }}
+
+  # Dev tags cut no desktop release (release-desktop ignores them), so this is their only
+  # GitHub release: a pre-release, never marked latest, created once Central has the version.
+  github-prerelease:
+    needs: [validate-release-ref, publish]
+    if: needs.validate-release-ref.outputs.is-dev == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      # Generic notes on purpose: the changelog belongs to the real release.
+      - name: Create GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # The only creator of a dev pre-release: release-desktop waits for it, then attaches the Lab.
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" \
+            --prerelease --latest=false \
+            --notes "Development build, not verified. Release notes will come with the final release."

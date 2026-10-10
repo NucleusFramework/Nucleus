@@ -8,6 +8,19 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 
 /**
+ * Builds one native popup layer for a Compose `Popup` / `Dialog` opened in a
+ * window: the per-platform `TaoPopupSceneLayer*` constructor, with the host
+ * already bound. Same signature as [ComposeSceneContext.createLayer].
+ */
+@OptIn(InternalComposeUiApi::class)
+internal typealias TaoPopupLayerFactory = (
+    density: Density,
+    layoutDirection: LayoutDirection,
+    focusable: Boolean,
+    consumePointerInputOutside: Boolean,
+) -> ComposeSceneLayer
+
+/**
  * `ComposeSceneContext` that lifts Compose `Popup` / `DropdownMenu` /
  * `Tooltip` content into a native popup window (an NSPanel on macOS, a Tao
  * popup on Linux, a child HWND on Windows) instead of drawing it inside the
@@ -26,12 +39,7 @@ import androidx.compose.ui.unit.LayoutDirection
 @OptIn(InternalComposeUiApi::class)
 internal class TaoComposeSceneContext(
     override val platformContext: PlatformContext,
-    private val layerFactory: (
-        density: Density,
-        layoutDirection: LayoutDirection,
-        focusable: Boolean,
-        consumePointerInputOutside: Boolean,
-    ) -> ComposeSceneLayer,
+    private val layerFactory: TaoPopupLayerFactory,
 ) : ComposeSceneContext {
     override fun createLayer(
         density: Density,

@@ -35,6 +35,11 @@ internal object SandboxMarkers {
     /** Descriptor of the rewritten `load(String)` call. */
     const val LOAD_DESC = "(Ljava/lang/String;)V"
 
+    private const val BYTE_MASK = 0xFF
+
+    // Values below this print as a single hex digit and need a leading zero.
+    private const val FIRST_TWO_DIGIT_HEX = 0x10
+
     /**
      * Builds the deterministic marker bytes that replace a native-lib entry inside a rewritten JAR.
      *
@@ -53,8 +58,8 @@ internal object SandboxMarkers {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return buildString(digest.size * 2) {
             for (b in digest) {
-                val v = b.toInt() and 0xFF
-                if (v < 0x10) append('0')
+                val v = b.toInt() and BYTE_MASK
+                if (v < FIRST_TWO_DIGIT_HEX) append('0')
                 append(Integer.toHexString(v))
             }
         }

@@ -29,8 +29,8 @@ import dev.nucleusframework.window.tao.LocalWindowClearColorLayers
  * }
  * ```
  *
- * Shares the content clear stack with `TitleBar`: co-composed, the last
- * SideEffect wins; when either leaves composition only its own contribution
+ * Shares the content clear stack with `TitleBar`: co-composed, the last to
+ * change its colour wins; when either leaves composition only its own contribution
  * is dropped, so this colour is restored if `TitleBar` is removed.
  *
  * The alternative is providing `LocalDecoratedWindowStyle` *around* the

@@ -18,18 +18,18 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore native output cache
         id: natives-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: '*/src/main/resources/nucleus/native/win32-*'
           key: natives-v1-windows-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
 
       - name: Setup JDK 21
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -47,11 +47,6 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call native-ssl\src\main\native\windows\build.bat
-
-      - name: Build decorated-window-jni Windows DLLs
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        shell: cmd
-        run: call decorated-window-jni\src\main\native\windows\build.bat
 
       - name: Build system-color Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
@@ -125,19 +120,15 @@ jobs:
         shell: cmd
         run: call fs-watcher\src\main\native\windows\build.bat
 
+      - name: Build share Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call share\src\main\native\windows\build.bat
+
       - name: Build decorated-window-tao Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
         run: call decorated-window-tao\src\main\native\windows\build.bat
-
-      # ANGLE (libEGL + libGLESv2) backs the Tao Windows Direct3D-11 render path.
-      # Fetched from a pinned Electron release with SHA-256 verification (never
-      # committed — see .gitignore). Lands in the same win32-*/ dirs so it ships
-      # (and is cached) inside the natives-windows artifact.
-      - name: Fetch ANGLE runtime DLLs
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: bash decorated-window-tao/src/main/native/windows/fetch-angle.sh all
 
       - name: Verify Windows natives
         shell: bash
@@ -145,7 +136,6 @@ jobs:
           FILES=(
             "darkmode-detector/nucleus_windows_theme.dll"
             "native-ssl/nucleus_ssl.dll"
-            "decorated-window-jni/nucleus_windows_decoration.dll"
             "system-color/nucleus_systemcolor.dll"
             "energy-manager/nucleus_energy_manager.dll"
             "taskbar-progress/nucleus_taskbar_progress.dll"
@@ -159,13 +149,12 @@ jobs:
             "media-control/nucleus_media_control_windows.dll"
             "spellcheck/nucleus_spellcheck.dll"
             "fs-watcher/nucleus_fs_watcher.dll"
+            "share/nucleus_share.dll"
             "decorated-window-tao/nucleus_tao.dll"
             "decorated-window-tao/nucleus_tao_windows_deco.dll"
             "decorated-window-tao/nucleus_tao_gl.dll"
             "decorated-window-tao/nucleus_tao_dnd.dll"
             "decorated-window-tao/nucleus_tao_windows_native_view.dll"
-            "decorated-window-tao/libEGL.dll"
-            "decorated-window-tao/libGLESv2.dll"
           )
           MISSING=0
           for arch in win32-x64 win32-aarch64; do
@@ -182,7 +171,7 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Upload Windows natives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-windows
           path: '*/src/main/resources/nucleus/native/win32-*/'
@@ -193,18 +182,18 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore native output cache
         id: natives-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: '*/src/main/resources/nucleus/native/darwin-*'
           key: natives-v1-macos-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
 
       - name: Setup JDK 21
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -216,14 +205,6 @@ jobs:
       - name: Build native-ssl macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash native-ssl/src/main/native/macos/build.sh
-
-      - name: Build decorated-window-jbr macOS dylibs
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: bash decorated-window-jbr/src/main/native/macos/build.sh
-
-      - name: Build decorated-window-jni macOS dylibs
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: bash decorated-window-jni/src/main/native/macos/build.sh
 
       - name: Build system-color macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
@@ -288,6 +269,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash fs-watcher/src/main/native/macos/build.sh
 
+      - name: Build share macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash share/src/main/native/macos/build.sh
+
       - name: Build decorated-window-tao macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/macos/build.sh
@@ -301,8 +286,6 @@ jobs:
           FILES=(
             "darkmode-detector/libnucleus_darkmode.dylib"
             "native-ssl/libnucleus_ssl.dylib"
-            "decorated-window-jbr/libnucleus_macos.dylib"
-            "decorated-window-jni/libnucleus_macos_jni.dylib"
             "system-color/libnucleus_systemcolor.dylib"
             "energy-manager/libnucleus_energy_manager.dylib"
             "taskbar-progress/libnucleus_taskbar_progress.dylib"
@@ -317,6 +300,7 @@ jobs:
             "media-control/libnucleus_media_control_macos.dylib"
             "spellcheck/libnucleus_spellcheck.dylib"
             "fs-watcher/libnucleus_fs_watcher.dylib"
+            "share/libnucleus_share.dylib"
             "decorated-window-tao/libnucleus_tao.dylib"
             "decorated-window-tao/libnucleus_tao_metal.dylib"
             "decorated-window-tao/libnucleus_tao_dnd.dylib"
@@ -340,7 +324,7 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Upload macOS natives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-macos
           path: '*/src/main/resources/nucleus/native/darwin-*/'
@@ -367,33 +351,30 @@ jobs:
             arch: aarch64
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore native output cache
         id: natives-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: '*/src/main/resources/nucleus/native/linux-*'
           key: natives-v1-linux-${{ matrix.arch }}-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
 
       - name: Setup JDK 21
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Install build dependencies
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libx11-dev libglib2.0-dev libgtk-3-dev
+        timeout-minutes: 10
+        run: .github/scripts/apt-install.sh libdbus-1-dev libx11-dev libglib2.0-dev libgtk-3-dev
 
       - name: Build darkmode-detector Linux native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash darkmode-detector/src/main/native/linux/build.sh
-
-      - name: Build decorated-window-jni Linux native shared library
-        if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: bash decorated-window-jni/src/main/native/linux/build.sh
 
       - name: Build linux-hidpi native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
@@ -454,6 +435,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash fs-watcher/src/main/native/linux/build.sh
 
+      - name: Build share Linux native libraries
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash share/src/main/native/linux/build.sh
+
       - name: Build decorated-window-tao Linux native libraries
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/linux/build.sh
@@ -462,7 +447,6 @@ jobs:
         run: |
           FILES=(
             "darkmode-detector/libnucleus_linux_theme.so"
-            "decorated-window-jni/libnucleus_linux_jni.so"
             "linux-hidpi/libnucleus_linux_hidpi_jni.so"
             "spellcheck/libnucleus_spellcheck.so"
             "system-color/libnucleus_systemcolor.so"
@@ -476,6 +460,7 @@ jobs:
             "scheduler/libnucleus_scheduler_linux.so"
             "media-control/libnucleus_media_control_linux.so"
             "fs-watcher/libnucleus_fs_watcher.so"
+            "share/libnucleus_share.so"
             "decorated-window-tao/libnucleus_tao.so"
             "decorated-window-tao/libnucleus_tao_egl.so"
             "decorated-window-tao/libnucleus_tao_linux_widget.so"
@@ -495,7 +480,7 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Upload Linux natives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-linux-${{ matrix.arch }}
           path: '*/src/main/resources/nucleus/native/linux-*/'

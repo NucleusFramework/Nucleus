@@ -4,7 +4,7 @@ package dev.nucleusframework.notification.linux
  * Entry point for the freedesktop Desktop Notifications API on Linux.
  *
  * Communicates with `org.freedesktop.Notifications` over D-Bus via JNI (GIO/GDBus).
- * All methods are thread-safe. Signal listener callbacks are dispatched on the Swing EDT.
+ * All methods are thread-safe. Signal listener callbacks are dispatched on the host's UI thread.
  *
  * Specification: https://specifications.freedesktop.org/notification/latest-single/
  */

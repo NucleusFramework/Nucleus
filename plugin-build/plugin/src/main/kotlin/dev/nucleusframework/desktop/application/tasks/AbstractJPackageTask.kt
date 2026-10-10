@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.tasks
 
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.LaunchAgentDefinition
+import dev.nucleusframework.desktop.application.dsl.MacAppExtension
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.internal.LaunchAgentPlistGenerator
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
@@ -21,21 +22,28 @@ import dev.nucleusframework.desktop.application.internal.MacAssetsTool
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
+import dev.nucleusframework.desktop.application.internal.LauncherClasspathOrder
 import dev.nucleusframework.desktop.application.internal.PathingJarClasspath
 import dev.nucleusframework.desktop.application.internal.PlistKeys
 import dev.nucleusframework.desktop.application.internal.SKIKO_LIBRARY_PATH
 import dev.nucleusframework.desktop.application.internal.cliArg
 import dev.nucleusframework.desktop.application.internal.files.FileCopyingProcessor
 import dev.nucleusframework.desktop.application.internal.files.MacJarSignFileCopyingProcessor
+import dev.nucleusframework.desktop.application.internal.files.NUCLEUS_BUNDLED_NATIVES_MARKER
+import dev.nucleusframework.desktop.application.internal.files.NUCLEUS_NATIVE_LIBRARY_PATH
 import dev.nucleusframework.desktop.application.internal.files.SimpleFileCopyingProcessor
+import dev.nucleusframework.desktop.application.internal.files.nucleusNativeEntries
 import dev.nucleusframework.desktop.application.internal.files.copyTo
 import dev.nucleusframework.desktop.application.internal.files.copyZipEntry
 import dev.nucleusframework.desktop.application.internal.files.findOutputFileOrDir
+import dev.nucleusframework.desktop.application.internal.files.hasZipEntry
 import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import dev.nucleusframework.desktop.application.internal.files.isJarFile
 import dev.nucleusframework.desktop.application.internal.files.mangledName
 import dev.nucleusframework.desktop.application.internal.files.normalizedPath
+import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
 import dev.nucleusframework.desktop.application.internal.files.transformJar
+import dev.nucleusframework.desktop.application.internal.files.unpackNucleusNativeLibs
 import dev.nucleusframework.desktop.application.internal.javaOption
 import dev.nucleusframework.desktop.application.internal.renameMacAppBundle
 import dev.nucleusframework.desktop.application.internal.validation.validate
@@ -77,6 +85,7 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.process.ExecResult
 import org.gradle.work.ChangeType
 import org.gradle.work.DisableCachingByDefault
+import org.gradle.work.FileChange
 import org.gradle.work.InputChanges
 import org.jetbrains.kotlin.gradle.internal.ensureParentDirsCreated
 import java.io.File
@@ -101,7 +110,7 @@ import kotlin.io.path.isRegularFile
  * by electron-builder via [AbstractElectronBuilderPackageTask].
  */
 @DisableCachingByDefault(because = "Depends on external jpackage tool")
-@Suppress("UnnecessaryAbstractClass")
+@Suppress("UnnecessaryAbstractClass", "LargeClass") // Its inputs are public API: splitting it would break them.
 abstract class AbstractJPackageTask
     @Inject
     constructor(
@@ -143,6 +152,16 @@ abstract class AbstractJPackageTask
          */
         @get:Input
         val packageFromUberJar: Property<Boolean> = objects.notNullProperty(false)
+
+        /**
+         * Classpath order of [files] when they come from a directory and so carry none (the
+         * sandboxed strip task's output): one file name per line, first wins. Unset: [files] is
+         * already in classpath order. See [LauncherClasspathOrder].
+         */
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.NONE)
+        val classpathOrderFile: RegularFileProperty = objects.fileProperty()
 
         @get:InputFile
         @get:Optional
@@ -281,6 +300,16 @@ abstract class AbstractJPackageTask
         internal val macLaunchAgents: ListProperty<LaunchAgentDefinition> =
             objects.listProperty(LaunchAgentDefinition::class.java).convention(emptyList())
 
+        @get:Internal
+        internal val macAppExtensions: ListProperty<MacAppExtension> =
+            objects.listProperty(MacAppExtension::class.java).convention(emptyList())
+
+        // Tracks the .appex payload + per-extension entitlements/profiles for up-to-date checks.
+        @get:InputFiles
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        internal val macAppExtensionFiles: ConfigurableFileCollection = objects.fileCollection()
+
         @get:Input
         @get:Optional
         val macOsSdkVersion: Property<String> = objects.nullableProperty()
@@ -288,8 +317,14 @@ abstract class AbstractJPackageTask
         @get:Input
         val sandboxingEnabled: Property<Boolean> = objects.notNullProperty(false)
 
+        /** The `nucleus/native/<dir>/` matching the packaged runtime's platform, e.g. `win32-x64`. */
+        @get:Input
+        internal val nucleusNativeDir: Property<String> =
+            objects.notNullProperty(nucleusNativeDir(currentOS, currentArch))
+
         @get:Nested
-        internal val additionalLaunchers: ListProperty<AdditionalLauncher> = objects.listProperty(AdditionalLauncher::class.java)
+        internal val additionalLaunchers: ListProperty<AdditionalLauncher> =
+            objects.listProperty(AdditionalLauncher::class.java)
 
         private val iconMapping by lazy {
             val icons = fileAssociations.get().mapNotNull { it.iconFile }.distinct()
@@ -298,20 +333,7 @@ abstract class AbstractJPackageTask
                 mutableListOf<String>().apply {
                     val usedNames = mutableSetOf("${packageName.get()}.icns")
                     for (icon in icons) {
-                        if (!icon.exists()) continue
-                        if (usedNames.add(icon.name)) {
-                            add(icon.name)
-                            continue
-                        }
-                        val nameWithoutExtension = icon.nameWithoutExtension
-                        val extension = icon.extension
-                        for (n in 1UL..ULong.MAX_VALUE) {
-                            val newName = "$nameWithoutExtension ($n).$extension"
-                            if (usedNames.add(newName)) {
-                                add(newName)
-                                break
-                            }
-                        }
+                        if (icon.exists()) add(uniqueIconName(icon, usedNames))
                     }
                 }
             val iconsDir = macAppDir.resolve("Contents").resolve("Resources")
@@ -335,7 +357,8 @@ abstract class AbstractJPackageTask
             if (currentOS == OS.MacOS) {
                 if (shouldSign) {
                     val validatedSettings =
-                        nonValidatedSettings!!.validate(nonValidatedMacBundleID, project, macAppStore)
+                        checkNotNull(nonValidatedSettings) { "Missing macOS signing settings" }
+                            .validate(nonValidatedMacBundleID, project, macAppStore)
                     MacSignerImpl(validatedSettings, runExternalTool)
                 } else {
                     NoCertificateSigner(runExternalTool)
@@ -351,10 +374,18 @@ abstract class AbstractJPackageTask
         protected val signDir: Provider<Directory> = project.layout.buildDirectory.dir("compose/tmp/sign")
 
         @get:LocalState
-        protected val jpackageResources: Provider<Directory> = project.layout.buildDirectory.dir("compose/tmp/resources")
+        protected val jpackageResources: Provider<Directory> =
+            project.layout.buildDirectory.dir("compose/tmp/resources")
 
         @get:LocalState
         protected val skikoDir: Provider<Directory> = project.layout.buildDirectory.dir("compose/tmp/skiko")
+
+        @get:LocalState
+        protected val nucleusNativesDir: Provider<Directory> =
+            project.layout.buildDirectory.dir("compose/tmp/nucleus-natives/$name")
+
+        /** Whether the Nucleus libraries were moved out of the JARs; decided in [prepareWorkingDir]. */
+        private var bundleNucleusNatives = false
 
         @get:Internal
         private val libsDir: Provider<Directory> =
@@ -375,6 +406,13 @@ abstract class AbstractJPackageTask
         private val libsMappingFile: Provider<RegularFile> =
             workingDir.map {
                 it.file("libs-mapping.txt")
+            }
+
+        /** The Nucleus library entries the libs in [libsDir] were laid out with (none: not bundled). */
+        @get:Internal
+        private val nucleusNativesLayoutFile: Provider<RegularFile> =
+            workingDir.map {
+                it.file("nucleus-natives-bundled.txt")
             }
 
         @get:Internal
@@ -421,6 +459,9 @@ abstract class AbstractJPackageTask
                         else -> appDir()
                     }
                 javaOption("-D$SKIKO_LIBRARY_PATH=$skikoPath")
+                if (bundleNucleusNatives) {
+                    javaOption("-D$NUCLEUS_NATIVE_LIBRARY_PATH=${appDir()}")
+                }
                 if (currentOS == OS.MacOS) {
                     macDockName.orNull?.let { dockName ->
                         javaOption("-Xdock:name=$dockName")
@@ -458,12 +499,20 @@ abstract class AbstractJPackageTask
 
                 additionalLaunchers.get().forEach { launcher ->
                     val propertiesFile = workingDir.ioFile.resolve("launcher_${launcher.name}.properties")
-                    val escapedPath = if (currentTarget.os == OS.Windows) propertiesFile.absolutePath.replace("\\", "\\\\") else propertiesFile.absolutePath
+                    val escapedPath =
+                        if (currentTarget.os == OS.Windows) {
+                            propertiesFile.absolutePath.replace("\\", "\\\\")
+                        } else {
+                            propertiesFile.absolutePath
+                        }
                     cliArg("--add-launcher", "${launcher.name}=${escapedPath}")
                 }
             }
 
-        private fun invalidateMappedLibs(inputChanges: InputChanges): Set<File> {
+        private fun invalidateMappedLibs(
+            inputChanges: InputChanges,
+            layoutChanged: Boolean,
+        ): Set<File> {
             val outdatedLibs = HashSet<File>()
             val libsDirFile = libsDir.ioFile
 
@@ -474,18 +523,13 @@ abstract class AbstractJPackageTask
                 fileOperations.clearDirs(libsDirFile)
             }
 
-            if (inputChanges.isIncremental) {
+            if (inputChanges.isIncremental && !layoutChanged) {
                 val allChanges = inputChanges.getFileChanges(files).asSequence()
 
+                // Whatever goes wrong incrementally, a full invalidation is always correct.
+                @Suppress("TooGenericExceptionCaught")
                 try {
-                    for (change in allChanges) {
-                        libsMapping.remove(change.file)?.let { files ->
-                            files.forEach { fileOperations.delete(it) }
-                        }
-                        if (change.changeType != ChangeType.REMOVED) {
-                            outdatedLibs.add(change.file)
-                        }
-                    }
+                    removeChangedLibs(allChanges, outdatedLibs)
                 } catch (e: Exception) {
                     logger.debug("Could remove outdated libs incrementally: ${e.stacktraceToString()}")
                     invalidateAllLibs()
@@ -497,11 +541,39 @@ abstract class AbstractJPackageTask
             return outdatedLibs
         }
 
+        /** Deletes the copies of every changed input and adds the ones still present to [outdatedLibs]. */
+        private fun removeChangedLibs(
+            changes: Sequence<FileChange>,
+            outdatedLibs: MutableSet<File>,
+        ) {
+            for (change in changes) {
+                libsMapping.remove(change.file)?.forEach { fileOperations.delete(it) }
+                if (change.changeType != ChangeType.REMOVED) {
+                    outdatedLibs.add(change.file)
+                }
+            }
+        }
+
+        /** Returns [icon]'s name, or `name (n).ext` with the first free `n`, and records it in [usedNames]. */
+        private fun uniqueIconName(
+            icon: File,
+            usedNames: MutableSet<String>,
+        ): String {
+            if (usedNames.add(icon.name)) return icon.name
+            return generateSequence(1UL) { it + 1UL }
+                .map { n -> "${icon.nameWithoutExtension} ($n).${icon.extension}" }
+                .first { usedNames.add(it) }
+        }
+
         private fun jarCopyingProcessor(): FileCopyingProcessor =
             if (currentOS == OS.MacOS) {
                 val tmpDirForSign = signDir.ioFile
                 fileOperations.clearDirs(tmpDirForSign)
-                MacJarSignFileCopyingProcessor(macSigner!!, tmpDirForSign, jvmRuntimeInfo.majorVersion)
+                MacJarSignFileCopyingProcessor(
+                    checkNotNull(macSigner) { "No macOS signer" },
+                    tmpDirForSign,
+                    jvmRuntimeInfo.majorVersion,
+                )
             } else {
                 SimpleFileCopyingProcessor
             }
@@ -527,19 +599,57 @@ abstract class AbstractJPackageTask
             // skiko can be bundled to the main uber jar by proguard
             fun File.isMainUberJar() = packageFromUberJar.get() && name == launcherMainJar.ioFile.name
 
-            val outdatedLibs = invalidateMappedLibs(inputChanges)
+            // Moving the libraries out of the JARs is only safe when the runtime on the classpath
+            // knows to look for them next to the JARs. The sandboxed pipeline has its own layout.
+            val jars = files.files.filter { it.isJarFile }
+            bundleNucleusNatives =
+                !sandboxingEnabled.get() &&
+                jars.any { jar -> jar.hasZipEntry { it == NUCLEUS_BUNDLED_NATIVES_MARKER } }
+            // Only the libraries the Nucleus modules list are moved, wherever they sit (a module may
+            // list a dependency's); every other entry, and any JAR without one, stays untouched.
+            val nucleusEntries: Set<String> =
+                if (bundleNucleusNatives) jars.flatMapTo(sortedSetOf()) { it.nucleusNativeEntries() } else emptySet()
+            val layout = nucleusEntries.joinToString("\n")
+            val layoutFile = nucleusNativesLayoutFile.ioFile
+            val layoutChanged = !layoutFile.exists() || layoutFile.readText() != layout
+
+            fun File.withNucleusNativesUnpacked(): List<File> {
+                if (!isJarFile || !hasZipEntry { it in nucleusEntries }) return listOf(this)
+                val unpackDir = nucleusNativesDir.ioFile.resolve(mangledName())
+                fileOperations.clearDirs(unpackDir)
+                return unpackNucleusNativeLibs(
+                    sourceJar = this,
+                    targetJar = unpackDir.resolve(name),
+                    libsDir = unpackDir,
+                    platformDir = nucleusNativeDir.get(),
+                    nucleusEntries = nucleusEntries,
+                )
+            }
+
+            val outdatedLibs = invalidateMappedLibs(inputChanges, layoutChanged)
             for (sourceFile in outdatedLibs) {
                 assert(sourceFile.exists()) { "Lib file does not exist: $sourceFile" }
 
-                libsMapping[sourceFile] =
+                val unpackedFiles =
                     if (isSkikoForCurrentOS(sourceFile) || sourceFile.isMainUberJar()) {
-                        val unpackedFiles = unpackSkikoForCurrentOS(sourceFile, skikoDir.ioFile, fileOperations)
-                        unpackedFiles.map { copyFileToLibsDir(it) }
+                        unpackSkikoForCurrentOS(sourceFile, skikoDir.ioFile, fileOperations)
                     } else {
-                        listOf(copyFileToLibsDir(sourceFile))
+                        listOf(sourceFile)
                     }
+                libsMapping[sourceFile] =
+                    unpackedFiles
+                        .flatMap { it.withNucleusNativesUnpacked() }
+                        .map { copyFileToLibsDir(it) }
             }
+            layoutFile.writeText(layout)
 
+            copyAppResources(libsDir)
+            prepareJpackageResources()
+            writeAdditionalLauncherProperties()
+        }
+
+        /** Copies the app resources into [packagedResourcesDir] (plus Skiko's `icudtl.dat` when sandboxed). */
+        private fun copyAppResources(libsDir: File) {
             // todo: incremental copy
             fileOperations.clearDirs(packagedResourcesDir)
             val destResourcesDir = packagedResourcesDir.ioFile
@@ -565,13 +675,18 @@ abstract class AbstractJPackageTask
                     icudtl.copyTo(destResourcesDir.resolve("icudtl.dat"), overwrite = true)
                 }
             }
+        }
 
+        /** Writes the jpackage resource directory: on macOS the compiled layered icon and `Info.plist`. */
+        private fun prepareJpackageResources() {
             fileOperations.clearDirs(jpackageResources)
             if (currentOS == OS.MacOS) {
                 val systemVersion = macMinimumSystemVersion.orNull ?: "10.13"
 
                 macLayeredIcons.ioFileOrNull?.let { layeredIcon ->
                     if (layeredIcon.exists()) {
+                        // The layered icon is optional: any failure of the external tool keeps the plain icon.
+                        @Suppress("TooGenericExceptionCaught")
                         try {
                             macAssetsTool.compileAssets(
                                 layeredIcon,
@@ -600,7 +715,10 @@ abstract class AbstractJPackageTask
                         .writeToFile(jpackageResources.ioFile.resolve("product-def.plist"))
                 }
             }
+        }
 
+        /** Writes the `--add-launcher` properties file of every additional launcher. */
+        private fun writeAdditionalLauncherProperties() {
             additionalLaunchers.get().forEach { launcher ->
                 val propertiesFile = workingDir.ioFile.resolve("launcher_${launcher.name}.properties")
                 val propertiesFileContent = buildString {
@@ -627,6 +745,10 @@ abstract class AbstractJPackageTask
 
         override fun checkResult(result: ExecResult) {
             super.checkResult(result)
+            // Before signing (macOS) and the pathing-jar collapse (Linux), which both keep the order.
+            if (targetFormat == TargetFormat.RawAppImage) {
+                LauncherClasspathOrder.apply(destinationDir.ioFile, launcherClasspathOrder(), logger)
+            }
             modifyRuntimeOnMacOsIfNeeded()
             // Linux only: shrink the jpackage launcher's serialized classpath so the parent
             // process's single pipe read cannot short-read (JDK-8380085 / Nucleus #454).
@@ -639,6 +761,25 @@ abstract class AbstractJPackageTask
             }
             val outputFile = findOutputFileOrDir(destinationDir.ioFile, targetFormat)
             logger.lifecycle("The distribution is written to ${outputFile.canonicalPath}")
+        }
+
+        /** The file names jpackage copied into `--input`, in classpath order, main JAR first. */
+        private fun launcherClasspathOrder(): List<String> {
+            val sources = files.files.toList()
+            val rank =
+                classpathOrderFile.orNull
+                    ?.asFile
+                    ?.takeIf { it.isFile }
+                    ?.readLines()
+                    ?.filter { it.isNotBlank() }
+                    ?.withIndex()
+                    ?.associate { (index, name) -> name.trim() to index }
+            val ordered = if (rank == null) sources else sources.sortedBy { rank[it.name] ?: Int.MAX_VALUE }
+            val mainJar = libsMapping[launcherMainJar.ioFile].orEmpty().filter { it.isJarFile }
+            return (mainJar + ordered.flatMap { libsMapping[it].orEmpty() })
+                .filter { it.isJarFile }
+                .map { it.name }
+                .distinct()
         }
 
         /** Bundle directory name jpackage's macOS output is renamed to, without the `.app` suffix. */
@@ -704,7 +845,7 @@ abstract class AbstractJPackageTask
             val appEntitlementsFile = macEntitlementsFile.ioFileOrNull
             val runtimeEntitlementsFile = macRuntimeEntitlementsFile.ioFileOrNull
 
-            val macSigner = macSigner!!
+            val macSigner = checkNotNull(macSigner) { "No macOS signer" }
             // Resign the runtime completely (and also the app dir only)
             // Sign all libs and executables in runtime
             runtimeDir.walk().forEach { file ->
@@ -727,6 +868,10 @@ abstract class AbstractJPackageTask
                 }
             }
 
+            // Embed and sign app extensions (.appex) into Contents/PlugIns before sealing the app.
+            embedAndSignAppExtensions(appDir, macSigner)
+            warnIfHostEntitlementsBlockExtensions(appEntitlementsFile)
+
             macSigner.sign(runtimeDir, runtimeEntitlementsFile, forceEntitlements = true)
             macSigner.sign(appDir, appEntitlementsFile, forceEntitlements = true)
 
@@ -738,6 +883,90 @@ abstract class AbstractJPackageTask
                     }
                 }
             }
+        }
+
+        /**
+         * Copies each configured app extension into `Contents/PlugIns/`, embeds its own
+         * provisioning profile, and signs it inside-out with its own entitlements. The outer
+         * app is sealed afterwards (without `--deep`), which preserves these signatures.
+         */
+        private fun embedAndSignAppExtensions(
+            appDir: File,
+            macSigner: MacSigner,
+        ) {
+            val extensions = macAppExtensions.get()
+            if (extensions.isEmpty()) return
+
+            val plugInsDir = appDir.resolve("Contents/PlugIns")
+            for (extension in extensions) {
+                val source =
+                    extension.appex
+                        ?: error("appExtension '${extension.name}': no .appex file configured (call appex(...))")
+                check(source.exists()) {
+                    "appExtension '${extension.name}': .appex not found at ${source.absolutePath}"
+                }
+                plugInsDir.mkdirs()
+                val dest = plugInsDir.resolve(source.name)
+                dest.deleteRecursively()
+                // `cp -R`, not `copyRecursively`: Kotlin's copy streams file contents and drops the
+                // POSIX mode, so the extension's executable lost its +x and launchd could not spawn
+                // it (#394). cp keeps the mode bits and any framework symlinks intact.
+                runExternalTool(File("/bin/cp"), listOf("-R", source.absolutePath, plugInsDir.absolutePath))
+
+                // Embed the extension's own provisioning profile.
+                extension.provisioningProfile?.copyTo(
+                    target = dest.resolve("Contents/embedded.provisionprofile"),
+                    overwrite = true,
+                )
+
+                // Sign the extension inside-out with its OWN entitlements.
+                signBundleInsideOut(dest, extension.entitlements, macSigner)
+            }
+        }
+
+        /**
+         * The default entitlements relax the hardened runtime for the JVM. A host app that ships a
+         * network extension has been reported not to launch with these keys (#394); the fix is a
+         * custom `entitlementsFile` without them — modern JDKs only need `allow-jit`.
+         */
+        private fun warnIfHostEntitlementsBlockExtensions(appEntitlementsFile: File?) {
+            if (macAppExtensions.get().isEmpty() || appEntitlementsFile == null) return
+            val offending =
+                listOf(
+                    "com.apple.security.cs.allow-unsigned-executable-memory",
+                    "com.apple.security.cs.disable-library-validation",
+                ).filter { appEntitlementsFile.readText().contains(it) }
+            if (offending.isNotEmpty()) {
+                logger.warn(
+                    "macOS app extensions are embedded but the host entitlements ($appEntitlementsFile) " +
+                        "still grant ${offending.joinToString()}. Apps hosting a Network Extension have " +
+                        "been reported to fail to launch with these keys; set macOS { entitlementsFile } " +
+                        "to a plist without them (allow-jit is enough for the JVM).",
+                )
+            }
+        }
+
+        /**
+         * Signs a nested bundle (e.g. an `.appex`) inside-out: nested executables/dylibs in its
+         * `Contents/Frameworks` first, then the bundle itself with its [entitlements].
+         */
+        private fun signBundleInsideOut(
+            bundle: File,
+            entitlements: File?,
+            macSigner: MacSigner,
+        ) {
+            val frameworks = bundle.resolve("Contents/Frameworks")
+            if (frameworks.exists()) {
+                frameworks.walk().forEach { file ->
+                    val path = file.toPath()
+                    if (path.isRegularFile(LinkOption.NOFOLLOW_LINKS) &&
+                        (path.isExecutable() || file.name.isDylibPath)
+                    ) {
+                        macSigner.sign(file, entitlements)
+                    }
+                }
+            }
+            macSigner.sign(bundle, entitlements, forceEntitlements = true)
         }
 
         /**
@@ -825,6 +1054,8 @@ abstract class AbstractJPackageTask
 
             val mappingFile = libsMappingFile.ioFile
             if (mappingFile.exists()) {
+                // Drops an unreadable mapping file whatever the failure, then rethrows it.
+                @Suppress("TooGenericExceptionCaught")
                 try {
                     libsMapping.loadFrom(mappingFile)
                 } catch (e: Exception) {
@@ -863,7 +1094,9 @@ abstract class AbstractJPackageTask
             val packageVersion = packageVersion.get()
             plist[PlistKeys.CFBundleShortVersionString] = packageVersion
             // If building for the App Store, use "utilities" as default just like jpackage.
-            val category = macAppCategory.orNull ?: (if (macAppStore.orNull == true) "public.app-category.utilities" else null)
+            val category =
+                macAppCategory.orNull
+                    ?: (if (macAppStore.orNull == true) "public.app-category.utilities" else null)
             plist[PlistKeys.LSApplicationCategoryType] = category ?: "Unknown"
             val packageBuildVersion = packageBuildVersion.orNull ?: packageVersion
             plist[PlistKeys.CFBundleVersion] = packageBuildVersion
@@ -882,7 +1115,8 @@ abstract class AbstractJPackageTask
                         .groupBy { it.mimeType to it.description }
                         .map { (key, extensions) ->
                             val (mimeType, description) = key
-                            val iconPath = extensions.firstNotNullOfOrNull { it.iconFile }?.let { iconMapping[it]?.name }
+                            val iconPath =
+                                extensions.firstNotNullOfOrNull { it.iconFile }?.let { iconMapping[it]?.name }
                             InfoPlistMapValue(
                                 PlistKeys.CFBundleTypeRole to InfoPlistStringValue("Editor"),
                                 PlistKeys.CFBundleTypeExtensions to
@@ -916,6 +1150,8 @@ abstract class AbstractJPackageTask
 // Serializable is only needed to avoid breaking configuration cache:
 // https://docs.gradle.org/current/userguide/configuration_cache.html#config_cache:requirements
 private class FilesMapping : Serializable {
+    // A var because readObject reassigns it: deserialization runs no initializer.
+    @Suppress("DoubleMutabilityForCollection")
     private var mapping = HashMap<File, List<File>>()
 
     operator fun get(key: File): List<File>? = mapping[key]
@@ -959,6 +1195,10 @@ private class FilesMapping : Serializable {
     @Suppress("UNCHECKED_CAST")
     private fun readObject(stream: ObjectInputStream) {
         mapping = stream.readObject() as HashMap<File, List<File>>
+    }
+
+    private companion object {
+        private const val serialVersionUID: Long = 1L
     }
 }
 

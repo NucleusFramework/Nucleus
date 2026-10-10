@@ -14,6 +14,19 @@ public interface UpdateProvider {
         version: String,
     ): String
 
+    /**
+     * Returns the URL of [fileName], a file of the [version] manifest read from [metadataUrl] (the
+     * URL [resolveMetadataUrl] returned). [dev.nucleusframework.updater.NucleusUpdater] calls this
+     * one; override it when the download location depends on where the manifest came from, as with
+     * the release a GitHub tag names. The default implementation delegates to the two-argument
+     * [getDownloadUrl].
+     */
+    public fun getDownloadUrl(
+        fileName: String,
+        version: String,
+        metadataUrl: String,
+    ): String = getDownloadUrl(fileName, version)
+
     public fun authHeaders(): Map<String, String> = emptyMap()
 
     /**
@@ -28,6 +41,13 @@ public interface UpdateProvider {
     public fun getBlockMapUrl(fileUrl: String): String = "$fileUrl.blockmap"
 
     /**
+     * Returns the URL of [fileUrl]'s detached signature, `<artifact>.asc` by default. Override it
+     * along with [getBlockMapUrl]. Optional: without it, the Linux passwordless update falls back to
+     * the password prompt.
+     */
+    public fun getSignatureUrl(fileUrl: String): String = "$fileUrl.asc"
+
+    /**
      * Returns the URL of the metadata (YAML) file for the given [channel] and [platform],
      * resolving it dynamically when the provider needs to consult a remote service first.
      *
@@ -35,12 +55,9 @@ public interface UpdateProvider {
      * check. The default implementation delegates to [getUpdateMetadataUrl], which is
      * sufficient for providers whose URLs can be computed without a network round-trip.
      *
-     * Override this method when locating the metadata requires an HTTP request. For example,
-     * [GitHubProvider] overrides it to query the GitHub Releases API and select the most
-     * recent pre-release whose tag matches the requested channel — the stable channel keeps
-     * the static `releases/latest/download/...` redirect, while `beta` and `alpha` channels
-     * resolve to `releases/download/<tag>/...` URLs that the GitHub `latest` shortcut would
-     * otherwise skip.
+     * Override this method when locating the metadata requires an HTTP request, as
+     * [GitHubProvider] does to find a pre-release channel's tag in the releases feed, and
+     * [PrivateGitHubProvider] to look the release up through the REST API.
      *
      * The [httpClient] is the same client that
      * [dev.nucleusframework.updater.UpdaterConfig.httpClient] configures (or the
@@ -58,4 +75,19 @@ public interface UpdateProvider {
         platform: Platform,
         httpClient: HttpClient,
     ): String = getUpdateMetadataUrl(channel, platform)
+
+    /**
+     * [resolveMetadataUrl], knowing the running [currentVersion] and whether the client accepts
+     * pre-releases ([allowPrerelease], as [dev.nucleusframework.updater.UpdaterConfig.allowPrerelease]
+     * resolves it). [dev.nucleusframework.updater.NucleusUpdater] calls this one; override it when
+     * picking the release depends on them, as the GitHub providers do. The default implementation
+     * delegates to the three-argument [resolveMetadataUrl].
+     */
+    public fun resolveMetadataUrl(
+        channel: String,
+        platform: Platform,
+        httpClient: HttpClient,
+        currentVersion: String,
+        allowPrerelease: Boolean,
+    ): String = resolveMetadataUrl(channel, platform, httpClient)
 }

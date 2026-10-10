@@ -129,15 +129,22 @@ internal class WindowClearColorLayers(
     }
 
     /**
-     * Publishes [argb] as this [key]'s content contribution. Re-entry moves
-     * [key] to the top so co-composed writers resolve by SideEffect order.
+     * Publishes [argb] as this [key]'s content contribution and moves [key] to
+     * the top: among co-composed writers, the last to change its colour wins.
+     * Re-publishing an unchanged colour keeps the order — a writer's
+     * SideEffect runs on every recomposition, and the resolved colour itself
+     * recomposes the chrome (its light/dark), so re-ranking on every call made
+     * a `TitleBar` and a `WindowBackground` of opposite darkness take turns,
+     * one frame each, forever (#755).
      */
     fun setContent(
         key: Any,
         argb: Int,
     ) {
+        val coerced = coerce(argb)
+        if (contentWriters[key] == coerced) return
         contentWriters.remove(key)
-        contentWriters[key] = coerce(argb)
+        contentWriters[key] = coerced
         push()
     }
 
@@ -210,7 +217,7 @@ public val LocalTaoWindow: ProvidableCompositionLocal<TaoWindow?> = staticCompos
 private val ModalScrimColor = Color(0x66000000)
 
 /**
- * Tao-backed equivalent of `decorated-window-jni`'s `DecoratedWindow`.
+ * Tao-backed equivalent of the legacy AWT backend's `DecoratedWindow`.
  * Imperative-on-the-outside, Composable-on-the-inside: opens a single Tao
  * window, mounts the user [content] inside its dedicated `ComposeScene`, and
  * returns the [TaoWindow] handle for further imperative control.
@@ -219,7 +226,7 @@ private val ModalScrimColor = Color(0x66000000)
  * AWT-based backends so an app can swap modules with minimal call-site change.
  * `enabled = false` swallows pointer + keyboard events at the host level so
  * the window appears unresponsive (no native disabled-state visual — matches
- * `decorated-window-jni`'s behavior). `focusable = false` calls
+ * the legacy AWT backend's behavior). `focusable = false` calls
  * `tao::Window::set_focusable(false)`, which prevents the window from ever
  * becoming key (useful for HUD/overlay windows).
  */
@@ -307,7 +314,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             // On macOS we keep native decorations (traffic-light buttons live there).
             // On Windows + Linux we drop them — we draw the close/min/max buttons
             // ourselves via [WindowControlsWindows] / [WindowControlsLinux] inside
-            // the user's [TitleBar] composable, mirroring decorated-window-jni.
+            // the user's [TitleBar] composable, mirroring the legacy AWT backend.
             // `undecorated` opts out entirely (borderless, no traffic lights).
             // Linux still gets the native GTK drop shadow through
             // `undecoratedShadow` below (yaru.dart-style hidden-titlebar CSD).
@@ -420,8 +427,8 @@ internal fun ApplicationScope.openDecoratedWindow(
 
     // Trackpad pinch / rotate / smart-magnify, intercepted before AppKit
     // dispatches them down the responder chain (Tao 0.35 doesn't surface
-    // these events). Synthesised as two-finger Touch pointers in the host
-    // so cross-platform `detectTransformGestures` reacts uniformly.
+    // these events). Pinch is forwarded as Compose Scale events (#660);
+    // rotation still synthesises two-finger Touch pointers.
     window.onTrackpadGesture { kind, phase, x, y, value ->
         exceptionHandler.catchExceptions {
             if (enabled) host.onTrackpadGesture(kind, phase, x, y, value)
@@ -499,6 +506,10 @@ internal fun ApplicationScope.openDecoratedWindow(
                         fullyTransparent = transparent,
                     )
                 }
+            // For NativePopupLayers { }: null when every popup is native already.
+            // Remembered so the static local keeps one value per window.
+            val nativePopupLayerFactory =
+                remember { if (host.nativePopupLayers) null else host.nativePopupLayerFactory() }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
@@ -509,6 +520,7 @@ internal fun ApplicationScope.openDecoratedWindow(
                 dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
                     provides host.metalTextureHost(),
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                LocalTaoNativePopupLayerFactory provides nativePopupLayerFactory,
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
             ) {
                 // Re-centre the native AppKit traffic-lights whenever the
@@ -591,9 +603,9 @@ internal fun ApplicationScope.openDecoratedWindow(
     window.onPointerExited { exceptionHandler.catchExceptions { if (enabled) host.onPointerExited() } }
     window.onPointerButton { b, p -> exceptionHandler.catchExceptions { if (enabled) host.onPointerButton(b, p) } }
     window.onPointerScroll { event -> exceptionHandler.catchExceptions { if (enabled) host.onPointerScroll(event) } }
-    window.onKeyEvent { type, vk, loc, mods, cp ->
+    window.onKeyInput { type, vk, loc, mods, cp, repeat ->
         exceptionHandler.catchExceptions(fallback = false) {
-            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp, repeat) else false
         }
     }
     window.onRedrawRequested { host.requestFrame() }
@@ -726,6 +738,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                         fullyTransparent = transparent,
                     )
                 }
+            // For NativePopupLayers { }: null when every popup is native already.
+            // Remembered so the static local keeps one value per window.
+            val nativePopupLayerFactory =
+                remember { if (host.nativePopupLayers) null else host.nativePopupLayerFactory() }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
@@ -733,6 +749,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalWindowClearColorLayers provides clearColorLayers,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                LocalTaoNativePopupLayerFactory provides nativePopupLayerFactory,
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 // Read as state: a Wayland hide/show rebuilds the EGL + Skia
                 // context pair, and TextureView imports must follow it.
@@ -912,9 +929,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     }
     window.onPointerScroll { event -> exceptionHandler.catchExceptions { if (enabled) host.onPointerScroll(event) } }
     window.onDragWindow { host.onNativeWindowDragStarted() }
-    window.onKeyEvent { type, vk, loc, mods, cp ->
+    window.onKeyInput { type, vk, loc, mods, cp, repeat ->
         exceptionHandler.catchExceptions(fallback = false) {
-            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp, repeat) else false
         }
     }
     window.onRedrawRequested { host.onRedrawRequested() }
@@ -1095,9 +1112,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
 
     // Trackpad pinch-to-zoom. Windows delivers a precision-touchpad pinch (and
     // a real Ctrl+wheel) as a Ctrl-flagged WM_MOUSEWHEEL; the Tao patch routes
-    // those to the magnify hook instead of a scroll, and the host synthesises a
-    // two-finger Touch pinch so cross-platform `detectTransformGestures` zooms
-    // uniformly — same model as macOS.
+    // those to the magnify hook instead of a scroll, and the host forwards
+    // Compose Scale events (#660) — same model as macOS.
     window.onTrackpadGesture { kind, phase, x, y, value ->
         exceptionHandler.catchExceptions {
             if (enabled) host.onTrackpadGesture(kind, phase, x, y, value)
@@ -1160,6 +1176,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                         fullyTransparent = transparent,
                     )
                 }
+            // For NativePopupLayers { }: null when every popup is native already.
+            // Remembered so the static local keeps one value per window.
+            val nativePopupLayerFactory =
+                remember { if (host.nativePopupLayers) null else host.nativePopupLayerFactory() }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
@@ -1169,6 +1189,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalBackdropComposeTint provides host.backdropTintArgbState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                LocalTaoNativePopupLayerFactory provides nativePopupLayerFactory,
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows
                     provides host.popupHost(),
@@ -1431,9 +1452,9 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         }
         host.onResizeLoopChanged(active)
     }
-    window.onKeyEvent { type, vk, loc, mods, cp ->
+    window.onKeyInput { type, vk, loc, mods, cp, repeat ->
         exceptionHandler.catchExceptions(fallback = false) {
-            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp, repeat) else false
         }
     }
     window.onRedrawRequested { host.onRedrawRequested() }

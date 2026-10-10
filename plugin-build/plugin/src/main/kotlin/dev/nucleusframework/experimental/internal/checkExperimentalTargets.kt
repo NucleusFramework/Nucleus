@@ -7,6 +7,7 @@ package dev.nucleusframework.experimental.internal
 
 import dev.nucleusframework.internal.utils.findLocalOrGlobalProperty
 import org.gradle.api.Project
+import org.gradle.api.artifacts.Configuration
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.KotlinTarget
 
@@ -80,22 +81,21 @@ private fun checkTarget(
             compilation.compileDependencyConfigurationName
         }
 
-    project.configurations.forEach { configuration ->
-        if (configuration.isCanBeResolved && configuration.name in targetConfigurationNames) {
-            val resolvedConfiguration = configuration.resolvedConfiguration
-            if (!resolvedConfiguration.hasError()) {
-                val containsSkikoArtifact =
-                    resolvedConfiguration.resolvedArtifacts.any {
-                        it.id.displayName.contains(SKIKO_ARTIFACT_PREFIX)
-                    }
-                if (containsSkikoArtifact) {
-                    val targetIsDisabled = project.findLocalOrGlobalProperty(targetType.gradlePropertyName).map { it != "true" }
-                    if (targetIsDisabled.get()) {
-                        return CheckResult.Fail(targetType)
-                    }
-                }
-            }
+    val usesSkiko =
+        project.configurations.any { configuration ->
+            configuration.isCanBeResolved &&
+                configuration.name in targetConfigurationNames &&
+                configuration.containsSkikoArtifact()
         }
-    }
-    return CheckResult.Success
+    val targetIsDisabled =
+        usesSkiko && project.findLocalOrGlobalProperty(targetType.gradlePropertyName).map { it != "true" }.get()
+    return if (targetIsDisabled) CheckResult.Fail(targetType) else CheckResult.Success
+}
+
+private fun Configuration.containsSkikoArtifact(): Boolean {
+    val resolved = resolvedConfiguration
+    return !resolved.hasError() &&
+        resolved.resolvedArtifacts.any {
+            it.id.displayName.contains(SKIKO_ARTIFACT_PREFIX)
+        }
 }

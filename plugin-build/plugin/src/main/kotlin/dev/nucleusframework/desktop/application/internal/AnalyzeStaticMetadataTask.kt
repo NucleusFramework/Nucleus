@@ -64,6 +64,11 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    /**
+     * Scans [runtimeClasspath] and writes the detected reflection, JNI and resource
+     * metadata to `reachability-metadata.json` in [outputDir] (an empty `{}` when there
+     * is nothing to analyze).
+     */
     @TaskAction
     fun analyze() {
         // Always materialize the output directory so consumers can declare it as a
@@ -135,7 +140,7 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
                 if (entries.size == 1) "y" else "ies",
         )
         // Cap log volume for the sledgehammer path (can register hundreds of types).
-        val limit = if (tag == "project-class") 50 else Int.MAX_VALUE
+        val limit = if (tag == "project-class") MAX_LOGGED_PROJECT_CLASSES else Int.MAX_VALUE
         val sorted = entries.sortedBy { it.type }
         for (entry in sorted.take(limit)) {
             logger.lifecycle("[$tag] ${entry.type}")
@@ -145,6 +150,9 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
         }
     }
 }
+
+/** Number of project classes listed in the log by the `reflectionForProjectClasses` path. */
+private const val MAX_LOGGED_PROJECT_CLASSES = 50
 
 /**
  * Builds a reachability-metadata.json string in the GraalVM format from analysis results.
@@ -173,7 +181,7 @@ internal fun buildReachabilityMetadataJson(
     if (resourcePatterns.isNotEmpty()) {
         root["resources"] =
             resourcePatterns
-                .sortedBy { it.glob ?: it.bundle ?: "" }
+                .sortedBy { (it.glob ?: it.bundle).orEmpty() }
                 .map { it.toJsonMap() }
     }
 

@@ -24,8 +24,14 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.work.DisableCachingByDefault
 import java.io.File
 
+/**
+ * Builds a DMG from the `.app` in [appDir] with `hdiutil`: creates a read-write image, mounts it, lays out the
+ * Finder window (icon positions, background, window bounds) with an AppleScript run by `osascript`, then
+ * converts it to the final [dmgFormat] (UDZO by default).
+ */
 @DisableCachingByDefault(because = "Depends on external macOS native tools")
 abstract class AbstractNativeMacApplicationPackageDmgTask : AbstractNativeMacApplicationPackageTask() {
+    /** Default DMG window layout and color conversion constants. */
     companion object {
         private const val DEFAULT_ICON_SIZE = 72
         private const val DEFAULT_WINDOW_X = 400
@@ -35,6 +41,8 @@ abstract class AbstractNativeMacApplicationPackageDmgTask : AbstractNativeMacApp
         private const val CSS_SHORT_HEX_LENGTH = 3
         private const val CSS_FULL_HEX_LENGTH = 6
         private const val APPLE_SCRIPT_RGB_SCALE = 257
+        private const val IMAGE_SIZE_HEADROOM_BYTES = 10L * 1024 * 1024
+        private const val MOUNT_SETTLE_DELAY_MS = 3000L
     }
 
     @get:InputFile
@@ -125,7 +133,7 @@ abstract class AbstractNativeMacApplicationPackageDmgTask : AbstractNativeMacApp
         srcDir: File,
     ) {
         var size = srcDir.walk().filter { it.isFile }.sumOf { it.length() }
-        size += 10 * 1024 * 1024
+        size += IMAGE_SIZE_HEADROOM_BYTES
 
         hdiutil(
             "create",
@@ -161,18 +169,16 @@ abstract class AbstractNativeMacApplicationPackageDmgTask : AbstractNativeMacApp
                 "-noautoopen",
                 imageFile.absolutePath,
             )
-        Thread.sleep(3000)
+        Thread.sleep(MOUNT_SETTLE_DELAY_MS)
         var device: String? = null
         var volume: String? = null
 
         for (line in output.split("\n")) {
-            if (!line.startsWith("/dev/")) continue
-
             val volumeIndex = line.lastIndexOf("/Volumes/$volumeName")
-            if (volumeIndex <= 0) continue
-
-            volume = line.substring(volumeIndex).trimEnd()
-            device = line.substring(0, line.indexOfFirst(Char::isWhitespace))
+            if (line.startsWith("/dev/") && volumeIndex > 0) {
+                volume = line.substring(volumeIndex).trimEnd()
+                device = line.substring(0, line.indexOfFirst(Char::isWhitespace))
+            }
         }
         check(device != null && volume != null) {
             "Could not parse mounted image's device ($device) & volume ($volume) from hdiutil output:" +

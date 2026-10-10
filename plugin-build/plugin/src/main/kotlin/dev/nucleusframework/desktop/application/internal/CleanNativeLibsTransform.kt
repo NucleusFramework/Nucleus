@@ -27,6 +27,7 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.work.DisableCachingByDefault
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -67,6 +68,21 @@ internal abstract class CleanNativeLibsTransform : TransformAction<CleanNativeLi
             }
 
         // First pass: determine which entries to remove
+        val entriesToRemove = collectEntriesToRemove(inputFile, expectedOs, expectedArch)
+        if (entriesToRemove.isEmpty()) {
+            outputs.file(inputFile)
+            return
+        }
+
+        // Second pass: copy JAR without removed entries
+        copyJarWithout(inputFile, outputs.file(inputFile.name), entriesToRemove)
+    }
+
+    private fun collectEntriesToRemove(
+        inputFile: File,
+        expectedOs: NativeOs,
+        expectedArch: NativeArch,
+    ): Set<String> {
         val entriesToRemove = mutableSetOf<String>()
         ZipInputStream(BufferedInputStream(inputFile.inputStream())).use { zis ->
             var entry = zis.nextEntry
@@ -85,41 +101,46 @@ internal abstract class CleanNativeLibsTransform : TransformAction<CleanNativeLi
                 entry = zis.nextEntry
             }
         }
+        return entriesToRemove
+    }
 
-        if (entriesToRemove.isEmpty()) {
-            outputs.file(inputFile)
-            return
-        }
-
-        // Second pass: copy JAR without removed entries
-        val outputFile = outputs.file(inputFile.name)
+    private fun copyJarWithout(
+        inputFile: File,
+        outputFile: File,
+        entriesToRemove: Set<String>,
+    ) {
         ZipInputStream(BufferedInputStream(inputFile.inputStream())).use { zis ->
             ZipOutputStream(BufferedOutputStream(FileOutputStream(outputFile))).use { zos ->
                 var entry = zis.nextEntry
                 while (entry != null) {
                     val shouldSkip = !entry.isDirectory && entry.name in entriesToRemove
-
-                    if (!shouldSkip) {
-                        zos.putNextEntry(
-                            ZipEntry(entry.name).apply {
-                                time = entry.time
-                                if (entry.method == ZipEntry.STORED) {
-                                    method = ZipEntry.STORED
-                                    size = entry.size
-                                    compressedSize = entry.compressedSize
-                                    crc = entry.crc
-                                }
-                            },
-                        )
-                        if (!entry.isDirectory) {
-                            zis.copyTo(zos)
-                        }
-                        zos.closeEntry()
-                    }
+                    if (!shouldSkip) copyEntry(entry, zis, zos)
                     entry = zis.nextEntry
                 }
             }
         }
+    }
+
+    private fun copyEntry(
+        entry: ZipEntry,
+        zis: ZipInputStream,
+        zos: ZipOutputStream,
+    ) {
+        zos.putNextEntry(
+            ZipEntry(entry.name).apply {
+                time = entry.time
+                if (entry.method == ZipEntry.STORED) {
+                    method = ZipEntry.STORED
+                    size = entry.size
+                    compressedSize = entry.compressedSize
+                    crc = entry.crc
+                }
+            },
+        )
+        if (!entry.isDirectory) {
+            zis.copyTo(zos)
+        }
+        zos.closeEntry()
     }
 
     private fun mapOs(os: String): NativeOs? =

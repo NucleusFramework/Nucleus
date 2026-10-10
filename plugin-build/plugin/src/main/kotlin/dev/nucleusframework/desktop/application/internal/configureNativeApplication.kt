@@ -87,37 +87,36 @@ private fun configureNativeApplication(
         }
 
     if (TargetFormat.Dmg in app.distributions.targetFormats) {
-        val packageDmg =
-            project.tasks.composeDesktopNativeTask<AbstractNativeMacApplicationPackageDmgTask>(
-                desktopNativeTaskName("packageDmgNative", binary),
-            ) {
-                configureNativePackageTask(app, binary, TargetFormat.Dmg)
+        project.tasks.composeDesktopNativeTask<AbstractNativeMacApplicationPackageDmgTask>(
+            desktopNativeTaskName("packageDmgNative", binary),
+        ) {
+            configureNativePackageTask(app, binary, TargetFormat.Dmg)
 
-                dependsOn(createDistributable)
-                appDir.set(createDistributable.flatMap { it.destinationDir })
+            dependsOn(createDistributable)
+            appDir.set(createDistributable.flatMap { it.destinationDir })
 
-                installDir.set(
-                    project.provider {
-                        app.distributions.macOS.installationPath ?: "/Applications"
-                    },
-                )
+            installDir.set(
+                project.provider {
+                    app.distributions.macOS.installationPath ?: "/Applications"
+                },
+            )
 
-                val dmgDsl = app.distributions.macOS.dmg
-                dmgDsl.format?.let { dmgFormat.set(it) }
-                dmgDsl.iconSize?.let { dmgIconSize.set(it) }
-                dmgDsl.window.x?.let { dmgWindowX.set(it) }
-                dmgDsl.window.y?.let { dmgWindowY.set(it) }
-                dmgDsl.window.width?.let { dmgWindowWidth.set(it) }
-                dmgDsl.window.height?.let { dmgWindowHeight.set(it) }
-                dmgDsl.title?.let { dmgTitle.set(it) }
-                dmgDsl.backgroundColor?.let { dmgBackgroundColor.set(it) }
-                if (dmgDsl.background.isPresent) {
-                    dmgBackgroundImage.set(dmgDsl.background)
-                }
-                if (dmgDsl.contents.isNotEmpty()) {
-                    dmgContents.set(dmgDsl.contents.toList())
-                }
+            val dmgDsl = app.distributions.macOS.dmg
+            dmgDsl.format?.let { dmgFormat.set(it) }
+            dmgDsl.iconSize?.let { dmgIconSize.set(it) }
+            dmgDsl.window.x?.let { dmgWindowX.set(it) }
+            dmgDsl.window.y?.let { dmgWindowY.set(it) }
+            dmgDsl.window.width?.let { dmgWindowWidth.set(it) }
+            dmgDsl.window.height?.let { dmgWindowHeight.set(it) }
+            dmgDsl.title?.let { dmgTitle.set(it) }
+            dmgDsl.backgroundColor?.let { dmgBackgroundColor.set(it) }
+            if (dmgDsl.background.isPresent) {
+                dmgBackgroundImage.set(dmgDsl.background)
             }
+            if (dmgDsl.contents.isNotEmpty()) {
+                dmgContents.set(dmgDsl.contents.toList())
+            }
+        }
     }
 }
 
@@ -164,9 +163,8 @@ private fun desktopNativeTaskName(
 
 private inline fun <reified T : Task> TaskContainer.composeDesktopNativeTask(
     name: String,
-    args: List<Any> = emptyList(),
     noinline configureFn: T.() -> Unit = {},
-) = register(name, T::class.java, *args.toTypedArray()).apply {
+) = register(name, T::class.java).apply {
     configure {
         it.group = "nucleus (native)"
         it.configureFn()

@@ -6,38 +6,32 @@ import androidx.compose.runtime.LaunchedEffect
 import dev.nucleusframework.application.DefaultNucleusDialogHost
 import dev.nucleusframework.application.DefaultNucleusWindowHost
 import dev.nucleusframework.application.LocalNucleusApplicationScope
-import dev.nucleusframework.application.LocalNucleusBackend
 import dev.nucleusframework.application.LocalNucleusDialogHost
 import dev.nucleusframework.application.LocalNucleusWindowHost
 import dev.nucleusframework.application.NucleusApplicationScope
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.ProvideNucleusSystemTheme
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.window.tao.TaoDockPolicy
 import dev.nucleusframework.window.tao.taoApplication
 
-/**
- * Isolates references to Tao symbols. Loaded only when [NucleusBackend.Tao] is
- * chosen — keeps `nucleusApplication` callable on classpaths that lack the
- * `decorated-window-tao` module.
- */
+/** Isolates the Tao entry point (`taoApplication`) from `nucleusApplication`. */
 internal object TaoLauncher {
     fun run(
         args: Array<String>,
         dockIconFollowsWindows: Boolean,
+        exitProcessOnExit: Boolean,
         content: @Composable NucleusApplicationScope.() -> Unit,
     ) {
         // macOS deep links arrive through Tao's `application:openURLs:` delegate
         // (forwarded by the native event loop to `TaoDeepLinkBridge`). The user's
         // callback is wired later from `TaoNucleusApplicationScope.onDeepLink { … }`;
         // URIs received before then are buffered and replayed by `TaoDeepLinkBridge`.
-        taoApplication {
+        taoApplication(exitProcessOnExit = exitProcessOnExit) {
             val scope = TaoNucleusApplicationScope(this, args)
             // Provide before other locals so Tao's per-window outerLocals bridge
             // carries LocalSystemTheme into each scene (see TaoDecoratedWindowAdapter).
             ProvideNucleusSystemTheme {
                 CompositionLocalProvider(
-                    LocalNucleusBackend provides NucleusBackend.Tao,
                     LocalNucleusApplicationScope provides scope,
                     LocalNucleusWindowHost provides DefaultNucleusWindowHost,
                     LocalNucleusDialogHost provides DefaultNucleusDialogHost,

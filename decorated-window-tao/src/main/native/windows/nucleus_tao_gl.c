@@ -15,6 +15,15 @@
  * (ANGLE presents inline — a cross-thread present on ANGLE's shared
  * per-display D3D11 device deadlocks the global display lock).
  *
+ * While the window overhangs the desktop, frames are also mirrored into a
+ * DirectComposition visual over the render child (nucleus_tao_gl_mirror.cpp):
+ * the blt present below is clipped at the desktop's edge, the visual is not,
+ * and it steps aside while the window's size changes, when only the blt
+ * present stays in step with the geometry. The copy is a glBlitFramebuffer
+ * from the window surface's back buffer into an EGLImage over the mirror's
+ * D3D11 texture, just before the swap. A window fully on-screen has no
+ * mirror at all (swapWithMirror).
+ *
  * The GL surface is NOT the Tao HWND itself: it is a borderless WS_CHILD
  * "render surface" HWND covering the client area, kept at the BOTTOM of the
  * sibling z-order so NativeView children (WebView, …) composite above the
@@ -29,6 +38,8 @@
  *                            next BackendRenderTarget
  *   <Skia rendering>
  *   nativePresent(h)       → eglSwapBuffers
+ *   nativePresentWithDamage(h, x, y, w, h)
+ *                          → eglPostSubBufferNV (partial redraw, #755)
  *   nativeDetach(h)        → tear-down
  *
  * Linked libraries: gdi32.lib user32.lib kernel32.lib
@@ -45,6 +56,8 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <EGL/eglext_angle.h>
+
+#include "nucleus_tao_gl_mirror.h"
 
 /* /NODEFAULTLIB support */
 int _fltused = 0;
@@ -64,6 +77,30 @@ typedef void (APIENTRY *PFN_glViewport)(int, int, int, int);
 typedef void (APIENTRY *PFN_glClearColor)(float, float, float, float);
 typedef void (APIENTRY *PFN_glClear)(unsigned int);
 typedef void (APIENTRY *PFN_glDisable)(unsigned int);
+typedef void (APIENTRY *PFN_glEnable)(unsigned int);
+typedef unsigned char (APIENTRY *PFN_glIsEnabled)(unsigned int);
+typedef void (APIENTRY *PFN_glGetIntegerv)(unsigned int, int *);
+typedef void (APIENTRY *PFN_glGenFramebuffers)(int, unsigned int *);
+typedef void (APIENTRY *PFN_glDeleteFramebuffers)(int, const unsigned int *);
+typedef void (APIENTRY *PFN_glBindFramebuffer)(unsigned int, unsigned int);
+typedef void (APIENTRY *PFN_glFramebufferTexture2D)(unsigned int, unsigned int, unsigned int, unsigned int, int);
+typedef unsigned int (APIENTRY *PFN_glCheckFramebufferStatus)(unsigned int);
+typedef void (APIENTRY *PFN_glGenTextures)(int, unsigned int *);
+typedef void (APIENTRY *PFN_glDeleteTextures)(int, const unsigned int *);
+typedef void (APIENTRY *PFN_glBindTexture)(unsigned int, unsigned int);
+typedef void (APIENTRY *PFN_glBlitFramebuffer)(int, int, int, int, int, int, int, int, unsigned int, unsigned int);
+typedef void (APIENTRY *PFN_glEGLImageTargetTexture2DOES)(unsigned int, void *);
+typedef void (APIENTRY *PFN_glFlush)(void);
+
+#define NUCLEUS_GL_TEXTURE_2D               0x0DE1u
+#define NUCLEUS_GL_TEXTURE_BINDING_2D       0x8069u
+#define NUCLEUS_GL_READ_FRAMEBUFFER         0x8CA8u
+#define NUCLEUS_GL_DRAW_FRAMEBUFFER         0x8CA9u
+#define NUCLEUS_GL_READ_FRAMEBUFFER_BINDING 0x8CAAu
+#define NUCLEUS_GL_DRAW_FRAMEBUFFER_BINDING 0x8CA6u
+#define NUCLEUS_GL_COLOR_ATTACHMENT0        0x8CE0u
+#define NUCLEUS_GL_FRAMEBUFFER_COMPLETE     0x8CD5u
+#define NUCLEUS_GL_NEAREST                  0x2600u
 
 #define NUCLEUS_GL_COLOR_BUFFER_BIT 0x00004000u
 #define NUCLEUS_GL_SCISSOR_TEST     0x0C11u
@@ -86,10 +123,32 @@ static PFNEGLSWAPBUFFERSPROC           pEglSwapBuffers           = NULL;
 static PFNEGLSWAPINTERVALPROC          pEglSwapInterval          = NULL;
 static PFNEGLDESTROYCONTEXTPROC        pEglDestroyContext        = NULL;
 static PFNEGLDESTROYSURFACEPROC        pEglDestroySurface        = NULL;
+static PFNEGLQUERYSTRINGPROC           pEglQueryString           = NULL;
+static PFNEGLQUERYSURFACEPROC          pEglQuerySurface          = NULL;
+static PFNEGLSURFACEATTRIBPROC         pEglSurfaceAttrib         = NULL;
+static PFNEGLGETCONFIGATTRIBPROC       pEglGetConfigAttrib       = NULL;
 static PFN_glViewport                  pglViewport               = NULL;
 static PFN_glClearColor                pglClearColor             = NULL;
 static PFN_glClear                     pglClear                  = NULL;
 static PFN_glDisable                   pglDisable                = NULL;
+static PFN_glEnable                    pglEnable                 = NULL;
+static PFN_glIsEnabled                 pglIsEnabled              = NULL;
+static PFN_glGetIntegerv               pglGetIntegerv            = NULL;
+static PFN_glGenFramebuffers           pglGenFramebuffers        = NULL;
+static PFN_glDeleteFramebuffers        pglDeleteFramebuffers     = NULL;
+static PFN_glBindFramebuffer           pglBindFramebuffer        = NULL;
+static PFN_glFramebufferTexture2D      pglFramebufferTexture2D   = NULL;
+static PFN_glCheckFramebufferStatus    pglCheckFramebufferStatus = NULL;
+static PFN_glGenTextures               pglGenTextures            = NULL;
+static PFN_glDeleteTextures            pglDeleteTextures         = NULL;
+static PFN_glBindTexture               pglBindTexture            = NULL;
+static PFN_glBlitFramebuffer           pglBlitFramebuffer        = NULL;
+static PFN_glEGLImageTargetTexture2DOES pglEGLImageTargetTexture2DOES = NULL;
+static PFN_glFlush                     pglFlush                  = NULL;
+static PFNEGLCREATEIMAGEKHRPROC        pEglCreateImageKHR        = NULL;
+static PFNEGLDESTROYIMAGEKHRPROC       pEglDestroyImageKHR       = NULL;
+static PFNEGLQUERYDISPLAYATTRIBEXTPROC pEglQueryDisplayAttribEXT = NULL;
+static PFNEGLQUERYDEVICEATTRIBEXTPROC  pEglQueryDeviceAttribEXT  = NULL;
 
 static void loadEgl(void) {
     if (eglLoaded) return;
@@ -113,6 +172,10 @@ static void loadEgl(void) {
     pEglSwapInterval        = (PFNEGLSWAPINTERVALPROC)        GetProcAddress(sLibEGL, "eglSwapInterval");
     pEglDestroyContext      = (PFNEGLDESTROYCONTEXTPROC)      GetProcAddress(sLibEGL, "eglDestroyContext");
     pEglDestroySurface      = (PFNEGLDESTROYSURFACEPROC)      GetProcAddress(sLibEGL, "eglDestroySurface");
+    pEglQueryString         = (PFNEGLQUERYSTRINGPROC)         GetProcAddress(sLibEGL, "eglQueryString");
+    pEglQuerySurface        = (PFNEGLQUERYSURFACEPROC)        GetProcAddress(sLibEGL, "eglQuerySurface");
+    pEglSurfaceAttrib       = (PFNEGLSURFACEATTRIBPROC)       GetProcAddress(sLibEGL, "eglSurfaceAttrib");
+    pEglGetConfigAttrib     = (PFNEGLGETCONFIGATTRIBPROC)     GetProcAddress(sLibEGL, "eglGetConfigAttrib");
 
     pEglGetPlatformDisplayEXT = (PFNEGLGETPLATFORMDISPLAYEXTPROC)
         GetProcAddress(sLibEGL, "eglGetPlatformDisplayEXT");
@@ -132,6 +195,26 @@ static void loadEgl(void) {
         if (!pglClearColor) pglClearColor = (PFN_glClearColor) pEglGetProcAddress("glClearColor");
         if (!pglClear)      pglClear      = (PFN_glClear)      pEglGetProcAddress("glClear");
         if (!pglDisable)    pglDisable    = (PFN_glDisable)    pEglGetProcAddress("glDisable");
+#define NUCLEUS_LOAD_GL(var, type, name) var = (type) pEglGetProcAddress(name)
+        NUCLEUS_LOAD_GL(pglEnable, PFN_glEnable, "glEnable");
+        NUCLEUS_LOAD_GL(pglIsEnabled, PFN_glIsEnabled, "glIsEnabled");
+        NUCLEUS_LOAD_GL(pglGetIntegerv, PFN_glGetIntegerv, "glGetIntegerv");
+        NUCLEUS_LOAD_GL(pglGenFramebuffers, PFN_glGenFramebuffers, "glGenFramebuffers");
+        NUCLEUS_LOAD_GL(pglDeleteFramebuffers, PFN_glDeleteFramebuffers, "glDeleteFramebuffers");
+        NUCLEUS_LOAD_GL(pglBindFramebuffer, PFN_glBindFramebuffer, "glBindFramebuffer");
+        NUCLEUS_LOAD_GL(pglFramebufferTexture2D, PFN_glFramebufferTexture2D, "glFramebufferTexture2D");
+        NUCLEUS_LOAD_GL(pglCheckFramebufferStatus, PFN_glCheckFramebufferStatus, "glCheckFramebufferStatus");
+        NUCLEUS_LOAD_GL(pglGenTextures, PFN_glGenTextures, "glGenTextures");
+        NUCLEUS_LOAD_GL(pglDeleteTextures, PFN_glDeleteTextures, "glDeleteTextures");
+        NUCLEUS_LOAD_GL(pglBindTexture, PFN_glBindTexture, "glBindTexture");
+        NUCLEUS_LOAD_GL(pglBlitFramebuffer, PFN_glBlitFramebuffer, "glBlitFramebuffer");
+        NUCLEUS_LOAD_GL(pglEGLImageTargetTexture2DOES, PFN_glEGLImageTargetTexture2DOES, "glEGLImageTargetTexture2DOES");
+        NUCLEUS_LOAD_GL(pglFlush, PFN_glFlush, "glFlush");
+        NUCLEUS_LOAD_GL(pEglCreateImageKHR, PFNEGLCREATEIMAGEKHRPROC, "eglCreateImageKHR");
+        NUCLEUS_LOAD_GL(pEglDestroyImageKHR, PFNEGLDESTROYIMAGEKHRPROC, "eglDestroyImageKHR");
+        NUCLEUS_LOAD_GL(pEglQueryDisplayAttribEXT, PFNEGLQUERYDISPLAYATTRIBEXTPROC, "eglQueryDisplayAttribEXT");
+        NUCLEUS_LOAD_GL(pEglQueryDeviceAttribEXT, PFNEGLQUERYDEVICEATTRIBEXTPROC, "eglQueryDeviceAttribEXT");
+#undef NUCLEUS_LOAD_GL
     }
 
     eglAvailable = (pEglInitialize && pEglChooseConfig && pEglCreateContext &&
@@ -167,6 +250,27 @@ typedef struct {
     int   widthPx;
     int   heightPx;
     float scale;
+
+    /* Frame mirror (see the file header); NULL when off or unavailable. */
+    NucleusTaoMirror *mirror;
+    ID3D11Texture2D  *mirrorTexture; /* the texture the GL side below wraps */
+    EGLImageKHR       mirrorImage;
+    unsigned int      mirrorGlTexture;
+    unsigned int      mirrorFbo;
+    int               mirrorW;
+    int               mirrorH;
+    BOOL              mirrorAllowed;   /* opaque window (JVM side decides) */
+    BOOL              mirrorBroken;    /* a mirror step failed on this window: never retried */
+    RECT              overhangRect;    /* window rect overhangCached was computed for */
+    BOOL              overhangCached;
+    /* Partial redraw (#755). ANGLE's D3D11 window surface renders into an
+     * offscreen texture that it copies into the swap chain at present, so
+     * with EGL_BUFFER_PRESERVED the default framebuffer always holds the
+     * previous frame; eglPostSubBufferNV copies only the damaged rectangle
+     * and presents it as the DXGI dirty rect (Present1). Either missing ⇒
+     * every frame is a full repaint. */
+    PFNEGLPOSTSUBBUFFERNVPROC postSubBuffer;
+    int   preserved;
 } GlAttachment;
 
 /* ================================================================== */
@@ -193,6 +297,17 @@ static LRESULT CALLBACK surfaceWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
          * the update region doesn't refire WM_PAINT forever. */
         ValidateRect(hwnd, NULL);
         return 0;
+    case WM_TIMER:
+        if (wParam == NUCLEUS_TAO_MIRROR_TIMER_ID) {
+            GlAttachment *att = (GlAttachment *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+            if (att && att->mirror) {
+                nucleus_tao_mirror_timer(att->mirror);
+            } else {
+                KillTimer(hwnd, NUCLEUS_TAO_MIRROR_TIMER_ID);
+            }
+            return 0;
+        }
+        break;
     default:
         break;
     }
@@ -388,6 +503,14 @@ __declspec(dllexport) int nucleus_tao_host_egl_for_hwnd(
  * loading/looking up libEGL itself, so all EGL resolution stays in one
  * place and works even where GetModuleHandleW("libEGL.dll") wouldn't
  * (name-mangled extraction). Returns NULL when ANGLE isn't loaded. */
+/* Called by the deco subclass (nucleus_tao_windows_deco.c) from the Tao
+ * window's WM_WINDOWPOSCHANGING when its size is about to change: the frame
+ * mirror must be down before the new geometry reaches DWM. */
+static void suspendMirrorFor(HWND hwnd);
+__declspec(dllexport) void nucleus_tao_window_size_changing(void *hwnd) {
+    suspendMirrorFor((HWND)hwnd);
+}
+
 __declspec(dllexport) void *nucleus_tao_host_egl_proc(const char *name) {
     if (sLibEGL) {
         void *p = (void *)GetProcAddress(sLibEGL, name);
@@ -403,6 +526,53 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 }
 
 /* ================================================================== */
+/*  Partial redraw (#755)                                              */
+/* ================================================================== */
+
+/* NUCLEUS_TAO_PARTIAL_REDRAW=0: the native kill switch next to the
+ * nucleus.tao.partialRedraw system property. No CRT here (no getenv). */
+static BOOL partialRedrawDisabledByEnv(void) {
+    char value[8];
+    DWORD n = GetEnvironmentVariableA("NUCLEUS_TAO_PARTIAL_REDRAW", value, sizeof(value));
+    return n == 1 && value[0] == '0';
+}
+
+/* Whole-word match of [name] in a space-separated EGL extension string. */
+static BOOL eglHasExtension(const char *exts, const char *name) {
+    if (!exts || !name) return FALSE;
+    const char *p = exts;
+    while (*p) {
+        while (*p == ' ') ++p;
+        const char *n = name;
+        const char *q = p;
+        while (*n && *q == *n) { ++q; ++n; }
+        if (*n == '\0' && (*q == ' ' || *q == '\0')) return TRUE;
+        while (*p && *p != ' ') ++p;
+    }
+    return FALSE;
+}
+
+/* eglPostSubBufferNV, or NULL when the display lacks EGL_NV_post_sub_buffer
+ * or partial redraw is switched off. */
+static PFNEGLPOSTSUBBUFFERNVPROC resolvePostSubBuffer(EGLDisplay dpy) {
+    if (partialRedrawDisabledByEnv() || !pEglQueryString || !pEglGetProcAddress) return NULL;
+    if (!eglHasExtension(pEglQueryString(dpy, EGL_EXTENSIONS), "EGL_NV_post_sub_buffer")) return NULL;
+    return (PFNEGLPOSTSUBBUFFERNVPROC) pEglGetProcAddress("eglPostSubBufferNV");
+}
+
+/* Asks for EGL_BUFFER_PRESERVED when [config] allows it; returns whether the
+ * surface took it. */
+static BOOL tryPreserve(EGLDisplay dpy, EGLConfig config, EGLSurface surface) {
+    if (!pEglSurfaceAttrib || !pEglGetConfigAttrib || !pEglQuerySurface) return FALSE;
+    EGLint types = 0;
+    if (!pEglGetConfigAttrib(dpy, config, EGL_SURFACE_TYPE, &types)) return FALSE;
+    if (!(types & EGL_SWAP_BEHAVIOR_PRESERVED_BIT)) return FALSE;
+    if (!pEglSurfaceAttrib(dpy, surface, EGL_SWAP_BEHAVIOR, EGL_BUFFER_PRESERVED)) return FALSE;
+    EGLint behavior = 0;
+    return pEglQuerySurface(dpy, surface, EGL_SWAP_BEHAVIOR, &behavior) && behavior == EGL_BUFFER_PRESERVED;
+}
+
+/* ================================================================== */
 /*  EGL / ANGLE attach                                                 */
 /* ================================================================== */
 
@@ -415,6 +585,207 @@ static EGLDisplay angleD3D11Display(EGLint deviceType) {
         EGL_NONE
     };
     return pEglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, attribs);
+}
+
+/* ================================================================== */
+/*  Frame mirror (GL side)                                             */
+/* ================================================================== */
+
+/* Attachments with a mirror, for the deco hook (looked up by top-level HWND). */
+#define MAX_MIRRORED 64
+static GlAttachment *sMirrored[MAX_MIRRORED];
+
+static void trackMirrored(GlAttachment *att, BOOL tracked) {
+    int i;
+    for (i = 0; i < MAX_MIRRORED; ++i) {
+        if (tracked && sMirrored[i] == NULL) { sMirrored[i] = att; return; }
+        if (!tracked && sMirrored[i] == att) { sMirrored[i] = NULL; return; }
+    }
+}
+
+static void suspendMirrorFor(HWND hwnd) {
+    int i;
+    for (i = 0; i < MAX_MIRRORED; ++i) {
+        GlAttachment *att = sMirrored[i];
+        if (att && att->hwnd == hwnd && att->mirror) nucleus_tao_mirror_suspend(att->mirror);
+    }
+}
+
+static BOOL mirrorSupported(EGLDisplay dpy) {
+    if (!nucleus_tao_mirror_available() ||
+        !pEglCreateImageKHR || !pEglDestroyImageKHR || !pglEGLImageTargetTexture2DOES ||
+        !pglBlitFramebuffer || !pglGenFramebuffers || !pglFramebufferTexture2D ||
+        !pglGetIntegerv || !pglIsEnabled || !pglEnable || !pglFlush ||
+        !pEglQueryDisplayAttribEXT || !pEglQueryDeviceAttribEXT || !pEglQueryString) {
+        return FALSE;
+    }
+    const char *ext = pEglQueryString(dpy, EGL_EXTENSIONS);
+    if (!ext) return FALSE;
+    /* EGL_ANGLE_image_d3d11_texture: an EGLImage over a D3D11 texture. */
+    const char *needle = "EGL_ANGLE_image_d3d11_texture";
+    const char *p;
+    for (p = ext; *p; ++p) {
+        const char *a = p, *b = needle;
+        while (*a && *b && *a == *b) { ++a; ++b; }
+        if (*b == 0 && (*a == ' ' || *a == 0)) return TRUE;
+    }
+    return FALSE;
+}
+
+/* Drops the GL objects over the mirror texture. Context must be current. */
+static void releaseMirrorGl(GlAttachment *att) {
+    if (att->mirrorFbo) { pglDeleteFramebuffers(1, &att->mirrorFbo); att->mirrorFbo = 0; }
+    if (att->mirrorGlTexture) { pglDeleteTextures(1, &att->mirrorGlTexture); att->mirrorGlTexture = 0; }
+    if (att->mirrorImage) { pEglDestroyImageKHR(att->eglDisplay, att->mirrorImage); att->mirrorImage = NULL; }
+    att->mirrorTexture = NULL;
+    att->mirrorW = att->mirrorH = 0;
+}
+
+static void enableMirror(GlAttachment *att) {
+    if (att->mirror || att->mirrorBroken) return;
+    EGLAttrib devAttr = 0, d3dAttr = 0;
+    if (!mirrorSupported(att->eglDisplay) ||
+        !pEglQueryDisplayAttribEXT(att->eglDisplay, EGL_DEVICE_EXT, &devAttr) ||
+        !pEglQueryDeviceAttribEXT((EGLDeviceEXT)devAttr, EGL_D3D11_DEVICE_ANGLE, &d3dAttr)) {
+        att->mirrorBroken = TRUE;
+        return;
+    }
+    att->mirror = nucleus_tao_mirror_create(att->surfaceHwnd, (ID3D11Device *)d3dAttr);
+    if (att->mirror) {
+        trackMirrored(att, TRUE);
+    } else {
+        att->mirrorBroken = TRUE;
+    }
+}
+
+static void disableMirror(GlAttachment *att) {
+    if (!att->mirror) return;
+    releaseMirrorGl(att);
+    trackMirrored(att, FALSE);
+    nucleus_tao_mirror_destroy(att->mirror);
+    att->mirror = NULL;
+}
+
+/* (Re)wraps the mirror texture for the current size in an EGLImage-backed GL
+ * texture and an FBO. Restores the 2D texture binding it touches. */
+static BOOL ensureMirrorGl(GlAttachment *att) {
+    int w = att->widthPx, h = att->heightPx;
+    ID3D11Texture2D *tex = nucleus_tao_mirror_texture(att->mirror, w, h);
+    if (!tex) return FALSE;
+    if (tex == att->mirrorTexture && att->mirrorFbo) return TRUE;
+    releaseMirrorGl(att);
+
+    const EGLint imageAttribs[] = { EGL_NONE };
+    EGLImageKHR image = pEglCreateImageKHR(att->eglDisplay, EGL_NO_CONTEXT,
+        EGL_D3D11_TEXTURE_ANGLE, (EGLClientBuffer)tex, imageAttribs);
+    if (image == EGL_NO_IMAGE_KHR) return FALSE;
+    att->mirrorImage = image;
+
+    int savedTexture = 0, savedDraw = 0;
+    pglGetIntegerv(NUCLEUS_GL_TEXTURE_BINDING_2D, &savedTexture);
+    pglGetIntegerv(NUCLEUS_GL_DRAW_FRAMEBUFFER_BINDING, &savedDraw);
+    pglGenTextures(1, &att->mirrorGlTexture);
+    pglBindTexture(NUCLEUS_GL_TEXTURE_2D, att->mirrorGlTexture);
+    pglEGLImageTargetTexture2DOES(NUCLEUS_GL_TEXTURE_2D, image);
+    pglGenFramebuffers(1, &att->mirrorFbo);
+    pglBindFramebuffer(NUCLEUS_GL_DRAW_FRAMEBUFFER, att->mirrorFbo);
+    pglFramebufferTexture2D(NUCLEUS_GL_DRAW_FRAMEBUFFER, NUCLEUS_GL_COLOR_ATTACHMENT0,
+        NUCLEUS_GL_TEXTURE_2D, att->mirrorGlTexture, 0);
+    BOOL complete = pglCheckFramebufferStatus(NUCLEUS_GL_DRAW_FRAMEBUFFER) == NUCLEUS_GL_FRAMEBUFFER_COMPLETE;
+    pglBindFramebuffer(NUCLEUS_GL_DRAW_FRAMEBUFFER, (unsigned int)savedDraw);
+    pglBindTexture(NUCLEUS_GL_TEXTURE_2D, (unsigned int)savedTexture);
+    if (!complete) {
+        releaseMirrorGl(att);
+        return FALSE;
+    }
+    att->mirrorTexture = tex;
+    att->mirrorW = w;
+    att->mirrorH = h;
+    return TRUE;
+}
+
+/* Copies the window surface's back buffer (the frame about to be swapped)
+ * into the mirror texture, rows flipped so the texture is top-down for D3D.
+ * Every GL binding it changes is put back, so Skia's state cache holds.
+ * Returns whether the mirror got the frame. */
+static BOOL copyToMirror(GlAttachment *att) {
+    if (!att->mirror || att->widthPx <= 0 || att->heightPx <= 0) return FALSE;
+    if (!ensureMirrorGl(att)) {
+        /* No EGLImage / FBO over the texture on this driver: stop trying. */
+        att->mirrorBroken = TRUE;
+        return FALSE;
+    }
+    int savedRead = 0, savedDraw = 0;
+    pglGetIntegerv(NUCLEUS_GL_READ_FRAMEBUFFER_BINDING, &savedRead);
+    pglGetIntegerv(NUCLEUS_GL_DRAW_FRAMEBUFFER_BINDING, &savedDraw);
+    unsigned char scissor = pglIsEnabled(NUCLEUS_GL_SCISSOR_TEST);
+    if (scissor) pglDisable(NUCLEUS_GL_SCISSOR_TEST);
+    pglBindFramebuffer(NUCLEUS_GL_READ_FRAMEBUFFER, 0);
+    pglBindFramebuffer(NUCLEUS_GL_DRAW_FRAMEBUFFER, att->mirrorFbo);
+    int w = att->mirrorW, h = att->mirrorH;
+    pglBlitFramebuffer(0, 0, w, h, 0, h, w, 0, NUCLEUS_GL_COLOR_BUFFER_BIT, NUCLEUS_GL_NEAREST);
+    pglBindFramebuffer(NUCLEUS_GL_READ_FRAMEBUFFER, (unsigned int)savedRead);
+    pglBindFramebuffer(NUCLEUS_GL_DRAW_FRAMEBUFFER, (unsigned int)savedDraw);
+    if (scissor) pglEnable(NUCLEUS_GL_SCISSOR_TEST);
+    /* The mirror's CopyResource joins ANGLE's immediate context after this. */
+    pglFlush();
+    return TRUE;
+}
+
+static BOOL CALLBACK sumMonitorArea(HMONITOR mon, HDC dc, LPRECT clipped, LPARAM area) {
+    (void)mon; (void)dc;
+    /* Monitors do not overlap, so the clipped parts add up. */
+    *(LONGLONG *)area += (LONGLONG)(clipped->right - clipped->left) * (clipped->bottom - clipped->top);
+    return TRUE;
+}
+
+/* Whether part of the Tao window lies outside every display — the only
+ * state in which a blt present loses pixels (see the file header). Cached
+ * per window rect: a frame of a window that has not moved costs one
+ * GetWindowRect. */
+static BOOL windowOverhangs(GlAttachment *att) {
+    RECT rc;
+    if (IsIconic(att->hwnd) || !GetWindowRect(att->hwnd, &rc)) return FALSE;
+    if (EqualRect(&rc, &att->overhangRect)) return att->overhangCached;
+    LONGLONG covered = 0;
+    EnumDisplayMonitors(NULL, &rc, sumMonitorArea, (LPARAM)&covered);
+    att->overhangRect = rc;
+    att->overhangCached = covered < (LONGLONG)(rc.right - rc.left) * (rc.bottom - rc.top);
+    return att->overhangCached;
+}
+
+/* Swaps the window surface, mirroring the frame while the window overhangs
+ * the desktop. The mirror only exists for that: a window fully on-screen
+ * gets every pixel through the blt present, so once one of its frames has
+ * been swapped the mirror (texture, swapchain, DirectComposition target) is
+ * released and the window costs what it did without it.
+ *
+ * [damage] (x, y, w, h, bottom-left origin) presents only that rectangle
+ * (partial redraw, #755); NULL presents the whole surface. The mirror gets
+ * the whole buffer either way: a partial frame's surface is preserved, so it
+ * holds the complete frame. */
+static void swapWithMirror(GlAttachment *att, const EGLint *damage) {
+    BOOL wanted = att->mirrorAllowed && !att->mirrorBroken && windowOverhangs(att);
+    if (wanted && !att->mirror) enableMirror(att);
+    BOOL mirrored = wanted && copyToMirror(att);
+    if (!damage || !att->postSubBuffer ||
+        !att->postSubBuffer(att->eglDisplay, att->eglSurface, damage[0], damage[1], damage[2], damage[3])) {
+        pEglSwapBuffers(att->eglDisplay, att->eglSurface);
+    }
+    if (mirrored) {
+        nucleus_tao_mirror_frame(att->mirror);
+        if (nucleus_tao_mirror_failed(att->mirror)) {
+            /* A DirectComposition / DXGI step failed: drop the mirror for good
+             * rather than copying every frame into it (the JVM then goes back
+             * to repainting on move, nativeNeedsRepaintOnMove). */
+            att->mirrorBroken = TRUE;
+            disableMirror(att);
+        }
+    } else if (att->mirror) {
+        /* Not wanted any more — this frame reached DWM whole through the blt
+         * present — or broken. */
+        disableMirror(att);
+    }
 }
 
 static GlAttachment *attachEgl(HWND hwnd) {
@@ -461,7 +832,12 @@ static GlAttachment *attachEgl(HWND hwnd) {
     HWND surfaceHwnd = createRenderSurface(hwnd);
     if (!surfaceHwnd) return NULL;
 
-    const EGLint surfAttribs[] = { EGL_NONE };
+    /* eglPostSubBufferNV only works on a surface created to allow it. */
+    PFNEGLPOSTSUBBUFFERNVPROC postSubBuffer = resolvePostSubBuffer(dpy);
+    const EGLint surfAttribs[] = {
+        postSubBuffer ? EGL_POST_SUB_BUFFER_SUPPORTED_NV : EGL_NONE, EGL_TRUE,
+        EGL_NONE
+    };
     EGLSurface surface = pEglCreateWindowSurface(
         dpy, config, (EGLNativeWindowType)surfaceHwnd, surfAttribs);
     if (surface == EGL_NO_SURFACE) {
@@ -509,6 +885,11 @@ static GlAttachment *attachEgl(HWND hwnd) {
     att->eglContext = ctx;
     att->eglConfig = config;
     att->scale = 1.0f;
+    SetWindowLongPtrW(surfaceHwnd, GWLP_USERDATA, (LONG_PTR)att);
+    if (postSubBuffer && tryPreserve(dpy, config, surface)) {
+        att->postSubBuffer = postSubBuffer;
+        att->preserved = 1;
+    }
 
     registerHostEgl(hwnd, dpy, ctx, config);
     return att;
@@ -551,6 +932,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeDetach(
     HWND hostHwnd = att->hwnd;
     /* The EGLDisplay is process-wide (shared with overlays); never
      * eglTerminate it here — just drop this window's context + surface. */
+    /* The GL side of the mirror needs the context current to go. */
+    pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
+    disableMirror(att);
     pEglMakeCurrent(att->eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     pEglDestroyContext(att->eglDisplay, att->eglContext);
     pEglDestroySurface(att->eglDisplay, att->eglSurface);
@@ -580,6 +964,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeResize(
     (void)env; (void)clazz;
     GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
     if (!att) return;
+    BOOL sizeChanged = att->widthPx != (int)widthPx || att->heightPx != (int)heightPx;
     att->widthPx = (int)widthPx;
     att->heightPx = (int)heightPx;
     att->scale = scale;
@@ -593,6 +978,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeResize(
     /* The ANGLE window surface tracks the HWND size automatically; the
      * explicit viewport keeps Skia surface creation in step. */
     pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
+    /* ANGLE only resizes its swap chain at the end of a present
+     * (SurfaceD3D::swapRect -> checkForOutOfDateSwapChain): the frame drawn
+     * right after a resize landed in the old-size buffer, everything past it
+     * lost, and was presented that way. Posting one pixel of the current
+     * buffer — what is already on screen — runs that check, so the next frame
+     * is drawn at the new size (#755). An empty rectangle would not: EGL
+     * returns before reaching the swap chain. */
+    if (sizeChanged && att->postSubBuffer) {
+        att->postSubBuffer(att->eglDisplay, att->eglSurface, 0, 0, 1, 1);
+    }
     if (pglViewport) pglViewport(0, 0, att->widthPx, att->heightPx);
 }
 
@@ -619,7 +1014,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeClearPresent(
     float b = (float)( argb        & 0xFF) / 255.0f;
     pglClearColor(r, g, b, a);
     pglClear(NUCLEUS_GL_COLOR_BUFFER_BIT);
-    pEglSwapBuffers(att->eglDisplay, att->eglSurface);
+    swapWithMirror(att, NULL);
 }
 
 JNIEXPORT void JNICALL
@@ -635,7 +1030,81 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativePresent(
      * surface to be current; re-binding when already current is an ANGLE
      * fast-path no-op. */
     pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
-    pEglSwapBuffers(att->eglDisplay, att->eglSurface);
+    swapWithMirror(att, NULL);
+}
+
+/* Turns the frame mirror on (opaque windows) or off (per-pixel alpha: the
+ * visual would lay a translucent frame over the same frame below). */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeSetMirrorEnabled(
+    JNIEnv *env, jclass clazz, jlong handle, jboolean enabled)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    if (!att) return JNI_FALSE;
+    pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
+    att->mirrorAllowed = enabled ? TRUE : FALSE;
+    if (!enabled) disableMirror(att);
+    /* What can be known up front; a later DirectComposition failure latches
+     * mirrorBroken, which nativeNeedsRepaintOnMove reports. */
+    if (enabled && !mirrorSupported(att->eglDisplay)) att->mirrorBroken = TRUE;
+    return (enabled && !att->mirrorBroken) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Whether a move must be answered with a frame: without a working mirror the
+ * blt present is all DWM has, and it lost whatever was off-screen; with one
+ * allocated, the next frame of a window back on-screen releases it. A window
+ * fully on-screen with a working (idle) mirror needs nothing. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeNeedsRepaintOnMove(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    if (!att) return JNI_FALSE;
+    return (!att->mirrorAllowed || att->mirrorBroken || att->mirror) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Whether a frame mirror is currently allocated (the window overhangs the
+ * desktop): the JVM presents a frame after a move so that one fully on-screen
+ * can let it go (see swapWithMirror). */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeHasMirror(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    return (att && att->mirror) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* Age of the back buffer the next frame renders into (#755): 1 when the
+ * surface is preserved and presents sub-rectangles — the default framebuffer
+ * then always holds the previous frame — else -1, partial redraw being
+ * unavailable on this surface. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeBufferAge(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    return att && att->postSubBuffer && att->preserved ? 1 : -1;
+}
+
+/* Presents only the (x, y, w, h) rectangle (#755), in surface pixels with a
+ * bottom-left origin (the EGL convention): ANGLE copies that part of its
+ * offscreen texture into the swap chain and hands it to DXGI as the dirty
+ * rect. Falls back to a whole present without eglPostSubBufferNV. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativePresentWithDamage(
+    JNIEnv *env, jclass clazz, jlong handle, jint x, jint y, jint width, jint height)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    if (!att) return;
+    /* See nativePresent. */
+    pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
+    const EGLint damage[4] = { x, y, width, height };
+    swapWithMirror(att, width > 0 && height > 0 ? damage : NULL);
 }
 
 JNIEXPORT void JNICALL

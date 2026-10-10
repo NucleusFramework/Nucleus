@@ -1,5 +1,6 @@
 package dev.nucleusframework.notification.common.internal
 
+import dev.nucleusframework.core.runtime.NucleusUiThread
 import dev.nucleusframework.notification.InterruptionLevel
 import dev.nucleusframework.notification.common.DismissReason
 import dev.nucleusframework.notification.common.NotificationResult
@@ -9,6 +10,7 @@ import dev.nucleusframework.notification.linux.Urgency
 import dev.nucleusframework.notification.windows.DismissalReason
 import dev.nucleusframework.notification.windows.ToastDuration
 import dev.nucleusframework.notification.windows.ToastScenario
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -18,6 +20,11 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PlatformDispatcherTest {
+    @AfterTest
+    fun resetUiExecutor() {
+        NucleusUiThread.setExecutor(null)
+    }
+
     @Test
     fun `factory returns a macos dispatcher on this host`() {
         val dispatcher = DispatcherFactory.create()
@@ -48,6 +55,9 @@ class PlatformDispatcherTest {
     fun `macos dispatcher send exercises buttons dismiss category and images`() {
         val dispatcher = MacOsDispatcher.createIfAvailable() ?: return
         dispatcher.initialize()
+        // `onFailed` is posted to NucleusUiThread; run it inline so the counts
+        // below are settled by the time they are asserted.
+        NucleusUiThread.setExecutor { it.run() }
 
         var failed = 0
         var activated = 0
@@ -301,7 +311,10 @@ class PlatformDispatcherTest {
     @Test
     fun `macos delegate routes default dismiss and button actions`() {
         val dispatcher = MacOsDispatcher.createIfAvailable() ?: return
-        val delegate = fieldOf<dev.nucleusframework.notification.NotificationCenterDelegate>(dispatcher, "delegate")
+        val delegate = dispatcher.delegate
+        // The delegate hands responses to NucleusUiThread; run them inline so
+        // this test keeps asserting straight after each call.
+        NucleusUiThread.setExecutor { it.run() }
         val presented =
             delegate.willPresent(
                 dev.nucleusframework.notification.DeliveredNotification("id", "t", "s", "b", 1L, "c", "th"),

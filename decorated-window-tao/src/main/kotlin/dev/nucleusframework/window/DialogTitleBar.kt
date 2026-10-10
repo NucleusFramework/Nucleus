@@ -47,7 +47,7 @@ private val isKdeDlg: Boolean =
 
 /**
  * Tao-backed close-only title bar for [DecoratedDialog]. Mirrors
- * `decorated-window-jni`'s `DialogTitleBar`: same signature and the same
+ * the legacy AWT backend's `DialogTitleBar`: same signature and the same
  * styling pipeline, with min/max stripped (dialogs render only the close
  * button on platforms that need a Compose-drawn chrome).
  */
@@ -58,6 +58,7 @@ public fun DecoratedDialogScope.DialogTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
     val taoScope = this as TaoDecoratedDialogScope
@@ -94,6 +95,7 @@ public fun DecoratedDialogScope.DialogTitleBar(
         style = style,
         controlButtonsDirection = controlDir,
         controlButtonsPlacementDirection = controlsPlacementDir,
+        layoutPolicy = layoutPolicy,
         applyTitleBar = { measuredHeight, titleBarState ->
             heightHolder.value = measuredHeight.value
             // Identical reservation logic to [TitleBar]: macOS traffic-lights

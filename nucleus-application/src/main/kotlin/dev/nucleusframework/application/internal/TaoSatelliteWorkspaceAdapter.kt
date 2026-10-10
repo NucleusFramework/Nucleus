@@ -1,0 +1,74 @@
+package dev.nucleusframework.application.internal
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.currentCompositionLocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
+import dev.nucleusframework.application.TaoNucleusApplicationScope
+import dev.nucleusframework.application.internal.TaoSatelliteWindowAdapter.NucleusSatelliteScene
+import dev.nucleusframework.window.ControlButtonsDirection
+import dev.nucleusframework.window.tao.DockSide
+import dev.nucleusframework.window.tao.SatellitePlacement
+import dev.nucleusframework.window.tao.SatelliteScope
+import dev.nucleusframework.window.tao.SatelliteWorkspace
+import dev.nucleusframework.window.tao.Satellite as TaoSatellite
+
+/**
+ * Workspace satellites on Tao: the tao `Satellite` composable, with the
+ * floating window's scene wrapped in the same Nucleus locals a standalone
+ * satellite window gets ([TaoSatelliteWindowAdapter]). Docked content composes
+ * inside the host window, where those locals already exist.
+ */
+internal object TaoSatelliteWorkspaceAdapter {
+    @Suppress("LongParameterList")
+    @Composable
+    fun Satellite(
+        scope: TaoNucleusApplicationScope,
+        workspace: SatelliteWorkspace,
+        id: String,
+        title: String,
+        initialPlacement: SatellitePlacement,
+        initiallyOpen: Boolean,
+        dockSides: Set<DockSide>,
+        floatable: Boolean,
+        reorderable: Boolean,
+        resizable: Boolean,
+        minExtent: Dp,
+        maxExtent: Dp,
+        hideWhileOwnerFullscreenOrMaximized: Boolean,
+        nativeContextMenu: Boolean,
+        header: @Composable SatelliteScope.() -> Unit,
+        floatingCaption: @Composable SatelliteScope.() -> Unit,
+        floatingBarMovesWindow: Boolean,
+        controlButtonsDirection: ControlButtonsDirection,
+        content: @Composable SatelliteScope.() -> Unit,
+    ) {
+        val outerLocals = currentCompositionLocalContext
+        val parentLayoutDirection = LocalLayoutDirection.current
+        with(scope.taoScope) {
+            TaoSatellite(
+                workspace = workspace,
+                id = id,
+                title = title,
+                initialPlacement = initialPlacement,
+                initiallyOpen = initiallyOpen,
+                dockSides = dockSides,
+                floatable = floatable,
+                reorderable = reorderable,
+                resizable = resizable,
+                minExtent = minExtent,
+                maxExtent = maxExtent,
+                hideWhileOwnerFullscreenOrMaximized = hideWhileOwnerFullscreenOrMaximized,
+                compositionLocalContext = outerLocals,
+                floatingContentWrapper = { inner ->
+                    NucleusSatelliteScene(outerLocals, parentLayoutDirection, nativeContextMenu) { inner() }
+                },
+                header = header,
+                floatingCaption = floatingCaption,
+                floatingBarMovesWindow = floatingBarMovesWindow,
+                controlButtonsDirection = controlButtonsDirection,
+                content = content,
+            )
+        }
+    }
+}

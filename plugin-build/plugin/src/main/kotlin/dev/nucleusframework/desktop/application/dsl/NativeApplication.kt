@@ -12,6 +12,7 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.konan.target.Family
 import javax.inject.Inject
 
+/** The `nativeApplication { }` block: packages a Kotlin/Native macOS application (DMG only). */
 abstract class NativeApplication
     @Inject
     constructor(
@@ -25,6 +26,7 @@ abstract class NativeApplication
         @Suppress("VariableNaming")
         internal val _targets = arrayListOf<KotlinNativeTarget>()
 
+        /** Sets the Kotlin/Native targets to package; only macOS targets are supported, any other fails. */
         fun targets(vararg targets: KotlinTarget) {
             val nonNativeTargets = arrayListOf<KotlinTarget>()
             val nonMacOSTargets = arrayListOf<KotlinNativeTarget>()
@@ -52,6 +54,7 @@ abstract class NativeApplication
         val distributions: NativeApplicationDistributions =
             objects.newInstance(NativeApplicationDistributions::class.java)
 
+        /** Configures the packages built for the application. */
         fun distributions(fn: Action<NativeApplicationDistributions>) {
             fn.execute(distributions)
         }

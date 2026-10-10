@@ -82,9 +82,9 @@ public object DesktopTaskScheduler {
      */
     @JvmStatic
     public fun enqueue(request: TaskRequest): Boolean {
-        if (ExecutableRuntime.isPkg()) {
+        if (Platform.Current == Platform.MacOS && ExecutableRuntime.isSandboxed()) {
             logger.severe(
-                "DesktopTaskScheduler is not supported in sandboxed Mac App Store builds (.pkg). " +
+                "DesktopTaskScheduler is not supported in sandboxed Mac App Store builds. " +
                     "Use the service-management-macos module with SMAppService instead.",
             )
             return false

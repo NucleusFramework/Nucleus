@@ -9,6 +9,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
 
+/** Flatpak packaging options: runtime, SDK, branch, sandbox `finish-args` and license. */
 abstract class FlatpakSettings {
     @get:Inject
     internal abstract val objects: ObjectFactory

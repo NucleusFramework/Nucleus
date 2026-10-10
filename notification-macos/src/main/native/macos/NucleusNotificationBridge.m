@@ -1,6 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <UserNotifications/UserNotifications.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 // ============================================================================
 // Globals
@@ -44,9 +45,7 @@ static void releaseEnv(BOOL didAttach) {
 }
 
 static void clearException(JNIEnv *env) {
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 }
 
 static jstring toJString(JNIEnv *env, NSString *str) {
@@ -137,11 +136,7 @@ API_AVAILABLE(macos(10.14))
         jint result = (*env)->CallStaticIntMethod(env, cls, method,
             jIdentifier, jTitle, jSubtitle, jBody, dateMs, jCategoryId, jThreadId);
 
-        BOOL hadException = (*env)->ExceptionCheck(env);
-        if (hadException) {
-            (*env)->ExceptionDescribe(env); // prints to stderr for debugging
-            (*env)->ExceptionClear(env);
-        }
+        BOOL hadException = nucleus_jni_clear_exception(env);
         releaseEnv(didAttach);
 
         // If Kotlin callback failed, fall back to defaults.

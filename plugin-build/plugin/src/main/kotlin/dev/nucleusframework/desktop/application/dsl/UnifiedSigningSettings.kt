@@ -31,14 +31,17 @@ class UnifiedSigningSettings(
     private val windowsSettings: WindowsSigningSettings,
     private val linuxSettings: LinuxSigningSettings,
 ) {
+    /** Configures macOS code signing (same instance as `macOS { signing { } }`). */
     fun macOS(fn: Action<MacOSSigningSettings>) {
         fn.execute(macOSSettings)
     }
 
+    /** Configures Windows code signing (same instance as `windows { signing { } }`). */
     fun windows(fn: Action<WindowsSigningSettings>) {
         fn.execute(windowsSettings)
     }
 
+    /** Configures Linux package signing (same instance as `linux { signing { } }`). */
     fun linux(fn: Action<LinuxSigningSettings>) {
         fn.execute(linuxSettings)
     }

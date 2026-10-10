@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.internal
 
 import org.gradle.api.Project
 import org.gradle.api.Task
+import org.gradle.api.artifacts.Configuration
 import org.gradle.api.file.FileCollection
 import org.gradle.api.file.RegularFile
 import org.gradle.api.provider.Provider
@@ -18,6 +19,8 @@ internal class JvmApplicationRuntimeFiles(
     val allRuntimeJars: FileCollection,
     val mainJar: Provider<RegularFile>,
     private val taskDependencies: Array<Any>,
+    /** `group:module` / project path of each resolved runtime JAR, keyed by absolute path; empty when unknown. */
+    val artifactCoordinates: Provider<Map<String, String>>? = null,
 ) {
     operator fun component1() = allRuntimeJars
 
@@ -58,6 +61,9 @@ internal sealed class JvmApplicationRuntimeFilesProvider {
         protected abstract val jarTaskName: String
         protected abstract val runtimeFiles: FileCollection
 
+        /** The configuration [runtimeFiles] resolves, when there is one. */
+        protected abstract fun runtimeConfigurationName(): String?
+
         override fun jvmApplicationRuntimeFiles(project: Project): JvmApplicationRuntimeFiles {
             val jarTask = project.tasks.named(jarTaskName, Jar::class.java)
             val mainJar = jarTask.flatMap { it.archiveFile }
@@ -66,7 +72,11 @@ internal sealed class JvmApplicationRuntimeFilesProvider {
                     from(mainJar)
                     from(runtimeFiles.filter { it.path.endsWith(".jar") })
                 }
-            return JvmApplicationRuntimeFiles(runtimeJarFiles, mainJar, arrayOf(jarTask))
+            val coordinates =
+                runtimeConfigurationName()
+                    ?.let { project.configurations.findByName(it) }
+                    ?.artifactCoordinates()
+            return JvmApplicationRuntimeFiles(runtimeJarFiles, mainJar, arrayOf(jarTask), coordinates)
         }
     }
 
@@ -78,6 +88,8 @@ internal sealed class JvmApplicationRuntimeFilesProvider {
 
         override val runtimeFiles: FileCollection
             get() = sourceSet.runtimeClasspath
+
+        override fun runtimeConfigurationName(): String = sourceSet.runtimeClasspathConfigurationName
 
         override fun projectClassDirs(project: Project): FileCollection = sourceSet.output.classesDirs
 
@@ -93,6 +105,9 @@ internal sealed class JvmApplicationRuntimeFilesProvider {
 
         override val runtimeFiles: FileCollection
             get() = target.compilations.getByName("main").runtimeDependencyFiles
+
+        override fun runtimeConfigurationName(): String? =
+            target.compilations.getByName("main").runtimeDependencyConfigurationName
 
         override fun projectClassDirs(project: Project): FileCollection =
             target.compilations.getByName("main").output.classesDirs
@@ -114,3 +129,13 @@ internal sealed class JvmApplicationRuntimeFilesProvider {
             JvmApplicationRuntimeFiles(runtimeJarFiles, mainJar, taskDependencies)
     }
 }
+
+private fun Configuration.artifactCoordinates(): Provider<Map<String, String>> =
+    incoming.artifacts.resolvedArtifacts.map { artifacts ->
+        artifacts
+            .mapNotNull { artifact ->
+                ConsumerProguardRules.coordinateOf(artifact.id.componentIdentifier)?.let { coordinate ->
+                    artifact.file.absoluteFile.normalize().path to coordinate
+                }
+            }.toMap()
+    }

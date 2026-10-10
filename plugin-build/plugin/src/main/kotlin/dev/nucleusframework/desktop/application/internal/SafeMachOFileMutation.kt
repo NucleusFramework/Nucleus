@@ -17,6 +17,8 @@ internal fun interface MachOCommandRunner {
     fun run(command: List<String>): MachOCommandResult
 }
 
+// Any failure to launch the tool is reported as a failed run so the caller keeps the original file.
+@Suppress("TooGenericExceptionCaught")
 internal val defaultMachOCommandRunner =
     MachOCommandRunner { command ->
         try {

@@ -37,7 +37,7 @@ private fun InferredWrapper(content: @Composable () -> Unit) {
 
 @Suppress("UnusedPrivateMember")
 private fun windowsStayUiRegardlessOfTheScopeApplier() {
-    nucleusApplication(enableSingleInstance = false) {
+    nucleusApplication(enableSingleInstance = false, exitProcessOnExit = false) {
         // Binds the application scope's applier to a non-UI one.
         rememberNonUiTargetedState()
 

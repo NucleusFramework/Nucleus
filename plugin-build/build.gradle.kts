@@ -56,7 +56,7 @@ fun Project.configurePluginBuildQuality() {
 
     detekt {
         config.setFrom(rootProject.files("../config/detekt/detekt.yml"))
-        ignoreFailures = true
+        ignoreFailures = false
     }
 }
 

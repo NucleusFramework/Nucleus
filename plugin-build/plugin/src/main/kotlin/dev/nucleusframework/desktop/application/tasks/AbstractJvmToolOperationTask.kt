@@ -7,18 +7,32 @@ package dev.nucleusframework.desktop.application.tasks
 
 import dev.nucleusframework.desktop.application.internal.NucleusProperties
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
-import dev.nucleusframework.internal.utils.*
+import dev.nucleusframework.internal.utils.clearDirs
+import dev.nucleusframework.internal.utils.delete
+import dev.nucleusframework.internal.utils.ioFile
+import dev.nucleusframework.internal.utils.jvmToolFile
+import dev.nucleusframework.internal.utils.notNullProperty
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.*
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.LocalState
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecResult
 import org.gradle.work.DisableCachingByDefault
 import org.gradle.work.InputChanges
 import java.io.File
 
+/**
+ * Base task for running a JDK tool (`jlink`, `jpackage`, `jdeps`, …) from [javaHome]: the arguments built by
+ * [makeArgs] are written to an `@argfile`, the tool runs into [destinationDir], and the scratch working
+ * directory is deleted afterwards unless the preserve-working-dir property is set.
+ */
 @DisableCachingByDefault(because = "Depends on external JVM tools")
 abstract class AbstractJvmToolOperationTask(
     private val toolName: String,
@@ -54,6 +68,7 @@ abstract class AbstractJvmToolOperationTask(
         result.assertNormalExitValue()
     }
 
+    /** Clears [destinationDir], prepares the working directory and runs the tool with the generated arguments. */
     @TaskAction
     fun run(inputChanges: InputChanges) {
         initState()

@@ -4,14 +4,20 @@ on:
   push:
     branches:
       - main
+      # The release lines (nucleus-3.0, …), the default branch and the base of
+      # every PR. Only a push run here writes the Gradle and natives caches a PR
+      # can read (a PR reads its base branch's and the default branch's caches,
+      # and setup-gradle saves nothing outside the default branch): with `main`
+      # alone, every PR job compiled the whole build from nothing.
+      - 'nucleus-*'
   pull_request:
     branches:
       # '**' (not '*'): base branches with a '/' (e.g. refactor/…) must
       # trigger too — the single-star glob does not cross path separators.
       - '**'
 
-# Supersede in-flight runs on PR pushes; pushes to main are never cancelled
-# (their run saves the caches every other workflow keys off).
+# Supersede in-flight runs on PR pushes; pushes to main or a release line are
+# never cancelled (their run saves the caches every other workflow keys off).
 concurrency:
   group: pre-merge-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -33,10 +39,10 @@ jobs:
       GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: 'natives-*'
           merge-multiple: true
@@ -54,14 +60,6 @@ jobs:
             "native-ssl/src/main/resources/nucleus/native/darwin-x64/libnucleus_ssl.dylib"
             "native-ssl/src/main/resources/nucleus/native/win32-x64/nucleus_ssl.dll"
             "native-ssl/src/main/resources/nucleus/native/win32-aarch64/nucleus_ssl.dll"
-            "decorated-window-jbr/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos.dylib"
-            "decorated-window-jbr/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos_jni.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos_jni.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_jni.so"
-            "decorated-window-jni/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_jni.so"
-            "decorated-window-jni/src/main/resources/nucleus/native/win32-x64/nucleus_windows_decoration.dll"
-            "decorated-window-jni/src/main/resources/nucleus/native/win32-aarch64/nucleus_windows_decoration.dll"
             "linux-hidpi/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_hidpi_jni.so"
             "linux-hidpi/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_hidpi_jni.so"
             "spellcheck/src/main/resources/nucleus/native/linux-x64/libnucleus_spellcheck.so"
@@ -92,6 +90,12 @@ jobs:
             "fs-watcher/src/main/resources/nucleus/native/darwin-x64/libnucleus_fs_watcher.dylib"
             "fs-watcher/src/main/resources/nucleus/native/linux-x64/libnucleus_fs_watcher.so"
             "fs-watcher/src/main/resources/nucleus/native/linux-aarch64/libnucleus_fs_watcher.so"
+            "share/src/main/resources/nucleus/native/win32-x64/nucleus_share.dll"
+            "share/src/main/resources/nucleus/native/win32-aarch64/nucleus_share.dll"
+            "share/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_share.dylib"
+            "share/src/main/resources/nucleus/native/darwin-x64/libnucleus_share.dylib"
+            "share/src/main/resources/nucleus/native/linux-x64/libnucleus_share.so"
+            "share/src/main/resources/nucleus/native/linux-aarch64/libnucleus_share.so"
             "notification-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_notification.dylib"
             "notification-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_notification.dylib"
             "service-management-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_service_management.dylib"
@@ -152,10 +156,6 @@ jobs:
             "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_native_view.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_native_view.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libEGL.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libEGL.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/libGLESv2.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/libGLESv2.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao.dylib"
             "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao.dylib"
             "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_metal.dylib"
@@ -193,13 +193,16 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # Open-source cache on GitHub Actions cache; v6's default provider is proprietary.
+          cache-provider: basic
 
       - name: Run Gradle tasks
         run: ./gradlew preMerge --continue
@@ -221,22 +224,25 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: 'natives-*'
           merge-multiple: true
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # Open-source cache on GitHub Actions cache; v6's default provider is proprietary.
+          cache-provider: basic
 
       - name: Run Tao scene tests
         run: ./gradlew :decorated-window-tao:test
@@ -249,7 +255,9 @@ jobs:
   # three display-stack runners for nothing.
   tao-headful:
     needs: [build-natives, gradle, tao-tests]
-    timeout-minutes: 30
+    # Above the suite's own 45 min watchdog (GLOBAL_WATCHDOG_MILLIS) plus setup
+    # and compile, so a hung run is halted with a thread dump, not killed here.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -257,22 +265,25 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: 'natives-*'
           merge-multiple: true
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # Open-source cache on GitHub Actions cache; v6's default provider is proprietary.
+          cache-provider: basic
 
       - name: Install Mesa software OpenGL (Windows)
         if: runner.os == 'Windows'
@@ -280,15 +291,14 @@ jobs:
         # the Tao scene host cannot attach. Mesa's llvmpipe opengl32.dll,
         # dropped next to java.exe (first directory in the DLL search order),
         # gives every JVM-launched window a real software GL context.
-        uses: f3d-app/install-mesa-windows-action@v1
+        uses: f3d-app/install-mesa-windows-action@v3
         with:
           path: C:\hostedtoolcache\windows\Java_Temurin-Hotspot_jdk\*\x64\bin
 
       - name: Install display stack (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
+        timeout-minutes: 10
+        run: .github/scripts/apt-install.sh xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0
 
       - name: Run headful suite (Linux, under Xvfb + openbox)
         if: runner.os == 'Linux'
@@ -310,7 +320,9 @@ jobs:
         # cycle — the standalone-popup native chain has no other CI coverage.
         run: ./gradlew :decorated-window-tao:smokeStandalonePanelMac
 
-  # Native accessibility protocol: launches tao-demo on its A11y tab and
+  # Native accessibility protocol: launches the Lab's `a11y-surface` fixture
+  # (examples/lab/probes/input — the A11y / Complex
+  # surfaces alone in a "Nucleus A11y Surface" window, no Lab chrome) and
   # verifies the OS-level projection from the OUTSIDE, through the same client
   # APIs assistive tech uses — UIA on Windows (hard gate), AT-SPI via pyatspi
   # on Linux (hard gate), the AX client API on macOS (self-skips on runners:
@@ -340,41 +352,41 @@ jobs:
     # TCC-trusted) and Linux (AT-SPI) verify the full round-trips in CI.
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: 'natives-*'
           merge-multiple: true
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # Open-source cache on GitHub Actions cache; v6's default provider is proprietary.
+          cache-provider: basic
 
       # NOTE: a Mesa/llvmpipe opengl32.dll install step used to sit here. It
       # was a red herring: the Windows host renders through ANGLE/D3D11 (WARP
       # on runners), never through WGL/opengl32, so Mesa had no effect. The
       # real cause of the empty UIA tree (idle-activation race) is fixed in
       # the a11y sync scheduler — see the job comment above.
-      - name: Build tao-demo (so the probe timeout is not spent compiling)
-        run: ./gradlew :examples:tao-demo:jar
+      - name: Build the Lab (so the probe timeout is not spent compiling)
+        run: ./gradlew :examples:lab:app:jar
 
       - name: Install display + AT-SPI stack (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 10
+        # No libwebkit2gtk: the a11y-surface fixture hosts no WebView (the old
+        # tao-demo sweep visited its WebView tab and needed it).
         run: |
-          sudo apt-get update
-          # libwebkit2gtk: tao-demo's WebView tab now hosts ComposeNativeWebView,
-          # whose Linux backend dlopens libwebkit2gtk-4.1. The multi-tab a11y
-          # probe (verify-atspi-all-tabs.py) visits that tab and would crash the
-          # app on runners, which don't ship webkit2gtk by default.
-          sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
-            libwebkit2gtk-4.1-0 \
+          .github/scripts/apt-install.sh xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
             at-spi2-core python3-pyatspi dbus-x11 xdotool
 
       - name: Verify AT-SPI projection (Linux)
@@ -391,7 +403,7 @@ jobs:
           dbus-send --session --dest=org.a11y.Bus --type=method_call --print-reply \
             /org/a11y/bus org.freedesktop.DBus.Properties.Set \
             string:org.a11y.Status string:IsEnabled variant:boolean:true
-          NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          ./gradlew --no-daemon :examples:lab:app:run -Dlab.fixture=a11y-surface > /tmp/a11y-surface.log 2>&1 &
           status=0
           # Ordered so the mutation-sensitive probe runs on a pristine tree:
           # verify-atspi.py asserts the exact 'click counter 1' transition.
@@ -404,42 +416,44 @@ jobs:
           python3 scripts/ci/verify-atspi-events.py || status=$?
           python3 scripts/ci/verify-atspi-keyboard.py || status=$?
           if [ $status -ne 0 ]; then
-            echo "── tao-demo log ($(wc -l < /tmp/tao-demo.log) lines) ──"
-            cat /tmp/tao-demo.log || true
+            echo "── a11y-surface log ($(wc -l < /tmp/a11y-surface.log) lines) ──"
+            cat /tmp/a11y-surface.log || true
           fi
-          pkill -f dev.nucleusframework.sampletao.MainKt || true
+          pkill -f lab.fixture=a11y-surface || true
           exit $status
 
       - name: Verify UIA projection (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          NUCLEUS_DEMO_TAB=A11y NUCLEUS_A11Y_DEBUG=1 \
-            ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          NUCLEUS_A11Y_DEBUG=1 \
+            ./gradlew --no-daemon :examples:lab:app:run -Dlab.fixture=a11y-surface > /tmp/a11y-surface.log 2>&1 &
           status=0
-          pwsh -File scripts/ci/verify-uia.ps1 -Title "Tao Backend Demo" -TimeoutSec 300 || status=$?
+          pwsh -File scripts/ci/verify-uia.ps1 -Title "Nucleus A11y Surface" -TimeoutSec 300 || status=$?
           echo "── java processes ──"
           tasklist | grep -i java || true
           echo "── proven dump-uia-tree.ps1 -Process java ──"
           pwsh -File scripts/dump-uia-tree.ps1 -Process java -MaxDepth 5 || true
-          echo "── tao-demo full log ($(wc -l < /tmp/tao-demo.log) lines) ──"
-          cat /tmp/tao-demo.log || true
+          echo "── a11y-surface full log ($(wc -l < /tmp/a11y-surface.log) lines) ──"
+          cat /tmp/a11y-surface.log || true
           taskkill //F //IM java.exe //T 2>/dev/null || true
           exit $status
 
       - name: Verify AX projection (macOS, self-skips without TCC trust)
         if: runner.os == 'macOS'
         run: |
-          NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
+          ./gradlew --no-daemon :examples:lab:app:run -Dlab.fixture=a11y-surface > /tmp/a11y-surface.log 2>&1 &
           for i in $(seq 1 90); do
-            APP_PID=$(pgrep -f dev.nucleusframework.sampletao.MainKt || true)
+            # The fixture JVM carries -Dlab.fixture=a11y-surface on its command line; Gradle's does too
+            # but runs no AX tree, so take the java process (the newest match).
+            APP_PID=$(pgrep -n -f "lab.fixture=a11y-surface.*dev.nucleusframework.lab.app.MainKt" || true)
             [ -n "$APP_PID" ] && break
             sleep 2
           done
-          if [ -z "$APP_PID" ]; then echo "tao-demo never started"; tail -50 /tmp/tao-demo.log; exit 1; fi
+          if [ -z "$APP_PID" ]; then echo "a11y-surface never started"; tail -50 /tmp/a11y-surface.log; exit 1; fi
           status=0
           swift scripts/ci/verify-ax.swift "$APP_PID" || status=$?
-          pkill -f dev.nucleusframework.sampletao.MainKt || true
+          pkill -f lab.fixture=a11y-surface || true
           exit $status
 
   # ── Expensive PR-only stages ───────────────────────────────────────────

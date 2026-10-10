@@ -1,5 +1,6 @@
 /**
- * JNI bridge for Linux HiDPI scale factor detection.
+ * JNI bridge for Linux startup setup: HiDPI scale factor detection, and the
+ * glibc malloc arena cap (nativeSetMallocArenaMax, at the end of this file).
  *
  * Replicates JetBrains Runtime's systemScale.c approach:
  * detects the native display scale factor from multiple sources so that
@@ -19,6 +20,7 @@
  * Linked libraries: -ldl
  */
 
+#define _GNU_SOURCE /* RTLD_DEFAULT */
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -264,7 +266,7 @@ static double readXftScale(void) {
 /*  nativeGetScaleFactor — JNI entry point                            */
 /* ------------------------------------------------------------------ */
 JNIEXPORT jdouble JNICALL
-Java_dev_nucleusframework_hidpi_HiDpiLinuxBridge_nativeGetScaleFactor(
+Java_dev_nucleusframework_hidpi_LinuxStartupBridge_nativeGetScaleFactor(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -310,7 +312,7 @@ Java_dev_nucleusframework_hidpi_HiDpiLinuxBridge_nativeGetScaleFactor(
 /*  by the desktop session.                                            */
 /* ------------------------------------------------------------------ */
 JNIEXPORT void JNICALL
-Java_dev_nucleusframework_hidpi_HiDpiLinuxBridge_nativeApplyScaleToEnv(
+Java_dev_nucleusframework_hidpi_LinuxStartupBridge_nativeApplyScaleToEnv(
     JNIEnv *env, jclass clazz, jint scale)
 {
     (void)env; (void)clazz;
@@ -321,4 +323,30 @@ Java_dev_nucleusframework_hidpi_HiDpiLinuxBridge_nativeApplyScaleToEnv(
 
     /* 0 = don't overwrite if already set by the desktop session */
     setenv("GDK_SCALE", buf, 0);
+}
+
+/* ------------------------------------------------------------------ */
+/*  nativeSetMallocArenaMax                                            */
+/*  Caps glibc's malloc arenas (mallopt(M_ARENA_MAX)). glibc creates   */
+/*  up to 8 x cores of them and each keeps what it once held, so a     */
+/*  many-threaded process ends up with far more RSS than it uses       */
+/*  (#757). Resolved through dlsym and gated on a glibc-only symbol:   */
+/*  musl has no arenas and a stub mallopt.                             */
+/*  Returns 1 when applied, 0 when mallopt refused it, -1 off glibc.   */
+/* ------------------------------------------------------------------ */
+#define NUCLEUS_M_ARENA_MAX (-8) /* M_ARENA_MAX from glibc's malloc.h */
+
+typedef int (*MalloptFn)(int, int);
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_hidpi_LinuxStartupBridge_nativeSetMallocArenaMax(
+    JNIEnv *env, jclass clazz, jint max)
+{
+    (void)env; (void)clazz;
+    if (dlsym(RTLD_DEFAULT, "gnu_get_libc_version") == NULL) return -1;
+
+    MalloptFn mallopt_fn = (MalloptFn)dlsym(RTLD_DEFAULT, "mallopt");
+    if (mallopt_fn == NULL) return -1;
+
+    return mallopt_fn(NUCLEUS_M_ARENA_MAX, (int)max) == 1 ? 1 : 0;
 }

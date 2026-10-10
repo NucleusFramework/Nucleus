@@ -112,14 +112,12 @@ internal object OrphanProjectClassDetector {
         appReferencedTypes: Set<String>,
     ): Set<ReflectionEntry> {
         if (projectFacts.isEmpty()) return emptySet()
-        val entries = mutableSetOf<ReflectionEntry>()
-        for (fact in projectFacts) {
-            if (fact.type in classpathReferencedTypes) continue
-            if (!fact.concretePublicNoArg) continue
-            if (!supertypeReferencedByApp(fact, appReferencedTypes)) continue
-            entries.add(ReflectionEntry(type = fact.type, methods = setOf(NO_ARG_INIT)))
-        }
-        return entries
+        return projectFacts
+            .filter { fact ->
+                fact.type !in classpathReferencedTypes &&
+                    fact.concretePublicNoArg &&
+                    supertypeReferencedByApp(fact, appReferencedTypes)
+            }.mapTo(mutableSetOf()) { fact -> ReflectionEntry(type = fact.type, methods = setOf(NO_ARG_INIT)) }
     }
 
     /**

@@ -32,7 +32,7 @@ private val DialogElevationStroke = Color(0x1F000000)
 /**
  * Returns the [Modifier.insideBorder] used by Tao `DecoratedWindow` on
  * Linux + Windows for the **default custom-chrome** look (no native frame —
- * same role as `decorated-window-jni`'s `DecoratedWindowBody` border). macOS
+ * same role as the legacy AWT backend's `DecoratedWindowBody` border). macOS
  * keeps native decorations and does not need this.
  *
  * Callers that pass `undecorated = true` (fully borderless overlays / ghosts)

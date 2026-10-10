@@ -142,6 +142,9 @@ internal class TaoSceneScrollRouter(
         }
     }
 
+    /** Whether a trackpad pan is open, its deferred PanEnd included. */
+    val panOpen: Boolean get() = pan.isOpen
+
     /** Closes an open pan now — a pointer press ends the gesture for Compose too. */
     fun finishPan() {
         if (cancelled) return

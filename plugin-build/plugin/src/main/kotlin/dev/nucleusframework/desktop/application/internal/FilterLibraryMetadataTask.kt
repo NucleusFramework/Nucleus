@@ -38,6 +38,12 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    /**
+     * Merges the `reflection` and `resources` sections of every bundled per-library
+     * metadata file whose `_meta.matchPackages` match [runtimeClasspath] into
+     * `reachability-metadata.json` in [outputDir]. GUI-only files are skipped when
+     * [headless] is set.
+     */
     @TaskAction
     fun filter() {
         val classpathPackages = buildClasspathPackageIndex(runtimeClasspath.files)
@@ -49,49 +55,32 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
                 ?.bufferedReader()
                 ?.readLines()
                 ?.filter { it.isNotBlank() }
-                ?: emptyList()
+                .orEmpty()
 
         val slurper = JsonSlurper()
         val mergedReflection = mutableListOf<Any?>()
         val mergedResources = mutableListOf<Any?>()
         var includedCount = 0
-        var skippedCount = 0
 
         val skipGuiMetadata = headless.get()
-        for (fileName in index) {
-            if (skipGuiMetadata && fileName in HEADLESS_SKIP_METADATA) {
+        val (headlessSkipped, candidates) = index.partition { skipGuiMetadata && it in HEADLESS_SKIP_METADATA }
+        var skippedCount = headlessSkipped.size
+        for (fileName in candidates) {
+            val root = readLibraryMetadata(slurper, "$metadataDir/$fileName") ?: continue
+            if (matchesClasspath(root, classpathPackages)) {
+                includedCount++
+
+                @Suppress("UNCHECKED_CAST")
+                val reflection = root["reflection"] as? List<Any?>
+                if (reflection != null) mergedReflection.addAll(reflection)
+
+                @Suppress("UNCHECKED_CAST")
+                val resources = root["resources"] as? List<Any?>
+                if (resources != null) mergedResources.addAll(resources)
+            } else {
                 skippedCount++
-                continue
+                logger.info("Skipping $fileName: no matching packages on classpath")
             }
-            val stream = javaClass.classLoader.getResourceAsStream("$metadataDir/$fileName") ?: continue
-
-            @Suppress("UNCHECKED_CAST")
-            val root = slurper.parseText(stream.bufferedReader().use { it.readText() }) as Map<String, Any?>
-
-            @Suppress("UNCHECKED_CAST")
-            val meta = root["_meta"] as? Map<String, Any?>
-
-            @Suppress("UNCHECKED_CAST")
-            val matchPackages = meta?.get("matchPackages") as? List<String>
-
-            if (matchPackages != null) {
-                val found = matchPackages.any { prefix -> classpathPackages.any { it.startsWith(prefix) } }
-                if (!found) {
-                    skippedCount++
-                    logger.info("Skipping $fileName: no matching packages on classpath")
-                    continue
-                }
-            }
-
-            includedCount++
-
-            @Suppress("UNCHECKED_CAST")
-            val reflection = root["reflection"] as? List<Any?>
-            if (reflection != null) mergedReflection.addAll(reflection)
-
-            @Suppress("UNCHECKED_CAST")
-            val resources = root["resources"] as? List<Any?>
-            if (resources != null) mergedResources.addAll(resources)
         }
 
         val merged = mutableMapOf<String, Any?>()
@@ -108,6 +97,31 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
         )
     }
 
+    private fun readLibraryMetadata(
+        slurper: JsonSlurper,
+        resourcePath: String,
+    ): Map<String, Any?>? {
+        val stream = javaClass.classLoader.getResourceAsStream(resourcePath) ?: return null
+
+        @Suppress("UNCHECKED_CAST")
+        val root = slurper.parseText(stream.bufferedReader().use { it.readText() }) as Map<String, Any?>
+        return root
+    }
+
+    /** A file without `_meta.matchPackages` always matches. */
+    private fun matchesClasspath(
+        root: Map<String, Any?>,
+        classpathPackages: Set<String>,
+    ): Boolean {
+        @Suppress("UNCHECKED_CAST")
+        val meta = root["_meta"] as? Map<String, Any?>
+
+        @Suppress("UNCHECKED_CAST")
+        val matchPackages = meta?.get("matchPackages") as? List<String> ?: return true
+        return matchPackages.any { prefix -> classpathPackages.any { it.startsWith(prefix) } }
+    }
+
+    /** Holds the per-library metadata files that only matter for GUI (non-headless) images. */
     companion object {
         private val HEADLESS_SKIP_METADATA =
             setOf(

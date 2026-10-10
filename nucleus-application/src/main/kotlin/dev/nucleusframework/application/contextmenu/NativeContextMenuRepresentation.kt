@@ -12,6 +12,7 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.NativePopupMenuItem
 import dev.nucleusframework.menu.macos.NsMenuItemImage
 import dev.nucleusframework.menu.macos.popUpNativeMenu
+import dev.nucleusframework.window.tao.NativePopupLayers
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -20,6 +21,11 @@ import kotlinx.coroutines.withContext
  * Windows, a Compose Adwaita flyout on GTK Linux desktops (GNOME, XFCE,
  * Cinnamon, MATE, …), a Compose Breeze flyout on Qt Linux desktops (KDE
  * Plasma, LXQt, Deepin, …).
+ *
+ * The Compose flyouts open in a native popup surface whatever the window's
+ * `nativePopupLayers` flag says ([NativePopupLayers]): an OS-looking menu has
+ * to be able to leave the window, like the menus it imitates, and the
+ * application's choice for its own popups must not decide that.
  *
  * Calling [Representation] off a supported OS closes the menu immediately
  * so a stray install cannot leave Compose in `Open`.
@@ -44,8 +50,10 @@ public object NativeContextMenuRepresentation : ContextMenuRepresentation {
             return
         }
         when (Platform.Current) {
-            Platform.Windows -> ContextMenuFlyout(status, entries, FluentMenuTheme, onDismiss)
-            Platform.Linux -> ContextMenuFlyout(status, entries, linuxContextMenuTheme(), onDismiss)
+            Platform.Windows ->
+                NativePopupLayers { ContextMenuFlyout(status, entries, FluentMenuTheme, onDismiss) }
+            Platform.Linux ->
+                NativePopupLayers { ContextMenuFlyout(status, entries, linuxContextMenuTheme(), onDismiss) }
             Platform.MacOS -> {
                 val macEntries = entries.map { it.toMacPopupItem() }
                 LaunchedEffect(status) {
