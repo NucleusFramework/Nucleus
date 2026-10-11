@@ -145,6 +145,12 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // native button-centering constraints once the window is shown.
     val heightHolder = LocalRequestedTitleBarHeight.current
 
+    // The compositor wants no decorations (#816): no bar, no reserved band.
+    if (taoWindow.isDecorationSuppressed) {
+        SideEffect { heightHolder.value = 0f }
+        return
+    }
+
     // Modifier-driven flags. `macOSLargeCornerRadius` re-runs the NSToolbar
     // install at composition time so the modifier-driven path matches the
     // AWT backends (the `MacOSStyle` parameter at window creation is the

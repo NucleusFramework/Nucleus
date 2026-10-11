@@ -75,6 +75,11 @@ public fun DecoratedDialogScope.DialogTitleBar(
     // Publish the resolved height up to DecoratedWindow so its native
     // button-centering call uses the dialog's actual title-bar height.
     val heightHolder = LocalRequestedTitleBarHeight.current
+    // The compositor wants no decorations (#816): no bar, no reserved band.
+    if (taoWindow.isDecorationSuppressed) {
+        SideEffect { heightHolder.value = 0f }
+        return
+    }
     SideEffect { heightHolder.value = style.metrics.height.value }
 
     // macOS: flip the AppKit traffic-lights to the right edge when RTL is

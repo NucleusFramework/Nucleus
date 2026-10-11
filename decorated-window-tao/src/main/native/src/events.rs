@@ -185,6 +185,11 @@ pub(crate) const EVENT_SHOWN: jint = 24;
 #[cfg(target_os = "windows")]
 pub(crate) const EVENT_SIZE_MOVE: jint = 25;
 pub(crate) const EVENT_QUIT_REQUESTED: jint = 26;
+// Linux/Wayland only. `a = 1` when the compositor answered the window's
+// decoration request with "no decorations" (KWin's server-decoration `none`,
+// #816), `0` when it allows them again. See `server_decoration.rs`.
+#[cfg(target_os = "linux")]
+pub(crate) const EVENT_DECORATIONS_SUPPRESSED: jint = 27;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;

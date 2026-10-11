@@ -88,6 +88,13 @@ public object TaoEventCode {
 
     /** macOS requested application termination; route it through each window's close callback. */
     internal const val QUIT_REQUESTED: Int = 26
+
+    /**
+     * Linux/Wayland only. `a` = 1 when the compositor asked the window not to
+     * draw decorations (KWin's server-decoration `none` mode), 0 when it
+     * allows them again.
+     */
+    internal const val DECORATIONS_SUPPRESSED: Int = 27
 }
 
 /** Trackpad gesture kind reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */

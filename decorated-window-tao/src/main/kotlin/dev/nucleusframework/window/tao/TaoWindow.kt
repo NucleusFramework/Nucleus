@@ -254,6 +254,21 @@ public class TaoWindow internal constructor(
     public var isFocused: Boolean by mutableStateOf(false)
         private set
 
+    /**
+     * `true` while the compositor asks this window not to draw any decoration:
+     * KWin answers the window's client-side decoration request with "none" on
+     * Plasma Mobile, or under a "No titlebar and frame" window rule. The
+     * stock title bars ([dev.nucleusframework.window.BasicTitleBar] and every
+     * bar built on it, [dev.nucleusframework.window.DialogTitleBar]) then
+     * collapse to nothing and [dev.nucleusframework.window.WindowScaffold]
+     * reserves no room for window controls; custom chrome reads this to do
+     * the same. Follows the compositor when it changes its mind.
+     * Snapshot-backed; always `false` outside Wayland and on compositors
+     * without KDE's server-decoration protocol.
+     */
+    public var isDecorationSuppressed: Boolean by mutableStateOf(false)
+        private set
+
     @Volatile
     private var willHideListener: (() -> Unit)? = null
     private var shownListener: (() -> Unit)? = null
@@ -1703,6 +1718,7 @@ public class TaoWindow internal constructor(
                 if (!minimized) requestRedraw()
                 minimizedListeners.forEach { it.invoke(minimized) }
             }
+            TaoEventCode.DECORATIONS_SUPPRESSED -> isDecorationSuppressed = a != 0
             TaoEventCode.CURSOR_MOVED -> pointerMoveListener?.invoke(a, b)
             TaoEventCode.CURSOR_LEFT -> pointerExitedListener?.invoke()
             TaoEventCode.MOUSE_DOWN -> pointerButtonListener?.invoke(a, true)

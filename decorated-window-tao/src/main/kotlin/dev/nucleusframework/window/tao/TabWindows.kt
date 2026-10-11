@@ -332,6 +332,12 @@ private fun TabBody(
 @Composable
 @ExperimentalNucleusApi
 public fun DecoratedWindowScope.DefaultTabTitleBar(strip: @Composable () -> Unit) {
+    // A compositor that wants no decorations (#816) takes the bar away, not
+    // the tabs: the strip stays, on its own.
+    if ((this as TaoDecoratedWindowScope).window.isDecorationSuppressed) {
+        Box(Modifier.fillMaxWidth()) { strip() }
+        return
+    }
     BasicTitleBar(layoutPolicy = TitleBarLayoutPolicy.FillCenter) {
         Box(Modifier.fillMaxWidth()) { strip() }
     }
