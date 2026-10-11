@@ -145,8 +145,11 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // native button-centering constraints once the window is shown.
     val heightHolder = LocalRequestedTitleBarHeight.current
 
-    // The compositor wants no decorations (#816): no bar, no reserved band.
+    // The compositor wants no decorations (#816): no bar, no reserved band,
+    // and no fullscreen overlay left armed by an earlier composition.
     if (taoWindow.isDecorationSuppressed) {
+        val holder = LocalFullscreenTitleBarHolder.current
+        if (holder?.content != null) holder.content = null
         SideEffect { heightHolder.value = 0f }
         return
     }

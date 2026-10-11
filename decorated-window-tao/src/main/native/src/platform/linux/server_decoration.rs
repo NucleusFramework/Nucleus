@@ -209,19 +209,29 @@ pub(crate) fn watch(handle: u64, gtk_window: &gtk::Window) {
 }
 
 fn attach(handle: u64, window: &gtk::Window) {
+    // A re-map that creates no object would leave a suppression reported
+    // before the unmap with nothing left to lift it.
+    if !try_attach(handle, window) {
+        report(handle, false);
+    }
+}
+
+fn try_attach(handle: u64, window: &gtk::Window) -> bool {
     // The map handler runs after GTK's class handler: the surface, the
-    // toplevel and GTK's own decoration object already exist.
-    if !window.style_context().has_class("csd") {
-        return;
+    // toplevel and GTK's own decoration object already exist. GTK marks a
+    // client-decorated window without client shadows `solid-csd`.
+    let style = window.style_context();
+    if !style.has_class("csd") && !style.has_class("solid-csd") {
+        return false;
     }
     let display = window.display();
     if !display.backend().is_wayland() {
-        return;
+        return false;
     }
     let Some(gdk_window) = window.window() else {
-        return;
+        return false;
     };
-    let Some(wl) = wayland() else { return };
+    let Some(wl) = wayland() else { return false };
     unsafe {
         let gdk_display_ptr: *mut gtk::gdk::ffi::GdkDisplay = display.to_glib_none().0;
         let gdk_window_ptr: *mut gtk::gdk::ffi::GdkWindow = gdk_window.to_glib_none().0;
@@ -230,11 +240,11 @@ fn attach(handle: u64, window: &gtk::Window) {
                 as *mut WlProxy;
         let surface = gdk_wayland_sys::gdk_wayland_window_get_wl_surface(gdk_window_ptr as *mut _);
         if wl_display.is_null() || surface.is_null() {
-            return;
+            return false;
         }
         let manager = manager_for(wl, wl_display);
         if manager.is_null() {
-            return;
+            return false;
         }
         detach(handle);
         let proxy = (wl.marshal_flags)(
@@ -247,7 +257,7 @@ fn attach(handle: u64, window: &gtk::Window) {
             surface,
         );
         if proxy.is_null() {
-            return;
+            return false;
         }
         static LISTENER: [unsafe extern "C" fn(*mut c_void, *mut WlProxy, u32); 1] = [on_mode];
         (wl.add_listener)(
@@ -273,6 +283,7 @@ fn attach(handle: u64, window: &gtk::Window) {
                 .proxy = proxy
         });
     }
+    true
 }
 
 fn detach(handle: u64) {
@@ -298,21 +309,26 @@ fn detach(handle: u64) {
 
 unsafe extern "C" fn on_mode(data: *mut c_void, proxy: *mut WlProxy, mode: u32) {
     let handle = data as usize as u64;
-    let changed = DECORATIONS.with(|d| {
-        let mut d = d.borrow_mut();
-        let Some(decoration) = d.get_mut(&handle).filter(|it| it.proxy == proxy) else {
-            return None;
-        };
+    let current = DECORATIONS.with(|d| d.borrow().get(&handle).is_some_and(|it| it.proxy == proxy));
+    if current {
         // `server` is no reason to drop the client's chrome: KWin only sends it
         // while it still resolves our request, or under a rule that forces its
         // own frame, which GTK's CSD keeps drawing under anyway.
-        let suppressed = mode == MODE_NONE;
-        (decoration.suppressed != suppressed).then(|| {
-            decoration.suppressed = suppressed;
-            suppressed
-        })
+        report(handle, mode == MODE_NONE);
+    }
+}
+
+/// Tells the JVM about `suppressed` unless it already knows.
+fn report(handle: u64, suppressed: bool) {
+    let changed = DECORATIONS.with(|d| {
+        let mut d = d.borrow_mut();
+        let decoration = d.entry(handle).or_insert(Decoration {
+            proxy: ptr::null_mut(),
+            suppressed: false,
+        });
+        std::mem::replace(&mut decoration.suppressed, suppressed) != suppressed
     });
-    if let Some(suppressed) = changed {
+    if changed {
         dispatch(handle, EVENT_DECORATIONS_SUPPRESSED, suppressed as i32, 0);
     }
 }

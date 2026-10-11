@@ -35,6 +35,7 @@ import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.TitleBarLayoutPolicy
 import dev.nucleusframework.window.WindowScaffold
 import dev.nucleusframework.window.tao.workspace.RelocatedContentHost
+import dev.nucleusframework.window.windowDragArea
 
 /**
  * What a tab's body gets to see: the tab, its workspace, and the actions tab
@@ -333,9 +334,10 @@ private fun TabBody(
 @ExperimentalNucleusApi
 public fun DecoratedWindowScope.DefaultTabTitleBar(strip: @Composable () -> Unit) {
     // A compositor that wants no decorations (#816) takes the bar away, not
-    // the tabs: the strip stays, on its own.
-    if ((this as TaoDecoratedWindowScope).window.isDecorationSuppressed) {
-        Box(Modifier.fillMaxWidth()) { strip() }
+    // the tabs: the strip stays, on its own, and still moves the window.
+    val window = (this as TaoDecoratedWindowScope).window
+    if (window.isDecorationSuppressed) {
+        Box(Modifier.fillMaxWidth().windowDragArea(window = window)) { strip() }
         return
     }
     BasicTitleBar(layoutPolicy = TitleBarLayoutPolicy.FillCenter) {
