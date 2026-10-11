@@ -1360,6 +1360,12 @@ public final class dev/nucleusframework/window/tao/TaoRenderBackend : java/lang/
 	public static fun values ()[Ldev/nucleusframework/window/tao/TaoRenderBackend;
 }
 
+public final class dev/nucleusframework/window/tao/TaoRootsForTest {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoRootsForTest;
+	public final fun getRoots ()Ljava/util/List;
+}
+
 public final class dev/nucleusframework/window/tao/TaoScreenGeometry {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoScreenGeometry;
