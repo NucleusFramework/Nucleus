@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.window.WindowExceptionHandler
+import dev.nucleusframework.window.ExperimentalNucleusApi
+import dev.nucleusframework.window.tao.TaoRootsForTest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -424,9 +426,9 @@ internal fun platformLayersSceneBundle(
 /**
  * Returns a [PlatformContext] view whose [PlatformContext.semanticsOwnerListener]
  * additionally registers every announced owner with [edtGuard] and
- * [damageTracker], and which hands the scene [outOfFrameExecutor].
+ * [damageTracker], which hands the scene [outOfFrameExecutor], and which lists its roots in [TaoRootsForTest].
  */
-@OptIn(InternalComposeUiApi::class)
+@OptIn(InternalComposeUiApi::class, ExperimentalNucleusApi::class)
 private fun PlatformContext.withOwnerListeners(
     edtGuard: RectManagerEdtGuard,
     damageTracker: LayerDamageTracker,
@@ -436,4 +438,6 @@ private fun PlatformContext.withOwnerListeners(
         override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener =
             damageTracker.wrapListener(edtGuard.wrapListener(this@withOwnerListeners.semanticsOwnerListener))
         override val outOfFrameExecutor: PlatformOutOfFrameExecutor? = outOfFrameExecutor
+        override val rootForTestListener: PlatformContext.RootForTestListener =
+            TaoRootsForTest.wrap(this@withOwnerListeners.rootForTestListener)
     }
