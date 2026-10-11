@@ -55,6 +55,8 @@ dependencies {
     testImplementation(compose.desktop.currentOs)
     // The Material 3 AlertDialog the headful appearance film compares against (the Lab's gallery)
     testImplementation(libs.compose.material3)
+    // runComposeUiTest for composables testable without a real window
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
 
 java {
