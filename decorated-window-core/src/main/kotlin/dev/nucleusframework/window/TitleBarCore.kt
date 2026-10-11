@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -25,6 +26,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.MeasurePolicy
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onSizeChanged
@@ -69,9 +72,51 @@ public fun GenericTitleBarImpl(
     applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     onPlace: (() -> Unit)? = null,
     backgroundContent: @Composable () -> Unit = {},
+    collapseWhenEmpty: Boolean = false,
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit,
 ) {
     val titleBarInfo = LocalTitleBarInfo.current
+    // Whether [content] laid out no child at all, written by its measure policy
+    // and read by the bar's own height. Only consulted with [collapseWhenEmpty]:
+    // a bar left with nothing to show (no window controls, no app content)
+    // takes no room and draws nothing.
+    val contentEmpty = remember { mutableStateOf(false) }
+    val barHeightModifier =
+        if (collapseWhenEmpty) {
+            Modifier.layout { measurable, constraints ->
+                val height = style.metrics.height.roundToPx()
+                val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+                if (contentEmpty.value) {
+                    layout(placeable.width, 0) {}
+                } else {
+                    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                }
+            }
+        } else {
+            Modifier.height(style.metrics.height)
+        }
+    val baseMeasurePolicy =
+        rememberTitleBarMeasurePolicy(
+            state = state,
+            applyTitleBar = applyTitleBar,
+            // [controlButtonsPlacementDirection] drives the *side* the
+            // control-button group is placed on, independently of its
+            // internal order. Defaults to [controlButtonsDirection].
+            controlButtonsDirection = controlButtonsPlacementDirection,
+            layoutPolicy = layoutPolicy,
+        )
+    val measurePolicy =
+        if (collapseWhenEmpty) {
+            remember(baseMeasurePolicy) {
+                MeasurePolicy { measurables, constraints ->
+                    val empty = measurables.isEmpty()
+                    if (contentEmpty.value != empty) contentEmpty.value = empty
+                    with(baseMeasurePolicy) { measure(measurables, constraints) }
+                }
+            }
+        } else {
+            baseMeasurePolicy
+        }
 
     val background by style.colors.backgroundFor(state)
 
@@ -109,8 +154,8 @@ public fun GenericTitleBarImpl(
                         Modifier.focusProperties { canFocus = false }
                     },
                 ).layoutId(TITLE_BAR_LAYOUT_ID)
-                .height(style.metrics.height)
                 .onSizeChanged { with(density) { applyTitleBar(it.height.toDp(), state) } }
+                .then(barHeightModifier)
                 .fillMaxWidth(),
     ) {
         backgroundContent()
@@ -127,16 +172,7 @@ public fun GenericTitleBarImpl(
                 }
             },
             modifier = Modifier.fillMaxSize().onPlaced { onPlace?.invoke() },
-            measurePolicy =
-                rememberTitleBarMeasurePolicy(
-                    state = state,
-                    applyTitleBar = applyTitleBar,
-                    // [controlButtonsPlacementDirection] drives the *side* the
-                    // control-button group is placed on, independently of its
-                    // internal order. Defaults to [controlButtonsDirection].
-                    controlButtonsDirection = controlButtonsPlacementDirection,
-                    layoutPolicy = layoutPolicy,
-                ),
+            measurePolicy = measurePolicy,
         )
     }
 }

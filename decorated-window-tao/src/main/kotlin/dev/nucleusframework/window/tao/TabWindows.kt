@@ -7,7 +7,6 @@
 
 package dev.nucleusframework.window.tao
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,9 +34,7 @@ import dev.nucleusframework.window.DecoratedWindowScope
 import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.TitleBarLayoutPolicy
 import dev.nucleusframework.window.WindowScaffold
-import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.tao.workspace.RelocatedContentHost
-import dev.nucleusframework.window.windowDragArea
 
 /**
  * What a tab's body gets to see: the tab, its workspace, and the actions tab
@@ -335,20 +332,6 @@ private fun TabBody(
 @Composable
 @ExperimentalNucleusApi
 public fun DecoratedWindowScope.DefaultTabTitleBar(strip: @Composable () -> Unit) {
-    // A compositor that wants no decorations (#816) takes the bar away, not
-    // the tabs: the strip stays, on its own, and still moves the window.
-    val taoScope = this as TaoDecoratedWindowScope
-    val window = taoScope.window
-    if (window.isDecorationSuppressed) {
-        val background by LocalTitleBarStyle.current.colors.backgroundFor(taoScope.state)
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(background)
-                .windowDragArea(window = window),
-        ) { strip() }
-        return
-    }
     BasicTitleBar(layoutPolicy = TitleBarLayoutPolicy.FillCenter) {
         Box(Modifier.fillMaxWidth()) { strip() }
     }
