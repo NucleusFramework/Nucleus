@@ -368,7 +368,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 // ahead of `content()`.
                 when (Platform.Current) {
                     Platform.Linux ->
-                        if (linuxLayout != null && (!decorationSuppressed || titleBarState.isFullscreen)) {
+                        if (linuxLayout != null && (!decorationSuppressed || useOverlay)) {
                             WindowControlsLinux(
                                 win = taoWindow,
                                 state = titleBarState,
@@ -376,12 +376,21 @@ public fun DecoratedWindowScope.BasicTitleBar(
                                 isMinimizable = taoWindow.isMinimizable,
                                 isMaximizable = taoWindow.isMaximizable,
                                 style = style,
-                                // Suppressed (#816): no window controls, but a
-                                // fullscreen window keeps its way out — the
-                                // maximize slot turns into exit-fullscreen.
+                                // Suppressed (#816): no window controls. The
+                                // fullscreen overlay, revealed on demand like
+                                // GNOME's and Firefox's, keeps the way out the
+                                // layout already offers (maximize turns into
+                                // exit-fullscreen); an inline fullscreen bar
+                                // collapses like Qt's, leaving it to the app.
                                 layout =
                                     if (decorationSuppressed) {
-                                        linuxLayout.copy(buttons = listOf(LinuxTitleBarButton.MAXIMIZE))
+                                        linuxLayout.copy(
+                                            buttons =
+                                                linuxLayout.buttons.filter {
+                                                    it ==
+                                                        LinuxTitleBarButton.MAXIMIZE
+                                                },
+                                        )
                                     } else {
                                         linuxLayout
                                     },
