@@ -4,6 +4,7 @@ import dev.nucleusframework.window.TitleBarHitTestTest
 import dev.nucleusframework.window.tao.TaoWindowResizableTest
 import dev.nucleusframework.window.tao.TaoWindowScrollTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
+import dev.nucleusframework.window.tao.deco.FullscreenOverlayVisibilityTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
 import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
@@ -538,6 +539,21 @@ public object TaoSceneTestBattery {
         }
         run("TaoTouchEventTimeTest: idleLongerThanTheUnambiguousClockRangeReanchors") {
             TaoTouchEventTimeTest().idleLongerThanTheUnambiguousClockRangeReanchors()
+        }
+        run("FullscreenOverlayVisibilityTest: mouseFollowsTheTopEdge") {
+            FullscreenOverlayVisibilityTest().mouseFollowsTheTopEdge()
+        }
+        run("FullscreenOverlayVisibilityTest: aTapAnywhereRevealsTheHiddenBar") {
+            FullscreenOverlayVisibilityTest().aTapAnywhereRevealsTheHiddenBar()
+        }
+        run("FullscreenOverlayVisibilityTest: aTapOutsideTheShownBarHidesIt") {
+            FullscreenOverlayVisibilityTest().aTapOutsideTheShownBarHidesIt()
+        }
+        run("FullscreenOverlayVisibilityTest: aTapOnTheShownBarKeepsIt") {
+            FullscreenOverlayVisibilityTest().aTapOnTheShownBarKeepsIt()
+        }
+        run("FullscreenOverlayVisibilityTest: touchMovesAndReleasesLeaveItAsIs") {
+            FullscreenOverlayVisibilityTest().touchMovesAndReleasesLeaveItAsIs()
         }
         run("TaoSceneScrollTest: one wheel unit scrolls ten dp on macOS") {
             TaoSceneScrollTest().`one wheel unit scrolls ten dp on macOS`()

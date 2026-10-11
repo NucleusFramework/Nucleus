@@ -100,15 +100,17 @@ internal fun FullscreenOverlayHost(
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull() ?: continue
-                        val onBar = change.position.y < titleBarHeightPx
-                        if (change.type != PointerType.Touch) {
-                            visible = onBar
-                        } else if (event.type == PointerEventType.Press) {
-                            // GNOME HIG: a tap anywhere reveals the controls,
-                            // another one outside them hides them again; a tap
-                            // on the shown bar is for its buttons.
-                            if (!(visible && onBar)) visible = !visible
-                            if (visible) touchReveal++
+                        val touch = change.type == PointerType.Touch
+                        val next =
+                            fullscreenOverlayVisibility(
+                                visible = visible,
+                                touch = touch,
+                                press = event.type == PointerEventType.Press,
+                                onBar = change.position.y < titleBarHeightPx,
+                            )
+                        if (next != null) {
+                            visible = next
+                            if (touch && next) touchReveal++
                         }
                     }
                 }
@@ -144,3 +146,23 @@ internal fun FullscreenOverlayHost(
         }
     }
 }
+
+/**
+ * The overlay's visibility after a pointer event, `null` when the event leaves
+ * it as is. The mouse follows the top edge: over the bar it shows, anywhere
+ * else it hides. Touch follows the GNOME HIG: a tap anywhere reveals the bar,
+ * another one outside it hides it again, and a tap on the shown bar is for its
+ * buttons; only presses count.
+ */
+internal fun fullscreenOverlayVisibility(
+    visible: Boolean,
+    touch: Boolean,
+    press: Boolean,
+    onBar: Boolean,
+): Boolean? =
+    when {
+        !touch -> onBar
+        !press -> null
+        visible && onBar -> true
+        else -> !visible
+    }

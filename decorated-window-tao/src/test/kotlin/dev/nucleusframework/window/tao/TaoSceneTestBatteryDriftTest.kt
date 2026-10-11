@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao
 
 import dev.nucleusframework.window.TitleBarHitTestTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
+import dev.nucleusframework.window.tao.deco.FullscreenOverlayVisibilityTest
 import dev.nucleusframework.window.tao.dnd.TaoSyntheticDndTest
 import dev.nucleusframework.window.tao.dnd.TaoTransferableAccessGuardTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
@@ -71,6 +72,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoKeyRepeatTest::class.java,
             TaoSyntheticMouseWheelEventTest::class.java,
             TaoTouchEventTimeTest::class.java,
+            FullscreenOverlayVisibilityTest::class.java,
             Win32WheelDeltaTest::class.java,
             LinuxWheelDeltaTest::class.java,
             MacOsWheelDeltaTest::class.java,
@@ -129,6 +131,7 @@ class TaoSceneTestBatteryDriftTest {
         mapOf(
             TaoMainDispatcherHandoffTest::class.java to "spawns real threads against the JVM dispatcher",
             TaoMainDispatcherReproTest::class.java to "spawns real threads against the JVM dispatcher",
+            TaoDecorationEventWireTest::class.java to "reads events.rs from the source tree",
             StandalonePanelNativeSmokeTest::class.java to "loads the Windows native popup chain",
             StandalonePanelLinuxNativeSmokeTest::class.java to "loads the Linux native popup chain",
             OutboundDragPumpNativeSmokeTest::class.java to "resolves the platform DnD JNI entry points",
