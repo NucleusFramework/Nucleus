@@ -4,6 +4,8 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class FullscreenOverlayVisibilityTest {
     @Test
@@ -87,7 +89,7 @@ class FullscreenOverlayVisibilityTest {
     }
 
     @Test
-    fun aPenPressOnTheTopBandRevealsTheBar() {
+    fun aPenThatNeverHoversRevealsTheBarFromTheTopBand() {
         assertEquals(
             restart(),
             decide(false, PointerType.Stylus, PointerEventType.Press, inContact = true, onBar = true),
@@ -98,18 +100,60 @@ class FullscreenOverlayVisibilityTest {
         )
     }
 
+    @Test
+    fun aHoveringPenNeverRevealsOrArmsTheBarByContact() {
+        assertEquals(
+            keep(),
+            decide(false, PointerType.Stylus, PointerEventType.Press, inContact = true, onBar = true, penHovers = true),
+        )
+        assertEquals(
+            keep(),
+            decide(true, PointerType.Stylus, PointerEventType.Press, inContact = true, onBar = true, penHovers = true),
+        )
+    }
+
+    @Test
+    fun onlyAPenMovingOutOfContactHovers() {
+        assertTrue(isPenHover(PointerType.Stylus, PointerEventType.Move, inContact = false))
+        assertFalse(isPenHover(PointerType.Stylus, PointerEventType.Move, inContact = true))
+        assertFalse(isPenHover(PointerType.Stylus, PointerEventType.Release, inContact = false))
+        assertFalse(isPenHover(PointerType.Mouse, PointerEventType.Move, inContact = false))
+    }
+
+    @Test
+    fun aPenLeavingFollowsTheTopEdge() {
+        assertEquals(
+            cancel(false),
+            decide(true, PointerType.Stylus, PointerEventType.Exit, inContact = false, onBar = false),
+        )
+    }
+
+    @Test
+    fun unknownPointersHover() {
+        assertEquals(
+            cancel(true),
+            decide(false, PointerType.Unknown, PointerEventType.Move, inContact = false, onBar = true),
+        )
+        assertEquals(
+            cancel(false),
+            decide(true, PointerType.Unknown, PointerEventType.Press, inContact = true, onBar = false),
+        )
+    }
+
     private fun decide(
         visible: Boolean,
         pointer: PointerType,
         event: PointerEventType,
         inContact: Boolean,
         onBar: Boolean,
+        penHovers: Boolean = false,
     ) = fullscreenOverlayUpdate(
         visible = visible,
         pointer = pointer,
         event = event,
         inContact = inContact,
         onBar = onBar,
+        penHovers = penHovers,
     )
 
     private fun cancel(visible: Boolean) = OverlayUpdate(visible, OverlayAutoHide.Cancel)

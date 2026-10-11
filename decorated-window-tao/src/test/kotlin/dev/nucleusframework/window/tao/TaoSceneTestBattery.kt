@@ -564,8 +564,20 @@ public object TaoSceneTestBattery {
         run("FullscreenOverlayVisibilityTest: aPenLiftEndsTheStrokeWithoutHidingTheBar") {
             FullscreenOverlayVisibilityTest().aPenLiftEndsTheStrokeWithoutHidingTheBar()
         }
-        run("FullscreenOverlayVisibilityTest: aPenPressOnTheTopBandRevealsTheBar") {
-            FullscreenOverlayVisibilityTest().aPenPressOnTheTopBandRevealsTheBar()
+        run("FullscreenOverlayVisibilityTest: aPenThatNeverHoversRevealsTheBarFromTheTopBand") {
+            FullscreenOverlayVisibilityTest().aPenThatNeverHoversRevealsTheBarFromTheTopBand()
+        }
+        run("FullscreenOverlayVisibilityTest: aHoveringPenNeverRevealsOrArmsTheBarByContact") {
+            FullscreenOverlayVisibilityTest().aHoveringPenNeverRevealsOrArmsTheBarByContact()
+        }
+        run("FullscreenOverlayVisibilityTest: onlyAPenMovingOutOfContactHovers") {
+            FullscreenOverlayVisibilityTest().onlyAPenMovingOutOfContactHovers()
+        }
+        run("FullscreenOverlayVisibilityTest: aPenLeavingFollowsTheTopEdge") {
+            FullscreenOverlayVisibilityTest().aPenLeavingFollowsTheTopEdge()
+        }
+        run("FullscreenOverlayVisibilityTest: unknownPointersHover") {
+            FullscreenOverlayVisibilityTest().unknownPointersHover()
         }
         run("TaoSceneScrollTest: one wheel unit scrolls ten dp on macOS") {
             TaoSceneScrollTest().`one wheel unit scrolls ten dp on macOS`()
