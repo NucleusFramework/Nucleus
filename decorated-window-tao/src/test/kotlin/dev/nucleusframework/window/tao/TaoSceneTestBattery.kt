@@ -561,6 +561,12 @@ public object TaoSceneTestBattery {
         run("FullscreenOverlayVisibilityTest: aPenInContactLeavesItAsIs") {
             FullscreenOverlayVisibilityTest().aPenInContactLeavesItAsIs()
         }
+        run("FullscreenOverlayVisibilityTest: aPenLiftEndsTheStrokeWithoutHidingTheBar") {
+            FullscreenOverlayVisibilityTest().aPenLiftEndsTheStrokeWithoutHidingTheBar()
+        }
+        run("FullscreenOverlayVisibilityTest: aPenPressOnTheTopBandRevealsTheBar") {
+            FullscreenOverlayVisibilityTest().aPenPressOnTheTopBandRevealsTheBar()
+        }
         run("TaoSceneScrollTest: one wheel unit scrolls ten dp on macOS") {
             TaoSceneScrollTest().`one wheel unit scrolls ten dp on macOS`()
         }

@@ -159,6 +159,13 @@ internal data class OverlayUpdate(
     val autoHide: OverlayAutoHide,
 )
 
+// Every outcome, allocated once: the update runs for each pointer event.
+private val Unchanged = OverlayUpdate(visible = null, autoHide = OverlayAutoHide.Keep)
+private val RevealedByTap = OverlayUpdate(visible = true, autoHide = OverlayAutoHide.Restart)
+private val HiddenByTap = OverlayUpdate(visible = false, autoHide = OverlayAutoHide.Keep)
+private val HoverOnBar = OverlayUpdate(visible = true, autoHide = OverlayAutoHide.Cancel)
+private val HoverOffBar = OverlayUpdate(visible = false, autoHide = OverlayAutoHide.Cancel)
+
 /**
  * How the overlay reacts to a pointer event. A hovering pointer (a mouse, a pen
  * out of contact) follows the top edge: over the bar it shows, anywhere else it
@@ -166,7 +173,9 @@ internal data class OverlayUpdate(
  * under the pointer. A finger follows the GNOME HIG: a tap anywhere reveals the
  * bar and restarts its auto-hide, another one outside it hides it again, a tap
  * on the shown bar is for its buttons; only presses count. A pen in contact is
- * drawing, not asking for the bar, and changes nothing.
+ * drawing and changes nothing, from pen-down to lift, except a press on the top
+ * band, which reveals the bar like a tap: a pen that reports no hover has no
+ * other way to reach it.
  */
 internal fun fullscreenOverlayUpdate(
     visible: Boolean,
@@ -175,15 +184,19 @@ internal fun fullscreenOverlayUpdate(
     inContact: Boolean,
     onBar: Boolean,
 ): OverlayUpdate =
-    when {
-        pointer == PointerType.Touch ->
-            if (event != PointerEventType.Press) {
-                OverlayUpdate(visible = null, autoHide = OverlayAutoHide.Keep)
-            } else {
-                val next = (visible && onBar) || !visible
-                OverlayUpdate(next, if (next) OverlayAutoHide.Restart else OverlayAutoHide.Keep)
+    when (pointer) {
+        PointerType.Touch ->
+            when {
+                event != PointerEventType.Press -> Unchanged
+                !visible || onBar -> RevealedByTap
+                else -> HiddenByTap
             }
-        inContact && (pointer == PointerType.Stylus || pointer == PointerType.Eraser) ->
-            OverlayUpdate(visible = null, autoHide = OverlayAutoHide.Keep)
-        else -> OverlayUpdate(visible = onBar, autoHide = OverlayAutoHide.Cancel)
+        PointerType.Stylus, PointerType.Eraser ->
+            when {
+                event == PointerEventType.Press && onBar -> RevealedByTap
+                // The lift ends a stroke: still contact, not hover.
+                inContact || event == PointerEventType.Press || event == PointerEventType.Release -> Unchanged
+                else -> if (onBar) HoverOnBar else HoverOffBar
+            }
+        else -> if (onBar) HoverOnBar else HoverOffBar
     }

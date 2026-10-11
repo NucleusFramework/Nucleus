@@ -74,6 +74,30 @@ class FullscreenOverlayVisibilityTest {
         assertEquals(keep(), decide(true, PointerType.Stylus, PointerEventType.Move, inContact = true, onBar = false))
     }
 
+    @Test
+    fun aPenLiftEndsTheStrokeWithoutHidingTheBar() {
+        assertEquals(
+            keep(),
+            decide(true, PointerType.Stylus, PointerEventType.Release, inContact = false, onBar = false),
+        )
+        assertEquals(
+            keep(),
+            decide(false, PointerType.Eraser, PointerEventType.Release, inContact = false, onBar = true),
+        )
+    }
+
+    @Test
+    fun aPenPressOnTheTopBandRevealsTheBar() {
+        assertEquals(
+            restart(),
+            decide(false, PointerType.Stylus, PointerEventType.Press, inContact = true, onBar = true),
+        )
+        assertEquals(
+            restart(),
+            decide(true, PointerType.Stylus, PointerEventType.Press, inContact = true, onBar = true),
+        )
+    }
+
     private fun decide(
         visible: Boolean,
         pointer: PointerType,
