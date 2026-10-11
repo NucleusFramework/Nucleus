@@ -318,15 +318,13 @@ unsafe extern "C" fn on_mode(data: *mut c_void, proxy: *mut WlProxy, mode: u32) 
     }
 }
 
-/// Tells the JVM about `suppressed` unless it already knows.
+/// Tells the JVM about `suppressed` unless it already knows. Only windows
+/// attached once have an entry, and only they ever reported anything.
 fn report(handle: u64, suppressed: bool) {
     let changed = DECORATIONS.with(|d| {
-        let mut d = d.borrow_mut();
-        let decoration = d.entry(handle).or_insert(Decoration {
-            proxy: ptr::null_mut(),
-            suppressed: false,
-        });
-        std::mem::replace(&mut decoration.suppressed, suppressed) != suppressed
+        d.borrow_mut()
+            .get_mut(&handle)
+            .is_some_and(|it| std::mem::replace(&mut it.suppressed, suppressed) != suppressed)
     });
     if changed {
         dispatch(handle, EVENT_DECORATIONS_SUPPRESSED, suppressed as i32, 0);

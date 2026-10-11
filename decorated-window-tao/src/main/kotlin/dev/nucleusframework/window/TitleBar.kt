@@ -145,6 +145,34 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // native button-centering constraints once the window is shown.
     val heightHolder = LocalRequestedTitleBarHeight.current
 
+    // Push the resolved title-bar background into the Skia clear color,
+    // re-applied every frame by every Tao host (macOS / Windows / Linux), so
+    // any Compose region without an explicit background matches the chrome
+    // color rather than flashing a hardcoded white or — on Linux — showing
+    // the desktop through the transparent CSD clear. This is the Tao
+    // equivalent of the AWT NSWindow background that jbr/jni get for free from
+    // the user's theme (see `DecoratedWindowBody`'s `Modifier.background`).
+    // On Linux the host still carves the rounded corners back to transparent
+    // after rendering.
+    // Published before the #816 suppression return below: a collapsed bar
+    // still owns the window's clear, or Linux would show the desktop through.
+    // Keyed content stack: co-composed WindowBackground survives when this
+    // TitleBar is removed (clearContent only drops this writer).
+    // Fully transparent windows (#416): WindowClearColorLayers coerces opaque
+    // chrome colours to alpha-0 for the clear only — the TitleBar still paints
+    // its own bar; empty client regions stay see-through.
+    val titleBarBackground by style.colors.backgroundFor(currentState)
+    val clearColorLayers = LocalWindowClearColorLayers.current
+    val clearColorKey = remember { Any() }
+    SideEffect {
+        clearColorLayers?.setContent(clearColorKey, titleBarBackground.toArgb())
+    }
+    DisposableEffect(clearColorKey) {
+        onDispose {
+            clearColorLayers?.clearContent(clearColorKey)
+        }
+    }
+
     // The compositor wants no decorations (#816): no bar, no reserved band,
     // and no fullscreen overlay left armed by an earlier composition.
     if (taoWindow.isDecorationSuppressed) {
@@ -240,32 +268,6 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // Chrome's fullscreen toolbar. Animating here again would trail AppKit's
     // own slide by the tween duration.
     val menuBarOffset = if (isFullscreenWithNewControls) menuBarOffsetPt.dp else 0.dp
-
-    // Push the resolved title-bar background into the Skia clear color,
-    // re-applied every frame by every Tao host (macOS / Windows / Linux), so
-    // any Compose region without an explicit background matches the chrome
-    // color rather than flashing a hardcoded white or — on Linux — showing
-    // the desktop through the transparent CSD clear. This is the Tao
-    // equivalent of the AWT NSWindow background that jbr/jni get for free from
-    // the user's theme (see `DecoratedWindowBody`'s `Modifier.background`).
-    // On Linux the host still carves the rounded corners back to transparent
-    // after rendering.
-    // Keyed content stack: co-composed WindowBackground survives when this
-    // TitleBar is removed (clearContent only drops this writer).
-    // Fully transparent windows (#416): WindowClearColorLayers coerces opaque
-    // chrome colours to alpha-0 for the clear only — the TitleBar still paints
-    // its own bar; empty client regions stay see-through.
-    val titleBarBackground by style.colors.backgroundFor(currentState)
-    val clearColorLayers = LocalWindowClearColorLayers.current
-    val clearColorKey = remember { Any() }
-    SideEffect {
-        clearColorLayers?.setContent(clearColorKey, titleBarBackground.toArgb())
-    }
-    DisposableEffect(clearColorKey) {
-        onDispose {
-            clearColorLayers?.clearContent(clearColorKey)
-        }
-    }
 
     // Push the animated offset back to native so the AppKit traffic-light
     // replacements follow the Compose title bar pixel-for-pixel.
