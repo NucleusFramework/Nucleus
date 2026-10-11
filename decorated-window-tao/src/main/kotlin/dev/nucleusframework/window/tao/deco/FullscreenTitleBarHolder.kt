@@ -100,17 +100,21 @@ internal fun FullscreenOverlayHost(
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull() ?: continue
-                        val touch = change.type == PointerType.Touch
                         val next =
                             fullscreenOverlayVisibility(
                                 visible = visible,
-                                touch = touch,
-                                press = event.type == PointerEventType.Press,
+                                pointer = change.type,
+                                event = event.type,
                                 onBar = change.position.y < titleBarHeightPx,
                             )
-                        if (next != null) {
-                            visible = next
-                            if (touch && next) touchReveal++
+                        if (next != null) visible = next
+                        // A hovering pointer owns the bar from now on: a hide
+                        // still pending from an earlier tap must not fire
+                        // under it. A tap that shows the bar restarts it.
+                        if (!change.type.revealsByTap) {
+                            touchReveal = 0
+                        } else if (next == true) {
+                            touchReveal++
                         }
                     }
                 }
@@ -148,21 +152,28 @@ internal fun FullscreenOverlayHost(
 }
 
 /**
+ * Pointers that cannot hover, a finger or a pen on the screen: they reveal the
+ * bar by tapping rather than by reaching the top edge.
+ */
+internal val PointerType.revealsByTap: Boolean
+    get() = this == PointerType.Touch || this == PointerType.Stylus || this == PointerType.Eraser
+
+/**
  * The overlay's visibility after a pointer event, `null` when the event leaves
- * it as is. The mouse follows the top edge: over the bar it shows, anywhere
- * else it hides. Touch follows the GNOME HIG: a tap anywhere reveals the bar,
- * another one outside it hides it again, and a tap on the shown bar is for its
- * buttons; only presses count.
+ * it as is. A hovering pointer follows the top edge: over the bar it shows,
+ * anywhere else it hides. A pointer that [revealsByTap] follows the GNOME HIG:
+ * a tap anywhere reveals the bar, another one outside it hides it again, and a
+ * tap on the shown bar is for its buttons; only presses count.
  */
 internal fun fullscreenOverlayVisibility(
     visible: Boolean,
-    touch: Boolean,
-    press: Boolean,
+    pointer: PointerType,
+    event: PointerEventType,
     onBar: Boolean,
 ): Boolean? =
     when {
-        !touch -> onBar
-        !press -> null
+        !pointer.revealsByTap -> onBar
+        event != PointerEventType.Press -> null
         visible && onBar -> true
         else -> !visible
     }
