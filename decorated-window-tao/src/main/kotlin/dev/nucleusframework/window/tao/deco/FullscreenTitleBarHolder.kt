@@ -69,8 +69,9 @@ internal fun FullscreenOverlayHost(
     content: @Composable () -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
-    // Bumped by every touch that reveals the bar or lands on it; each bump
-    // restarts the auto-hide below.
+    // Drives the auto-hide below, as [fullscreenOverlayUpdate] decides: a finger
+    // tap that shows the bar bumps it (restarting the hide), a hovering pointer
+    // resets it to 0 (cancelling a hide still pending under the cursor).
     var touchReveal by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
 
@@ -100,21 +101,19 @@ internal fun FullscreenOverlayHost(
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull() ?: continue
-                        val next =
-                            fullscreenOverlayVisibility(
+                        val update =
+                            fullscreenOverlayUpdate(
                                 visible = visible,
                                 pointer = change.type,
                                 event = event.type,
+                                inContact = change.pressed,
                                 onBar = change.position.y < titleBarHeightPx,
                             )
-                        if (next != null) visible = next
-                        // A hovering pointer owns the bar from now on: a hide
-                        // still pending from an earlier tap must not fire
-                        // under it. A tap that shows the bar restarts it.
-                        if (!change.type.revealsByTap) {
-                            touchReveal = 0
-                        } else if (next == true) {
-                            touchReveal++
+                        update.visible?.let { visible = it }
+                        when (update.autoHide) {
+                            OverlayAutoHide.Restart -> touchReveal++
+                            OverlayAutoHide.Cancel -> touchReveal = 0
+                            OverlayAutoHide.Keep -> Unit
                         }
                     }
                 }
@@ -151,29 +150,40 @@ internal fun FullscreenOverlayHost(
     }
 }
 
-/**
- * Pointers that cannot hover, a finger or a pen on the screen: they reveal the
- * bar by tapping rather than by reaching the top edge.
- */
-internal val PointerType.revealsByTap: Boolean
-    get() = this == PointerType.Touch || this == PointerType.Stylus || this == PointerType.Eraser
+/** What a pointer event does to the touch auto-hide of the overlay. */
+internal enum class OverlayAutoHide { Restart, Cancel, Keep }
+
+/** The overlay's visibility after a pointer event (`null`: as is) and its auto-hide. */
+internal data class OverlayUpdate(
+    val visible: Boolean?,
+    val autoHide: OverlayAutoHide,
+)
 
 /**
- * The overlay's visibility after a pointer event, `null` when the event leaves
- * it as is. A hovering pointer follows the top edge: over the bar it shows,
- * anywhere else it hides. A pointer that [revealsByTap] follows the GNOME HIG:
- * a tap anywhere reveals the bar, another one outside it hides it again, and a
- * tap on the shown bar is for its buttons; only presses count.
+ * How the overlay reacts to a pointer event. A hovering pointer (a mouse, a pen
+ * out of contact) follows the top edge: over the bar it shows, anywhere else it
+ * hides, and a hide still pending from a tap is cancelled so it never fires
+ * under the pointer. A finger follows the GNOME HIG: a tap anywhere reveals the
+ * bar and restarts its auto-hide, another one outside it hides it again, a tap
+ * on the shown bar is for its buttons; only presses count. A pen in contact is
+ * drawing, not asking for the bar, and changes nothing.
  */
-internal fun fullscreenOverlayVisibility(
+internal fun fullscreenOverlayUpdate(
     visible: Boolean,
     pointer: PointerType,
     event: PointerEventType,
+    inContact: Boolean,
     onBar: Boolean,
-): Boolean? =
+): OverlayUpdate =
     when {
-        !pointer.revealsByTap -> onBar
-        event != PointerEventType.Press -> null
-        visible && onBar -> true
-        else -> !visible
+        pointer == PointerType.Touch ->
+            if (event != PointerEventType.Press) {
+                OverlayUpdate(visible = null, autoHide = OverlayAutoHide.Keep)
+            } else {
+                val next = (visible && onBar) || !visible
+                OverlayUpdate(next, if (next) OverlayAutoHide.Restart else OverlayAutoHide.Keep)
+            }
+        inContact && (pointer == PointerType.Stylus || pointer == PointerType.Eraser) ->
+            OverlayUpdate(visible = null, autoHide = OverlayAutoHide.Keep)
+        else -> OverlayUpdate(visible = onBar, autoHide = OverlayAutoHide.Cancel)
     }

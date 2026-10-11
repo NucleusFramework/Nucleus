@@ -4,53 +4,93 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class FullscreenOverlayVisibilityTest {
     @Test
-    fun mouseFollowsTheTopEdge() {
-        assertEquals(true, decide(visible = false, PointerType.Mouse, PointerEventType.Move, onBar = true))
-        assertEquals(false, decide(visible = true, PointerType.Mouse, PointerEventType.Move, onBar = false))
-        assertEquals(false, decide(visible = true, PointerType.Mouse, PointerEventType.Press, onBar = false))
+    fun mouseFollowsTheTopEdgeAndCancelsAutoHide() {
+        assertEquals(
+            cancel(true),
+            decide(false, PointerType.Mouse, PointerEventType.Move, inContact = false, onBar = true),
+        )
+        assertEquals(
+            cancel(false),
+            decide(true, PointerType.Mouse, PointerEventType.Move, inContact = false, onBar = false),
+        )
+        assertEquals(
+            cancel(false),
+            decide(true, PointerType.Mouse, PointerEventType.Press, inContact = true, onBar = false),
+        )
     }
 
     @Test
     fun aTapAnywhereRevealsTheHiddenBar() {
-        assertEquals(true, decide(visible = false, PointerType.Touch, PointerEventType.Press, onBar = false))
-        assertEquals(true, decide(visible = false, PointerType.Touch, PointerEventType.Press, onBar = true))
+        assertEquals(
+            restart(),
+            decide(false, PointerType.Touch, PointerEventType.Press, inContact = true, onBar = false),
+        )
+        assertEquals(
+            restart(),
+            decide(false, PointerType.Touch, PointerEventType.Press, inContact = true, onBar = true),
+        )
     }
 
     @Test
     fun aTapOutsideTheShownBarHidesIt() {
-        assertEquals(false, decide(visible = true, PointerType.Touch, PointerEventType.Press, onBar = false))
+        assertEquals(
+            OverlayUpdate(false, OverlayAutoHide.Keep),
+            decide(true, PointerType.Touch, PointerEventType.Press, inContact = true, onBar = false),
+        )
     }
 
     @Test
-    fun aTapOnTheShownBarKeepsIt() {
-        assertEquals(true, decide(visible = true, PointerType.Touch, PointerEventType.Press, onBar = true))
+    fun aTapOnTheShownBarKeepsItAndRestartsAutoHide() {
+        assertEquals(restart(), decide(true, PointerType.Touch, PointerEventType.Press, inContact = true, onBar = true))
     }
 
     @Test
     fun touchMovesAndReleasesLeaveItAsIs() {
-        assertNull(decide(visible = true, PointerType.Touch, PointerEventType.Move, onBar = false))
-        assertNull(decide(visible = false, PointerType.Touch, PointerEventType.Release, onBar = true))
+        assertEquals(keep(), decide(true, PointerType.Touch, PointerEventType.Move, inContact = true, onBar = false))
+        assertEquals(
+            keep(),
+            decide(false, PointerType.Touch, PointerEventType.Release, inContact = false, onBar = true),
+        )
     }
 
     @Test
-    fun aPenTapsLikeAFinger() {
-        assertEquals(true, decide(visible = false, PointerType.Stylus, PointerEventType.Press, onBar = false))
-        assertEquals(true, decide(visible = false, PointerType.Eraser, PointerEventType.Press, onBar = false))
-        assertTrue(PointerType.Stylus.revealsByTap)
-        assertFalse(PointerType.Mouse.revealsByTap)
-        assertFalse(PointerType.Unknown.revealsByTap)
+    fun aHoveringPenFollowsTheTopEdge() {
+        assertEquals(
+            cancel(true),
+            decide(false, PointerType.Stylus, PointerEventType.Move, inContact = false, onBar = true),
+        )
+        assertEquals(
+            cancel(false),
+            decide(true, PointerType.Eraser, PointerEventType.Move, inContact = false, onBar = false),
+        )
+    }
+
+    @Test
+    fun aPenInContactLeavesItAsIs() {
+        assertEquals(keep(), decide(false, PointerType.Stylus, PointerEventType.Press, inContact = true, onBar = false))
+        assertEquals(keep(), decide(true, PointerType.Stylus, PointerEventType.Move, inContact = true, onBar = false))
     }
 
     private fun decide(
         visible: Boolean,
         pointer: PointerType,
         event: PointerEventType,
+        inContact: Boolean,
         onBar: Boolean,
-    ) = fullscreenOverlayVisibility(visible = visible, pointer = pointer, event = event, onBar = onBar)
+    ) = fullscreenOverlayUpdate(
+        visible = visible,
+        pointer = pointer,
+        event = event,
+        inContact = inContact,
+        onBar = onBar,
+    )
+
+    private fun cancel(visible: Boolean) = OverlayUpdate(visible, OverlayAutoHide.Cancel)
+
+    private fun restart() = OverlayUpdate(true, OverlayAutoHide.Restart)
+
+    private fun keep() = OverlayUpdate(null, OverlayAutoHide.Keep)
 }

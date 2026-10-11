@@ -540,8 +540,8 @@ public object TaoSceneTestBattery {
         run("TaoTouchEventTimeTest: idleLongerThanTheUnambiguousClockRangeReanchors") {
             TaoTouchEventTimeTest().idleLongerThanTheUnambiguousClockRangeReanchors()
         }
-        run("FullscreenOverlayVisibilityTest: mouseFollowsTheTopEdge") {
-            FullscreenOverlayVisibilityTest().mouseFollowsTheTopEdge()
+        run("FullscreenOverlayVisibilityTest: mouseFollowsTheTopEdgeAndCancelsAutoHide") {
+            FullscreenOverlayVisibilityTest().mouseFollowsTheTopEdgeAndCancelsAutoHide()
         }
         run("FullscreenOverlayVisibilityTest: aTapAnywhereRevealsTheHiddenBar") {
             FullscreenOverlayVisibilityTest().aTapAnywhereRevealsTheHiddenBar()
@@ -549,14 +549,17 @@ public object TaoSceneTestBattery {
         run("FullscreenOverlayVisibilityTest: aTapOutsideTheShownBarHidesIt") {
             FullscreenOverlayVisibilityTest().aTapOutsideTheShownBarHidesIt()
         }
-        run("FullscreenOverlayVisibilityTest: aTapOnTheShownBarKeepsIt") {
-            FullscreenOverlayVisibilityTest().aTapOnTheShownBarKeepsIt()
+        run("FullscreenOverlayVisibilityTest: aTapOnTheShownBarKeepsItAndRestartsAutoHide") {
+            FullscreenOverlayVisibilityTest().aTapOnTheShownBarKeepsItAndRestartsAutoHide()
         }
         run("FullscreenOverlayVisibilityTest: touchMovesAndReleasesLeaveItAsIs") {
             FullscreenOverlayVisibilityTest().touchMovesAndReleasesLeaveItAsIs()
         }
-        run("FullscreenOverlayVisibilityTest: aPenTapsLikeAFinger") {
-            FullscreenOverlayVisibilityTest().aPenTapsLikeAFinger()
+        run("FullscreenOverlayVisibilityTest: aHoveringPenFollowsTheTopEdge") {
+            FullscreenOverlayVisibilityTest().aHoveringPenFollowsTheTopEdge()
+        }
+        run("FullscreenOverlayVisibilityTest: aPenInContactLeavesItAsIs") {
+            FullscreenOverlayVisibilityTest().aPenInContactLeavesItAsIs()
         }
         run("TaoSceneScrollTest: one wheel unit scrolls ten dp on macOS") {
             TaoSceneScrollTest().`one wheel unit scrolls ten dp on macOS`()
