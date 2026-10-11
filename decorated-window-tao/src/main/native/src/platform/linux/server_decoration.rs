@@ -184,12 +184,15 @@ unsafe fn load_wayland() -> Option<Wayland> {
 thread_local! {
     /// `wl_display*` → its bound manager, or null when the compositor has none.
     static MANAGERS: RefCell<HashMap<usize, usize>> = RefCell::new(HashMap::new());
-    /// Window handle → its live decoration object and the last state reported.
+    /// Window handle → its decoration object and the last state reported.
     static DECORATIONS: RefCell<HashMap<u64, Decoration>> = RefCell::new(HashMap::new());
 }
 
 struct Decoration {
+    /// Null while the window is unmapped.
     proxy: *mut WlProxy,
+    /// What the JVM was last told. Outlives the proxy: a re-map creates a new
+    /// object, and its first answer is only reported if it differs.
     suppressed: bool,
 }
 
@@ -199,6 +202,10 @@ struct Decoration {
 pub(crate) fn watch(handle: u64, gtk_window: &gtk::Window) {
     gtk_window.connect_map(move |window| attach(handle, window));
     gtk_window.connect_unmap(move |_| detach(handle));
+    gtk_window.connect_destroy(move |_| {
+        detach(handle);
+        DECORATIONS.with(|d| d.borrow_mut().remove(&handle));
+    });
 }
 
 fn attach(handle: u64, window: &gtk::Window) {
@@ -256,26 +263,34 @@ fn attach(handle: u64, window: &gtk::Window) {
             0,
             MODE_CLIENT,
         );
-        let suppressed =
-            DECORATIONS.with(|d| d.borrow().get(&handle).is_some_and(|it| it.suppressed));
         DECORATIONS.with(|d| {
             d.borrow_mut()
-                .insert(handle, Decoration { proxy, suppressed })
+                .entry(handle)
+                .or_insert(Decoration {
+                    proxy: ptr::null_mut(),
+                    suppressed: false,
+                })
+                .proxy = proxy
         });
     }
 }
 
 fn detach(handle: u64) {
-    let Some(decoration) = DECORATIONS.with(|d| d.borrow_mut().remove(&handle)) else {
+    let proxy = DECORATIONS.with(|d| {
+        d.borrow_mut()
+            .get_mut(&handle)
+            .map(|it| std::mem::replace(&mut it.proxy, ptr::null_mut()))
+    });
+    let Some(proxy) = proxy.filter(|it| !it.is_null()) else {
         return;
     };
     let Some(wl) = wayland() else { return };
     unsafe {
         (wl.marshal_flags)(
-            decoration.proxy,
+            proxy,
             DECORATION_RELEASE,
             ptr::null(),
-            (wl.get_version)(decoration.proxy),
+            (wl.get_version)(proxy),
             WL_MARSHAL_FLAG_DESTROY,
         );
     }
