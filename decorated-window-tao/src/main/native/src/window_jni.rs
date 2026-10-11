@@ -622,3 +622,15 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     };
     (window.scale_factor() * 1000.0) as jint
 }
+
+/// Drops the Windows shutdown block reason a session-end query set (#751), once
+/// the quit it was waiting for has been cancelled by a window staying open.
+/// No-op elsewhere. Event-loop thread only.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeReleaseShutdownBlock(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::release_block();
+}

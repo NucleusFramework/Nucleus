@@ -491,6 +491,32 @@ pub fn set_magnify_hook(hook: fn(crate::window::WindowId, f32)) {
   let _ = MAGNIFY_HOOK.set(hook);
 }
 
+// PATCH(nucleus): session-end hooks (#751).
+//
+// Upstream tao answers `WM_QUERYENDSESSION` with `DefWindowProc` (TRUE) — the
+// app agrees to logoff / restart / shutdown / a Restart Manager close without
+// being asked, so no window gets a close request it could veto. Every tao
+// window's procedure calls `QUERY_END_SESSION_HOOK` instead and returns its
+// answer (`true` = the session may end), and `END_SESSION_HOOK` on
+// `WM_ENDSESSION` (`true` = the session is ending, `false` = it was cancelled)
+// instead of tao's own handling. Both get `(hwnd, …, nested)`: `hwnd` is the thread
+// target window whatever window received the message (the one to hang a
+// shutdown block reason on), `nested` is `true` when the event handler is
+// already running further up this thread's stack.
+// Idempotent: the first installed hooks win.
+pub(crate) static QUERY_END_SESSION_HOOK: std::sync::OnceLock<fn(isize, isize, bool) -> bool> =
+  std::sync::OnceLock::new();
+pub(crate) static END_SESSION_HOOK: std::sync::OnceLock<fn(isize, bool, bool)> =
+  std::sync::OnceLock::new();
+
+/// Install the hooks every tao window calls on `WM_QUERYENDSESSION`
+/// (`(hwnd, lParam, nested) -> may end`) and `WM_ENDSESSION`
+/// (`(hwnd, ending, nested)`). See [`QUERY_END_SESSION_HOOK`].
+pub fn set_end_session_hooks(query: fn(isize, isize, bool) -> bool, end: fn(isize, bool, bool)) {
+  let _ = QUERY_END_SESSION_HOOK.set(query);
+  let _ = END_SESSION_HOOK.set(end);
+}
+
 // PATCH(nucleus): modal size/move loop hook.
 //
 // Windows runs a modal message loop between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE
