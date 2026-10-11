@@ -73,9 +73,6 @@ internal fun FullscreenOverlayHost(
     // tap that shows the bar bumps it (restarting the hide), a hovering pointer
     // resets it to 0 (cancelling a hide still pending under the cursor).
     var touchReveal by remember { mutableIntStateOf(0) }
-    // Whether the pen has hovered at least once: such a pen reaches the bar
-    // like a mouse, and its strokes never reveal it.
-    var penHovers by remember { mutableStateOf(false) }
     val density = LocalDensity.current
 
     // Clear residual overlay content when leaving fullscreen so the next
@@ -104,15 +101,12 @@ internal fun FullscreenOverlayHost(
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull() ?: continue
-                        if (isPenHover(change.type, event.type, change.pressed)) penHovers = true
                         val update =
                             fullscreenOverlayUpdate(
                                 visible = visible,
                                 pointer = change.type,
                                 event = event.type,
-                                inContact = change.pressed,
                                 onBar = change.position.y < titleBarHeightPx,
-                                penHovers = penHovers,
                             )
                         update.visible?.let { visible = it }
                         when (update.autoHide) {
@@ -172,48 +166,22 @@ private val HOVER_ON_BAR = OverlayUpdate(visible = true, autoHide = OverlayAutoH
 private val HOVER_OFF_BAR = OverlayUpdate(visible = false, autoHide = OverlayAutoHide.Cancel)
 
 /**
- * How the overlay reacts to a pointer event. A hovering pointer (a mouse, a pen
- * out of contact) follows the top edge: over the bar it shows, anywhere else it
- * hides, and a hide still pending from a tap is cancelled so it never fires
- * under the pointer. A finger follows the GNOME HIG: a tap anywhere reveals the
- * bar and restarts its auto-hide, another one outside it hides it again, a tap
- * on the shown bar is for its buttons; only presses count. A pen in contact is
- * drawing and changes nothing, from pen-down to lift. A pen that has never
- * hovered ([penHovers] false) has no other way to reach the bar, so for it a
- * press on the top band reveals the bar like a tap; a stroke started there does
- * too, the price of reaching it at all.
+ * How the overlay reacts to a pointer event. A hovering pointer (a mouse) follows
+ * the top edge: over the bar it shows, anywhere else it hides, and a hide still
+ * pending from a tap is cancelled so it never fires under the pointer. A finger
+ * follows the GNOME HIG: a tap anywhere reveals the bar and restarts its
+ * auto-hide, another one outside it hides it again, a tap on the shown bar is for
+ * its buttons; only presses count.
  */
 internal fun fullscreenOverlayUpdate(
     visible: Boolean,
     pointer: PointerType,
     event: PointerEventType,
-    inContact: Boolean,
     onBar: Boolean,
-    penHovers: Boolean,
 ): OverlayUpdate =
-    when (pointer) {
-        PointerType.Touch ->
-            when {
-                event != PointerEventType.Press -> UNCHANGED
-                !visible || onBar -> REVEALED_BY_TAP
-                else -> HIDDEN_BY_TAP
-            }
-        PointerType.Stylus, PointerType.Eraser ->
-            when {
-                !penHovers && event == PointerEventType.Press && onBar -> REVEALED_BY_TAP
-                // The lift ends a stroke: still contact, not hover.
-                inContact || event == PointerEventType.Release -> UNCHANGED
-                else -> if (onBar) HOVER_ON_BAR else HOVER_OFF_BAR
-            }
-        else -> if (onBar) HOVER_ON_BAR else HOVER_OFF_BAR
+    when {
+        pointer != PointerType.Touch -> if (onBar) HOVER_ON_BAR else HOVER_OFF_BAR
+        event != PointerEventType.Press -> UNCHANGED
+        !visible || onBar -> REVEALED_BY_TAP
+        else -> HIDDEN_BY_TAP
     }
-
-/** A pen moving above the screen without touching it, which only some pens report. */
-internal fun isPenHover(
-    pointer: PointerType,
-    event: PointerEventType,
-    inContact: Boolean,
-): Boolean =
-    (pointer == PointerType.Stylus || pointer == PointerType.Eraser) &&
-        event == PointerEventType.Move &&
-        !inContact

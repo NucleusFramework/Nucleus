@@ -555,27 +555,6 @@ public object TaoSceneTestBattery {
         run("FullscreenOverlayVisibilityTest: touchMovesAndReleasesLeaveItAsIs") {
             FullscreenOverlayVisibilityTest().touchMovesAndReleasesLeaveItAsIs()
         }
-        run("FullscreenOverlayVisibilityTest: aHoveringPenFollowsTheTopEdge") {
-            FullscreenOverlayVisibilityTest().aHoveringPenFollowsTheTopEdge()
-        }
-        run("FullscreenOverlayVisibilityTest: aPenInContactLeavesItAsIs") {
-            FullscreenOverlayVisibilityTest().aPenInContactLeavesItAsIs()
-        }
-        run("FullscreenOverlayVisibilityTest: aPenLiftEndsTheStrokeWithoutHidingTheBar") {
-            FullscreenOverlayVisibilityTest().aPenLiftEndsTheStrokeWithoutHidingTheBar()
-        }
-        run("FullscreenOverlayVisibilityTest: aPenThatNeverHoversRevealsTheBarFromTheTopBand") {
-            FullscreenOverlayVisibilityTest().aPenThatNeverHoversRevealsTheBarFromTheTopBand()
-        }
-        run("FullscreenOverlayVisibilityTest: aHoveringPenNeverRevealsOrArmsTheBarByContact") {
-            FullscreenOverlayVisibilityTest().aHoveringPenNeverRevealsOrArmsTheBarByContact()
-        }
-        run("FullscreenOverlayVisibilityTest: onlyAPenMovingOutOfContactHovers") {
-            FullscreenOverlayVisibilityTest().onlyAPenMovingOutOfContactHovers()
-        }
-        run("FullscreenOverlayVisibilityTest: aPenLeavingFollowsTheTopEdge") {
-            FullscreenOverlayVisibilityTest().aPenLeavingFollowsTheTopEdge()
-        }
         run("FullscreenOverlayVisibilityTest: unknownPointersHover") {
             FullscreenOverlayVisibilityTest().unknownPointersHover()
         }
