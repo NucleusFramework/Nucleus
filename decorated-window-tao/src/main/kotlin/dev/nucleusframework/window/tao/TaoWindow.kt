@@ -257,7 +257,8 @@ public class TaoWindow internal constructor(
     /**
      * `true` while the compositor asks this window not to draw any decoration:
      * KWin answers the window's client-side decoration request with "none" on
-     * Plasma Mobile, or under a "No titlebar and frame" window rule. The
+     * Plasma Mobile or under a "No titlebar and frame" window rule, or with
+     * "server" (it draws its own frame) under a rule forcing its titlebar. The
      * stock title bars ([dev.nucleusframework.window.BasicTitleBar] and every
      * bar built on it, [dev.nucleusframework.window.DialogTitleBar]) then
      * collapse to nothing and [dev.nucleusframework.window.WindowScaffold]

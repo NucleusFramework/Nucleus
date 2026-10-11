@@ -91,8 +91,8 @@ public object TaoEventCode {
 
     /**
      * Linux/Wayland only. `a` = 1 when the compositor asked the window not to
-     * draw decorations (KWin's server-decoration `none` mode), 0 when it
-     * allows them again.
+     * draw decorations (KWin's server-decoration `none` or `server` mode), 0
+     * when it allows them again.
      */
     internal const val DECORATIONS_SUPPRESSED: Int = 27
 }

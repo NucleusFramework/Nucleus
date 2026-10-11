@@ -4,7 +4,9 @@
 // GTK 3 announces client-side decorations through that protocol and binds the
 // reply, but its `mode` handler only reacts to `client` / `server`: a `none`
 // answer — KWin on Plasma Mobile, or a "No titlebar and frame" window rule —
-// is dropped, and GTK exposes neither the object nor the mode. So the window
+// is dropped, and so is a `server` answer KWin imposes under a rule forcing its
+// own titlebar (GTK re-requests `client` and keeps drawing; the window ends up
+// with two title bars). GTK exposes neither the object nor the mode. So the window
 // gets a decoration object of its own, created after GTK's on every map, which
 // requests the same `client` mode GTK did. KWin keeps the most recently created
 // object of a surface as *the* decoration of the window
@@ -72,6 +74,7 @@ struct Wayland {
     roundtrip_queue: unsafe extern "C" fn(*mut WlProxy, *mut WlEventQueue) -> c_int,
     queue_destroy: unsafe extern "C" fn(*mut WlEventQueue),
     registry_interface: *const WlInterface,
+    callback_interface: *const WlInterface,
     manager_interface: *const WlInterface,
     decoration_interface: *const WlInterface,
 }
@@ -82,12 +85,12 @@ unsafe impl Send for Wayland {}
 unsafe impl Sync for Wayland {}
 
 const WL_MARSHAL_FLAG_DESTROY: u32 = 1;
+const WL_DISPLAY_SYNC: u32 = 0;
 const WL_DISPLAY_GET_REGISTRY: u32 = 1;
 const WL_REGISTRY_BIND: u32 = 0;
 const MANAGER_CREATE: u32 = 0;
 const DECORATION_RELEASE: u32 = 0;
 const DECORATION_REQUEST_MODE: u32 = 1;
-const MODE_NONE: u32 = 0;
 const MODE_CLIENT: u32 = 1;
 const MANAGER_NAME: &CStr = c"org_kde_kwin_server_decoration_manager";
 
@@ -110,6 +113,7 @@ unsafe fn load_wayland() -> Option<Wayland> {
         (!p.is_null()).then_some(p)
     };
     let registry_interface = sym(c"wl_registry_interface")? as *const WlInterface;
+    let callback_interface = sym(c"wl_callback_interface")? as *const WlInterface;
     let surface_interface = sym(c"wl_surface_interface")? as *const WlInterface;
 
     // Hand-written tables of server-decoration.xml (version 1), the same
@@ -176,6 +180,7 @@ unsafe fn load_wayland() -> Option<Wayland> {
         roundtrip_queue: std::mem::transmute(sym(c"wl_display_roundtrip_queue")?),
         queue_destroy: std::mem::transmute(sym(c"wl_event_queue_destroy")?),
         registry_interface,
+        callback_interface,
         manager_interface,
         decoration_interface,
     })
@@ -191,6 +196,13 @@ thread_local! {
 struct Decoration {
     /// Null while the window is unmapped.
     proxy: *mut WlProxy,
+    /// `wl_display.sync` sent right after our request, null once done. Until
+    /// then the `mode` events are the compositor's base policy (sent on
+    /// creation, and again by KWin when it installs the object), not the
+    /// answer: the last one before `done` is.
+    sync: *mut WlProxy,
+    /// The latest `mode` received while `sync` is pending.
+    pending: Option<u32>,
     /// What the JVM was last told. Outlives the proxy: a re-map creates a new
     /// object, and its first answer is only reported if it differs.
     suppressed: bool,
@@ -273,30 +285,59 @@ fn try_attach(handle: u64, window: &gtk::Window) -> bool {
             0,
             MODE_CLIENT,
         );
+        let sync = (wl.marshal_flags)(
+            wl_display,
+            WL_DISPLAY_SYNC,
+            wl.callback_interface,
+            (wl.get_version)(wl_display),
+            0,
+            ptr::null_mut::<c_void>(),
+        );
+        if !sync.is_null() {
+            static SYNC_LISTENER: [unsafe extern "C" fn(*mut c_void, *mut WlProxy, u32); 1] =
+                [on_synced];
+            (wl.add_listener)(
+                sync,
+                SYNC_LISTENER.as_ptr() as *const *const c_void,
+                handle as usize as *mut c_void,
+            );
+        }
         DECORATIONS.with(|d| {
-            d.borrow_mut()
-                .entry(handle)
-                .or_insert(Decoration {
-                    proxy: ptr::null_mut(),
-                    suppressed: false,
-                })
-                .proxy = proxy
+            let mut d = d.borrow_mut();
+            let decoration = d.entry(handle).or_insert(Decoration {
+                proxy: ptr::null_mut(),
+                sync: ptr::null_mut(),
+                pending: None,
+                suppressed: false,
+            });
+            decoration.proxy = proxy;
+            decoration.sync = sync;
+            decoration.pending = None;
         });
     }
     true
 }
 
 fn detach(handle: u64) {
-    let proxy = DECORATIONS.with(|d| {
-        d.borrow_mut()
-            .get_mut(&handle)
-            .map(|it| std::mem::replace(&mut it.proxy, ptr::null_mut()))
-    });
-    let Some(proxy) = proxy.filter(|it| !it.is_null()) else {
+    let Some((proxy, sync)) = DECORATIONS.with(|d| {
+        d.borrow_mut().get_mut(&handle).map(|it| {
+            it.pending = None;
+            (
+                std::mem::replace(&mut it.proxy, ptr::null_mut()),
+                std::mem::replace(&mut it.sync, ptr::null_mut()),
+            )
+        })
+    }) else {
         return;
     };
     let Some(wl) = wayland() else { return };
     unsafe {
+        if !sync.is_null() {
+            (wl.destroy)(sync);
+        }
+        if proxy.is_null() {
+            return;
+        }
         (wl.marshal_flags)(
             proxy,
             DECORATION_RELEASE,
@@ -309,13 +350,43 @@ fn detach(handle: u64) {
 
 unsafe extern "C" fn on_mode(data: *mut c_void, proxy: *mut WlProxy, mode: u32) {
     let handle = data as usize as u64;
-    let current = DECORATIONS.with(|d| d.borrow().get(&handle).is_some_and(|it| it.proxy == proxy));
-    if current {
-        // `server` is no reason to drop the client's chrome: KWin only sends it
-        // while it still resolves our request, or under a rule that forces its
-        // own frame, which GTK's CSD keeps drawing under anyway.
-        report(handle, mode == MODE_NONE);
+    let answered = DECORATIONS.with(|d| {
+        let mut d = d.borrow_mut();
+        let decoration = d.get_mut(&handle).filter(|it| it.proxy == proxy)?;
+        if decoration.sync.is_null() {
+            Some(mode)
+        } else {
+            decoration.pending = Some(mode);
+            None
+        }
+    });
+    if let Some(mode) = answered {
+        apply(handle, mode);
     }
+}
+
+unsafe extern "C" fn on_synced(data: *mut c_void, callback: *mut WlProxy, _serial: u32) {
+    let handle = data as usize as u64;
+    let pending = DECORATIONS.with(|d| {
+        let mut d = d.borrow_mut();
+        let decoration = d.get_mut(&handle).filter(|it| it.sync == callback)?;
+        decoration.sync = ptr::null_mut();
+        Some(decoration.pending.take())
+    });
+    if let Some(wl) = wayland() {
+        (wl.destroy)(callback);
+    }
+    if let Some(Some(mode)) = pending {
+        apply(handle, mode);
+    }
+}
+
+fn apply(handle: u64, mode: u32) {
+    // `none`: no decoration at all. `server`: the compositor embeds the window
+    // in its own frame (KWin only grants it against our `client` request under
+    // a rule forcing its titlebar). Either way the client draws none, as
+    // xdg-decoration clients (Qt, Chromium, Zed) do.
+    report(handle, mode != MODE_CLIENT);
 }
 
 /// Tells the JVM about `suppressed` unless it already knows. Only windows
