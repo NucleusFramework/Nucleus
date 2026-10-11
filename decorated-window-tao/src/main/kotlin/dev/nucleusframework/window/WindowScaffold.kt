@@ -112,8 +112,8 @@ public fun DecoratedWindowScope.WindowScaffold(
     // last measured height would leave a phantom traffic-light / KDE pad over
     // full-window content (macOS fullscreen used to keep 80.dp).
     // A compositor that wants no decorations (#816) gets no window controls:
-    // the stock bars collapse, and whatever the slot still holds has nothing
-    // to make room for.
+    // the stock bars drop them (and collapse when nothing else is left), so
+    // whatever the slot still holds has no controls to make room for.
     val chromeInsets =
         WindowChromeInsets(
             controlsInsets =

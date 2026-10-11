@@ -50,6 +50,7 @@ import dev.nucleusframework.window.tao.event.TaoTrackpadRotationContacts
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.utils.linux.LinuxTitleBarButton
 import dev.nucleusframework.window.utils.linux.rememberLinuxButtonLayout
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -367,7 +368,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 // ahead of `content()`.
                 when (Platform.Current) {
                     Platform.Linux ->
-                        if (linuxLayout != null && !decorationSuppressed) {
+                        if (linuxLayout != null && (!decorationSuppressed || titleBarState.isFullscreen)) {
                             WindowControlsLinux(
                                 win = taoWindow,
                                 state = titleBarState,
@@ -375,7 +376,15 @@ public fun DecoratedWindowScope.BasicTitleBar(
                                 isMinimizable = taoWindow.isMinimizable,
                                 isMaximizable = taoWindow.isMaximizable,
                                 style = style,
-                                layout = linuxLayout,
+                                // Suppressed (#816): no window controls, but a
+                                // fullscreen window keeps its way out — the
+                                // maximize slot turns into exit-fullscreen.
+                                layout =
+                                    if (decorationSuppressed) {
+                                        linuxLayout.copy(buttons = listOf(LinuxTitleBarButton.MAXIMIZE))
+                                    } else {
+                                        linuxLayout
+                                    },
                                 isFullscreen = titleBarState.isFullscreen,
                                 onExitFullscreen = { taoWindow.setFullscreen(false) },
                             )

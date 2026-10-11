@@ -150,7 +150,11 @@ public fun DecoratedWindowScope.WindowControls(
             state = state,
             isFullscreen = state.isFullscreen,
             onExitFullscreen = { window.setFullscreen(false) },
-        )
+        ).filter {
+            // A compositor that wants no decorations (#816) gets no window
+            // controls; leaving fullscreen is the app's own affordance and stays.
+            !window.isDecorationSuppressed || it.type == WindowControlType.ExitFullscreen
+        }
 
     CompositionLocalProvider(LocalLayoutDirection provides controlDir) {
         // Center vertically like core's [TitleBarLayoutPolicy] does: the

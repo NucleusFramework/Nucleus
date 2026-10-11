@@ -293,15 +293,25 @@ fn try_attach(handle: u64, window: &gtk::Window) -> bool {
             0,
             ptr::null_mut::<c_void>(),
         );
-        if !sync.is_null() {
-            static SYNC_LISTENER: [unsafe extern "C" fn(*mut c_void, *mut WlProxy, u32); 1] =
-                [on_synced];
-            (wl.add_listener)(
-                sync,
-                SYNC_LISTENER.as_ptr() as *const *const c_void,
-                handle as usize as *mut c_void,
+        if sync.is_null() {
+            // Without the sync the base policy cannot be told from the answer;
+            // following no decision beats reporting a transient one.
+            (wl.marshal_flags)(
+                proxy,
+                DECORATION_RELEASE,
+                ptr::null(),
+                (wl.get_version)(proxy),
+                WL_MARSHAL_FLAG_DESTROY,
             );
+            return false;
         }
+        static SYNC_LISTENER: [unsafe extern "C" fn(*mut c_void, *mut WlProxy, u32); 1] =
+            [on_synced];
+        (wl.add_listener)(
+            sync,
+            SYNC_LISTENER.as_ptr() as *const *const c_void,
+            handle as usize as *mut c_void,
+        );
         DECORATIONS.with(|d| {
             let mut d = d.borrow_mut();
             let decoration = d.entry(handle).or_insert(Decoration {

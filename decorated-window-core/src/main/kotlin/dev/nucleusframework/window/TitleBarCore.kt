@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.constrainHeight
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
@@ -84,7 +85,7 @@ public fun GenericTitleBarImpl(
     val barHeightModifier =
         if (collapseWhenEmpty) {
             Modifier.layout { measurable, constraints ->
-                val height = style.metrics.height.roundToPx()
+                val height = constraints.constrainHeight(style.metrics.height.roundToPx())
                 val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
                 if (contentEmpty.value) {
                     layout(placeable.width, 0) {}
