@@ -441,6 +441,13 @@ pub(crate) fn run_event_loop_blocking() {
                             window.gtk_window().connect_destroy(move |_| {
                                 crate::state::mark_gtk_destroyed(handle);
                             });
+                            // Popups are no toplevels: nothing to decorate.
+                            if popup_of == 0 {
+                                crate::platform::linux::server_decoration::watch(
+                                    handle,
+                                    window.gtk_window(),
+                                );
+                            }
                         }
 
                         {

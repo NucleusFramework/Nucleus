@@ -1427,6 +1427,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun getX11PortalParent ()Ljava/lang/String;
 	public final fun getX11WindowId ()Ljava/lang/Long;
 	public final fun hide ()V
+	public final fun isDecorationSuppressed ()Z
 	public final fun isFocused ()Z
 	public final fun isFullscreen ()Z
 	public final fun isMaximizable ()Z

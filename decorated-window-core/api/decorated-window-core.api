@@ -1,7 +1,7 @@
 public final class dev/nucleusframework/window/ComposableSingletons$TitleBarCoreKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/ComposableSingletons$TitleBarCoreKt;
 	public fun <init> ()V
-	public final fun getLambda$1482324090$Nucleus_decorated_window_core ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$-126419754$Nucleus_decorated_window_core ()Lkotlin/jvm/functions/Function2;
 }
 
 public final class dev/nucleusframework/window/ControlButtonsDirection : java/lang/Enum {
@@ -209,7 +209,7 @@ public final class dev/nucleusframework/window/TitleBarChildDataNode : androidx/
 }
 
 public final class dev/nucleusframework/window/TitleBarCoreKt {
-	public static final fun GenericTitleBarImpl-A2IcLmc (JLandroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Landroidx/compose/ui/unit/LayoutDirection;Landroidx/compose/ui/unit/LayoutDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;III)V
+	public static final fun GenericTitleBarImpl-xGgWS54 (JLandroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Landroidx/compose/ui/unit/LayoutDirection;Landroidx/compose/ui/unit/LayoutDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;ZLkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;III)V
 	public static final fun getLocalContentColor ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 	public static final fun getLocalControlButtonsDirection ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }

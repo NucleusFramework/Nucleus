@@ -50,6 +50,7 @@ import dev.nucleusframework.window.tao.event.TaoTrackpadRotationContacts
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.utils.linux.LinuxTitleBarButton
 import dev.nucleusframework.window.utils.linux.rememberLinuxButtonLayout
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -144,6 +145,11 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // Publish the resolved height up to DecoratedWindow, which applies the
     // native button-centering constraints once the window is shown.
     val heightHolder = LocalRequestedTitleBarHeight.current
+
+    // The compositor wants no decorations (#816): the bar keeps whatever the
+    // app put in it (tabs, title, menus) but loses the window controls and the
+    // room reserved for them, and takes no room at all when nothing is left.
+    val decorationSuppressed = taoWindow.isDecorationSuppressed
 
     // Modifier-driven flags. `macOSLargeCornerRadius` re-runs the NSToolbar
     // install at composition time so the modifier-driven path matches the
@@ -329,12 +335,16 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 if (!useOverlay) {
                     heightHolder.value = measuredHeight.value
                 }
-                titleBarPadding(
-                    measuredHeight = measuredHeight,
-                    isFullscreen = titleBarState.isFullscreen,
-                    controlIsRtl = controlDir == LayoutDirection.Rtl,
-                    linuxControlsOnRight = linuxLayout?.controlsOnRight,
-                )
+                if (decorationSuppressed) {
+                    PaddingValues(0.dp)
+                } else {
+                    titleBarPadding(
+                        measuredHeight = measuredHeight,
+                        isFullscreen = titleBarState.isFullscreen,
+                        controlIsRtl = controlDir == LayoutDirection.Rtl,
+                        linuxControlsOnRight = linuxLayout?.controlsOnRight,
+                    )
+                }
             },
             onPlace = {
                 // macOS fullscreen: keep the AppKit replacement traffic-lights
@@ -348,6 +358,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 }
             },
             backgroundContent = backgroundContent,
+            collapseWhenEmpty = decorationSuppressed,
             content = { titleBarState ->
                 // Window controls are declared BEFORE user content so core's
                 // [TitleBarMeasurePolicy] places them at the extreme edge first
@@ -357,7 +368,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 // ahead of `content()`.
                 when (Platform.Current) {
                     Platform.Linux ->
-                        if (linuxLayout != null) {
+                        if (linuxLayout != null && (!decorationSuppressed || useOverlay)) {
                             WindowControlsLinux(
                                 win = taoWindow,
                                 state = titleBarState,
@@ -365,7 +376,24 @@ public fun DecoratedWindowScope.BasicTitleBar(
                                 isMinimizable = taoWindow.isMinimizable,
                                 isMaximizable = taoWindow.isMaximizable,
                                 style = style,
-                                layout = linuxLayout,
+                                // Suppressed (#816): no window controls. The
+                                // fullscreen overlay, revealed on demand like
+                                // GNOME's and Firefox's, keeps the way out the
+                                // layout already offers (maximize turns into
+                                // exit-fullscreen); an inline fullscreen bar
+                                // collapses like Qt's, leaving it to the app.
+                                layout =
+                                    if (decorationSuppressed) {
+                                        linuxLayout.copy(
+                                            buttons =
+                                                linuxLayout.buttons.filter {
+                                                    it ==
+                                                        LinuxTitleBarButton.MAXIMIZE
+                                                },
+                                        )
+                                    } else {
+                                        linuxLayout
+                                    },
                                 isFullscreen = titleBarState.isFullscreen,
                                 onExitFullscreen = { taoWindow.setFullscreen(false) },
                             )

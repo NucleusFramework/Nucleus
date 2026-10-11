@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.size
@@ -25,6 +26,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.ControlButtonsDirection
@@ -75,7 +77,12 @@ public fun DecoratedDialogScope.DialogTitleBar(
     // Publish the resolved height up to DecoratedWindow so its native
     // button-centering call uses the dialog's actual title-bar height.
     val heightHolder = LocalRequestedTitleBarHeight.current
-    SideEffect { heightHolder.value = style.metrics.height.value }
+    // The compositor wants no decorations (#816): the bar keeps the app's
+    // content but loses the close button and the room reserved for controls,
+    // and takes no room at all when nothing is left (its measured height,
+    // then 0, is what reaches [heightHolder]).
+    val decorationSuppressed = taoWindow.isDecorationSuppressed
+    if (!decorationSuppressed) SideEffect { heightHolder.value = style.metrics.height.value }
 
     // macOS: flip the AppKit traffic-lights to the right edge when RTL is
     // active. Same path as the windowed [TitleBar].
@@ -102,33 +109,40 @@ public fun DecoratedDialogScope.DialogTitleBar(
             // (with fullscreen 80 dp override), KDE Breeze edge padding, none
             // elsewhere. Dialogs never expose a Linux native control layout
             // (close-only chrome), so [linuxControlsOnRight] = null.
-            titleBarPadding(
-                measuredHeight = measuredHeight,
-                isFullscreen = titleBarState.isFullscreen,
-                controlIsRtl = controlIsRtl,
-                linuxControlsOnRight = null,
-            )
+            if (decorationSuppressed) {
+                PaddingValues(0.dp)
+            } else {
+                titleBarPadding(
+                    measuredHeight = measuredHeight,
+                    isFullscreen = titleBarState.isFullscreen,
+                    controlIsRtl = controlIsRtl,
+                    linuxControlsOnRight = null,
+                )
+            }
         },
+        collapseWhenEmpty = decorationSuppressed,
         content = { _ ->
             // Window controls are declared BEFORE the user content so core's
             // [TitleBarMeasurePolicy] places them at the extreme edge first
             // — same convention as [TitleBar].
-            when (Platform.Current) {
-                Platform.Windows ->
-                    DialogWindowsCloseButton(
-                        onClick = { taoWindow.requestUserClose() },
-                        state = windowState,
-                        modifier = Modifier.align(Alignment.End),
-                        style = style,
-                    )
-                Platform.Linux ->
-                    DialogLinuxCloseButton(
-                        onClick = { taoWindow.requestUserClose() },
-                        state = windowState,
-                        style = style,
-                        modifier = Modifier.align(Alignment.End),
-                    )
-                else -> Unit // macOS uses native AppKit traffic-lights
+            if (!decorationSuppressed) {
+                when (Platform.Current) {
+                    Platform.Windows ->
+                        DialogWindowsCloseButton(
+                            onClick = { taoWindow.requestUserClose() },
+                            state = windowState,
+                            modifier = Modifier.align(Alignment.End),
+                            style = style,
+                        )
+                    Platform.Linux ->
+                        DialogLinuxCloseButton(
+                            onClick = { taoWindow.requestUserClose() },
+                            state = windowState,
+                            style = style,
+                            modifier = Modifier.align(Alignment.End),
+                        )
+                    else -> Unit // macOS uses native AppKit traffic-lights
+                }
             }
 
             content(dialogState)
