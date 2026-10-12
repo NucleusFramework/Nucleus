@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,7 +20,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.lab.designsystem.LabDimens
 import dev.nucleusframework.lab.designsystem.LabShapes
@@ -115,5 +119,41 @@ internal fun StaticCards() {
                 }
             }
         }
+    }
+}
+
+/**
+ * A write made during layout and read in the draw phase of another layer (#755): a label
+ * changes once, `partial.demo.changeAfterSeconds` (default 5) after start, and its
+ * `onSizeChanged` stores the new width, which a bar far below reads in its draw. Nothing else
+ * animates, so no later frame repairs a missed repaint: the bar must end as wide as the label.
+ */
+@Composable
+internal fun LayoutWriteScene() {
+    val changeAfter = System.getProperty("partial.demo.changeAfterSeconds")?.toLongOrNull() ?: 5L
+    var changed by remember { mutableStateOf(false) }
+    var labelWidth by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        delay(changeAfter * 1000)
+        changed = true
+    }
+    val barColor = LabTheme.colors.selection
+    Column(Modifier.fillMaxSize().padding(LabDimens.block)) {
+        // A fixed-size clipped layer: the label's change damages that box alone and moves nothing.
+        Box(Modifier.width(900.dp).height(40.dp).graphicsLayer { clip = true }) {
+            Text(
+                if (changed) "AFTER — a label much wider than the one before it" else "BEFORE",
+                modifier = Modifier.onSizeChanged { labelWidth = it.width },
+                style = LabTheme.typography.title,
+            )
+        }
+        StaticCards()
+        Box(
+            Modifier
+                .width(900.dp)
+                .height(40.dp)
+                .graphicsLayer { clip = true }
+                .drawBehind { drawRect(barColor, size = Size(labelWidth.toFloat(), size.height)) },
+        )
     }
 }

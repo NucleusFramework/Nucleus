@@ -388,6 +388,8 @@ internal class TaoSceneTestScope(
          * `MacPopupPictureCullTest` exercises.
          */
         cullRect: Rect? = null,
+        /** Runs where the host's partial redraw walks the damage (#755), right after it. */
+        onBeforeDraw: (() -> Unit)? = null,
     ): Picture {
         lastFrameDamage = null
         lastFullFrameReason = null
@@ -415,6 +417,7 @@ internal class TaoSceneTestScope(
                 // What the host's partial redraw asks between layout and draw (#755).
                 lastFrameDamage = sceneBundle.frameDamage(width, height)
                 lastFullFrameReason = sceneBundle.fullFrameReason
+                onBeforeDraw?.invoke()
             },
         ).also { lastPicture = it }
     }
