@@ -182,8 +182,8 @@ internal class TaoSceneBundle(
             if (!renderingScope.render(scene, frameRecomposer, canvas, nanoTime, beforeDraw) { closed.get() }) {
                 return@catchExceptions
             }
-            // A layer recorded where the damage tracker could not see it change:
-            // the next frame repaints in full, so there has to be one.
+            // A layer changed where the damage tracker could not see it: the
+            // next frame repaints it, so there has to be one.
             if (damageTracker.afterDraw()) requestFrame()
             renderOverlay?.invoke(canvas)
             edtGuard.afterFrame()
@@ -280,13 +280,23 @@ internal class TaoSceneRenderingScope(
             // The frame's own recomposition may close this scene (its window or popup left the
             // composition); laying it out then throws "RootNodeOwner is already disposed".
             if (isClosed()) return false
-            // `scene.draw` applies the global snapshot again before it draws:
-            // a write since the frame's apply (another thread, a layout
-            // callback) would invalidate a layer after [beforeDraw] measured
-            // the damage. Applied here, only writes landing during the walk
-            // itself can still race it (#755) — see LayerDamageTracker.afterDraw.
+            // `scene.draw` applies the global snapshot again and lays out
+            // before it draws: a write since the frame's apply would
+            // invalidate a layer after [beforeDraw] measured the damage, and
+            // that layer would be redrawn outside the repainted region with no
+            // later frame to repair it (#755). Writes come from other threads
+            // and, above all, from the layout itself — `onSizeChanged`,
+            // `onGloballyPositioned`, `onTextLayout` storing what a draw reads —
+            // so the scene is applied and laid out once more after its layout,
+            // as `scene.draw` would. Only writes landing during that second
+            // pass or the walk itself can still race it: see
+            // LayerDamageTracker.afterDraw.
             if (beforeDraw != null) Snapshot.sendApplyNotifications()
             scene.measureAndLayout()
+            if (beforeDraw != null) {
+                Snapshot.sendApplyNotifications()
+                scene.measureAndLayout()
+            }
             beforeDraw?.invoke(canvas)
             scene.draw(canvas.asComposeCanvas())
         } finally {

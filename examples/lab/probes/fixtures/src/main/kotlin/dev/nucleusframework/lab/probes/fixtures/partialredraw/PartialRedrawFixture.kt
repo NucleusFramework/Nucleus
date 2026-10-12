@@ -41,7 +41,10 @@ import kotlin.system.exitProcess
  *  - `bare` — a full-window background and a counter with no layer of the app's own;
  *  - `tour` — a scripted sequence of every kind of change the damage tracker must get right,
  *    run under `-Dnucleus.tao.partialRedraw.verify=true` by the end-to-end check;
- *  - `torture` — random window-level chaos over partial-friendly churn, see [Torture].
+ *  - `torture` — random window-level chaos over partial-friendly churn, see [Torture];
+ *  - `layout-write` — a value written during layout (`onSizeChanged`) and read by another
+ *    layer's draw: once the label changes, the bar below must be as wide as it, see
+ *    [LayoutWriteScene].
  *
  * `-Dpartial.demo.exitAfterSeconds=N` closes the app after N seconds;
  * `-Dpartial.demo.maximized=true` opens it maximized (the power measurement);
@@ -138,6 +141,7 @@ class PartialRedrawFixture : Fixture {
                             "tour" -> Tour()
                             "torture" -> Torture(windowState)
                             "main-tick" -> MainTick()
+                            "layout-write" -> LayoutWriteScene()
                             else -> BusyWindow(blink = scene != "idle", isolated = scene != "blink-plain")
                         }
                     }
@@ -149,7 +153,7 @@ class PartialRedrawFixture : Fixture {
     private companion object {
         const val SCENE = "partial.demo.scene"
         const val PARTIAL = "nucleus.tao.partialRedraw"
-        val SCENES = listOf("blink", "blink-plain", "idle", "main-tick", "bare", "tour", "torture")
+        val SCENES = listOf("blink", "blink-plain", "idle", "main-tick", "bare", "tour", "torture", "layout-write")
 
         val settleDirDefault: String =
             File(System.getProperty("java.io.tmpdir"), "nucleus-lab-partial-settle").path

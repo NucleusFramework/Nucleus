@@ -131,16 +131,22 @@ internal class LayerDamageTracker {
         }
 
     /**
-     * Call right after the scene drew. Returns true when the draw recorded an
-     * explicit layer somewhere else than in the layer that draws it: what is
-     * on screen may be stale, so the caller schedules another frame — which
-     * [frameDamage] then makes a full one.
+     * Call right after the scene drew. Returns true when what is on screen may
+     * be stale, so the caller schedules another frame:
+     *  - the draw recorded an explicit layer somewhere else than in the layer
+     *    that draws it — [frameDamage] then makes the next frame a full one;
+     *  - a layer was invalidated between the walk and the end of the draw (see
+     *    [racedDuringDraw]) — the next walk sees its new version and repaints
+     *    it, but its invalidation was consumed by this draw, so without this
+     *    nothing would ask for that frame and the layer would stay stale
+     *    outside this frame's repaint until something else changed.
      */
     fun afterDraw(): Boolean {
-        if (PartialRedraw.verify) PartialRedrawVerifier.racedArea = racedDuringDraw()
-        if (!explicitTracking || !GraphicsLayerDrawRegistry.drainForeignRecords()) return false
-        foreignRecord = true
-        return true
+        val raced = racedDuringDraw()
+        if (PartialRedraw.verify) PartialRedrawVerifier.racedArea = raced
+        val foreign = explicitTracking && GraphicsLayerDrawRegistry.drainForeignRecords()
+        if (foreign) foreignRecord = true
+        return foreign || raced != null
     }
 
     /**
@@ -160,9 +166,9 @@ internal class LayerDamageTracker {
      * The footprints of the layers invalidated between the walk and the end of
      * the draw — `scene.draw` applies the global snapshot itself, so a write
      * landing in between (another thread) re-records a layer the damage does
-     * not cover. That frame shows the layer one frame late; the next one sees
-     * the new version and repaints it. For the oracle, which tells this race
-     * from a missed damage.
+     * not cover. That frame shows the layer one frame late; [afterDraw] asks
+     * for the next one, which sees the new version and repaints it. The
+     * oracle uses it too, to tell this race from a missed damage.
      */
     private fun racedDuringDraw(): IntRect? {
         if (!previousValid) return null

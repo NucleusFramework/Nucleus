@@ -1228,6 +1228,9 @@ public object TaoSceneTestBattery {
         run("PartialRedrawTest: a repaint covering 80 percent of the frame is done in full") {
             PartialRedrawTest().`a repaint covering 80 percent of the frame is done in full`()
         }
+        run("PartialRedrawTest: a write made during layout is applied before the damage walk") {
+            PartialRedrawTest().`a write made during layout is applied before the damage walk`()
+        }
         run("PartialRedrawTest: an unpatched Compose reports no damage and keeps rendering") {
             PartialRedrawTest().`an unpatched Compose reports no damage and keeps rendering`()
         }

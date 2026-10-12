@@ -4,10 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import kotlin.test.Test
@@ -86,6 +89,32 @@ class PartialRedrawTest {
         assertTrue(!IntRect(0, 0, 79, 100).coversMostOf(100, 100))
         // No Int overflow on large windows.
         assertTrue(!IntRect(0, 0, 3840, 1000).coversMostOf(3840, 2160))
+    }
+
+    @Test
+    fun `a write made during layout is applied before the damage walk`() {
+        runTaoSceneTest {
+            var wide by mutableStateOf(false)
+            // What an `onSizeChanged` / `onTextLayout` stores for a draw elsewhere to read.
+            val measured = mutableIntStateOf(0)
+            setContent {
+                Box(Modifier.size(if (wide) 80.dp else 20.dp, 10.dp).onSizeChanged { measured.intValue = it.width })
+            }
+            frameUntilIdle()
+            var applied = false
+            val observer = Snapshot.registerApplyObserver { changed, _ -> if (measured in changed) applied = true }
+            try {
+                wide = true
+                var appliedAtWalk: Boolean? = null
+                frame(onBeforeDraw = { appliedAtWalk = applied })
+                // Applied only by `scene.draw`, the layers it invalidates would
+                // be redrawn outside the repaint, with no frame left to repair them.
+                assertEquals(true, appliedAtWalk)
+                assertEquals(80, measured.intValue)
+            } finally {
+                observer.dispose()
+            }
+        }
     }
 
     @Test
