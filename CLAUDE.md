@@ -52,7 +52,7 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR or reviewing one: 
 ## Build & Run
 
 ```bash
-./gradlew :examples:nucleus-demo:run            # Run the flagship demo app
+./gradlew :examples:lab:app:run                  # Run the Lab (test bench app, JVM 25)
 ./gradlew packageDistributionForCurrentOS        # Package for current OS
 ./gradlew packageReleaseDistributionForCurrentOS # Release build with ProGuard
 ./gradlew preMerge                               # Full CI verification
