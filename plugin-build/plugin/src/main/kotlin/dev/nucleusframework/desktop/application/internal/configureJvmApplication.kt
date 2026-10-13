@@ -1229,6 +1229,9 @@ internal fun JvmApplicationContext.configurePlatformSettings(
         OS.Windows -> {
             app.nativeDistributions.windows.also { win ->
                 packageTask.winConsole.set(win.console)
+                packageTask.winCRuntimeDlls.set(
+                    if (win.bundleCRuntime) MsvcRedistLocator.CPP_RUNTIME_DLLS else emptyList(),
+                )
                 packageTask.iconFile.set(win.iconFile.orElse(defaultResources.get { windowsIcon }))
                 packageTask.fileAssociations.set(win.fileAssociations)
             }
