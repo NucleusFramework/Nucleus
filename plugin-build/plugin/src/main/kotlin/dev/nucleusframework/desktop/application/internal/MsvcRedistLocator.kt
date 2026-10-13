@@ -3,6 +3,8 @@ package dev.nucleusframework.desktop.application.internal
 import dev.nucleusframework.internal.utils.currentArch
 import org.gradle.api.logging.Logger
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * Locates the MSVC C/C++ runtime redistributable of the newest Visual Studio install
@@ -42,10 +44,14 @@ internal object MsvcRedistLocator {
     }
 
     /**
-     * Copies [dlls] from the redistributable next to the executable of the jpackage app image(s)
-     * under [destinationDir]: unlike `runtime\bin`, the executable's directory is searched for a
-     * library's dependencies. The whole set goes there, so every runtime DLL the process loads
-     * comes from one version.
+     * Completes the C++ runtime of the jpackage app image(s) under [destinationDir] with [dlls]
+     * from the redistributable, so the process loads a single copy of each, all of one version:
+     * - the DLLs the JDK ships in `runtime\bin` (msvcp140, vcruntime140*) are loaded from there
+     *   by `jvm.dll`, so they are replaced there, unless the JDK's are newer (a binary needs a
+     *   runtime at least as new as its toolset);
+     * - the others (msvcp140_1, ...) go next to the executable: Windows doesn't search
+     *   `runtime\bin` for a library's dependencies, but searches the executable's directory.
+     *   A copy of the JDK's there would be loaded too, beside the one in `runtime\bin`.
      */
     fun bundleIntoAppImage(
         destinationDir: File,
@@ -62,26 +68,64 @@ internal object MsvcRedistLocator {
             )
             return
         }
+        val missing = dlls.filterNot { dll -> File(crtDir, dll).isFile }
+        if (missing.isNotEmpty()) {
+            logger.warn("[windows] C runtime DLLs not found in $crtDir: ${missing.joinToString()}")
+        }
         // jpackage's app image: <destinationDir>/<name>/{<name>.exe, runtime/, app/}
         val appImageRoots =
             destinationDir
                 .walkTopDown()
                 .maxDepth(2)
-                .filter { dir -> dir.isDirectory && File(dir, "runtime").isDirectory }
+                .filter { dir -> dir.isDirectory && File(dir, "runtime/bin").isDirectory }
                 .filter { dir -> dir.children().any { it.extension.equals("exe", ignoreCase = true) } }
                 .toList()
         for (root in appImageRoots) {
-            val missing = dlls.filterNot { dll -> File(crtDir, dll).isFile }
-            dlls
-                .map { File(crtDir, it) }
-                .filter { it.isFile }
-                .forEach { it.copyTo(File(root, it.name), overwrite = true) }
-            if (missing.isNotEmpty()) {
-                logger.warn("[windows] C runtime DLLs not found in $crtDir: ${missing.joinToString()}")
+            val runtimeBin = File(root, "runtime/bin")
+            val (jdkShipped, notShipped) = (dlls - missing.toSet()).partition { File(runtimeBin, it).isFile }
+            val redistVersion = peFileVersion(File(crtDir, REFERENCE_DLL))
+            val jdkVersion = peFileVersion(File(runtimeBin, REFERENCE_DLL))
+            if (jdkVersion != null && redistVersion != null && compareVersions(jdkVersion, redistVersion) > 0) {
+                logger.warn(
+                    "[windows] The JDK's C++ runtime (${jdkVersion.joinToString(".")}) is newer than the MSVC " +
+                        "redistributable (${redistVersion.joinToString(".")}, $crtDir): keeping the JDK's and adding " +
+                        "${notShipped.joinToString()} from the older redistributable. " +
+                        "Update Visual Studio to align them.",
+                )
+            } else {
+                jdkShipped.forEach { File(crtDir, it).copyTo(File(runtimeBin, it), overwrite = true) }
             }
+            notShipped.forEach { File(crtDir, it).copyTo(File(root, it), overwrite = true) }
             logger.info("Bundled the MSVC C/C++ runtime from $crtDir into $root")
         }
     }
+
+    /**
+     * The file version of a PE file, from its `VS_FIXEDFILEINFO` (found by its signature), e.g.
+     * `[14, 42, 34438, 0]`; null when absent.
+     */
+    internal fun peFileVersion(file: File): List<Int>? {
+        if (!file.isFile) return null
+        val bytes = file.readBytes()
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        // dwSignature, dwStrucVersion, dwFileVersionMS, dwFileVersionLS
+        for (offset in 0..bytes.size - FIXED_FILE_INFO_VERSION_END) {
+            if (buffer.getInt(offset) == FIXED_FILE_INFO_SIGNATURE) {
+                val ms = buffer.getInt(offset + FILE_VERSION_MS_OFFSET)
+                val ls = buffer.getInt(offset + FILE_VERSION_LS_OFFSET)
+                return listOf(ms ushr WORD_BITS, ms and WORD_MASK, ls ushr WORD_BITS, ls and WORD_MASK)
+            }
+        }
+        return null
+    }
+
+    private const val REFERENCE_DLL = "msvcp140.dll"
+    private const val FIXED_FILE_INFO_SIGNATURE = 0xFEEF04BD.toInt()
+    private const val FIXED_FILE_INFO_VERSION_END = 16
+    private const val FILE_VERSION_MS_OFFSET = 8
+    private const val FILE_VERSION_LS_OFFSET = 12
+    private const val WORD_BITS = 16
+    private const val WORD_MASK = 0xFFFF
 
     /** Searches `<root>\<year>\<edition>\VC\Redist\MSVC\<version>`, newest version first. */
     internal fun locateCrtDir(
