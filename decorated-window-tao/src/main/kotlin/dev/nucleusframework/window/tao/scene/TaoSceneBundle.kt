@@ -220,7 +220,7 @@ internal class TaoSceneBundle(
             val nanoTime = System.nanoTime()
             frameRecomposer.performFrame(nanoTime)
             frameRecomposer.performFrame(nanoTime)
-            scene.measureAndLayout()
+            scene.measureAndLayoutPastDisposedLayers()
         }
     }
 
@@ -292,10 +292,10 @@ internal class TaoSceneRenderingScope(
             // pass or the walk itself can still race it: see
             // LayerDamageTracker.afterDraw.
             if (beforeDraw != null) Snapshot.sendApplyNotifications()
-            scene.measureAndLayout()
+            scene.measureAndLayoutPastDisposedLayers()
             if (beforeDraw != null) {
                 Snapshot.sendApplyNotifications()
-                scene.measureAndLayout()
+                scene.measureAndLayoutPastDisposedLayers()
             }
             beforeDraw?.invoke(canvas)
             scene.draw(canvas.asComposeCanvas())
@@ -306,6 +306,33 @@ internal class TaoSceneRenderingScope(
         return true
     }
 }
+
+/**
+ * [ComposeScene.measureAndLayout], past the layers the layout itself closes.
+ *
+ * `CanvasLayersComposeScene` lays out its owners from a copy of its list, taken before the main owner's layout. A popup
+ * composed by a subcomposition (`BoxWithConstraints`, `SubcomposeLayout`) leaves it during that layout, and its owner,
+ * disposed by then, is laid out next: "RootNodeOwner is already disposed" — a tab strip's overflow menu, open while
+ * the window grows past the overflow. The closed layer is off the list by then, so the next pass lays out the rest.
+ */
+@OptIn(InternalComposeUiApi::class)
+internal fun ComposeScene.measureAndLayoutPastDisposedLayers() {
+    repeat(MAX_LAYOUT_PASSES - 1) {
+        try {
+            measureAndLayout()
+            return
+        } catch (e: IllegalArgumentException) {
+            if (e.message != DISPOSED_OWNER_MESSAGE) throw e
+        }
+    }
+    measureAndLayout()
+}
+
+// Compose's own message (RootNodeOwner.measureAndLayout's `require`): anything else is a real layout failure.
+private const val DISPOSED_OWNER_MESSAGE = "RootNodeOwner is already disposed"
+
+// One per layer a single layout can close, which is a handful at most.
+private const val MAX_LAYOUT_PASSES = 8
 
 /**
  * Creates a [CanvasLayersComposeScene] wired to a fresh [FrameRecomposer].
