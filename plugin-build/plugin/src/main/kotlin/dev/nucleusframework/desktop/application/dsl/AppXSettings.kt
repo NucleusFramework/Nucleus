@@ -9,6 +9,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
 
+/** Windows AppX / MSIX package options (identity, publisher, tiles, auto-launch extension). */
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class AppXSettings {
     @get:Inject

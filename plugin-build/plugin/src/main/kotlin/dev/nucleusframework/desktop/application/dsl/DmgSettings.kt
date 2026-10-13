@@ -10,6 +10,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
 
+/** macOS DMG installer options: background, window layout, icon positions and signing. */
 @Suppress("AbstractClassCanBeConcreteClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class DmgSettings {
     @get:Inject
@@ -50,6 +51,7 @@ abstract class DmgSettings {
 
     val window: DmgWindowSettings = objects.newInstance(DmgWindowSettings::class.java)
 
+    /** Configures the Finder window shown when the DMG is opened. */
     fun window(fn: Action<DmgWindowSettings>) {
         fn.execute(window)
     }
@@ -91,6 +93,7 @@ enum class DmgFormat(
     ULFO("ULFO"),
 }
 
+/** Position and size of the Finder window shown when the DMG is opened; `null` keeps electron-builder's default. */
 @Suppress("AbstractClassCanBeConcreteClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class DmgWindowSettings {
     /** Window x position. Default: null (electron-builder uses 400) */
@@ -106,6 +109,7 @@ abstract class DmgWindowSettings {
     var height: Int? = null
 }
 
+/** An icon placed in the DMG window at ([x], [y]), as passed to electron-builder's `dmg.contents`. */
 data class DmgContentEntry(
     val x: Int,
     val y: Int,

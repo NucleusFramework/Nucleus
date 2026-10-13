@@ -50,151 +50,151 @@ internal object MethodHandleDetector {
                     descriptor: String,
                     signature: String?,
                     exceptions: Array<out String>?,
-                ): MethodVisitor =
-                    object : MethodVisitor(Opcodes.ASM9) {
-                        // Track the most recent class type from LDC (e.g., LDC Type com/example/Foo)
-                        private var lastClassType: String? = null
-
-                        // Track local variable slots that hold class types
-                        private val localClassTypes = mutableMapOf<Int, String>()
-                        private var lastStringConstant: String? = null
-                        private val localStrings = mutableMapOf<Int, String>()
-
-                        override fun visitCode() {
-                            lastClassType = null
-                            localClassTypes.clear()
-                            lastStringConstant = null
-                            localStrings.clear()
-                        }
-
-                        override fun visitLdcInsn(value: Any?) {
-                            when (value) {
-                                is Type -> {
-                                    if (value.sort == Type.OBJECT) {
-                                        lastClassType = value.className
-                                    }
-                                    lastStringConstant = null
-                                }
-                                is String -> {
-                                    lastStringConstant = value
-                                }
-                                else -> {
-                                    lastStringConstant = null
-                                }
-                            }
-                        }
-
-                        override fun visitVarInsn(
-                            opcode: Int,
-                            varIndex: Int,
-                        ) {
-                            when (opcode) {
-                                Opcodes.ASTORE -> {
-                                    if (lastClassType != null) {
-                                        localClassTypes[varIndex] = lastClassType!!
-                                    }
-                                    if (lastStringConstant != null) {
-                                        localStrings[varIndex] = lastStringConstant!!
-                                    }
-                                    lastClassType = null
-                                    lastStringConstant = null
-                                }
-                                Opcodes.ALOAD -> {
-                                    lastClassType = localClassTypes[varIndex] ?: lastClassType
-                                    lastStringConstant = localStrings[varIndex]
-                                }
-                                else -> {
-                                    lastStringConstant = null
-                                }
-                            }
-                        }
-
-                        override fun visitMethodInsn(
-                            opcode: Int,
-                            owner: String,
-                            name: String,
-                            descriptor: String,
-                            isInterface: Boolean,
-                        ) {
-                            if (opcode == Opcodes.INVOKEVIRTUAL &&
-                                owner == "java/lang/invoke/MethodHandles\$Lookup"
-                            ) {
-                                val targetClass = lastClassType
-                                val memberName = lastStringConstant
-
-                                if (targetClass != null) {
-                                    when {
-                                        name in FIND_METHOD_NAMES && memberName != null -> {
-                                            entries.add(
-                                                ReflectionEntry(
-                                                    type = targetClass,
-                                                    methods = setOf(MethodSignature(memberName)),
-                                                ),
-                                            )
-                                        }
-                                        name in FIND_FIELD_NAMES && memberName != null -> {
-                                            entries.add(
-                                                ReflectionEntry(
-                                                    type = targetClass,
-                                                    fields = setOf(memberName),
-                                                ),
-                                            )
-                                        }
-                                        name == "findConstructor" -> {
-                                            entries.add(
-                                                ReflectionEntry(
-                                                    type = targetClass,
-                                                    methods = setOf(MethodSignature("<init>")),
-                                                ),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            lastClassType = null
-                            lastStringConstant = null
-                        }
-
-                        override fun visitInsn(opcode: Int) {
-                            if (opcode != Opcodes.DUP && opcode != Opcodes.DUP2) {
-                                lastStringConstant = null
-                            }
-                        }
-
-                        override fun visitFieldInsn(
-                            opcode: Int,
-                            owner: String,
-                            name: String,
-                            descriptor: String,
-                        ) {
-                            lastStringConstant = null
-                        }
-
-                        override fun visitIntInsn(
-                            opcode: Int,
-                            operand: Int,
-                        ) {
-                            lastStringConstant = null
-                        }
-
-                        override fun visitTypeInsn(
-                            opcode: Int,
-                            type: String,
-                        ) {
-                            lastStringConstant = null
-                        }
-
-                        override fun visitJumpInsn(
-                            opcode: Int,
-                            label: org.objectweb.asm.Label,
-                        ) {
-                            // Don't clear — conditional patterns
-                        }
-                    }
+                ): MethodVisitor = LookupCallVisitor(entries)
             },
             0,
         )
 
         return entries
+    }
+
+    /** Records the targets of `MethodHandles.Lookup` find calls whose class and member are constants. */
+    private class LookupCallVisitor(
+        private val entries: MutableSet<ReflectionEntry>,
+    ) : MethodVisitor(Opcodes.ASM9) {
+        // Track the most recent class type from LDC (e.g., LDC Type com/example/Foo)
+        private var lastClassType: String? = null
+
+        // Track local variable slots that hold class types
+        private val localClassTypes = mutableMapOf<Int, String>()
+        private var lastStringConstant: String? = null
+        private val localStrings = mutableMapOf<Int, String>()
+
+        override fun visitCode() {
+            lastClassType = null
+            localClassTypes.clear()
+            lastStringConstant = null
+            localStrings.clear()
+        }
+
+        override fun visitLdcInsn(value: Any?) {
+            when (value) {
+                is Type -> {
+                    if (value.sort == Type.OBJECT) {
+                        lastClassType = value.className
+                    }
+                    lastStringConstant = null
+                }
+                is String -> {
+                    lastStringConstant = value
+                }
+                else -> {
+                    lastStringConstant = null
+                }
+            }
+        }
+
+        override fun visitVarInsn(
+            opcode: Int,
+            varIndex: Int,
+        ) {
+            when (opcode) {
+                Opcodes.ASTORE -> {
+                    lastClassType?.let { localClassTypes[varIndex] = it }
+                    lastStringConstant?.let { localStrings[varIndex] = it }
+                    lastClassType = null
+                    lastStringConstant = null
+                }
+                Opcodes.ALOAD -> {
+                    lastClassType = localClassTypes[varIndex] ?: lastClassType
+                    lastStringConstant = localStrings[varIndex]
+                }
+                else -> {
+                    lastStringConstant = null
+                }
+            }
+        }
+
+        override fun visitMethodInsn(
+            opcode: Int,
+            owner: String,
+            name: String,
+            descriptor: String,
+            isInterface: Boolean,
+        ) {
+            if (opcode == Opcodes.INVOKEVIRTUAL &&
+                owner == "java/lang/invoke/MethodHandles\$Lookup"
+            ) {
+                val targetClass = lastClassType
+                val memberName = lastStringConstant
+
+                if (targetClass != null) {
+                    when {
+                        name in FIND_METHOD_NAMES && memberName != null -> {
+                            entries.add(
+                                ReflectionEntry(
+                                    type = targetClass,
+                                    methods = setOf(MethodSignature(memberName)),
+                                ),
+                            )
+                        }
+                        name in FIND_FIELD_NAMES && memberName != null -> {
+                            entries.add(
+                                ReflectionEntry(
+                                    type = targetClass,
+                                    fields = setOf(memberName),
+                                ),
+                            )
+                        }
+                        name == "findConstructor" -> {
+                            entries.add(
+                                ReflectionEntry(
+                                    type = targetClass,
+                                    methods = setOf(MethodSignature("<init>")),
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            lastClassType = null
+            lastStringConstant = null
+        }
+
+        override fun visitInsn(opcode: Int) {
+            if (opcode != Opcodes.DUP && opcode != Opcodes.DUP2) {
+                lastStringConstant = null
+            }
+        }
+
+        override fun visitFieldInsn(
+            opcode: Int,
+            owner: String,
+            name: String,
+            descriptor: String,
+        ) {
+            lastStringConstant = null
+        }
+
+        override fun visitIntInsn(
+            opcode: Int,
+            operand: Int,
+        ) {
+            lastStringConstant = null
+        }
+
+        override fun visitTypeInsn(
+            opcode: Int,
+            type: String,
+        ) {
+            lastStringConstant = null
+        }
+
+        override fun visitJumpInsn(
+            opcode: Int,
+            label: org.objectweb.asm.Label,
+        ) {
+            // Don't clear — conditional patterns
+        }
     }
 }

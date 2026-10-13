@@ -4,6 +4,25 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
 
 private const val LIBRARY_NAME = "nucleus_system_info"
 
+// Slots of nativeProcessByPid's arrays, mirrored in nucleus_system_info_process.c.
+internal const val PROCESS_LONG_PARENT_PID = 0
+internal const val PROCESS_LONG_MEMORY = 1
+internal const val PROCESS_LONG_VIRTUAL_MEMORY = 2
+internal const val PROCESS_LONG_START_TIME = 3
+internal const val PROCESS_LONG_RUN_TIME = 4
+internal const val PROCESS_LONG_COUNT = 5
+
+internal const val PROCESS_FLOAT_CPU_USAGE = 0
+internal const val PROCESS_FLOAT_COUNT = 1
+
+internal const val PROCESS_STRING_NAME = 0
+internal const val PROCESS_STRING_EXE = 1
+internal const val PROCESS_STRING_STATUS = 2
+internal const val PROCESS_STRING_CMD = 3
+internal const val PROCESS_STRING_CWD = 4
+internal const val PROCESS_STRING_ROOT = 5
+internal const val PROCESS_STRING_COUNT = 6
+
 @Suppress("TooManyFunctions")
 internal object NativeMacOsSystemInfoBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeMacOsSystemInfoBridge::class.java)
@@ -178,30 +197,13 @@ internal object NativeMacOsSystemInfoBridge {
 
     @JvmStatic external fun nativeProcessRoots(): Array<String>?
 
-    // Single process by PID
-    @JvmStatic external fun nativeProcessByPidName(pid: Long): String?
-
-    @JvmStatic external fun nativeProcessByPidExe(pid: Long): String?
-
-    @JvmStatic external fun nativeProcessByPidMemory(pid: Long): Long
-
-    @JvmStatic external fun nativeProcessByPidVirtualMemory(pid: Long): Long
-
-    @JvmStatic external fun nativeProcessByPidCpuUsage(pid: Long): Float
-
-    @JvmStatic external fun nativeProcessByPidStatus(pid: Long): String?
-
-    @JvmStatic external fun nativeProcessByPidStartTime(pid: Long): Long
-
-    @JvmStatic external fun nativeProcessByPidRunTime(pid: Long): Long
-
-    @JvmStatic external fun nativeProcessByPidParentPid(pid: Long): Long
-
-    @JvmStatic external fun nativeProcessByPidCmd(pid: Long): String?
-
-    @JvmStatic external fun nativeProcessByPidCwd(pid: Long): String?
-
-    @JvmStatic external fun nativeProcessByPidRoot(pid: Long): String?
+    // Single process by PID: fills [longs], [floats] and [strings] at the PROCESS_* slots.
+    @JvmStatic external fun nativeProcessByPid(
+        pid: Long,
+        longs: LongArray,
+        floats: FloatArray,
+        strings: Array<String?>,
+    ): Boolean
 
     // GPUs
     @JvmStatic external fun nativeGpuCount(): Int

@@ -11,6 +11,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <gio/gio.h>
 #include <string.h>
 #include <stdio.h>
@@ -104,7 +105,7 @@ static int ensure_callback_ids(JNIEnv *env) {
     jclass cls = (*env)->FindClass(env,
         "dev/nucleusframework/notification/linux/NativeLinuxNotificationBridge");
     if (cls == NULL) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return 0;
     }
     g_bridge_class = (jclass)(*env)->NewGlobalRef(env, cls);
@@ -118,7 +119,7 @@ static int ensure_callback_ids(JNIEnv *env) {
         "onActivationToken", "(ILjava/lang/String;)V");
 
     if (!g_on_closed_method || !g_on_action_method || !g_on_token_method) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, g_bridge_class);
         g_bridge_class = NULL;
         return 0;
@@ -493,7 +494,7 @@ static void on_notification_closed(
     if (ensure_callback_ids(env)) {
         (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_closed_method,
             (jint)id, (jint)reason);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
     }
 
     release_env(attached);
@@ -519,7 +520,7 @@ static void on_action_invoked(
         jstring j_key = (*env)->NewStringUTF(env, action_key);
         (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_action_method,
             (jint)id, j_key);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, j_key);
     }
 
@@ -546,7 +547,7 @@ static void on_activation_token(
         jstring j_token = (*env)->NewStringUTF(env, token);
         (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_token_method,
             (jint)id, j_token);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, j_token);
     }
 

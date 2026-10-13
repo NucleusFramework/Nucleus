@@ -6,6 +6,27 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.io.File
 
+/** Broad registration flags: only ever upgraded from false to true, never downgraded. */
+private val BROAD_FLAGS =
+    listOf(
+        "allDeclaredFields",
+        "allDeclaredMethods",
+        "allDeclaredConstructors",
+        "allPublicFields",
+        "allPublicMethods",
+        "allPublicConstructors",
+        "unsafeAllocated",
+        "jniAccessible",
+    )
+
+/** Member arrays of a type entry, mapped to the `allDeclared*` flag that already covers them. */
+private val ALL_DECLARED_KEY_BY_MEMBER =
+    mapOf(
+        "methods" to "allDeclaredMethods",
+        "fields" to "allDeclaredFields",
+        "queriedMethods" to "allDeclaredMethods",
+    )
+
 /**
  * Merges the agent-generated `reachability-metadata.json` into the existing one.
  *
@@ -109,18 +130,7 @@ private fun mergeTypeEntry(
     existingEntry: MutableMap<String, Any?>,
 ) {
     // Preserve broad flags -- only upgrade false->true, never downgrade
-    val broadFlags =
-        listOf(
-            "allDeclaredFields",
-            "allDeclaredMethods",
-            "allDeclaredConstructors",
-            "allPublicFields",
-            "allPublicMethods",
-            "allPublicConstructors",
-            "unsafeAllocated",
-            "jniAccessible",
-        )
-    for (flag in broadFlags) {
+    for (flag in BROAD_FLAGS) {
         if (agentEntry[flag] == true) {
             existingEntry[flag] = true
         }
@@ -128,27 +138,19 @@ private fun mergeTypeEntry(
     }
 
     // Merge array-based members (methods, fields, queriedMethods)
-    for (memberKey in listOf("methods", "fields", "queriedMethods")) {
+    for ((memberKey, allDeclaredKey) in ALL_DECLARED_KEY_BY_MEMBER) {
         @Suppress("UNCHECKED_CAST")
-        val agentMembers = agentEntry[memberKey] as? List<Map<String, Any?>> ?: continue
+        val agentMembers = agentEntry[memberKey] as? List<Map<String, Any?>>
 
         // If existing has allDeclared* for this category, skip -- already broader
-        val allDeclaredKey =
-            when (memberKey) {
-                "fields" -> "allDeclaredFields"
-                "methods", "queriedMethods" -> "allDeclaredMethods"
-                else -> null
-            }
-        if (allDeclaredKey != null && existingEntry[allDeclaredKey] == true) {
-            continue
+        if (agentMembers != null && existingEntry[allDeclaredKey] != true) {
+            @Suppress("UNCHECKED_CAST")
+            val existingMembers =
+                (existingEntry[memberKey] as? MutableList<Map<String, Any?>>)
+                    ?: mutableListOf<Map<String, Any?>>().also { existingEntry[memberKey] = it }
+
+            mergeMembers(agentMembers, existingMembers)
         }
-
-        @Suppress("UNCHECKED_CAST")
-        val existingMembers =
-            (existingEntry[memberKey] as? MutableList<Map<String, Any?>>)
-                ?: mutableListOf<Map<String, Any?>>().also { existingEntry[memberKey] = it }
-
-        mergeMembers(agentMembers, existingMembers)
     }
 }
 
@@ -175,10 +177,10 @@ private fun mergeMembers(
  * Produces a comparable signature string for a method/field entry.
  */
 private fun memberSignature(obj: Map<String, Any?>): String {
-    val name = obj["name"] as? String ?: ""
+    val name = (obj["name"] as? String).orEmpty()
 
     @Suppress("UNCHECKED_CAST")
-    val params = (obj["parameterTypes"] as? List<String>)?.joinToString(",") ?: ""
+    val params = (obj["parameterTypes"] as? List<String>)?.joinToString(",").orEmpty()
     return "$name($params)"
 }
 
@@ -225,47 +227,11 @@ internal fun deduplicateAgainstLibraryMetadata(
     if (!targetFile.exists()) return
 
     val slurper = JsonSlurper()
-
-    // Collect full library entries per section, keyed by type name.
-    // Multiple JARs may contribute entries for the same type -- merge them.
-    val libraryEntries = mutableMapOf<String, MutableMap<String, MutableMap<String, Any?>>>()
-    val libraryResourceJsons = mutableSetOf<String>()
-    val libraryResourceGlobs = mutableListOf<Pair<String?, String>>()
-    val includeResourcePatterns = mutableListOf<Regex>()
+    val baseline = LibraryBaseline()
 
     for (file in classpathFiles) {
-        if (!file.exists() || !file.name.endsWith(".jar")) continue
-        try {
-            java.util.jar.JarFile(file).use { jar ->
-                for (entry in jar.entries()) {
-                    // Collect reachability-metadata.json from library JARs
-                    if (entry.name.contains("META-INF/native-image/") &&
-                        entry.name.endsWith("reachability-metadata.json")
-                    ) {
-                        val text = jar.getInputStream(entry).bufferedReader().readText()
-                        collectLibraryMetadata(slurper, text, libraryEntries, libraryResourceJsons, libraryResourceGlobs)
-                    }
-
-                    // Collect IncludeResources patterns from native-image.properties
-                    if (entry.name.contains("META-INF/native-image/") &&
-                        entry.name.endsWith("native-image.properties")
-                    ) {
-                        val props = java.util.Properties()
-                        jar.getInputStream(entry).use { props.load(it) }
-                        val args = props.getProperty("Args") ?: continue
-                        val regex = Regex("""-H:IncludeResources=(\S+)""")
-                        for (match in regex.findAll(args)) {
-                            try {
-                                includeResourcePatterns.add(Regex(match.groupValues[1]))
-                            } catch (_: Exception) {
-                                // Skip malformed patterns
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (_: Exception) {
-            // Skip unreadable JARs
+        if (file.exists() && file.name.endsWith(".jar")) {
+            baseline.collectFromJar(slurper, file)
         }
     }
 
@@ -275,17 +241,16 @@ internal fun deduplicateAgainstLibraryMetadata(
         val stream = object {}::class.java.classLoader.getResourceAsStream(resourcePath)
         if (stream != null) {
             val text = stream.bufferedReader().use { it.readText() }
-            collectLibraryMetadata(slurper, text, libraryEntries, libraryResourceJsons, libraryResourceGlobs)
+            baseline.collectMetadata(slurper, text)
         }
     }
 
     // Include extra metadata directories (Oracle repo, static analysis, etc.)
     for (dir in extraMetadataDirs) {
-        if (!dir.isDirectory) continue
         val metadataFile = File(dir, "reachability-metadata.json")
-        if (metadataFile.exists()) {
+        if (dir.isDirectory && metadataFile.exists()) {
             try {
-                collectLibraryMetadata(slurper, metadataFile.readText(), libraryEntries, libraryResourceJsons, libraryResourceGlobs)
+                baseline.collectMetadata(slurper, metadataFile.readText())
             } catch (_: Exception) {
                 // Skip unreadable metadata files
             }
@@ -294,7 +259,133 @@ internal fun deduplicateAgainstLibraryMetadata(
 
     // Add main class to the baseline so the agent entry gets deduped
     if (!mainClass.isNullOrBlank()) {
-        val reflectionMap = libraryEntries.getOrPut("reflection") { mutableMapOf() }
+        baseline.addMainClass(mainClass)
+    }
+
+    if (baseline.isEmpty) return
+
+    @Suppress("UNCHECKED_CAST")
+    val targetRoot = slurper.parseText(targetFile.readText()) as MutableMap<String, Any?>
+
+    val typesChanged = baseline.removeCoveredTypeEntries(targetRoot)
+    val resourcesChanged = baseline.removeCoveredResources(targetRoot)
+
+    if (typesChanged || resourcesChanged) {
+        targetFile.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(targetRoot)) + "\n")
+    }
+}
+
+/**
+ * What libraries, plugin platform metadata and extra metadata directories already
+ * register, used by [deduplicateAgainstLibraryMetadata] to drop redundant project entries.
+ */
+private class LibraryBaseline {
+    /**
+     * Full library entries per section, keyed by type name. Multiple JARs may contribute
+     * entries for the same type -- they are merged.
+     */
+    private val entries = mutableMapOf<String, MutableMap<String, MutableMap<String, Any?>>>()
+    private val resourceJsons = mutableSetOf<String>()
+    private val resourceGlobs = mutableListOf<Pair<String?, String>>()
+    private val includeResourcePatterns = mutableListOf<Regex>()
+
+    val isEmpty: Boolean
+        get() =
+            entries.isEmpty() &&
+                resourceJsons.isEmpty() &&
+                resourceGlobs.isEmpty() &&
+                includeResourcePatterns.isEmpty()
+
+    /**
+     * Collects `reachability-metadata.json` files and `native-image.properties`
+     * `-H:IncludeResources=` patterns under `META-INF/native-image/` of [file].
+     * Unreadable JARs are skipped.
+     */
+    fun collectFromJar(
+        slurper: JsonSlurper,
+        file: File,
+    ) {
+        try {
+            java.util.jar.JarFile(file).use { jar ->
+                for (entry in jar.entries()) {
+                    if (entry.name.contains("META-INF/native-image/")) {
+                        collectFromJarEntry(slurper, jar, entry)
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Skip unreadable JARs
+        }
+    }
+
+    private fun collectFromJarEntry(
+        slurper: JsonSlurper,
+        jar: java.util.jar.JarFile,
+        entry: java.util.jar.JarEntry,
+    ) {
+        when {
+            entry.name.endsWith("reachability-metadata.json") -> {
+                collectMetadata(slurper, jar.getInputStream(entry).bufferedReader().readText())
+            }
+            entry.name.endsWith("native-image.properties") -> {
+                val props = java.util.Properties()
+                jar.getInputStream(entry).use { props.load(it) }
+                props.getProperty("Args")?.let { collectIncludeResourcePatterns(it) }
+            }
+        }
+    }
+
+    private fun collectIncludeResourcePatterns(args: String) {
+        val regex = Regex("""-H:IncludeResources=(\S+)""")
+        for (match in regex.findAll(args)) {
+            try {
+                includeResourcePatterns.add(Regex(match.groupValues[1]))
+            } catch (_: Exception) {
+                // Skip malformed patterns
+            }
+        }
+    }
+
+    /**
+     * Parses a library's reachability-metadata.json and adds its entries to the baseline.
+     */
+    fun collectMetadata(
+        slurper: JsonSlurper,
+        jsonText: String,
+    ) {
+        @Suppress("UNCHECKED_CAST")
+        val libRoot = slurper.parseText(jsonText) as? Map<String, Any?> ?: return
+
+        for (section in listOf("reflection", "jni")) {
+            @Suppress("UNCHECKED_CAST")
+            val sectionEntries = libRoot[section] as? List<Map<String, Any?>> ?: continue
+            val sectionMap = entries.getOrPut(section) { mutableMapOf() }
+            for (e in sectionEntries) {
+                val typeName = e["type"] as? String ?: continue
+                val existing = sectionMap[typeName]
+                if (existing == null) {
+                    sectionMap[typeName] = e.toMutableMap()
+                } else {
+                    mergeTypeEntry(e, existing)
+                }
+            }
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val resources = libRoot["resources"] as? List<Map<String, Any?>> ?: return
+        for (e in resources) {
+            resourceJsons.add(JsonOutput.toJson(e))
+            val glob = e["glob"] as? String
+            if (glob != null) {
+                val module = e["module"] as? String
+                resourceGlobs.add(Pair(module, glob))
+            }
+        }
+    }
+
+    /** Registers `mainClass.main(String[])` so the agent's entry for it gets deduped. */
+    fun addMainClass(mainClass: String) {
+        val reflectionMap = entries.getOrPut("reflection") { mutableMapOf() }
         val mainClassEntry =
             mutableMapOf<String, Any?>(
                 "type" to mainClass,
@@ -315,126 +406,76 @@ internal fun deduplicateAgainstLibraryMetadata(
         }
     }
 
-    val hasBaseline =
-        libraryEntries.isNotEmpty() ||
-            libraryResourceJsons.isNotEmpty() ||
-            libraryResourceGlobs.isNotEmpty() ||
-            includeResourcePatterns.isNotEmpty()
-    if (!hasBaseline) return
+    /**
+     * Removes reflection/jni entries of [targetRoot] only when the library fully covers
+     * the project entry. Returns true when anything was removed.
+     */
+    fun removeCoveredTypeEntries(targetRoot: MutableMap<String, Any?>): Boolean {
+        var changed = false
+        for (section in listOf("reflection", "jni")) {
+            val sectionMap = entries[section]
 
-    @Suppress("UNCHECKED_CAST")
-    val targetRoot = slurper.parseText(targetFile.readText()) as MutableMap<String, Any?>
-    var changed = false
-
-    // Remove reflection/jni entries only when the library fully covers the project entry
-    for (section in listOf("reflection", "jni")) {
-        val sectionMap = libraryEntries[section] ?: continue
-
-        @Suppress("UNCHECKED_CAST")
-        val targetArray = targetRoot[section] as? MutableList<Map<String, Any?>> ?: continue
-        val before = targetArray.size
-        targetArray.removeAll { projectEntry ->
-            val typeName = projectEntry["type"] as? String ?: return@removeAll false
-            val libEntry = sectionMap[typeName] ?: return@removeAll false
-            libraryCoversProject(libEntry, projectEntry)
-        }
-        if (targetArray.size != before) changed = true
-    }
-
-    // Remove resource entries already provided by libraries
-    @Suppress("UNCHECKED_CAST")
-    val targetResources = targetRoot["resources"] as? MutableList<Map<String, Any?>>
-    if (targetResources != null) {
-        val before = targetResources.size
-        targetResources.removeAll { entry ->
-            isResourceCovered(entry, libraryResourceJsons, libraryResourceGlobs, includeResourcePatterns)
-        }
-        if (targetResources.size != before) changed = true
-    }
-
-    if (changed) {
-        targetFile.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(targetRoot)) + "\n")
-    }
-}
-
-/**
- * Parses a library's reachability-metadata.json and adds its entries to the baseline collections.
- */
-private fun collectLibraryMetadata(
-    slurper: JsonSlurper,
-    jsonText: String,
-    libraryEntries: MutableMap<String, MutableMap<String, MutableMap<String, Any?>>>,
-    libraryResourceJsons: MutableSet<String>,
-    libraryResourceGlobs: MutableList<Pair<String?, String>>,
-) {
-    @Suppress("UNCHECKED_CAST")
-    val libRoot = slurper.parseText(jsonText) as? Map<String, Any?> ?: return
-
-    for (section in listOf("reflection", "jni")) {
-        @Suppress("UNCHECKED_CAST")
-        val entries = libRoot[section] as? List<Map<String, Any?>> ?: continue
-        val sectionMap = libraryEntries.getOrPut(section) { mutableMapOf() }
-        for (e in entries) {
-            val typeName = e["type"] as? String ?: continue
-            val existing = sectionMap[typeName]
-            if (existing == null) {
-                sectionMap[typeName] = e.toMutableMap()
-            } else {
-                mergeTypeEntry(e, existing)
+            @Suppress("UNCHECKED_CAST")
+            val targetArray = targetRoot[section] as? MutableList<Map<String, Any?>>
+            if (sectionMap != null && targetArray != null) {
+                val before = targetArray.size
+                targetArray.removeAll { projectEntry ->
+                    val typeName = projectEntry["type"] as? String ?: return@removeAll false
+                    val libEntry = sectionMap[typeName] ?: return@removeAll false
+                    libraryCoversProject(libEntry, projectEntry)
+                }
+                if (targetArray.size != before) changed = true
             }
         }
+        return changed
     }
 
-    @Suppress("UNCHECKED_CAST")
-    val resources = libRoot["resources"] as? List<Map<String, Any?>> ?: return
-    for (e in resources) {
-        libraryResourceJsons.add(JsonOutput.toJson(e))
-        val glob = e["glob"] as? String
-        if (glob != null) {
-            val module = e["module"] as? String
-            libraryResourceGlobs.add(Pair(module, glob))
-        }
+    /**
+     * Removes resource entries of [targetRoot] already provided by libraries.
+     * Returns true when anything was removed.
+     */
+    fun removeCoveredResources(targetRoot: MutableMap<String, Any?>): Boolean {
+        @Suppress("UNCHECKED_CAST")
+        val targetResources = targetRoot["resources"] as? MutableList<Map<String, Any?>> ?: return false
+        val before = targetResources.size
+        targetResources.removeAll { entry -> isResourceCovered(entry) }
+        return targetResources.size != before
     }
-}
 
 /**
- * Returns true if a project resource entry is already covered by the library baseline.
- *
- * Checks:
- * 1. Exact JSON match with a library resource entry
- * 2. Agent glob path matches a library resource glob pattern (e.g. `*skiko*.sha256`)
- * 3. Agent glob path matches a `native-image.properties` IncludeResources regex
- */
-private fun isResourceCovered(
-    entry: Map<String, Any?>,
-    libraryResourceJsons: Set<String>,
-    libraryResourceGlobs: List<Pair<String?, String>>,
-    includeResourcePatterns: List<Regex>,
-): Boolean {
-    // Exact JSON match (handles bundles and identical glob entries)
-    if (JsonOutput.toJson(entry) in libraryResourceJsons) return true
+     * Returns true if a project resource entry is already covered by the library baseline.
+     *
+     * Checks:
+     * 1. Exact JSON match with a library resource entry
+     * 2. Agent glob path matches a library resource glob pattern (e.g. `*skiko*.sha256`)
+     * 3. Agent glob path matches a `native-image.properties` IncludeResources regex
+     */
+    private fun isResourceCovered(entry: Map<String, Any?>): Boolean {
+        // Exact JSON match (handles bundles and identical glob entries)
+        if (JsonOutput.toJson(entry) in resourceJsons) return true
 
-    // Only glob entries can be matched by patterns; bundles need exact match
-    val glob = entry["glob"] as? String ?: return false
-    val module = entry["module"] as? String
+        // Only glob entries can be matched by patterns; bundles need exact match
+        val glob = entry["glob"] as? String ?: return false
+        val module = entry["module"] as? String
 
-    // Check against library resource globs (e.g. "*skiko*.sha256" covers "skiko-windows-x64.dll.sha256")
-    // Module-qualified entries only match against library globs with the same module
-    for ((libModule, libGlob) in libraryResourceGlobs) {
-        if (module != libModule) continue
-        if (libGlob.contains('*') || libGlob.contains('?')) {
-            if (globMatches(libGlob, glob)) return true
+        // Check against library resource globs (e.g. "*skiko*.sha256" covers "skiko-windows-x64.dll.sha256")
+        // Module-qualified entries only match against library globs with the same module
+        for ((libModule, libGlob) in resourceGlobs) {
+            if (module != libModule) continue
+            if (libGlob.contains('*') || libGlob.contains('?')) {
+                if (globMatches(libGlob, glob)) return true
+            }
         }
-    }
 
-    // IncludeResources patterns only apply to non-module-qualified entries
-    if (module == null) {
-        for (pattern in includeResourcePatterns) {
-            if (pattern.matches(glob)) return true
+        // IncludeResources patterns only apply to non-module-qualified entries
+        if (module == null) {
+            for (pattern in includeResourcePatterns) {
+                if (pattern.matches(glob)) return true
+            }
         }
-    }
 
-    return false
+        return false
+    }
 }
 
 /**
@@ -478,51 +519,28 @@ private fun libraryCoversProject(
     projectEntry: Map<String, Any?>,
 ): Boolean {
     // Check broad flags: if project needs a flag, library must have it
-    val broadFlags =
-        listOf(
-            "allDeclaredFields",
-            "allDeclaredMethods",
-            "allDeclaredConstructors",
-            "allPublicFields",
-            "allPublicMethods",
-            "allPublicConstructors",
-            "unsafeAllocated",
-            "jniAccessible",
-        )
-    for (flag in broadFlags) {
-        if (projectEntry[flag] == true && libEntry[flag] != true) {
-            return false
-        }
+    if (BROAD_FLAGS.any { flag -> projectEntry[flag] == true && libEntry[flag] != true }) {
+        return false
     }
 
     // Check methods, fields, queriedMethods
-    for (memberKey in listOf("methods", "fields", "queriedMethods")) {
+    return ALL_DECLARED_KEY_BY_MEMBER.all { (memberKey, allDeclaredKey) ->
         @Suppress("UNCHECKED_CAST")
         val projectMembers = projectEntry[memberKey] as? List<Map<String, Any?>>
-        if (projectMembers.isNullOrEmpty()) continue
-
-        // If library has allDeclared* for this category, it covers everything
-        val allDeclaredKey =
-            when (memberKey) {
-                "fields" -> "allDeclaredFields"
-                "methods", "queriedMethods" -> "allDeclaredMethods"
-                else -> null
-            }
-        if (allDeclaredKey != null && libEntry[allDeclaredKey] == true) continue
 
         @Suppress("UNCHECKED_CAST")
         val libMembers = libEntry[memberKey] as? List<Map<String, Any?>>
-        if (libMembers == null) return false
-
-        val libSignatures = libMembers.map { memberSignature(it) }.toSet()
-        for (pm in projectMembers) {
-            if (memberSignature(pm) !in libSignatures) {
-                return false
+        when {
+            projectMembers.isNullOrEmpty() -> true
+            // If library has allDeclared* for this category, it covers everything
+            libEntry[allDeclaredKey] == true -> true
+            libMembers == null -> false
+            else -> {
+                val libSignatures = libMembers.map { memberSignature(it) }.toSet()
+                projectMembers.all { memberSignature(it) in libSignatures }
             }
         }
     }
-
-    return true
 }
 
 /**

@@ -22,15 +22,36 @@ internal val DEFAULT_RUNTIME_MODULES =
         "jdk.unsupported",
     )
 
+/**
+ * The `nativeDistributions { }` block of a JVM application: the bundled runtime image, per-platform
+ * packaging (Linux, macOS, Windows), signing, file associations, URL protocols and update publishing.
+ */
 abstract class JvmApplicationDistributions : AbstractDistributions() {
     @Suppress("DoubleMutabilityForCollection", "SpreadOperator")
     var modules = arrayListOf(*DEFAULT_RUNTIME_MODULES)
 
+    /** Appends JDK modules to [modules], the module list of the bundled runtime image. */
     fun modules(vararg modules: String) {
         this.modules.addAll(modules.toList())
     }
 
     var includeAllModules: Boolean = false
+
+    /**
+     * Omits the JRE's bundled fonts (`lib/fonts` from `java.desktop`) from the runtime image.
+     *
+     * Compose ships its own fonts, so the JDK copies are unused weight in the distributable.
+     * JetBrains Runtime bundles about 9 MB of them; many other JREs bundle none, and then this
+     * changes nothing. Set to `false` to keep the fonts, for an app that renders text through
+     * AWT or Swing.
+     *
+     * ```kotlin
+     * nativeDistributions {
+     *     stripJreFonts = false
+     * }
+     * ```
+     */
+    var stripJreFonts: Boolean = true
 
     /** Strip native libraries for non-target platforms from dependency JARs to reduce package size. */
     var cleanupNativeLibs: Boolean = false
@@ -43,6 +64,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      */
     val aotCache: AotCacheSettings = objects.newInstance(AotCacheSettings::class.java)
 
+    /** Configures [aotCache]. */
     fun aotCache(fn: Action<AotCacheSettings>) {
         fn.execute(aotCache)
     }
@@ -58,26 +80,43 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         }
 
     /**
-     * Whether any of the configured target formats require sandboxing
-     * (store formats like PKG, AppX, Flatpak) AND are compatible with the current OS.
+     * Whether [format] is built through the sandboxed (store) pipeline: Flatpak always is, PKG
+     * only when it targets the Mac App Store (`macOS { pkg { appStore } }`, the default). A
+     * Developer ID PKG shares the non-sandboxed pipeline with DMG. AppX is not sandboxed:
+     * electron-builder always declares `runFullTrust`, so the app runs as a packaged Win32 process,
+     * not in an AppContainer, and is built like any other Windows format.
+     */
+    internal fun isSandboxed(format: TargetFormat): Boolean =
+        when (format) {
+            TargetFormat.Pkg -> macOS.pkg.appStore
+            TargetFormat.Flatpak -> true
+            else -> false
+        }
+
+    /**
+     * Whether any of the configured target formats require sandboxing (see [isSandboxed])
+     * AND are compatible with the current OS.
      */
     internal val hasStoreFormats: Boolean
-        get() = targetFormats.any { it.isStoreFormat && it.isCompatibleWithCurrentOS }
+        get() = targetFormats.any { isSandboxed(it) && it.isCompatibleWithCurrentOS }
 
     val linux: LinuxPlatformSettings = objects.newInstance(LinuxPlatformSettings::class.java)
 
+    /** Configures Linux packaging. */
     open fun linux(fn: Action<LinuxPlatformSettings>) {
         fn.execute(linux)
     }
 
     val macOS: JvmMacOSPlatformSettings = objects.newInstance(JvmMacOSPlatformSettings::class.java)
 
+    /** Configures macOS packaging. */
     open fun macOS(fn: Action<JvmMacOSPlatformSettings>) {
         fn.execute(macOS)
     }
 
     val windows: WindowsPlatformSettings = objects.newInstance(WindowsPlatformSettings::class.java)
 
+    /** Configures Windows packaging. */
     fun windows(fn: Action<WindowsPlatformSettings>) {
         fn.execute(windows)
     }
@@ -87,6 +126,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      */
     val sandboxing: SandboxingSettings = objects.newInstance(SandboxingSettings::class.java)
 
+    /** Configures [sandboxing]. */
     fun sandboxing(fn: Action<SandboxingSettings>) {
         fn.execute(sandboxing)
     }
@@ -99,6 +139,10 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         fn.execute(UnifiedSigningSettings(macOS.signing, windows.signing, linux.signing))
     }
 
+    /**
+     * Associates files with [extension] / [mimeType] with the application on every platform,
+     * optionally with a per-platform icon.
+     */
     @JvmOverloads
     fun fileAssociation(
         mimeType: String,
@@ -117,8 +161,19 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     val publish: PublishSettings = objects.newInstance(PublishSettings::class.java)
 
+    /** Configures where release artifacts and update metadata are published. */
     fun publish(fn: Action<PublishSettings>) {
         fn.execute(publish)
+    }
+
+    // --- Node.js used to run electron-builder ---
+
+    /** Node.js acquisition for the electron-builder pipeline. See [NodeJsSettings]. */
+    val nodejs: NodeJsSettings = objects.newInstance(NodeJsSettings::class.java)
+
+    /** Configures [nodejs]. */
+    fun nodejs(fn: Action<NodeJsSettings>) {
+        fn.execute(nodejs)
     }
 
     // --- Compression level for archive formats ---
@@ -161,6 +216,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     val protocols: MutableList<UrlProtocol> = mutableListOf()
 
+    /** Registers the URL [schemes] (deep links) handled by the application under the display [name]. */
     fun protocol(
         name: String,
         vararg schemes: String,
@@ -169,10 +225,12 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
     }
 }
 
+/** A URL protocol handler: the URL [schemes] the application opens, registered under [name]. */
 data class UrlProtocol(
     val name: String,
     val schemes: List<String>,
 ) : Serializable {
+    /** Serialization constants. */
     companion object {
         private const val serialVersionUID: Long = 1L
     }

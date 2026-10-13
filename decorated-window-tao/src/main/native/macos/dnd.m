@@ -25,6 +25,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -208,9 +209,7 @@ static NSDragOperation nucleus_draggingEntered(id self, SEL _cmd, id<NSDraggingI
     if (g_method_on_enter) {
         effect = (*env)->CallIntMethod(env, st.callbackRef, g_method_on_enter,
                                        (jlong)(intptr_t)view, x, y, (jint)0, JNI_TRUE);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionDescribe(env);
-            (*env)->ExceptionClear(env);
+        if (nucleus_jni_clear_exception(env)) {
             effect = DROP_EFFECT_NONE;
         }
     }
@@ -235,9 +234,7 @@ static NSDragOperation nucleus_draggingUpdated(id self, SEL _cmd, id<NSDraggingI
     if (g_method_on_over) {
         effect = (*env)->CallIntMethod(env, st.callbackRef, g_method_on_over,
                                        (jlong)(intptr_t)view, x, y, (jint)0, JNI_TRUE);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionDescribe(env);
-            (*env)->ExceptionClear(env);
+        if (nucleus_jni_clear_exception(env)) {
             effect = DROP_EFFECT_NONE;
         }
     }
@@ -257,10 +254,7 @@ static void nucleus_draggingExited(id self, SEL _cmd, id<NSDraggingInfo> sender)
     if (env && g_method_on_leave) {
         (*env)->CallVoidMethod(env, st.callbackRef, g_method_on_leave,
                                (jlong)(intptr_t)view);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionDescribe(env);
-            (*env)->ExceptionClear(env);
-        }
+        nucleus_jni_clear_exception(env);
     }
     detach_if_needed(attached);
 }
@@ -290,9 +284,7 @@ static BOOL nucleus_performDragOperation(id self, SEL _cmd, id<NSDraggingInfo> s
     if (g_method_on_drop) {
         effect = (*env)->CallIntMethod(env, st.callbackRef, g_method_on_drop,
                                        (jlong)(intptr_t)view, x, y, (jint)0, files);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionDescribe(env);
-            (*env)->ExceptionClear(env);
+        if (nucleus_jni_clear_exception(env)) {
             effect = DROP_EFFECT_NONE;
         }
     }
@@ -454,7 +446,7 @@ static void drag_pump_resolve(JNIEnv *env, jobject pump, NucleusDragPump *out) {
     if (out->method) out->ref = pump;
     /* Optional: a failure here only costs the host its frames during the drag,
      * so keep the session going. */
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* CFRunLoopTimerCallBack. Fires on the main thread for as long as the timer is
@@ -465,12 +457,10 @@ static void drag_pump_tick(CFRunLoopTimerRef timer, void *info) {
     if (!p || !p->ref || !p->method) return;
     JNIEnv *env = p->env;
     (*env)->CallVoidMethod(env, p->ref, p->method);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionDescribe(env);
-        (*env)->ExceptionClear(env);
+    if (nucleus_jni_clear_exception(env)) {
         /* Whatever broke (Metal layer, Skia recording) will break again on the
          * next tick, and we tick ~120×/s — latch the pump off so one failure
-         * reports once instead of flooding stderr. The drag degrades to the old
+         * reports once instead of flooding logs. The drag degrades to the old
          * frozen-but-quiet behaviour and still completes normally. */
         p->method = NULL;
     }

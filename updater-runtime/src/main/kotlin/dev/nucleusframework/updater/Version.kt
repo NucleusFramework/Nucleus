@@ -31,7 +31,8 @@ public data class Version(
         }
 
     public companion object {
-        private val SEMVER_REGEXP = """^(\d+)(?:\.(\d*))?(?:\.(\d*))?(?:-(.*))?${'$'}""".toRegex()
+        // Build metadata (`+...`) is matched but discarded: SemVer ignores it for precedence.
+        private val SEMVER_REGEXP = """^(\d+)(?:\.(\d*))?(?:\.(\d*))?(?:-([^+]*))?(?:\+.*)?${'$'}""".toRegex()
 
         private const val GROUP_MAJOR = 1
         private const val GROUP_MINOR = 2

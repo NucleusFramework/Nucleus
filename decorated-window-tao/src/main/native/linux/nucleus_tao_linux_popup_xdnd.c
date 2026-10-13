@@ -12,6 +12,7 @@
  */
 
 #include "nucleus_tao_linux_popup.h"
+#include "../../../../../native-common/nucleus_jni.h"
 
 #include <poll.h>
 #include <stdlib.h>
@@ -33,7 +34,7 @@ static void cache_dnd_callback_ids(JNIEnv *env, jobject callback) {
     g_on_drag_drop  = (*env)->GetMethodID(env, cls, "onDrop",
                                          "(JIII[Ljava/lang/String;)I");
     (*env)->DeleteLocalRef(env, cls);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 void popup_xdnd_intern_atoms(Display *dpy, Panel *p) {
@@ -176,8 +177,7 @@ static jint call_dnd_motion(JNIEnv *env, Panel *p, jmethodID method, int x, int 
     jint effect = (*env)->CallIntMethod(env, cb, method, (jlong) (uintptr_t) p,
                                         (jint) x, (jint) y, (jint) 0,
                                         has_files ? JNI_TRUE : JNI_FALSE);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+    if (nucleus_jni_clear_exception(env)) {
         return DROP_EFFECT_NONE;
     }
     return effect;
@@ -189,7 +189,7 @@ static void call_dnd_leave(JNIEnv *env, Panel *p) {
     pthread_mutex_unlock(&p->lock);
     if (cb == NULL || g_on_drag_leave == NULL) return;
     (*env)->CallVoidMethod(env, cb, g_on_drag_leave, (jlong) (uintptr_t) p);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static jint call_dnd_drop(JNIEnv *env, Panel *p, int x, int y,
@@ -201,19 +201,19 @@ static jint call_dnd_drop(JNIEnv *env, Panel *p, int x, int y,
 
     jclass str_cls = (*env)->FindClass(env, "java/lang/String");
     if (str_cls == NULL) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return DROP_EFFECT_NONE;
     }
     jobjectArray arr = (*env)->NewObjectArray(env, npaths, str_cls, NULL);
     (*env)->DeleteLocalRef(env, str_cls);
     if (arr == NULL) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return DROP_EFFECT_NONE;
     }
     for (int i = 0; i < npaths; i++) {
         jstring s = (*env)->NewStringUTF(env, paths[i]);
         if (s == NULL) {
-            if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            nucleus_jni_clear_exception(env);
             continue;
         }
         (*env)->SetObjectArrayElement(env, arr, i, s);
@@ -223,8 +223,7 @@ static jint call_dnd_drop(JNIEnv *env, Panel *p, int x, int y,
                                         (jlong) (uintptr_t) p,
                                         (jint) x, (jint) y, (jint) 0, arr);
     (*env)->DeleteLocalRef(env, arr);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+    if (nucleus_jni_clear_exception(env)) {
         return DROP_EFFECT_NONE;
     }
     return effect;

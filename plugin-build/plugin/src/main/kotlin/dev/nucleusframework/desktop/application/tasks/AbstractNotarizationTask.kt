@@ -30,6 +30,11 @@ import org.gradle.work.DisableCachingByDefault
 import java.io.File
 import javax.inject.Inject
 
+/**
+ * Notarizes the [targetFormat] package found in [inputDir] with `xcrun notarytool submit --wait`, staples the
+ * ticket (except on ZIP update artifacts) and refreshes the package's size and SHA-512 in the update manifests
+ * next to it. On failure the Apple notarization log is fetched and included in the error.
+ */
 @DisableCachingByDefault(because = "Depends on external Apple notarization service")
 abstract class AbstractNotarizationTask
     @Inject
@@ -49,6 +54,7 @@ abstract class AbstractNotarizationTask
             check(targetFormat != TargetFormat.RawAppImage) { "${TargetFormat.RawAppImage} cannot be notarized!" }
         }
 
+        /** Submits, staples and updates the update metadata of the package. */
         @TaskAction
         fun run() {
             val notarization = nonValidatedNotarizationSettings.validate()
@@ -89,9 +95,9 @@ abstract class AbstractNotarizationTask
                     },
                 )
 
-            if (submissionId != null) {
-                logger.lifecycle("Notarization submission ID: $submissionId (file: ${packageFile.name})")
-                saveNotarizationRequestInfo(submissionId!!)
+            submissionId?.let { id ->
+                logger.lifecycle("Notarization submission ID: $id (file: ${packageFile.name})")
+                saveNotarizationRequestInfo(id)
             }
 
             if (result.exitValue != 0 || stdout.contains("status: Invalid")) {
@@ -187,6 +193,7 @@ abstract class AbstractNotarizationTask
             }
         }
 
+        /** Holds the `notarytool` output parser. */
         companion object {
             private val SUBMISSION_ID_REGEX = Regex("""^\s*id:\s*([0-9a-fA-F-]+)\s*$""", RegexOption.MULTILINE)
         }

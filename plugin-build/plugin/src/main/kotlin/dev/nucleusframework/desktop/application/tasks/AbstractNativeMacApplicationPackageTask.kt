@@ -6,15 +6,25 @@
 package dev.nucleusframework.desktop.application.tasks
 
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
-import dev.nucleusframework.internal.utils.*
+import dev.nucleusframework.internal.utils.clearDirs
+import dev.nucleusframework.internal.utils.ioFile
+import dev.nucleusframework.internal.utils.notNullProperty
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.*
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.LocalState
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 import java.io.File
 
+/**
+ * Base task for macOS packaging steps that build a package into [destinationDir] with native macOS tools;
+ * subclasses implement [createPackage].
+ */
 @DisableCachingByDefault(because = "Depends on external macOS native tools")
 abstract class AbstractNativeMacApplicationPackageTask : AbstractNucleusTask() {
     @get:Input
@@ -42,6 +52,7 @@ abstract class AbstractNativeMacApplicationPackageTask : AbstractNucleusTask() {
     @get:LocalState
     val workingDir: Provider<Directory> = project.layout.buildDirectory.dir("compose/tmp/$name")
 
+    /** Clears [destinationDir] and [workingDir], then calls [createPackage]. */
     @TaskAction
     fun run() {
         fileOperations.clearDirs(destinationDir, workingDir)

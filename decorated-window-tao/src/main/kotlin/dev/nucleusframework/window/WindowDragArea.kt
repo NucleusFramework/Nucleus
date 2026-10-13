@@ -87,7 +87,7 @@ public fun Modifier.windowDragArea(
                     val now = System.currentTimeMillis()
                     if (now - lastPress in
                         viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis &&
-                        (window.isMaximized || window.isResizable)
+                        (window.isMaximized || (window.isResizable && window.isMaximizable))
                     ) {
                         window.setMaximized(!window.isMaximized)
                         // Cancel any in-flight touch drag armed with the

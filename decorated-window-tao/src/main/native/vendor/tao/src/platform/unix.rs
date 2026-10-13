@@ -98,6 +98,11 @@ pub trait WindowExtUnix {
   /// point leaves the candidate window free to sit on top of the composition.
   /// Callers that know the caret's size should use this.
   fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S);
+
+  /// Nucleus patch: anchor a popup overlay (`with_popup_transient_for`) at a
+  /// logical point of its parent so GDK maps it as a compositor-positioned
+  /// `xdg_popup`. See the platform `Window::popup_anchor`.
+  fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32));
 }
 
 impl WindowExtUnix for Window {
@@ -127,6 +132,10 @@ impl WindowExtUnix for Window {
 
   fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
     self.window.set_ime_cursor_area(position, size);
+  }
+
+  fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32)) {
+    self.window.popup_anchor(x, y, width, height, shadow);
   }
 }
 

@@ -59,6 +59,9 @@ public object SingleInstanceManager {
     private var fileLock: FileLock? = null
     private var isWatching = false
 
+    @Volatile
+    private var handedOff = false
+
     /**
      * Checks if the current process is the single running instance.
      *
@@ -112,6 +115,8 @@ public object SingleInstanceManager {
         }
         Runtime.getRuntime().addShutdownHook(
             Thread {
+                // After a handoff the lock file belongs to the new instance.
+                if (handedOff) return@Thread
                 releaseLock()
                 lockFile.delete()
                 deleteRestoreRequestFile()
@@ -175,7 +180,7 @@ public object SingleInstanceManager {
                             continue
                         }
                         val filename = event.context() as Path
-                        if (filename.toString() == configuration.restoreRequestFileName) {
+                        if (!handedOff && filename.toString() == configuration.restoreRequestFileName) {
                             debugLog { "Restore request file detected" }
                             configuration.restoreRequestFilePath.onRestoreRequest()
                             // Remove the request file after processing
@@ -223,6 +228,21 @@ public object SingleInstanceManager {
         } catch (e: IOException) {
             errorLog { "Error while deleting restore request file: $e" }
         }
+    }
+
+    /**
+     * Gives up the lock while this process keeps running, so the instance it is about to launch
+     * becomes the single instance — the seamless restart after a hot update, where the old version
+     * stays on screen until the new one is. From then on this process ignores restore requests and
+     * leaves the lock file to its successor. No-op when the lock is not held.
+     */
+    public fun releaseForHandoff() {
+        if (fileLock == null) return
+        handedOff = true
+        releaseLock()
+        fileLock = null
+        fileChannel = null
+        debugLog { "Lock released for an update handoff" }
     }
 
     private fun releaseLock() {

@@ -10,16 +10,31 @@ import dev.nucleusframework.desktop.application.internal.ExternalToolRunner
 import dev.nucleusframework.desktop.application.internal.NucleusProperties
 import dev.nucleusframework.desktop.application.internal.files.normalizedPath
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
-import dev.nucleusframework.internal.utils.*
+import dev.nucleusframework.internal.utils.clearDirs
+import dev.nucleusframework.internal.utils.delete
+import dev.nucleusframework.internal.utils.ioFile
+import dev.nucleusframework.internal.utils.jvmToolFile
+import dev.nucleusframework.internal.utils.notNullProperty
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.Directory
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.*
+import org.gradle.api.tasks.Classpath
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.LocalState
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 
+/**
+ * Runs `jdeps --print-module-deps` over the application classpath and logs a `modules(...)` DSL line listing
+ * the JDK modules it needs beyond the default runtime modules.
+ */
 @DisableCachingByDefault(because = "Depends on external jdeps tool")
 abstract class AbstractSuggestModulesTask : AbstractNucleusTask() {
     @get:Input
@@ -45,6 +60,7 @@ abstract class AbstractSuggestModulesTask : AbstractNucleusTask() {
     @get:LocalState
     protected val workingDir: Provider<Directory> = project.layout.buildDirectory.dir("compose/tmp/$name")
 
+    /** Runs `jdeps` and logs the suggested runtime modules. */
     @TaskAction
     fun run() {
         val jtool = jvmToolFile("jdeps", javaHome = javaHome)
@@ -67,7 +83,7 @@ abstract class AbstractSuggestModulesTask : AbstractNucleusTask() {
                 args = args,
                 logToConsole = ExternalToolRunner.LogToConsole.Never,
                 processStdout = { output ->
-                    val defaultModules = hashSetOf(*DEFAULT_RUNTIME_MODULES)
+                    val defaultModules = DEFAULT_RUNTIME_MODULES.toHashSet()
                     val suggestedModules =
                         output
                             .splitToSequence(",")

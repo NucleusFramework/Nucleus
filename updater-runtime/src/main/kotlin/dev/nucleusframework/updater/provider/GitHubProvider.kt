@@ -2,132 +2,215 @@ package dev.nucleusframework.updater.provider
 
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.updater.exception.NetworkException
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import dev.nucleusframework.updater.provider.GitHubReleaseChannels.clientChannel
+import dev.nucleusframework.updater.provider.GitHubReleaseChannels.latestFileName
+import dev.nucleusframework.updater.provider.GitHubReleaseChannels.manifestFileName
+import dev.nucleusframework.updater.provider.GitHubReleaseChannels.selectTag
+import dev.nucleusframework.updater.provider.GitHubReleases.FEED_RELEASES
+import dev.nucleusframework.updater.provider.GitHubReleases.assetName
+import dev.nucleusframework.updater.provider.GitHubReleases.feedTags
+import dev.nucleusframework.updater.provider.GitHubReleases.isReleaseTag
+import dev.nucleusframework.updater.provider.GitHubReleases.isStable
+import dev.nucleusframework.updater.provider.GitHubReleases.metadataFileName
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import javax.xml.stream.XMLStreamException
 
+/**
+ * Updates from the releases of a public GitHub repository, read through GitHub's anonymous web
+ * routes (no REST API on github.com, so no rate limit), as electron-updater does.
+ *
+ * Without pre-releases the release is the repository's latest one. With them, it is picked from
+ * `releases.atom` ([GitHubReleaseChannels.selectTag]), and its manifest is its own channel's
+ * (`beta.yml` for `v2.0.0-beta.1`), else `latest*.yml`: a client on `beta` moves on to the release
+ * that follows. Every file is then downloaded from that release's tag.
+ *
+ * The feed lists only the 10 most recent releases: a channel with none among them is not found
+ * (stable is unaffected). Tags that are not SemVer versions are on no channel.
+ *
+ * Private and internal repositories, and Enterprise Servers in private mode, need
+ * [PrivateGitHubProvider].
+ *
+ * @property host e.g. `github.example.com` for GitHub Enterprise Server, whose latest release is read
+ *   from its REST API (`/api/v3`); may include a port.
+ * @property protocol `"https"`, or `"http"` for a loopback host (local testing).
+ */
 public class GitHubProvider(
     public val owner: String,
     public val repo: String,
-    public val token: String? = null,
+    public val host: String = GitHubReleases.DEFAULT_HOST,
+    public val protocol: String = GitHubReleases.DEFAULT_PROTOCOL,
 ) : UpdateProvider {
     /**
-     * Base URL for the GitHub REST API. Exposed as `internal` so tests in this module
-     * can redirect API traffic to a local server; not part of the public API.
+     * Kept so that a call passing a token, `GitHubProvider(owner, repo, token)`, fails to compile
+     * instead of taking the token as [host]. Any three positional arguments resolve here, so a host
+     * is passed by name: `GitHubProvider(owner, repo, host = "github.example.com")`.
      */
-    internal var apiBaseUrl: String = "https://api.github.com"
+    @Deprecated(
+        "GitHubProvider reads public repositories only and takes no token. Use PrivateGitHubProvider.",
+        ReplaceWith("PrivateGitHubProvider(owner, repo, token)"),
+        DeprecationLevel.ERROR,
+    )
+    @Suppress("UNUSED_PARAMETER")
+    public constructor(owner: String, repo: String, token: String) : this(owner, repo)
+
+    private val baseUrl: String = GitHubReleases.baseUrl(protocol, host, "GitHubProvider")
+    private val releasesUrl = "$baseUrl/$owner/$repo/releases"
+    private val downloadUrl = "$releasesUrl/download/"
 
     override fun getUpdateMetadataUrl(
         channel: String,
         platform: Platform,
-    ): String {
-        val fileName = metadataFileName(channel, platform)
-        return "https://github.com/$owner/$repo/releases/latest/download/$fileName"
-    }
+    ): String = "$releasesUrl/latest/download/${metadataFileName(channel, platform)}"
+
+    /** As for a client that accepts pre-releases only on a pre-release channel. */
+    override fun resolveMetadataUrl(
+        channel: String,
+        platform: Platform,
+        httpClient: HttpClient,
+    ): String = resolve(channel, platform, httpClient, currentVersion = null, allowPrerelease = !isStable(channel))
 
     override fun resolveMetadataUrl(
         channel: String,
         platform: Platform,
         httpClient: HttpClient,
-    ): String {
-        val fileName = metadataFileName(channel, platform)
-        if (channel.equals(LATEST_CHANNEL, ignoreCase = true)) {
-            return "https://github.com/$owner/$repo/releases/latest/download/$fileName"
-        }
-        val tag = findLatestPrereleaseTag(channel, httpClient)
-        return "https://github.com/$owner/$repo/releases/download/$tag/$fileName"
-    }
+        currentVersion: String,
+        allowPrerelease: Boolean,
+    ): String = resolve(channel, platform, httpClient, currentVersion, allowPrerelease)
 
+    /** [fileName] under the tag `v<version>`; the manifest's own tag is only known from its URL. */
     override fun getDownloadUrl(
         fileName: String,
         version: String,
-    ): String = "https://github.com/$owner/$repo/releases/download/v$version/$fileName"
+    ): String = "${downloadUrl}v$version/${assetName(fileName)}"
 
-    override fun authHeaders(): Map<String, String> =
-        if (token != null) {
-            mapOf("Authorization" to "token $token")
-        } else {
-            emptyMap()
-        }
+    /** [fileName] under the tag [metadataUrl] was read from. */
+    override fun getDownloadUrl(
+        fileName: String,
+        version: String,
+        metadataUrl: String,
+    ): String {
+        if (!metadataUrl.startsWith(downloadUrl)) return getDownloadUrl(fileName, version)
+        val tag = metadataUrl.removePrefix(downloadUrl).substringBeforeLast('/')
+        return "$downloadUrl$tag/${assetName(fileName)}"
+    }
 
-    private fun metadataFileName(
+    private fun resolve(
         channel: String,
         platform: Platform,
+        httpClient: HttpClient,
+        currentVersion: String?,
+        allowPrerelease: Boolean,
     ): String {
-        val suffix = platformSuffix(platform)
-        return if (suffix.isEmpty()) "$channel.yml" else "$channel-$suffix.yml"
+        val tag =
+            if (allowPrerelease) {
+                findFeedTag(
+                    clientChannel(channel, currentVersion),
+                    httpClient,
+                )
+            } else {
+                findLatestTag(httpClient)
+            }
+        val url = "$downloadUrl$tag/${manifestFileName(tag, channel, platform)}"
+        val latestUrl = "$downloadUrl$tag/${latestFileName(platform)}"
+        // A release publishes no pre-release manifest: a pre-release client reads its latest*.yml.
+        return if (!allowPrerelease || url == latestUrl || isPublished(url, httpClient)) url else latestUrl
     }
 
-    private fun findLatestPrereleaseTag(
-        channel: String,
+    /** The tag the client on [clientChannel] takes from the releases feed ([selectTag]). */
+    private fun findFeedTag(
+        clientChannel: String?,
         httpClient: HttpClient,
     ): String {
-        val builder =
+        val tags = readFeedTags(httpClient).filter(::isReleaseTag)
+        if (tags.isEmpty()) {
+            throw NoSuchElementException("No published versions for $owner/$repo on GitHub.")
+        }
+        return selectTag(tags, clientChannel)
+            ?: throw NoSuchElementException(
+                "No release found for channel '$clientChannel' among the $FEED_RELEASES most recent releases " +
+                    "of $owner/$repo (the GitHub releases feed lists no more). Publish a release on this channel.",
+            )
+    }
+
+    /**
+     * The tag of the latest release. On github.com, the web route `releases/latest` redirects to the
+     * release's page, which answers JSON when asked to; elsewhere, the REST API.
+     */
+    private fun findLatestTag(httpClient: HttpClient): String {
+        val url =
+            if (host.equals(GitHubReleases.DEFAULT_HOST, ignoreCase = true)) {
+                "$releasesUrl/latest"
+            } else {
+                "$baseUrl/api/v3/repos/$owner/$repo/releases/latest"
+            }
+        val response = get(url, "application/json", httpClient)
+        when (response.statusCode()) {
+            HTTP_OK -> Unit
+            HTTP_NOT_FOUND -> throw NoSuchElementException("No published release for $owner/$repo on GitHub.")
+            else -> throw NetworkException(
+                "GitHub latest release lookup failed for $owner/$repo: HTTP ${response.statusCode()}",
+            )
+        }
+        return releaseTag(response.body())
+    }
+
+    private fun releaseTag(json: String): String =
+        try {
+            GitHubReleases.json.decodeFromString<GitHubReleases.TaggedRelease>(json).tagName
+        } catch (e: IllegalArgumentException) {
+            // SerializationException included.
+            throw NetworkException("GitHub latest release of $owner/$repo did not answer its tag", e)
+        }
+
+    private fun readFeedTags(httpClient: HttpClient): List<String> =
+        try {
+            feedTags(fetchFeed(httpClient))
+        } catch (e: XMLStreamException) {
+            throw NetworkException("GitHub releases feed for $owner/$repo is not valid Atom", e)
+        }
+
+    /** Reads `/<owner>/<repo>/releases.atom`. */
+    private fun fetchFeed(httpClient: HttpClient): String {
+        val response = get("$baseUrl/$owner/$repo/releases.atom", ATOM_ACCEPT, httpClient)
+        if (response.statusCode() != HTTP_OK) {
+            throw NetworkException("GitHub releases feed failed for $owner/$repo: HTTP ${response.statusCode()}")
+        }
+        return response.body()
+    }
+
+    /** Whether [url] answers, probed with a `HEAD` that follows GitHub's redirect to storage. */
+    private fun isPublished(
+        url: String,
+        httpClient: HttpClient,
+    ): Boolean {
+        val request =
             HttpRequest
                 .newBuilder()
-                .uri(URI.create("$apiBaseUrl/repos/$owner/$repo/releases?per_page=$PER_PAGE"))
-                .header("Accept", "application/vnd.github+json")
-                .header("X-GitHub-Api-Version", "2026-03-10")
-        if (token != null) builder.header("Authorization", "Bearer $token")
-        val request = builder.GET().build()
-
-        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-        val status = response.statusCode()
-        if (status != HTTP_OK) {
-            val rateLimited =
-                status == HTTP_FORBIDDEN &&
-                    response.headers().firstValue("X-RateLimit-Remaining").orElse(null) == "0"
-            val detail =
-                if (rateLimited) {
-                    "rate limit exceeded — configure a token to raise the limit"
-                } else {
-                    "HTTP $status"
-                }
-            throw NetworkException("GitHub API failed while listing releases for $owner/$repo: $detail")
-        }
-
-        val releases = json.decodeFromString<List<GitHubRelease>>(response.body())
-        val match =
-            releases.firstOrNull { release ->
-                release.prerelease && tagMatchesChannel(release.tagName, channel)
-            } ?: throw NoSuchElementException(
-                "No release found for channel '$channel' within the most recent $PER_PAGE releases. " +
-                    "Publish a fresh release on this channel.",
-            )
-        return match.tagName
+                .uri(URI.create(url))
+                .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                .build()
+        return httpClient.send(request, HttpResponse.BodyHandlers.discarding()).statusCode() == HTTP_OK
     }
 
-    private fun tagMatchesChannel(
-        tag: String,
-        channel: String,
-    ): Boolean {
-        val suffix = tag.substringAfter('-', missingDelimiterValue = "")
-        return suffix.startsWith(channel, ignoreCase = true)
-    }
-
-    private fun platformSuffix(platform: Platform): String =
-        when (platform) {
-            Platform.Windows -> ""
-            Platform.MacOS -> "mac"
-            Platform.Linux -> "linux"
-            Platform.Unknown -> ""
-        }
-
-    @Serializable
-    internal data class GitHubRelease(
-        @SerialName("tag_name") val tagName: String,
-        val prerelease: Boolean,
-    )
-
-    private companion object {
-        const val LATEST_CHANNEL = "latest"
-        const val PER_PAGE = 100
-        const val HTTP_OK = 200
-        const val HTTP_FORBIDDEN = 403
-        val json = Json { ignoreUnknownKeys = true }
+    private fun get(
+        url: String,
+        accept: String,
+        httpClient: HttpClient,
+    ): HttpResponse<String> {
+        val request =
+            HttpRequest
+                .newBuilder()
+                .uri(URI.create(url))
+                .header("Accept", accept)
+                .GET()
+                .build()
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString())
     }
 }
+
+private const val HTTP_OK = 200
+private const val HTTP_NOT_FOUND = 404
+private const val ATOM_ACCEPT = "application/atom+xml, application/xml, text/xml, */*"

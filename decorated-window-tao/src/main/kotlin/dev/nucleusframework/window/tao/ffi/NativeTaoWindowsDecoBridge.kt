@@ -9,7 +9,7 @@ private const val LIBRARY_NAME = "nucleus_tao_windows_deco"
  * (client-area extension via `WM_NCCALCSIZE`, hit-test routing via
  * `WM_NCHITTEST`, DWM shadow via `DwmExtendFrameIntoClientArea`).
  *
- * Mirrors the API of `decorated-window-jni`'s `JniWindowsDecorationBridge`,
+ * Mirrors the API of the legacy AWT backend's Windows decoration bridge,
  * minus the Skiko-AWT child-window plumbing (Tao renders into the HWND
  * directly via ANGLE).
  */
@@ -267,6 +267,15 @@ internal object NativeTaoWindowsDecoBridge {
     external fun nativeGetPrimaryMonitorWorkArea(): LongArray?
 
     /**
+     * Returns one descriptor per attached monitor
+     * (`EnumDisplayMonitors` + `GetMonitorInfoW`), encoded as documented in
+     * [dev.nucleusframework.window.tao.TaoMonitor]. `null` when the
+     * enumeration fails.
+     */
+    @JvmStatic
+    external fun nativeGetMonitors(): Array<String>?
+
+    /**
      * Returns the primary monitor's scale factor encoded as `(scale * 1000)`.
      * Falls back gracefully when `GetDpiForSystem` is unavailable. Used as a
      * scale source while a Tao window's own scale factor is not yet
@@ -330,4 +339,16 @@ internal object NativeTaoWindowsDecoBridge {
         startScreenX: Int,
         startScreenY: Int,
     ): LongArray?
+
+    /**
+     * Windows ClearType pixel geometry for Skia LCD text.
+     *
+     * `0` = font smoothing off or not ClearType, `1` = RGB_H, `2` = BGR_H.
+     */
+    @JvmStatic
+    external fun nativeFontSmoothingPixelGeometry(): Int
+
+    const val FONT_SMOOTHING_UNKNOWN: Int = 0
+    const val FONT_SMOOTHING_RGB: Int = 1
+    const val FONT_SMOOTHING_BGR: Int = 2
 }

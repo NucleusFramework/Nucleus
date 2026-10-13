@@ -1,3 +1,6 @@
+// Cohesive set of small, pure resolvability helpers shared by the metadata tasks.
+@file:Suppress("TooManyFunctions")
+
 package dev.nucleusframework.desktop.application.internal
 
 import java.io.File
@@ -168,27 +171,41 @@ internal fun buildClasspathClassIndex(files: Collection<File>): Set<String> {
     for (file in files) {
         if (!file.exists()) continue
         if (file.isDirectory) {
-            file
-                .walkTopDown()
-                .filter { it.isFile && it.name.endsWith(".class") }
-                .forEach { classFile ->
-                    val relative = classFile.relativeTo(file).path.replace(File.separatorChar, '/')
-                    classNameFromClassPath(relative)?.let { classes.add(it) }
-                }
+            indexClassDirectory(file, classes)
         } else if (file.name.endsWith(".jar")) {
-            try {
-                JarFile(file).use { jar ->
-                    for (entry in jar.entries()) {
-                        if (entry.isDirectory) continue
-                        classNameFromClassPath(entry.name)?.let { classes.add(it) }
-                    }
-                }
-            } catch (_: Exception) {
-                // Skip unreadable JARs
-            }
+            indexJar(file, classes)
         }
     }
     return classes
+}
+
+private fun indexClassDirectory(
+    dir: File,
+    classes: MutableSet<String>,
+) {
+    dir
+        .walkTopDown()
+        .filter { it.isFile && it.name.endsWith(".class") }
+        .forEach { classFile ->
+            val relative = classFile.relativeTo(dir).path.replace(File.separatorChar, '/')
+            classNameFromClassPath(relative)?.let { classes.add(it) }
+        }
+}
+
+private fun indexJar(
+    file: File,
+    classes: MutableSet<String>,
+) {
+    try {
+        JarFile(file).use { jar ->
+            for (entry in jar.entries()) {
+                if (entry.isDirectory) continue
+                classNameFromClassPath(entry.name)?.let { classes.add(it) }
+            }
+        }
+    } catch (_: Exception) {
+        // Skip unreadable JARs
+    }
 }
 
 /**
@@ -239,7 +256,7 @@ internal fun normalizeTypeForLookup(typeName: String): String? {
         var depth = 0
         while (depth < name.length && name[depth] == '[') depth++
         if (depth >= name.length) return name
-        return when (val tag = name[depth]) {
+        return when (name[depth]) {
             in JVM_PRIMITIVE_ARRAY_ELEMENT -> null
             'L' -> {
                 val semi = name.indexOf(';', depth)

@@ -1,5 +1,9 @@
 package dev.nucleusframework.desktop.application.tasks
 
+import dev.nucleusframework.desktop.application.internal.NUCLEUS_IDLE_GC_RESOURCE_KEY
+import dev.nucleusframework.desktop.application.internal.NUCLEUS_MALLOC_ARENA_MAX_RESOURCE_KEY
+import dev.nucleusframework.desktop.application.internal.NUCLEUS_PARTIAL_REDRAW_RESOURCE_KEY
+import dev.nucleusframework.desktop.application.internal.OPTIMIZED_MALLOC_ARENA_MAX
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
@@ -10,6 +14,10 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 import java.util.Properties
 
+/**
+ * Writes `nucleus/nucleus-app.properties` into [outputDir]: the app metadata (id, version, vendor, name, AUMID,
+ * startup identifiers) and the enabled runtime optimizations, read back at run time by the Nucleus runtime.
+ */
 @DisableCachingByDefault(because = "Lightweight task that writes a single properties file")
 abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
     @get:Input
@@ -43,9 +51,22 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
     @get:Optional
     abstract val startupTaskId: Property<String>
 
+    @get:Input
+    @get:Optional
+    abstract val idleGc: Property<Boolean>
+
+    @get:Input
+    @get:Optional
+    abstract val partialRedraw: Property<Boolean>
+
+    @get:Input
+    @get:Optional
+    abstract val mallocArenas: Property<Boolean>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    /** Writes the properties file. */
     @TaskAction
     fun generate() {
         val dir = outputDir.get().asFile.resolve("nucleus")
@@ -60,6 +81,11 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
         appAumid.orNull?.let { props["app.aumid"] = it }
         startupWmClass.orNull?.let { props["startup.wm.class"] = it }
         startupTaskId.orNull?.let { props["startup.task.id"] = it }
+        if (idleGc.getOrElse(false)) props[NUCLEUS_IDLE_GC_RESOURCE_KEY] = "true"
+        if (partialRedraw.getOrElse(false)) props[NUCLEUS_PARTIAL_REDRAW_RESOURCE_KEY] = "true"
+        if (mallocArenas.getOrElse(false)) {
+            props[NUCLEUS_MALLOC_ARENA_MAX_RESOURCE_KEY] = OPTIMIZED_MALLOC_ARENA_MAX.toString()
+        }
 
         // Use the OutputStream overload (not Writer): it escapes any non-Latin1
         // character (e.g. Hebrew app names) as \uXXXX, so the file round-trips

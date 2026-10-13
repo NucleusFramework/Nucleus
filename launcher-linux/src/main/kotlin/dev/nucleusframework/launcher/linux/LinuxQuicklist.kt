@@ -1,6 +1,6 @@
 package dev.nucleusframework.launcher.linux
 
-import javax.swing.SwingUtilities
+import dev.nucleusframework.core.runtime.NucleusUiThread
 
 /**
  * Dynamic quicklist server implementing `com.canonical.dbusmenu` over D-Bus.
@@ -141,7 +141,7 @@ public class LinuxQuicklist(
             itemId: Int,
         ) {
             val quicklist = registry[objectPath] ?: return
-            SwingUtilities.invokeLater {
+            NucleusUiThread.post {
                 quicklist.listener?.onItemClicked(itemId)
             }
         }

@@ -479,3 +479,22 @@ pub(crate) static MINIMIZED_HOOK: std::sync::OnceLock<fn(crate::window::WindowId
 pub fn set_minimized_hook(hook: fn(crate::window::WindowId, bool)) {
   let _ = MINIMIZED_HOOK.set(hook);
 }
+
+// PATCH(nucleus): embedder-provided cursor table.
+//
+// Tao resolves a `CursorIcon` itself, partly through private `NSCursor`
+// factories that can throw on a newer macOS (`_moveCursor` raises
+// "unrecognized selector" on macOS 27 although the method still exists, #746)
+// — inside `resetCursorRects`, where nothing can catch it. With a hook
+// installed every icon is resolved by the embedder instead, so the cursor rect
+// and the embedder's own immediate `[NSCursor set]` agree on one instance.
+pub(crate) static CURSOR_HOOK: std::sync::OnceLock<fn(crate::window::CursorIcon) -> *mut c_void> =
+  std::sync::OnceLock::new();
+
+/// Install the function that resolves a [`CursorIcon`](crate::window::CursorIcon)
+/// to an `NSCursor *` (+0, kept alive by the embedder; null = Tao's own cursor).
+/// Idempotent: the first installed hook wins. Called on the main thread from
+/// `resetCursorRects`; it must not throw an Objective-C exception.
+pub fn set_cursor_hook(hook: fn(crate::window::CursorIcon) -> *mut c_void) {
+  let _ = CURSOR_HOOK.set(hook);
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AT-SPI *event delivery* verification for tao-demo.
+"""AT-SPI *event delivery* verification for the Lab a11y-surface fixture.
 
 Linux counterpart of scripts/ci/verify-uia-events.ps1 (which gates on a COM
 UIA client receiving PropertyChanged). Here we subscribe to the AT-SPI D-Bus
@@ -78,7 +78,7 @@ class EventLog:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", default=ap.DEFAULT_APP)
-    parser.add_argument("--window", default="Tao Backend Demo")
+    parser.add_argument("--window", default=ap.DEFAULT_WINDOW)
     parser.add_argument("--timeout", type=int, default=int(os.environ.get("ATSPI_TIMEOUT_S", "300")))
     args = parser.parse_args()
 

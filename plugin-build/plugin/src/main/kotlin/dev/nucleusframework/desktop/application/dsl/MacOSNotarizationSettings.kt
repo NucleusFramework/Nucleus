@@ -15,6 +15,10 @@ import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Optional
 import javax.inject.Inject
 
+/**
+ * Credentials used to notarize macOS packages with `notarytool`: Apple ID + password + team ID,
+ * a keychain profile, or an App Store Connect API key. Each value defaults to its Nucleus Gradle property.
+ */
 abstract class MacOSNotarizationSettings {
     @get:Inject
     protected abstract val objects: ObjectFactory

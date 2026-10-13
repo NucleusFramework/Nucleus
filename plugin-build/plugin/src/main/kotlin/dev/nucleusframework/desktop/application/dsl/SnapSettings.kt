@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+/** Snap package options, passed to electron-builder's `snap` target. */
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class SnapSettings {
     /**

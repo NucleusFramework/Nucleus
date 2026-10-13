@@ -9,7 +9,10 @@ import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
 import org.gradle.api.tasks.Internal
-import java.io.*
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.InputStream
 import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
@@ -27,6 +30,8 @@ internal fun File.mangledName(): String =
         }
     }
 
+private const val BYTE_MASK = 0xFF
+
 internal fun File.contentHash(): String {
     val md5 = MessageDigest.getInstance("MD5")
     if (isDirectory) {
@@ -40,7 +45,7 @@ internal fun File.contentHash(): String {
     val digest = md5.digest()
     return buildString(digest.size * 2) {
         for (byte in digest) {
-            append(Integer.toHexString(0xFF and byte.toInt()))
+            append(Integer.toHexString(BYTE_MASK and byte.toInt()))
         }
     }
 }
@@ -48,7 +53,7 @@ internal fun File.contentHash(): String {
 private fun MessageDigest.digestContent(file: File) {
     file.inputStream().buffered().use { fis ->
         DigestInputStream(fis, this).use { ds ->
-            while (ds.read() != -1) {}
+            ds.readAllBytes()
         }
     }
 }

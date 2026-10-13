@@ -3,7 +3,6 @@ package dev.nucleusframework.application
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.DpSize
 import dev.nucleusframework.window.DecoratedDialogScope
@@ -22,8 +21,7 @@ public data class NucleusWindowBounds(
 )
 
 /**
- * Backend-agnostic handle to a window opened by [DecoratedWindow]. Mirrors the
- * intersection of `ComposeWindow` and `TaoWindow`.
+ * Portable handle to a window opened by [DecoratedWindow].
  *
  * Backend-specific bridges live behind [unsafe] — using them is an explicit
  * opt-out of the portable contract.
@@ -38,10 +36,9 @@ public interface NucleusWindow {
 
     /**
      * Outer (decoration-inclusive) window bounds in logical screen coordinates,
-     * or `null` while the native window isn't realized yet. Backend-agnostic:
-     * AWT reads user-space coordinates directly; Tao converts the physical
-     * window rect through the window's scale factor. Intended for cross-window
-     * features (drag & drop hit-testing, window placement).
+     * or `null` while the native window isn't realized yet. Converted from the
+     * physical window rect through the window's scale factor. Intended for
+     * cross-window features (drag & drop hit-testing, window placement).
      */
     public fun boundsOnScreen(): NucleusWindowBounds? = null
 
@@ -76,16 +73,11 @@ public interface NucleusWindow {
 }
 
 /**
- * Backend-specific escape hatches. The accessor matching the active backend
- * returns a non-null value; the others always return `null`. Access is
- * intentionally namespaced to flag uses that break portability.
+ * Backend-specific escape hatches, intentionally namespaced to flag uses that
+ * break portability across future backends.
  */
 @Stable
 public interface NucleusWindowUnsafe {
-    public val awtWindow: ComposeWindow? get() = null
-
-    public val awtDialog: androidx.compose.ui.awt.ComposeDialog? get() = null
-
     /** Tao-owned window (no-AWT backend). */
     public val taoWindow: dev.nucleusframework.window.tao.TaoWindow? get() = null
 
@@ -94,12 +86,11 @@ public interface NucleusWindowUnsafe {
 }
 
 /**
- * Decorated-window scope exposing a backend-agnostic [nucleusWindow]. Returned
- * inside the `content` lambda of [DecoratedWindow]. The concrete adapter also
- * implements the active backend's scope (`AwtDecoratedWindowScope` /
- * `TaoDecoratedWindowScope`), so the existing `TitleBar { … }` extension works
- * unchanged. The backend-specific `window` is reachable from those scopes;
- * use [nucleusWindow] (or [LocalNucleusWindow]) for portable code.
+ * Decorated-window scope exposing the portable [nucleusWindow]. Returned inside
+ * the `content` lambda of [DecoratedWindow]. The concrete adapter also
+ * implements `TaoDecoratedWindowScope`, so the `TitleBar { … }` extension works
+ * unchanged and the Tao `window` stays reachable; use [nucleusWindow] (or
+ * [LocalNucleusWindow]) for portable code.
  */
 @Stable
 public interface NucleusDecoratedWindowScope : DecoratedWindowScope {

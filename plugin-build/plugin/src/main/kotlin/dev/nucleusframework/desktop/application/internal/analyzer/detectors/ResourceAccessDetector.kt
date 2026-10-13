@@ -32,8 +32,8 @@ internal object ResourceAccessDetector {
             object : ClassVisitor(Opcodes.ASM9) {
                 override fun visitMethod(
                     access: Int,
-                    name: String,
-                    descriptor: String,
+                    methodName: String,
+                    methodDescriptor: String,
                     signature: String?,
                     exceptions: Array<out String>?,
                 ): MethodVisitor =
@@ -71,12 +71,13 @@ internal object ResourceAccessDetector {
                             descriptor: String,
                             isInterface: Boolean,
                         ) {
+                            val resourceName = stackString
                             if (opcode == Opcodes.INVOKEVIRTUAL &&
                                 owner in RESOURCE_OWNERS &&
                                 name in RESOURCE_METHODS &&
-                                stackString != null
+                                resourceName != null
                             ) {
-                                val path = normalizeResourcePath(stackString!!)
+                                val path = normalizeResourcePath(resourceName)
                                 if (path.isNotEmpty()) {
                                     patterns.add(ResourcePattern(glob = path))
                                 }

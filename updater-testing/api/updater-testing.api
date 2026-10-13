@@ -1,0 +1,75 @@
+public abstract class dev/nucleusframework/updater/testing/FeedFault {
+}
+
+public final class dev/nucleusframework/updater/testing/FeedFault$Corrupt : dev/nucleusframework/updater/testing/FeedFault {
+	public fun <init> ()V
+	public fun <init> (J)V
+	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getOffset ()J
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/testing/FeedFault$Delay : dev/nucleusframework/updater/testing/FeedFault {
+	public synthetic fun <init> (JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDuration-UwyO8pc ()J
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/testing/FeedFault$IgnoreRange : dev/nucleusframework/updater/testing/FeedFault {
+	public static final field INSTANCE Ldev/nucleusframework/updater/testing/FeedFault$IgnoreRange;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/testing/FeedFault$Status : dev/nucleusframework/updater/testing/FeedFault {
+	public fun <init> (I)V
+	public final fun getCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/testing/FeedFault$Throttle : dev/nucleusframework/updater/testing/FeedFault {
+	public fun <init> (J)V
+	public final fun getBytesPerSecond ()J
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/testing/FeedFault$Truncate : dev/nucleusframework/updater/testing/FeedFault {
+	public fun <init> (J)V
+	public final fun getAfterBytes ()J
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/testing/FeedRequest {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IJ)V
+	public final fun getBytesSent ()J
+	public final fun getMethod ()Ljava/lang/String;
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getRange ()Ljava/lang/String;
+	public final fun getStatus ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/testing/UpdateFeedServer : java/lang/AutoCloseable {
+	public static final field Companion Ldev/nucleusframework/updater/testing/UpdateFeedServer$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/io/File;I)V
+	public synthetic fun <init> (Ljava/io/File;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun clearFaults ()V
+	public final fun clearRequests ()V
+	public fun close ()V
+	public final fun fault (Ldev/nucleusframework/updater/testing/FeedFault;Ljava/lang/String;I)V
+	public static synthetic fun fault$default (Ldev/nucleusframework/updater/testing/UpdateFeedServer;Ldev/nucleusframework/updater/testing/FeedFault;Ljava/lang/String;IILjava/lang/Object;)V
+	public final fun getBaseUrl ()Ljava/lang/String;
+	public final fun getDirectory ()Ljava/io/File;
+	public final fun getRequests ()Ljava/util/List;
+	public final fun publish (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/time/Instant;)Ljava/io/File;
+	public final fun publish (Ljava/lang/String;[Ljava/io/File;)Ljava/io/File;
+	public static synthetic fun publish$default (Ldev/nucleusframework/updater/testing/UpdateFeedServer;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/time/Instant;ILjava/lang/Object;)Ljava/io/File;
+}
+
+public final class dev/nucleusframework/updater/testing/UpdateFeedServer$Companion {
+	public final fun manifestName (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
+	public static synthetic fun manifestName$default (Ldev/nucleusframework/updater/testing/UpdateFeedServer$Companion;Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;ILjava/lang/Object;)Ljava/lang/String;
+}
+

@@ -17,6 +17,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -123,7 +124,7 @@ static void fireHotKey(jlong id, jint keyCode, jint modifiers) {
     } else if (st != JNI_OK) return;
 
     (*env)->CallStaticVoidMethod(env, g_bridgeClass, g_onHotKeyMethod, id, keyCode, modifiers);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     if (didAttach) (*g_jvm)->DetachCurrentThread(g_jvm);
 }
 
@@ -132,8 +133,7 @@ static void fireHotKeyPortal(jlong id, jint keyCode, jint modifiers) {
     if (!g_portal_env || !g_bridgeClass || !g_onHotKeyMethod) return;
     (*g_portal_env)->CallStaticVoidMethod(g_portal_env, g_bridgeClass, g_onHotKeyMethod,
                                           id, keyCode, modifiers);
-    if ((*g_portal_env)->ExceptionCheck(g_portal_env))
-        (*g_portal_env)->ExceptionClear(g_portal_env);
+    nucleus_jni_clear_exception(g_portal_env);
 }
 
 /* awtToKeySym() and buildTrigger() live in nucleus_hotkey_keys.h so the

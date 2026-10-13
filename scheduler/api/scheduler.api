@@ -204,6 +204,7 @@ public abstract class dev/nucleusframework/scheduler/RetryPolicy {
 
 public final class dev/nucleusframework/scheduler/RetryPolicy$ExponentialBackoff : dev/nucleusframework/scheduler/RetryPolicy {
 	public static final field MAX_SHIFT I
+	public fun <init> ()V
 	public synthetic fun <init> (JIILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-UwyO8pc ()J
@@ -218,6 +219,7 @@ public final class dev/nucleusframework/scheduler/RetryPolicy$ExponentialBackoff
 }
 
 public final class dev/nucleusframework/scheduler/RetryPolicy$Linear : dev/nucleusframework/scheduler/RetryPolicy {
+	public fun <init> ()V
 	public synthetic fun <init> (JIILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-UwyO8pc ()J
