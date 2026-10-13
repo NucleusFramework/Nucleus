@@ -1,5 +1,7 @@
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.internal.utils.currentArch
+import org.gradle.api.logging.Logger
 import java.io.File
 
 /**
@@ -11,6 +13,20 @@ import java.io.File
  * C++ runtime, e.g. msvcp140_1.dll, which ONNX Runtime imports.
  */
 internal object MsvcRedistLocator {
+    /**
+     * The whole C++ runtime (~1.4 MB), not only what the executable imports: JNI libraries
+     * loaded at run time import the rest (e.g. ONNX Runtime needs msvcp140_1.dll).
+     */
+    val CPP_RUNTIME_DLLS =
+        listOf(
+            "vcruntime140.dll",
+            "vcruntime140_1.dll",
+            "msvcp140.dll",
+            "msvcp140_1.dll",
+            "msvcp140_2.dll",
+            "concrt140.dll",
+        )
+
     private val crtDirRegex = Regex("""Microsoft\.VC14\d\.CRT""")
 
     /** [architecture] is the redist folder name: `x64` or `arm64`. */
@@ -23,6 +39,48 @@ internal object MsvcRedistLocator {
             listOfNotNull(System.getenv("ProgramFiles"), System.getenv("ProgramFiles(x86)"))
                 .map { File(it, "Microsoft Visual Studio") }
         return locateCrtDir(visualStudioRoots, architecture)
+    }
+
+    /**
+     * Copies [dlls] from the redistributable next to the executable of the jpackage app image(s)
+     * under [destinationDir]: unlike `runtime\bin`, the executable's directory is searched for a
+     * library's dependencies. The whole set goes there, so every runtime DLL the process loads
+     * comes from one version.
+     */
+    fun bundleIntoAppImage(
+        destinationDir: File,
+        dlls: List<String>,
+        logger: Logger,
+        crtDir: File? = if (dlls.isEmpty()) null else locateCrtDir(currentArch.id),
+    ) {
+        if (dlls.isEmpty()) return
+        if (crtDir == null) {
+            logger.warn(
+                "[windows] MSVC redistributable not found (no Visual Studio with the C++ tools): " +
+                    "the app may fail to load native libraries on machines without the Visual C++ " +
+                    "Redistributable. Set nativeDistributions.windows.bundleCRuntime = false to silence this.",
+            )
+            return
+        }
+        // jpackage's app image: <destinationDir>/<name>/{<name>.exe, runtime/, app/}
+        val appImageRoots =
+            destinationDir
+                .walkTopDown()
+                .maxDepth(2)
+                .filter { dir -> dir.isDirectory && File(dir, "runtime").isDirectory }
+                .filter { dir -> dir.children().any { it.extension.equals("exe", ignoreCase = true) } }
+                .toList()
+        for (root in appImageRoots) {
+            val missing = dlls.filterNot { dll -> File(crtDir, dll).isFile }
+            dlls
+                .map { File(crtDir, it) }
+                .filter { it.isFile }
+                .forEach { it.copyTo(File(root, it.name), overwrite = true) }
+            if (missing.isNotEmpty()) {
+                logger.warn("[windows] C runtime DLLs not found in $crtDir: ${missing.joinToString()}")
+            }
+            logger.info("Bundled the MSVC C/C++ runtime from $crtDir into $root")
+        }
     }
 
     /** Searches `<root>\<year>\<edition>\VC\Redist\MSVC\<version>`, newest version first. */

@@ -1,7 +1,9 @@
 package dev.nucleusframework.desktop.application.internal
 
 import org.junit.Assert.assertEquals
+import org.gradle.api.logging.Logging
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -51,5 +53,25 @@ class MsvcRedistLocatorTest {
     @Test
     fun `returns null without Visual Studio`() {
         assertNull(MsvcRedistLocator.locateCrtDir(listOf(File(tmpDir.root, "missing")), "x64"))
+    }
+
+    @Test
+    fun `bundles the runtime next to the app image executable only`() {
+        val crt = tmpDir.newFolder("crt")
+        MsvcRedistLocator.CPP_RUNTIME_DLLS.forEach { File(crt, it).writeText(it) }
+        val destination = tmpDir.newFolder("app-image")
+        val appRoot = File(destination, "MyApp").apply { mkdirs() }
+        File(appRoot, "MyApp.exe").writeText("")
+        val runtimeBin = File(appRoot, "runtime/bin").apply { mkdirs() }
+
+        MsvcRedistLocator.bundleIntoAppImage(
+            destination,
+            MsvcRedistLocator.CPP_RUNTIME_DLLS,
+            Logging.getLogger(MsvcRedistLocatorTest::class.java),
+            crt,
+        )
+
+        MsvcRedistLocator.CPP_RUNTIME_DLLS.forEach { dll -> assertTrue(dll, File(appRoot, dll).isFile) }
+        assertTrue(runtimeBin.list().orEmpty().isEmpty())
     }
 }

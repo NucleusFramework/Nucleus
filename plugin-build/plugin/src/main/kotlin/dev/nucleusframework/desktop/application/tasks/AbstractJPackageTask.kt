@@ -14,6 +14,7 @@ import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.dsl.UrlProtocol
 import dev.nucleusframework.desktop.application.internal.APP_RESOURCES_DIR
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder
+import dev.nucleusframework.desktop.application.internal.MsvcRedistLocator
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
@@ -266,6 +267,10 @@ abstract class AbstractJPackageTask
         @get:Input
         @get:Optional
         val winConsole: Property<Boolean> = objects.nullableProperty()
+
+        /** MSVC runtime DLLs copied next to the Windows executable; empty to bundle none. */
+        @get:Input
+        val winCRuntimeDlls: ListProperty<String> = objects.listProperty(String::class.java)
 
         @get:InputDirectory
         @get:Optional
@@ -750,6 +755,9 @@ abstract class AbstractJPackageTask
                 LauncherClasspathOrder.apply(destinationDir.ioFile, launcherClasspathOrder(), logger)
             }
             modifyRuntimeOnMacOsIfNeeded()
+            if (currentOS == OS.Windows && targetFormat == TargetFormat.RawAppImage) {
+                MsvcRedistLocator.bundleIntoAppImage(destinationDir.ioFile, winCRuntimeDlls.get(), logger)
+            }
             // Linux only: shrink the jpackage launcher's serialized classpath so the parent
             // process's single pipe read cannot short-read (JDK-8380085 / Nucleus #454).
             if (currentOS == OS.Linux && targetFormat == TargetFormat.RawAppImage) {

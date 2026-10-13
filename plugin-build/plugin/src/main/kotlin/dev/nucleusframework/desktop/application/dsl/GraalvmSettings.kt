@@ -1,5 +1,6 @@
 package dev.nucleusframework.desktop.application.dsl
 
+import dev.nucleusframework.desktop.application.internal.MsvcRedistLocator
 import dev.nucleusframework.internal.utils.new
 import dev.nucleusframework.internal.utils.notNullProperty
 import dev.nucleusframework.internal.utils.nullableProperty
@@ -340,16 +341,7 @@ abstract class GraalvmWindowsSettings
         val dlls: ListProperty<String> =
             objects
                 .listProperty(String::class.java)
-                .convention(
-                    listOf(
-                        "vcruntime140.dll",
-                        "vcruntime140_1.dll",
-                        "msvcp140.dll",
-                        "msvcp140_1.dll",
-                        "msvcp140_2.dll",
-                        "concrt140.dll",
-                    ),
-                )
+                .convention(MsvcRedistLocator.CPP_RUNTIME_DLLS)
 
         /**
          * Directory the runtime DLLs are copied from. When unset, they come from the newest

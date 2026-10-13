@@ -358,6 +358,20 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
     var console: Boolean = false
     var dirChooser: Boolean = true
 
+    /**
+     * Whether to bundle the MSVC C/C++ runtime DLLs (msvcp140*, vcruntime140*, concrt140) next
+     * to the app's executable, from the newest Visual Studio's redistributable.
+     *
+     * The JDK runtime only ships vcruntime140.dll, vcruntime140_1.dll and msvcp140.dll, in
+     * `runtime\bin`, where Windows doesn't look for a library's dependencies: a JNI library
+     * importing the rest (e.g. ONNX Runtime needs msvcp140_1.dll) fails to load
+     * (`UnsatisfiedLinkError`) on machines without the Visual C++ Redistributable.
+     *
+     * Defaults to `true`; without Visual Studio on the build machine, nothing is bundled and a
+     * warning is logged.
+     */
+    var bundleCRuntime: Boolean = true
+
     @Deprecated(
         "Use msi { perMachine = ... } instead. Note the inverted meaning: " +
             "perUserInstall = true is equivalent to msi.perMachine = false.",
