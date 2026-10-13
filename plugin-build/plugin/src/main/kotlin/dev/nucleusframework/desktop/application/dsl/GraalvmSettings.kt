@@ -314,8 +314,8 @@ abstract class GraalvmWindowsSettings
         objects: ObjectFactory,
     ) {
         /**
-         * Whether to bundle the MSVC C/C++ runtime DLLs (vcruntime140.dll, vcruntime140_1.dll,
-         * msvcp140.dll) next to the produced native executable.
+         * Whether to bundle the MSVC C/C++ runtime DLLs ([dlls]) next to the produced native
+         * executable.
          *
          * GraalVM native images on Windows are dynamically linked against the Visual C++
          * runtime, which is **not** part of a clean Windows install (it ships with the
@@ -329,19 +329,34 @@ abstract class GraalvmWindowsSettings
 
         /**
          * The DLL file names copied next to the executable when [bundleCRuntime] is enabled.
-         * Only files that actually exist in [sourceDir] are copied; missing ones are reported
-         * as a warning at packaging time.
+         *
+         * Defaults to the whole C++ runtime (~1.4 MB), not only what the executable imports:
+         * JNI libraries loaded at run time import the rest (e.g. ONNX Runtime needs
+         * msvcp140_1.dll), and without it they fail to load (`UnsatisfiedLinkError`) only on
+         * machines lacking the Visual C++ Redistributable. Only files that actually exist in the
+         * source directories are copied; missing ones are reported as a warning at packaging
+         * time.
          */
         val dlls: ListProperty<String> =
             objects
                 .listProperty(String::class.java)
-                .convention(listOf("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"))
+                .convention(
+                    listOf(
+                        "vcruntime140.dll",
+                        "vcruntime140_1.dll",
+                        "msvcp140.dll",
+                        "msvcp140_1.dll",
+                        "msvcp140_2.dll",
+                        "concrt140.dll",
+                    ),
+                )
 
         /**
-         * Directory the runtime DLLs are copied from. Defaults to the GraalVM toolchain's
-         * `bin` directory, which ships these DLLs. Override it to point at the MSVC
-         * redistributable directory (e.g. `VC\Redist\MSVC\<version>\x64\Microsoft.VC143.CRT`)
-         * if one of the requested DLLs is not present in the toolchain.
+         * Directory the runtime DLLs are copied from. When unset, they come from the newest
+         * MSVC redistributable (`VC\Redist\MSVC\<version>\<arch>\Microsoft.VC14x.CRT`, found
+         * through `VCToolsRedistDir` or the Visual Studio installs native-image builds with),
+         * else from the GraalVM toolchain's `bin` directory, which only ships vcruntime140.dll,
+         * vcruntime140_1.dll and msvcp140.dll.
          */
         val sourceDir: DirectoryProperty = objects.directoryProperty()
     }

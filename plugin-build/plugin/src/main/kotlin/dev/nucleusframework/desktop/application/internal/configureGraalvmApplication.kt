@@ -35,6 +35,7 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.Project
 import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.file.Directory
+import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
 import org.gradle.api.logging.Logger
 import org.gradle.api.plugins.JavaPluginExtension
@@ -2255,8 +2256,9 @@ private fun JvmApplicationContext.registerCopyGraalvmAwtDlls(
     }
 
 /**
- * Copies the MSVC C/C++ runtime DLLs next to the executable, warning about any the configured
- * source directory lacks.
+ * Copies the MSVC C/C++ runtime DLLs next to the executable, warning about any the source
+ * directories lack. Without an explicit `sourceDir`, they come from the MSVC redistributable
+ * (the whole C++ runtime), else from the GraalVM toolchain's `bin` (only its core DLLs).
  */
 private fun JvmApplicationContext.registerCopyGraalvmCRuntime(
     graalvm: GraalvmSettings,
@@ -2265,17 +2267,24 @@ private fun JvmApplicationContext.registerCopyGraalvmCRuntime(
     outputDir: Provider<Directory>,
 ): TaskProvider<Copy> {
     val requestedDlls = graalvm.windows.dlls.get()
-    val cRuntimeSourceDir =
+    val graalvmBin = graalvmHome.map { "$it/bin" }
+    val cRuntimeSourceDirs: Provider<List<String>> =
         graalvm.windows.sourceDir
-            .map { it.asFile.absolutePath }
-            .orElse(graalvmHome.map { "$it/bin" })
+            .map { listOf(it.asFile.absolutePath) }
+            .orElse(
+                graalvmBin.map { bin ->
+                    listOfNotNull(MsvcRedistLocator.locateCrtDir(currentArch.id)?.absolutePath, bin)
+                },
+            )
     return tasks.register<Copy>(
         taskNameAction = "copy",
         taskNameObject = "graalvmCRuntimeDlls",
     ) {
         description = "Copy MSVC C/C++ runtime DLLs next to the native executable"
         dependsOn(nativeImageCompile)
-        from(cRuntimeSourceDir) {
+        // The first source holding a DLL wins, so all of them come from one runtime version
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        from(cRuntimeSourceDirs) {
             requestedDlls.forEach { dll -> include(dll) }
         }
         into(outputDir)
@@ -2285,7 +2294,7 @@ private fun JvmApplicationContext.registerCopyGraalvmCRuntime(
             val missing = requestedDlls.filterNot { dll -> dll.lowercase() in present }
             if (missing.isNotEmpty()) {
                 logger.warn(
-                    "[graalvm] C runtime DLLs not found in ${cRuntimeSourceDir.get()}: " +
+                    "[graalvm] C runtime DLLs not found in ${cRuntimeSourceDirs.get().joinToString()}: " +
                         "${missing.joinToString()}. The app may fail to start with a " +
                         "\"DLL not found\" error on machines without the Visual C++ " +
                         "Redistributable. Point graalvm.windows.sourceDir at a directory " +
