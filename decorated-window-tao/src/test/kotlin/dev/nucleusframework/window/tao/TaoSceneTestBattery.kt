@@ -30,6 +30,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerSlopTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
+import dev.nucleusframework.window.tao.scene.TaoScenePopupDisposedInLayoutTest
 import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
@@ -605,6 +606,13 @@ public object TaoSceneTestBattery {
         }
         run("TaoScenePopupTest: buffer scale alignment rounds up and never collapses to zero") {
             TaoScenePopupTest().`buffer scale alignment rounds up and never collapses to zero`()
+        }
+        run(
+            "TaoScenePopupDisposedInLayoutTest: a popup its subcomposition drops during layout " +
+                "does not break the frame",
+        ) {
+            TaoScenePopupDisposedInLayoutTest()
+                .`a popup its subcomposition drops during layout does not break the frame`()
         }
         run(
             "TaoSceneOuterLocalsBridgeTest: wrapping window content in outer locals with " +
