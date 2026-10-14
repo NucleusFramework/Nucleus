@@ -27,21 +27,9 @@ inputs:
     required: false
     default: 'true'
   graalvm:
-    description: 'Prepare a GraalVM native-image build: native build tools (Xcode/MSVC) and toolchain cache. The GraalVM JDK itself is auto-downloaded by the Nucleus plugin.'
+    description: 'Prepare a GraalVM native-image build: native build tools (Xcode/MSVC). The GraalVM JDK itself is auto-downloaded by the Nucleus plugin.'
     required: false
     default: 'false'
-  graalvm-version:
-    description: 'GraalVM toolchain version, used only as a cache-key component. Keep in sync with the graalvm { toolchain { } } DSL (e.g. 25i4, 25).'
-    required: false
-    default: '25i4'
-  graalvm-distribution:
-    description: 'GraalVM distribution, used only as a cache-key component. Keep in sync with graalvm { toolchain { distribution } } (community or oracle). Changing it must not restore a cache holding the other distribution.'
-    required: false
-    default: 'community'
-  node-version:
-    description: 'Node.js line the Nucleus plugin provisions, used only as a cache-key component. Keep in sync with the nativeDistributions { nodejs { version } } DSL.'
-    required: false
-    default: '22'
 
 outputs:
   java-home:
@@ -71,9 +59,11 @@ runs:
     # ── GraalVM native-image prerequisites ──────────────────────────────
     # The GraalVM JDK is not installed here: the Nucleus plugin auto-downloads
     # GraalVM Community Edition by default (Liberica NIK on Intel macOS) per the
-    # graalvm { toolchain { } } DSL and caches it under ~/.gradle/nucleus/graalvm.
-    # Only the native build tools (Xcode/MSVC) and the toolchain cache are
-    # GraalVM-specific.
+    # graalvm { toolchain { } } DSL into ~/.gradle/nucleus/graalvm. It is not
+    # cached: ~300 MB per OS/arch, saved again for every tag and PR ref, it
+    # pushed the repo past the 10 GB Actions cache limit and got the Gradle
+    # caches evicted, all to save a download. Only the native build tools
+    # (Xcode/MSVC) are GraalVM-specific.
     - name: Select Xcode 26
       if: runner.os == 'macOS' && inputs.graalvm == 'true'
       shell: bash
@@ -82,17 +72,6 @@ runs:
     - name: Setup MSVC
       if: runner.os == 'Windows' && inputs.graalvm == 'true'
       uses: ilammy/msvc-dev-cmd@v1
-
-    # Keyed per OS/arch/distribution: the plugin resolves a platform-specific
-    # toolchain, and cache entries with different keys are never shared across
-    # runners. The distribution is part of the key so switching it never restores
-    # a cache still holding the other build.
-    - name: Cache GraalVM toolchain
-      if: inputs.graalvm == 'true'
-      uses: actions/cache@v6
-      with:
-        path: ~/.gradle/nucleus/graalvm
-        key: graalvm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.graalvm-distribution }}-${{ inputs.graalvm-version }}
 
     - name: Set java-home output
       id: set-java-home
@@ -151,11 +130,6 @@ runs:
 
     # ── Node.js ─────────────────────────────────────────────────────────
     # No actions/setup-node: the Nucleus plugin downloads the Node.js it runs
-    # electron-builder with and caches it under ~/.gradle/nucleus/nodejs, so CI
-    # packages with the same toolchain a developer machine does. Only the cache
-    # is CI's business.
-    - name: Cache Node.js toolchain
-      uses: actions/cache@v6
-      with:
-        path: ~/.gradle/nucleus/nodejs
-        key: nodejs-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.node-version }}
+    # electron-builder with into ~/.gradle/nucleus/nodejs, so CI packages with
+    # the same toolchain a developer machine does. Not cached, for the same
+    # reason as the GraalVM toolchain.
