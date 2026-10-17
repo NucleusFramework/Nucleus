@@ -30,6 +30,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerSlopTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
+import dev.nucleusframework.window.tao.scene.TaoScenePopupDisposedInLayoutTest
 import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRectManagerRaceTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
@@ -93,6 +94,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneTrackpadScaleTest::class.java,
             TaoTrackpadScaleSessionTest::class.java,
             TaoScenePopupTest::class.java,
+            TaoScenePopupDisposedInLayoutTest::class.java,
             TaoSceneOuterLocalsBridgeTest::class.java,
             TaoOutOfFrameExecutorTest::class.java,
             TaoSceneAnimationTest::class.java,
