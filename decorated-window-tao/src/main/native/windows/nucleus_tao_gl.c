@@ -150,15 +150,36 @@ static PFNEGLDESTROYIMAGEKHRPROC       pEglDestroyImageKHR       = NULL;
 static PFNEGLQUERYDISPLAYATTRIBEXTPROC pEglQueryDisplayAttribEXT = NULL;
 static PFNEGLQUERYDEVICEATTRIBEXTPROC  pEglQueryDeviceAttribEXT  = NULL;
 
+/* The libGLESv2.dll beside libEGL: ANGLE's libEGL loads its GLES from its own
+ * directory (by absolute path, at eglInitialize), and only that copy sees the
+ * contexts libEGL makes current. A bare-name load could bind another copy
+ * already in the process. Falls back to the bare name. No CRT here. */
+static HMODULE loadGlesBesideEgl(HMODULE egl) {
+    static const WCHAR kGles[] = L"libGLESv2.dll";
+    WCHAR path[MAX_PATH];
+    DWORD len = GetModuleFileNameW(egl, path, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        DWORD dir = len;
+        while (dir > 0 && path[dir - 1] != L'\\' && path[dir - 1] != L'/') dir--;
+        if (dir > 0 && dir + sizeof(kGles) / sizeof(WCHAR) <= MAX_PATH) {
+            for (DWORD i = 0; i < sizeof(kGles) / sizeof(WCHAR); i++) path[dir + i] = kGles[i];
+            HMODULE gles = LoadLibraryW(path);
+            if (gles) return gles;
+        }
+    }
+    return LoadLibraryW(kGles);
+}
+
 static void loadEgl(void) {
     if (eglLoaded) return;
     eglLoaded = TRUE;
 
     /* The DLLs ship next to the other nucleus_tao_*.dll; the JVM side extracts
-     * them and pre-loads libGLESv2/libEGL so they resolve by bare name here. */
+     * libEGL (with libGLESv2 beside it) and pre-loads it so it resolves by bare
+     * name here. */
     sLibEGL = LoadLibraryW(L"libEGL.dll");
     if (!sLibEGL) return;
-    sLibGLESv2 = LoadLibraryW(L"libGLESv2.dll"); /* libEGL also pulls it in */
+    sLibGLESv2 = loadGlesBesideEgl(sLibEGL);
 
     pEglGetProcAddress      = (PFNEGLGETPROCADDRESSPROC)      GetProcAddress(sLibEGL, "eglGetProcAddress");
     pEglGetDisplay          = (PFNEGLGETDISPLAYPROC)          GetProcAddress(sLibEGL, "eglGetDisplay");

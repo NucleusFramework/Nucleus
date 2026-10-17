@@ -22,17 +22,19 @@ internal object NativeTaoGlBridge {
     init {
         // ANGLE (libEGL + libGLESv2) backs the Direct3D-11 render path.
         // They ship next to the other Windows native libs but are only
-        // present on win32-*; load libGLESv2 by absolute path FIRST (libEGL
-        // depends on it) so the native `LoadLibraryW("libEGL.dll")` resolves
-        // the already-loaded module by base name.
+        // present on win32-*; libEGL is loaded by absolute path so the native
+        // `LoadLibraryW("libEGL.dll")` resolves the already-loaded module by
+        // base name.
         //
-        // libGLESv2 must ALSO sit in libEGL's cache directory: at eglInitialize
-        // ANGLE's libEGL loads libGLESv2 via an absolute path built from its own
-        // module dir (SearchType::ModuleDir). The content-addressed loader gives
-        // each library its own <fingerprint>/ dir, so without this sidecar the
-        // two DLLs land in different dirs and ANGLE can't find libGLESv2.
+        // libGLESv2 sits in libEGL's cache directory and is loaded from there
+        // only: at eglInitialize ANGLE's libEGL loads libGLESv2 via an absolute
+        // path built from its own module dir (SearchType::ModuleDir), and the
+        // native side loads that same file. libEGL has no import of libGLESv2,
+        // so it isn't loaded on its own first: from another directory it would
+        // be a second copy in the process, which by-name lookups (native code,
+        // delay-loaded imports of other libraries) could bind instead of
+        // ANGLE's, with no current context there.
         if (System.getProperty("os.name", "").lowercase().contains("win")) {
-            NativeLibraryLoader.load("libGLESv2", NativeTaoGlBridge::class.java)
             NativeLibraryLoader.load(
                 "libEGL",
                 NativeTaoGlBridge::class.java,
