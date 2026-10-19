@@ -217,9 +217,50 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
     }
 }
 
-/** Extra `Info.plist` content: [extraKeysRawXml] is inserted verbatim into the generated plist dictionary. */
+/**
+ * Extra `Info.plist` content: [extraKeysRawXml] is inserted verbatim into the generated plist dictionary,
+ * and [localizationsDir] / [localization] provide the localized values macOS reads from
+ * `Contents/Resources/<lang>.lproj/InfoPlist.strings` (e.g. permission prompts).
+ *
+ * ```kotlin
+ * macOS {
+ *     infoPlist {
+ *         extraKeysRawXml = "<key>NSCameraUsageDescription</key><string>Scan documents</string>"
+ *         localization("de", mapOf("NSCameraUsageDescription" to "Dokumente scannen"))
+ *         localizationsDir = file("macos/localizations") // fr.lproj/InfoPlist.strings, …
+ *     }
+ * }
+ * ```
+ */
 open class InfoPlistSettings {
     var extraKeysRawXml: String? = null
+
+    /**
+     * Directory whose `<lang>.lproj/` subdirectories are copied as-is into the bundle's
+     * `Contents/Resources`, before signing, in both the JVM and GraalVM pipelines.
+     */
+    var localizationsDir: File? = null
+
+    internal val localizedStrings: MutableMap<String, Map<String, String>> = linkedMapOf()
+
+    /**
+     * Writes [strings] (`Info.plist` key → localized value) to `<language>.lproj/InfoPlist.strings`.
+     * Calling it again for the same [language] merges the entries. A language must not also have an
+     * `InfoPlist.strings` in [localizationsDir].
+     */
+    fun localization(
+        language: String,
+        strings: Map<String, String>,
+    ) {
+        require(LPROJ_LANGUAGE.matches(language)) {
+            "macOS infoPlist localization: invalid language '$language' (expected e.g. \"de\", \"pt-BR\", \"zh-Hans\")"
+        }
+        localizedStrings[language] = localizedStrings[language].orEmpty() + strings
+    }
+
+    private companion object {
+        val LPROJ_LANGUAGE = Regex("[A-Za-z0-9_-]+")
+    }
 }
 
 /**

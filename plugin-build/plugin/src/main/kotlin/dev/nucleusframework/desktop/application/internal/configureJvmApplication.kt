@@ -1283,6 +1283,10 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                 packageTask.macRuntimeProvisioningProfile.set(mac.runtimeProvisioningProfile)
                 packageTask.macOsSdkVersion.set(mac.macOsSdkVersion)
                 packageTask.macExtraPlistKeysRawXml.set(mac.infoPlistSettings.extraKeysRawXml)
+                packageTask.macInfoPlistLocalizationsDir.set(mac.infoPlistSettings.localizationsDir)
+                packageTask.macInfoPlistLocalizedStrings.set(
+                    renderInfoPlistLocalizations(mac.infoPlistSettings.localizedStrings),
+                )
                 packageTask.nonValidatedMacSigningSettings = app.nativeDistributions.macOS.signing
                 packageTask.iconFile.set(mac.iconFile.orElse(defaultResources.get { macIcon }))
                 packageTask.fileAssociations.set(mac.fileAssociations)
