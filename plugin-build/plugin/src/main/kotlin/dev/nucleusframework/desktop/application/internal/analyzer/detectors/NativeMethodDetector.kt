@@ -17,13 +17,18 @@ import org.objectweb.asm.Type
  * since GraalVM JNI configs need all types accessible from native code.
  *
  * Native methods carrying a GraalVM C interop annotation (`org.graalvm.nativeimage.c.*`, e.g.
- * `@CFunction`, `@CConstant`) are skipped: native-image binds those itself, they are not JNI.
- * Registering them, and through their signatures the `@CStruct` word types they take, crashes
- * native-image's points-to analysis ("Should not reach here: This method should never be called").
+ * `@CFunction`, `@CConstant`) are skipped here and in [extractJniCallbackEntry]: native-image binds
+ * those itself, they are not JNI. Registering them, or the `@CStruct` word types they take,
+ * crashes native-image's points-to analysis ("Should not reach here: This method should never be
+ * called"); [isGraalvmWordType] lets the analyzer keep word types out of the JNI metadata whatever
+ * route leads to them.
  */
 internal object NativeMethodDetector {
     /** Descriptor prefix of the GraalVM C interop annotations (`@CFunction`, `@CConstant`, …). */
     private const val GRAALVM_C_INTEROP_PACKAGE = "Lorg/graalvm/nativeimage/c/"
+
+    /** Internal-name prefix of the GraalVM word interfaces (`WordBase`, `PointerBase`, …). */
+    private const val GRAALVM_WORD_PACKAGE = "org/graalvm/word/"
 
     data class NativeMethodResult(
         val jniEntries: Set<JniEntry>,
@@ -82,34 +87,20 @@ internal object NativeMethodDetector {
                     exceptions: Array<out String>?,
                 ): MethodVisitor? {
                     if (access and Opcodes.ACC_NATIVE == 0) return null
-                    // Registered once the method's annotations have been seen, in visitEnd.
-                    return object : MethodVisitor(Opcodes.ASM9) {
-                        private var cInterop = false
+                    return unlessCInterop {
+                        hasNativeMethods = true
+                        val argTypes = Type.getArgumentTypes(descriptor)
+                        val retType = Type.getReturnType(descriptor)
+                        val paramTypes = argTypes.map { asmTypeToJavaName(it) }
 
-                        override fun visitAnnotation(
-                            annotationDescriptor: String,
-                            visible: Boolean,
-                        ): AnnotationVisitor? {
-                            if (annotationDescriptor.startsWith(GRAALVM_C_INTEROP_PACKAGE)) cInterop = true
-                            return null
+                        entries
+                            .getOrPut(className) { mutableSetOf() }
+                            .add(MethodSignature(name, paramTypes))
+
+                        for (t in argTypes) {
+                            collectObjectTypes(t, referencedTypes)
                         }
-
-                        override fun visitEnd() {
-                            if (cInterop) return
-                            hasNativeMethods = true
-                            val argTypes = Type.getArgumentTypes(descriptor)
-                            val retType = Type.getReturnType(descriptor)
-                            val paramTypes = argTypes.map { asmTypeToJavaName(it) }
-
-                            entries
-                                .getOrPut(className) { mutableSetOf() }
-                                .add(MethodSignature(name, paramTypes))
-
-                            for (t in argTypes) {
-                                collectObjectTypes(t, referencedTypes)
-                            }
-                            collectObjectTypes(retType, referencedTypes)
-                        }
+                        collectObjectTypes(retType, referencedTypes)
                     }
                 }
             },
@@ -175,7 +166,10 @@ internal object NativeMethodDetector {
                     if (access and Opcodes.ACC_PRIVATE != 0 && name != "<init>") return null
 
                     val paramTypes = Type.getArgumentTypes(descriptor).map { asmTypeToJavaName(it) }
-                    methods.add(MethodSignature(name, paramTypes))
+                    val method = MethodSignature(name, paramTypes)
+                    // A C interop native is not callable through JNI; see the class KDoc.
+                    if (access and Opcodes.ACC_NATIVE != 0) return unlessCInterop { methods.add(method) }
+                    methods.add(method)
                     return null
                 }
             },
@@ -185,6 +179,53 @@ internal object NativeMethodDetector {
         if (className.isEmpty()) return null
         return JniEntry(type = className, methods = methods, fields = fields, jniAccessible = true)
     }
+
+    /**
+     * True when [internalName] is a GraalVM word type: a class or interface that extends one of
+     * the `org.graalvm.word` interfaces (`WordBase`, `PointerBase`, …), directly or through
+     * supertypes found in [classBytesIndex]. `@CStruct`, `@RawStructure` and `@CPointerTo` types are
+     * all word types. A supertype outside [classBytesIndex] is not followed, so a word type whose
+     * chain passes through a class on another JAR is not recognized.
+     */
+    fun isGraalvmWordType(
+        internalName: String,
+        classBytesIndex: Map<String, ByteArray>,
+        visited: MutableSet<String> = mutableSetOf(),
+    ): Boolean {
+        if (internalName.startsWith(GRAALVM_WORD_PACKAGE)) return true
+        if (!visited.add(internalName)) return false
+        val reader =
+            classBytesIndex[internalName]?.let {
+                try {
+                    ClassReader(it)
+                } catch (_: IllegalArgumentException) {
+                    null
+                }
+            } ?: return false
+        val supertypes = reader.interfaces.toList() + listOfNotNull(reader.superName)
+        return supertypes.any { isGraalvmWordType(it, classBytesIndex, visited) }
+    }
+
+    /**
+     * A visitor for a native method that runs [register] once the method's annotations have been
+     * read, unless one of them is a GraalVM C interop annotation.
+     */
+    private fun unlessCInterop(register: () -> Unit): MethodVisitor =
+        object : MethodVisitor(Opcodes.ASM9) {
+            private var cInterop = false
+
+            override fun visitAnnotation(
+                descriptor: String,
+                visible: Boolean,
+            ): AnnotationVisitor? {
+                if (descriptor.startsWith(GRAALVM_C_INTEROP_PACKAGE)) cInterop = true
+                return null
+            }
+
+            override fun visitEnd() {
+                if (!cInterop) register()
+            }
+        }
 
     /**
      * Recursively collects all object types from an ASM Type (handles arrays).
