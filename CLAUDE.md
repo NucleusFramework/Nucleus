@@ -25,7 +25,7 @@ Deep dives (why a mechanism is built the way it is, measurements, E2E) live in [
 - `launcher-linux` - Unity Launcher API via JNI (badge, progress, urgency, quicklist via com.canonical.Unity.LauncherEntry + com.canonical.dbusmenu)
 - `menu-macos` - Native macOS menu bar
 - `media-control` - OS media controls — MPRIS (Linux), Now Playing (macOS), SMTC (Windows)
-- `global-hotkey` - System-wide keyboard shortcuts
+- `global-hotkey` - System-wide keyboard shortcuts. `HotKeyEventListener` gets PRESSED / RELEASED, `isRepeat` and the portal's Wayland `activationToken`; `TaoWindow.focus()` takes that token on its own through `core-runtime`'s `ActivationToken` mailbox. Mechanism and E2E (#739): [docs/internals/global-hotkey.md](docs/internals/global-hotkey.md)
 - `taskbar-progress` - Native taskbar/dock progress bar and attention requests (Windows ITaskbarList3, macOS NSDockTile, Linux delegates to launcher-linux)
 - `taskbar-progress-tao` - Taskbar progress on the Tao backend
 - `darkmode-detector` - Reactive OS dark mode detection via JNI
