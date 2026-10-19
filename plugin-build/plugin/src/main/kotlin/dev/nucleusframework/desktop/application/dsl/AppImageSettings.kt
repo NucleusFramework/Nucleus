@@ -24,9 +24,8 @@ abstract class AppImageSettings {
      * Archive compression for this AppImage only.
      *
      * Overrides the root [JvmApplicationDistributions.compressionLevel] when set.
-     * Prefer [CompressionLevel.Normal] or [CompressionLevel.Store]:
-     * [CompressionLevel.Maximum] / [CompressionLevel.Ultra] map to electron-builder
-     * `maximum` and can make cold starts very slow (squashfs/FUSE decompression).
+     * AppImages are built on the static type2-runtime, whose squashfs supports gzip and zstd but
+     * not xz: [CompressionLevel.Store] builds a gzip image, every other level a zstd image.
      */
     var compressionLevel: CompressionLevel? = null
 }
