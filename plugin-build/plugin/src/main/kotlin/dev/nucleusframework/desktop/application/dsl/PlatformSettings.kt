@@ -5,6 +5,14 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Nested
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+
 import org.gradle.api.Action
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
@@ -20,9 +28,15 @@ abstract class AbstractPlatformSettings {
     @get:Inject
     internal abstract val objects: ObjectFactory
 
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val iconFile: RegularFileProperty = objects.fileProperty()
+    @get:Input
+    @get:Optional
     var packageVersion: String? = null
 
+    @get:Nested
     internal val fileAssociations: MutableSet<FileAssociation> = mutableSetOf()
 
     /**
@@ -45,6 +59,8 @@ abstract class AbstractPlatformSettings {
  * signing, notarization and the DMG layout.
  */
 abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
+    @get:Input
+    @get:Optional
     var packageName: String? = null
 
     /**
@@ -60,14 +76,31 @@ abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
      * Note that this only renames the bundle directory: the launcher stays at
      * `Contents/MacOS/<packageName>` and `CFBundleName` keeps using `appName`.
      */
+    @get:Input
+    @get:Optional
     var bundleName: String? = null
 
+    @get:Input
+    @get:Optional
     var packageBuildVersion: String? = null
+    @get:Input
+    @get:Optional
     var dmgPackageVersion: String? = null
+    @get:Input
+    @get:Optional
     var dmgPackageBuildVersion: String? = null
+    @get:Input
+    @get:Optional
     var appCategory: String? = null
+    @get:Input
+    @get:Optional
     var minimumSystemVersion: String? = null
+    @get:Input
+    @get:Optional
     var installationPath: String? = null
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     var layeredIconDir: DirectoryProperty = objects.directoryProperty()
 
     /**
@@ -77,8 +110,11 @@ abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
      *
      * Use of a reverse DNS notation (e.g. com.mycompany.myapp) is recommended.
      */
+    @get:Input
+    @get:Optional
     var bundleID: String? = null
 
+    @get:Nested
     val signing: MacOSSigningSettings = objects.newInstance(MacOSSigningSettings::class.java)
 
     /** Configures macOS code signing. */
@@ -86,6 +122,7 @@ abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
         fn.execute(signing)
     }
 
+    @get:Nested
     val notarization: MacOSNotarizationSettings = objects.newInstance(MacOSNotarizationSettings::class.java)
 
     /** Configures macOS notarization. */
@@ -93,6 +130,7 @@ abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
         fn.execute(notarization)
     }
 
+    @get:Nested
     val dmg: DmgSettings = objects.newInstance(DmgSettings::class.java)
 
     /** Configures the DMG installer. */
@@ -109,13 +147,17 @@ abstract class NativeApplicationMacOSPlatformSettings : AbstractMacOSPlatformSet
  * sandboxing entitlements and provisioning, launch agents, app extensions and extra `Info.plist` keys.
  */
 abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
+    @get:Input
+    @get:Optional
     var dockName: String? = null
+    @get:Input
     var setDockNameSameAsPackageName: Boolean = true
 
     /**
      * PKG installer settings: distribution channel (Mac App Store or Developer ID) and install
      * scripts. See [PkgSettings].
      */
+    @get:Nested
     val pkg: PkgSettings = objects.newInstance(PkgSettings::class.java)
 
     /** Configures the PKG installer, see [PkgSettings]. */
@@ -138,17 +180,34 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
         ReplaceWith("pkg.appStore"),
         level = DeprecationLevel.ERROR,
     )
+    @get:Internal
     var appStore: Boolean
         get() = pkg.appStore
         set(value) {
             pkg.appStore = value
         }
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val entitlementsFile: RegularFileProperty = objects.fileProperty()
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val runtimeEntitlementsFile: RegularFileProperty = objects.fileProperty()
+    @get:Input
+    @get:Optional
     var pkgPackageVersion: String? = null
+    @get:Input
+    @get:Optional
     var pkgPackageBuildVersion: String? = null
 
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val provisioningProfile: RegularFileProperty = objects.fileProperty()
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val runtimeProvisioningProfile: RegularFileProperty = objects.fileProperty()
 
     /**
@@ -159,6 +218,8 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
      * Set to null to disable patching. Defaults to "26.0".
      * Only effective on macOS; ignored on other platforms.
      */
+    @get:Input
+    @get:Optional
     var macOsSdkVersion: String? = "26.0"
 
     /**
@@ -179,6 +240,7 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
      * }
      * ```
      */
+    @get:Input
     val launchAgents: LaunchAgentSettings = LaunchAgentSettings()
 
     /** Configures [launchAgents]. */
@@ -202,6 +264,7 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
      * }
      * ```
      */
+    @get:Input
     val appExtensions: MacAppExtensionSettings = MacAppExtensionSettings()
 
     /** Configures [appExtensions]. See [MacAppExtensionSettings] for the caveats. */
@@ -209,6 +272,7 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
         fn.execute(appExtensions)
     }
 
+    @get:Nested
     internal val infoPlistSettings = InfoPlistSettings()
 
     /** Configures extra keys added to the bundle's `Info.plist`. */
@@ -219,6 +283,8 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
 
 /** Extra `Info.plist` content: [extraKeysRawXml] is inserted verbatim into the generated plist dictionary. */
 open class InfoPlistSettings {
+    @get:Input
+    @get:Optional
     var extraKeysRawXml: String? = null
 }
 
@@ -227,6 +293,7 @@ open class InfoPlistSettings {
  * and the Snap, Flatpak and AppImage targets.
  */
 abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
+    @get:Input
     var shortcut: Boolean = false
 
     /**
@@ -234,24 +301,47 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      *
      * If null, Nucleus derives a default from `mainClass` by replacing dots with hyphens.
      */
+    @get:Input
+    @get:Optional
     var startupWMClass: String? = null
+    @get:Input
+    @get:Optional
     var packageName: String? = null
+    @get:Input
+    @get:Optional
     var appRelease: String? = null
+    @get:Input
+    @get:Optional
     var appCategory: String? = null
+    @get:Input
+    @get:Optional
     var debMaintainer: String? = null
+    @get:Input
+    @get:Optional
     var menuGroup: String? = null
+    @get:Input
+    @get:Optional
     var rpmLicenseType: String? = null
+    @get:Input
+    @get:Optional
     var debPackageVersion: String? = null
+    @get:Input
+    @get:Optional
     var rpmPackageVersion: String? = null
+    @get:Input
+    @get:Optional
     var pacmanPackageVersion: String? = null
 
     /** Additional Debian dependencies for .deb packages. */
+    @get:Input
     var debDepends: List<String> = emptyList()
 
     /** Additional RPM requires for .rpm packages. */
+    @get:Input
     var rpmRequires: List<String> = emptyList()
 
     /** Additional pacman dependencies for .pacman packages. */
+    @get:Input
     var pacmanDepends: List<String> = emptyList()
 
     /**
@@ -264,6 +354,9 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      * `systemctl enable "${executable}.service"` line will silently no-op instead
      * of failing loudly.
      */
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val afterInstall: RegularFileProperty = objects.fileProperty()
 
     /**
@@ -278,6 +371,9 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      * for that, and unlike Deb/RPM there is no fallback to the install/remove
      * scriptlets when those are undefined. See [afterUpgrade]/[beforeUpgrade].
      */
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val afterRemove: RegularFileProperty = objects.fileProperty()
 
     /**
@@ -290,6 +386,9 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      *
      * Not called on a Pacman upgrade — see [afterRemove] and [beforeUpgrade].
      */
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val beforeInstall: RegularFileProperty = objects.fileProperty()
 
     /**
@@ -299,6 +398,9 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      *
      * Not called on a Pacman upgrade — see [afterRemove] and [beforeUpgrade].
      */
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val beforeRemove: RegularFileProperty = objects.fileProperty()
 
     /**
@@ -311,6 +413,9 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      * [afterInstall]. Ignored for Deb/RPM, whose install scriptlets already fire on
      * both fresh installs and upgrades.
      */
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val afterUpgrade: RegularFileProperty = objects.fileProperty()
 
     /**
@@ -318,8 +423,12 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      * [afterUpgrade] — on Pacman this is the only pre-payload-swap hook that runs
      * during an upgrade; [beforeInstall] is skipped entirely in that case.
      */
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val beforeUpgrade: RegularFileProperty = objects.fileProperty()
 
+    @get:Nested
     val snap: SnapSettings = objects.newInstance(SnapSettings::class.java)
 
     /** Configures the Snap package. */
@@ -327,6 +436,7 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
         fn.execute(snap)
     }
 
+    @get:Nested
     val flatpak: FlatpakSettings = objects.newInstance(FlatpakSettings::class.java)
 
     /** Configures the Flatpak package. */
@@ -334,6 +444,7 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
         fn.execute(flatpak)
     }
 
+    @get:Nested
     val appImage: AppImageSettings = objects.newInstance(AppImageSettings::class.java)
 
     /** Configures the AppImage package. */
@@ -341,6 +452,7 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
         fn.execute(appImage)
     }
 
+    @get:Nested
     val signing: LinuxSigningSettings = objects.newInstance(LinuxSigningSettings::class.java)
 
     /** Configures Linux package signing. */
@@ -354,8 +466,12 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
  * portable targets and code signing.
  */
 abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
+    @get:Input
+    @get:Optional
     var packageName: String? = null
+    @get:Input
     var console: Boolean = false
+    @get:Input
     var dirChooser: Boolean = true
 
     /**
@@ -372,21 +488,34 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
      * Defaults to `true`; without Visual Studio on the build machine, nothing is bundled and a
      * warning is logged.
      */
+    @get:Input
     var bundleCRuntime: Boolean = true
 
     @Deprecated(
         "Use msi { perMachine = ... } instead. Note the inverted meaning: " +
             "perUserInstall = true is equivalent to msi.perMachine = false.",
     )
+    @get:Input
     var perUserInstall: Boolean = false
+    @get:Input
     var shortcut: Boolean = false
+    @get:Input
     var menu: Boolean = false
         get() = field || menuGroup != null
+    @get:Input
+    @get:Optional
     var menuGroup: String? = null
+    @get:Input
+    @get:Optional
     var upgradeUuid: String? = null
+    @get:Input
+    @get:Optional
     var msiPackageVersion: String? = null
+    @get:Input
+    @get:Optional
     var exePackageVersion: String? = null
 
+    @get:Nested
     val nsis: NsisSettings = objects.newInstance(NsisSettings::class.java)
 
     /** Configures the NSIS installer. */
@@ -394,6 +523,7 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
         fn.execute(nsis)
     }
 
+    @get:Nested
     val msi: MsiSettings = objects.newInstance(MsiSettings::class.java)
 
     /** Configures the MSI installer. */
@@ -401,6 +531,7 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
         fn.execute(msi)
     }
 
+    @get:Nested
     val appx: AppXSettings = objects.newInstance(AppXSettings::class.java)
 
     /** Configures the AppX / MSIX package. */
@@ -408,6 +539,7 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
         fn.execute(appx)
     }
 
+    @get:Nested
     val portable: PortableSettings = objects.newInstance(PortableSettings::class.java)
 
     /** Configures the portable executable. */
@@ -415,6 +547,7 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
         fn.execute(portable)
     }
 
+    @get:Nested
     val signing: WindowsSigningSettings = objects.newInstance(WindowsSigningSettings::class.java)
 
     /** Configures Windows code signing. */

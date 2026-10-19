@@ -5,6 +5,9 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Optional
+
 /**
  * Settings for the Windows portable (self-extracting) package.
  *
@@ -29,5 +32,7 @@ abstract class PortableSettings {
      * Portable packages are self-extracting archives: higher levels shrink the download
      * but slow first launch while the payload is unpacked.
      */
+    @get:Input
+    @get:Optional
     var compressionLevel: CompressionLevel? = null
 }

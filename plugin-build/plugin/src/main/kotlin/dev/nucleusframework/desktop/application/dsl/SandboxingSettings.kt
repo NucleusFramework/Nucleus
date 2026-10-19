@@ -5,6 +5,8 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+import org.gradle.api.tasks.Input
+
 /**
  * Sandboxed (store) distribution settings, scoped under `nativeDistributions { sandboxing { ... } }`.
  *
@@ -32,6 +34,7 @@ abstract class SandboxingSettings {
      *
      * Example: `sandboxing { keepNativeLibsInJars("some-validating-lib") }`
      */
+    @get:Input
     val keepNativeLibsInJars: MutableList<String> = mutableListOf()
 
     /** Adds one or more JAR name substrings to [keepNativeLibsInJars]. */

@@ -243,11 +243,12 @@ abstract class AbstractElectronBuilderPackageTask
         val appxWide310x150Logo: RegularFileProperty = objects.fileProperty()
 
         /**
-         * The distributions DSL object providing all platform-specific settings.
-         * Marked @Internal because the individual settings are tracked via other @Input properties
-         * on the DSL objects themselves, and this reference is used for config generation only.
+         * The distributions DSL object providing all platform-specific settings. Nested, so every
+         * DSL value is an input of this task: most of them reach electron-builder only through
+         * this object, and a change to one of them must make the task out of date.
          */
-        @get:Internal
+        @get:Nested
+        @get:Optional
         var distributions: JvmApplicationDistributions? = null
 
         @get:InputFile

@@ -5,6 +5,9 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Optional
+
 /** Snap package options, passed to electron-builder's `snap` target. */
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class SnapSettings {
@@ -18,21 +21,30 @@ abstract class SnapSettings {
      * so overriding this also renames the snap's launcher command and desktop entry.
      * Must be a valid snap name (lowercase letters, digits and hyphens).
      */
+    @get:Input
+    @get:Optional
     var name: String? = null
 
     /** Confinement level. Default: [SnapConfinement.Strict] */
+    @get:Input
     var confinement: SnapConfinement = SnapConfinement.Strict
 
     /** Quality grade. Default: [SnapGrade.Stable] */
+    @get:Input
     var grade: SnapGrade = SnapGrade.Stable
 
     /** Short summary (max 78 chars) */
+    @get:Input
+    @get:Optional
     var summary: String? = null
 
     /** Base snap. Default: "core22" */
+    @get:Input
+    @get:Optional
     var base: String? = null
 
     /** Snap interfaces (plugs) */
+    @get:Input
     var plugs: List<SnapPlug> =
         listOf(
             SnapPlug.Desktop,
@@ -49,8 +61,11 @@ abstract class SnapSettings {
         )
 
     /** Auto-start on login. Default: false */
+    @get:Input
     var autoStart: Boolean = false
 
     /** Compression algorithm. Default: null (uses snap default) */
+    @get:Input
+    @get:Optional
     var compression: SnapCompression? = null
 }

@@ -5,6 +5,13 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
@@ -41,6 +48,7 @@ abstract class PkgSettings {
      * Whether the PKG targets the Mac App Store (`true`, the default) or direct Developer ID
      * distribution (`false`). See the class documentation for what each channel changes.
      */
+    @get:Input
     var appStore: Boolean = true
 
     /**
@@ -56,11 +64,18 @@ abstract class PkgSettings {
      * Requires `appStore = false`: the Mac App Store rejects installer packages that carry install
      * scripts (validation error 90254).
      */
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val preInstall: RegularFileProperty = objects.fileProperty()
 
     /** Script the Installer runs as root **after** the payload is copied. Same rules as [preInstall]. */
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val postInstall: RegularFileProperty = objects.fileProperty()
 
+    @get:Internal
     internal val hasScripts: Boolean
         get() = preInstall.isPresent || postInstall.isPresent
 }

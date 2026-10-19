@@ -5,6 +5,14 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Nested
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+
 import org.gradle.api.Action
 import org.gradle.api.file.ConfigurableFileCollection
 import java.io.File
@@ -28,6 +36,7 @@ internal val DEFAULT_RUNTIME_MODULES =
  */
 abstract class JvmApplicationDistributions : AbstractDistributions() {
     @Suppress("DoubleMutabilityForCollection", "SpreadOperator")
+    @get:Input
     var modules = arrayListOf(*DEFAULT_RUNTIME_MODULES)
 
     /** Appends JDK modules to [modules], the module list of the bundled runtime image. */
@@ -35,6 +44,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         this.modules.addAll(modules.toList())
     }
 
+    @get:Input
     var includeAllModules: Boolean = false
 
     /**
@@ -51,17 +61,22 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      * }
      * ```
      */
+    @get:Input
     var stripJreFonts: Boolean = true
 
     /** Strip native libraries for non-target platforms from dependency JARs to reduce package size. */
+    @get:Input
     var cleanupNativeLibs: Boolean = false
 
     /** Splash screen image filename relative to appResources (e.g. "splash.png"). */
+    @get:Input
+    @get:Optional
     var splashImage: String? = null
 
     /**
      * JDK 25+ AOT cache settings. See [AotCacheSettings].
      */
+    @get:Nested
     val aotCache: AotCacheSettings = objects.newInstance(AotCacheSettings::class.java)
 
     /** Configures [aotCache]. */
@@ -73,6 +88,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      * Enable JDK 25+ AOT cache generation for faster application startup.
      * Shorthand for `aotCache { enabled = ... }`.
      */
+    @get:Internal
     var enableAotCache: Boolean
         get() = aotCache.enabled
         set(value) {
@@ -97,9 +113,11 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      * Whether any of the configured target formats require sandboxing (see [isSandboxed])
      * AND are compatible with the current OS.
      */
+    @get:Internal
     internal val hasStoreFormats: Boolean
         get() = targetFormats.any { isSandboxed(it) && it.isCompatibleWithCurrentOS }
 
+    @get:Nested
     val linux: LinuxPlatformSettings = objects.newInstance(LinuxPlatformSettings::class.java)
 
     /** Configures Linux packaging. */
@@ -107,6 +125,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         fn.execute(linux)
     }
 
+    @get:Nested
     val macOS: JvmMacOSPlatformSettings = objects.newInstance(JvmMacOSPlatformSettings::class.java)
 
     /** Configures macOS packaging. */
@@ -114,6 +133,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         fn.execute(macOS)
     }
 
+    @get:Nested
     val windows: WindowsPlatformSettings = objects.newInstance(WindowsPlatformSettings::class.java)
 
     /** Configures Windows packaging. */
@@ -124,6 +144,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
     /**
      * Sandboxed (store) distribution settings. See [SandboxingSettings].
      */
+    @get:Nested
     val sandboxing: SandboxingSettings = objects.newInstance(SandboxingSettings::class.java)
 
     /** Configures [sandboxing]. */
@@ -159,6 +180,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     // --- Publishing ---
 
+    @get:Nested
     val publish: PublishSettings = objects.newInstance(PublishSettings::class.java)
 
     /** Configures where release artifacts and update metadata are published. */
@@ -169,6 +191,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
     // --- Node.js used to run electron-builder ---
 
     /** Node.js acquisition for the electron-builder pipeline. See [NodeJsSettings]. */
+    @get:Internal
     val nodejs: NodeJsSettings = objects.newInstance(NodeJsSettings::class.java)
 
     /** Configures [nodejs]. */
@@ -188,10 +211,13 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      * [CompressionLevel.Maximum] / [CompressionLevel.Ultra] are not recommended for AppImage
      * (slow FUSE/squashfs cold start); override that format to [CompressionLevel.Normal] instead.
      */
+    @get:Input
+    @get:Optional
     var compressionLevel: CompressionLevel? = null
 
     // --- Artifact name template (e.g., "\${name}-\${version}-\${arch}.\${ext}") ---
 
+    @get:Input
     var artifactName: String = "\${name}-\${version}-\${os}-\${arch}.\${ext}"
 
     // --- Trusted CA certificates for the bundled JVM ---
@@ -210,10 +236,14 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      * derived from the filename (lowercased, non-alphanumeric characters replaced with `-`).
      * Import is idempotent: if an alias already exists it is silently skipped.
      */
+    @get:InputFiles
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val trustedCertificates: ConfigurableFileCollection = objects.fileCollection()
 
     // --- URL protocol handlers (deep linking) ---
 
+    @get:Input
     val protocols: MutableList<UrlProtocol> = mutableListOf()
 
     /** Registers the URL [schemes] (deep links) handled by the application under the display [name]. */
