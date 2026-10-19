@@ -44,6 +44,7 @@ import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Delete
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.jvm.tasks.Jar
@@ -1737,6 +1738,12 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     val plistUrlProtocols: List<UrlProtocol> =
         app.nativeDistributions.protocols.toList()
 
+    // Extra raw plist keys and their localized values (#833), captured at configuration time
+    val plistExtraKeysRawXml: String? = app.nativeDistributions.macOS.infoPlistSettings.extraKeysRawXml
+    val plistLocalizationsDir: File? = app.nativeDistributions.macOS.infoPlistSettings.localizationsDir
+    val plistLocalizedStrings: Map<String, String> =
+        renderInfoPlistLocalizations(app.nativeDistributions.macOS.infoPlistSettings.localizedStrings)
+
     // Build a mapping from icon File -> unique name inside Resources/ (avoids collisions)
     val fileAssociationIconMapping: Map<File, File> =
         fileAssociationIconNames(plistFileAssociations, plistIconFileName)
@@ -1761,9 +1768,10 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             inputs.property("iconFileName", plistIconFileName)
             inputs.property("fileAssociations", plistFileAssociations.toString())
             inputs.property("urlProtocols", plistUrlProtocols.toString())
+            inputs.property("extraKeysRawXml", plistExtraKeysRawXml.orEmpty())
 
             doLast {
-                val plist = InfoPlistBuilder()
+                val plist = InfoPlistBuilder(plistExtraKeysRawXml)
                 plist[PlistKeys.CFBundleName] = plistBundleName
                 plist[PlistKeys.CFBundleDisplayName] = plistBundleName
                 plist[PlistKeys.CFBundleIdentifier] = plistBundleID
@@ -1811,6 +1819,17 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
             from(appTmpDir.map { it.file("graalvm/Info.plist") })
             into(appBundleDir)
+
+            // Localized Info.plist values live next to it, in Resources/<lang>.lproj/InfoPlist.strings
+            plistLocalizationsDir?.let { inputs.dir(it).withPathSensitivity(PathSensitivity.RELATIVE) }
+            inputs.property("localizedStrings", plistLocalizedStrings)
+            doLast {
+                installInfoPlistLocalizations(
+                    resourcesDir = appBundleDir.get().dir("Resources").asFile,
+                    localizationsDir = plistLocalizationsDir,
+                    renderedStrings = plistLocalizedStrings,
+                )
+            }
         }
 
     // Copy icon into Resources/ — use custom icon if set, otherwise default

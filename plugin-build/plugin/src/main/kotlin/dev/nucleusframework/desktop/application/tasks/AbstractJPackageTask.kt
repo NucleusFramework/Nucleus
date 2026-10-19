@@ -45,6 +45,7 @@ import dev.nucleusframework.desktop.application.internal.files.normalizedPath
 import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
 import dev.nucleusframework.desktop.application.internal.files.transformJar
 import dev.nucleusframework.desktop.application.internal.files.unpackNucleusNativeLibs
+import dev.nucleusframework.desktop.application.internal.installInfoPlistLocalizations
 import dev.nucleusframework.desktop.application.internal.javaOption
 import dev.nucleusframework.desktop.application.internal.renameMacAppBundle
 import dev.nucleusframework.desktop.application.internal.validation.validate
@@ -69,6 +70,7 @@ import org.gradle.api.file.FileSystemOperations
 import org.gradle.api.file.RegularFile
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
 import org.gradle.api.provider.SetProperty
@@ -284,6 +286,16 @@ abstract class AbstractJPackageTask
         @get:Input
         @get:Optional
         internal val macExtraPlistKeysRawXml: Property<String> = objects.nullableProperty()
+
+        @get:InputDirectory
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        internal val macInfoPlistLocalizationsDir: DirectoryProperty = objects.directoryProperty()
+
+        /** Language → rendered `InfoPlist.strings` content. */
+        @get:Input
+        internal val macInfoPlistLocalizedStrings: MapProperty<String, String> =
+            objects.mapProperty(String::class.java, String::class.java).convention(emptyMap())
 
         @get:InputFile
         @get:Optional
@@ -834,6 +846,12 @@ abstract class AbstractJPackageTask
                     copyTo(appDir.resolve("Contents/Resources/Assets.car"))
                 }
             }
+
+            installInfoPlistLocalizations(
+                resourcesDir = appDir.resolve("Contents/Resources"),
+                localizationsDir = macInfoPlistLocalizationsDir.ioFileOrNull,
+                renderedStrings = macInfoPlistLocalizedStrings.get(),
+            )
 
             // Add the provisioning profile
             macRuntimeProvisioningProfile.ioFileOrNull?.copyTo(
