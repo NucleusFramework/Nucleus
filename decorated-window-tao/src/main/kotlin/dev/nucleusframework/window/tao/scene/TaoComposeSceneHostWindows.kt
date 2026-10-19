@@ -1263,6 +1263,31 @@ internal class TaoComposeSceneHostWindows(
         window.requestRedraw()
     }
 
+    /**
+     * Reclaims the GPU resource cache when the window is minimized (#638) —
+     * the at-rest moment: nothing is visible, and the re-mint is paid by the
+     * restore frame, which redraws everything anyway. The resize purges above
+     * only ever run on the drag path, so a cache an animation filled would
+     * otherwise stay at its high-water mark for the life of the process.
+     *
+     * Rendering is inline on this thread, so making this host's context
+     * current is all the context discipline needed. Skipped under a live
+     * [dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers] consumer
+     * (#478), whose renderer must not lose its cache mid-frame.
+     */
+    fun onMinimizedChanged(minimized: Boolean) {
+        if (!minimized) return
+        val ctx = directContext ?: return
+        if (dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
+                .isActive(ctx)
+        ) {
+            return
+        }
+        // Same foreign-context hazard as [purgeGpuResourceCache] (#514).
+        if (attachmentHandle != 0L) NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+        ctx.purgeAtRest()
+    }
+
     fun onFocusChanged(focused: Boolean) {
         // Win32 focus moving to an embedded child (a `NativeView`, WebView2)
         // reaches Tao as the main HWND losing it, but the window is still the
