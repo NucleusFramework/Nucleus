@@ -99,6 +99,11 @@ pub trait WindowExtUnix {
   /// Callers that know the caret's size should use this.
   fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S);
 
+  /// Nucleus patch: whether a text field owns the input, so the input context
+  /// is focused (and an on-screen keyboard may show) only while one does
+  /// (nucleusframework#842). Off until the first `true`.
+  fn set_ime_allowed(&self, allowed: bool);
+
   /// Nucleus patch: anchor a popup overlay (`with_popup_transient_for`) at a
   /// logical point of its parent so GDK maps it as a compositor-positioned
   /// `xdg_popup`. See the platform `Window::popup_anchor`.
@@ -132,6 +137,10 @@ impl WindowExtUnix for Window {
 
   fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
     self.window.set_ime_cursor_area(position, size);
+  }
+
+  fn set_ime_allowed(&self, allowed: bool) {
+    self.window.set_ime_allowed(allowed);
   }
 
   fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32)) {

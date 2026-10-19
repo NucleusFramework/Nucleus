@@ -875,6 +875,18 @@ internal object NativeTaoBridge {
     )
 
     /**
+     * Linux only (#842): whether a text field owns the input of [handle]. The
+     * GTK input context is focused only while it does — on Wayland, focusing
+     * it sends text-input `enable`, which compositors answer by raising the
+     * on-screen keyboard. Off until the first `true`.
+     */
+    @JvmStatic
+    external fun nativeSetImeAllowed(
+        handle: Long,
+        allowed: Boolean,
+    )
+
+    /**
      * macOS only: pushes the focused field's committed text (a bounded
      * window), the window's document-absolute offset and the selection to
      * the native `NSTextInputClient` cache — all offsets in UTF-16 code

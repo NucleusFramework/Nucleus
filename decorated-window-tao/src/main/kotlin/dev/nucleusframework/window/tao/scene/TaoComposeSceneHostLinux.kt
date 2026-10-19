@@ -4029,19 +4029,21 @@ private class LinuxTaoPlatformContext(
         }
 
     /**
-     * Keeps the GTK input context anchored to the caret for as long as a field
-     * owns the input (#558).
+     * Keeps the GTK input context focused and anchored to the caret for as
+     * long as a field owns the input (#558).
      *
-     * The macOS twin also has to activate the view's `NSTextInputContext`
-     * first; GTK needs no such step, because the context is created with — and
-     * follows the focus of — the window itself. So this only mirrors the caret
-     * rect, through the same `nativeSetImeRect` contract Windows uses.
+     * Like the macOS twin activating the view's `NSTextInputContext`, the
+     * context is only focused for the session (#842): it follows the window's
+     * focus natively, but a window with no field must not focus it, or Wayland
+     * compositors raise the on-screen keyboard on every activation. The caret
+     * rect goes through the same `nativeSetImeRect` contract Windows uses.
      */
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     override suspend fun startInputMethod(
         request: androidx.compose.ui.platform.PlatformTextInputMethodRequest,
     ): Nothing {
         onInputSession(request)
+        NativeTaoBridge.nativeSetImeAllowed(windowHandle, true)
         try {
             coroutineScope {
                 launch {
@@ -4063,6 +4065,7 @@ private class LinuxTaoPlatformContext(
                 awaitCancellation()
             }
         } finally {
+            NativeTaoBridge.nativeSetImeAllowed(windowHandle, false)
             onInputSession(null)
         }
     }
