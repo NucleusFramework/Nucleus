@@ -282,8 +282,14 @@ internal fun ApplicationScope.openDecoratedWindow(
     // then held in a plain field on the host, because it must also cover
     // exceptions that break the composition it would otherwise be read from.
     exceptionHandlerFactory: WindowExceptionHandlerFactory = DefaultWindowExceptionHandlerFactory,
+    // The platform draws the title bar and frame (#841): AppKit's standard
+    // title bar, the Win32 caption, the window manager's or GTK's decorations.
+    // Nucleus then installs none of its chrome (caption zone, resize band,
+    // traffic-light layout, corner carving). Ignored with [undecorated].
+    systemDecorations: Boolean = false,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
+    val systemChrome = systemDecorations && !undecorated
     // hiddenFromDock rides on the GTK skip-taskbar/skip-pager hint, which
     // native Wayland does not honour: there is no client-side skip-taskbar
     // protocol on Wayland (xdg-shell, gtk_shell1 and the staging extensions all
@@ -318,7 +324,9 @@ internal fun ApplicationScope.openDecoratedWindow(
             // `undecorated` opts out entirely (borderless, no traffic lights).
             // Linux still gets the native GTK drop shadow through
             // `undecoratedShadow` below (yaru.dart-style hidden-titlebar CSD).
-            decorations = !undecorated && Platform.Current == Platform.MacOS,
+            // System decorations (#841) keep them on every platform.
+            decorations = systemChrome || (!undecorated && Platform.Current == Platform.MacOS),
+            systemDecorations = systemChrome,
             resizable = resizable,
             visible = false, // we show after first paint
             // Pass `maximized` to the builder so Tao sets it BEFORE the window
@@ -343,8 +351,10 @@ internal fun ApplicationScope.openDecoratedWindow(
             // the rectangular HWND, not the content-defined shape (#416) —
             // macOS keeps it (AppKit shapes the shadow to the drawn content)
             // and Linux keeps its CSD hidden-titlebar path.
+            // A system frame has the platform's own shadow; the borderless one
+            // (and on Linux the hidden-titlebar CSD it selects) would fight it.
             undecoratedShadow =
-                !undecorated && !(transparent && Platform.Current == Platform.Windows),
+                !systemChrome && !undecorated && !(transparent && Platform.Current == Platform.Windows),
         )
 
     // Compose Hot Reload: the agent only auto-wraps AWT `ComposeWindow`/
@@ -458,7 +468,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     // Borderless overlays have no TitleBar chrome — keep the caption zone at 0
     // (parity with the Windows path).
     val titleBarHeightState =
-        host.titleBarHeightDpState.also { it.value = if (undecorated) 0f else 28f }
+        host.titleBarHeightDpState.also { it.value = if (undecorated || window.hasSystemDecorations) 0f else 28f }
 
     val scopeFactory: ColumnScope.() -> TaoDecoratedWindowScope = {
         object : TaoDecoratedWindowScope, ColumnScope by this {
@@ -532,11 +542,14 @@ internal fun ApplicationScope.openDecoratedWindow(
                 // DialogTitleBar's publish, latching the 28dp init and leaving
                 // the traffic-lights at the wrong inset (margin 14 vs 20).
                 // snapshotFlow keeps the read out of the content recomposition.
-                LaunchedEffect(Unit) {
-                    snapshotFlow { titleBarHeightState.value }.collect { height ->
-                        val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
-                        if (nsView != 0L && NativeMetalBridge.isLoaded) {
-                            NativeMetalBridge.nativeApplyButtonLayout(nsView, height)
+                // System decorations (#841): AppKit lays its own title bar out.
+                if (!window.hasSystemDecorations) {
+                    LaunchedEffect(Unit) {
+                        snapshotFlow { titleBarHeightState.value }.collect { height ->
+                            val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
+                            if (nsView != 0L && NativeMetalBridge.isLoaded) {
+                                NativeMetalBridge.nativeApplyButtonLayout(nsView, height)
+                            }
                         }
                     }
                 }
@@ -684,7 +697,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     // `undecoratedShadow = !undecorated` at openWindow time; the host aligns
     // the frame radius and extends the resize band over the ring. Only
     // effective on Wayland non-popup windows.
-    host.nativeCsdDecorations = !undecorated
+    // System decorations (#841) are the window manager's or GTK's own frame:
+    // no hidden-titlebar ring to align with.
+    host.nativeCsdDecorations = !undecorated && !window.hasSystemDecorations
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
     // ── Linux accessibility (AT-SPI2 via AccessKit) ────────────────────────
@@ -705,7 +720,8 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     host.semanticsOwnerListener = a11yObserver
 
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true, maximized = maximized))
-    val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
+    val titleBarHeightState =
+        host.titleBarHeightDpState.also { it.value = if (window.hasSystemDecorations) 0f else 32f }
 
     val scopeFactory: ColumnScope.() -> TaoDecoratedWindowScope = {
         object : TaoDecoratedWindowScope, ColumnScope by this {
@@ -767,7 +783,8 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 // `transparent` skips it too: the stroke traces the rectangular
                 // window bounds, not the content-defined shape (#416).
                 val border =
-                    if (undecorated || transparent) {
+                    if (undecorated || transparent || window.hasSystemDecorations) {
+                        // A system frame (#841) draws its own border.
                         Modifier
                     } else {
                         rememberUndecoratedWindowBorder(
@@ -1009,6 +1026,16 @@ private fun initialMacOsSize(
     }
 
     if (!maximized || !NativeTaoMacOsDecoBridge.isLoaded) return fallbackPhysicalSize()
+    if (window.hasSystemDecorations) {
+        // A standard title bar sits above the content, so the zoomed content is
+        // the visible frame minus the bar: ask AppKit for the view's own rect.
+        val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
+        val content = if (nsView != 0L) NativeTaoMacOsDecoBridge.nativeGetContentRect(nsView) else null
+        if (content == null || content.size < 4 || content[2] <= 0 || content[3] <= 0) {
+            return fallbackPhysicalSize()
+        }
+        return content[2].toInt() to content[3].toInt()
+    }
     val workArea = NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return fallbackPhysicalSize()
     if (workArea.size != 4) return fallbackPhysicalSize()
     val width = workArea[2].toInt()
@@ -1138,7 +1165,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true, maximized = maximized))
     // Borderless overlays have no TitleBar chrome — keep the caption zone at 0.
     val titleBarHeightState =
-        host.titleBarHeightDpState.also { it.value = if (undecorated) 0f else 32f }
+        host.titleBarHeightDpState.also { it.value = if (undecorated || window.hasSystemDecorations) 0f else 32f }
     // Hoisted out of the composition so the initial native theme push below
     // (before the first blocking render and show()) can read it.
     val appearanceOverride = mutableStateOf(dev.nucleusframework.window.WindowAppearanceMode.System)
@@ -1228,7 +1255,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 // windows skip it too: the DWM 1px frame follows the
                 // rectangular HWND, not the content-defined shape (#416).
                 val border =
-                    if (undecorated || transparent) {
+                    if (undecorated || transparent || window.hasSystemDecorations) {
+                        // A system frame (#841) draws its own border.
                         Modifier
                     } else {
                         rememberUndecoratedWindowBorder(
@@ -1289,7 +1317,13 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         // every edge (Win32 frame quirk), and sizing the GL surface to that
         // would draw Compose content into the off-screen frame area.
         val (initialW, initialH) =
-            if (maximized && NativeTaoWindowsDecoBridge.isLoaded) {
+            if (maximized && NativeTaoWindowsDecoBridge.isLoaded && window.hasSystemDecorations) {
+                // A system frame keeps its caption: the client is smaller than
+                // the work area, so ask the window itself.
+                val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+                val client = if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeGetClientSize(hwnd) else null
+                if (client != null && client.size == 2) client[0] to client[1] else w to h
+            } else if (maximized && NativeTaoWindowsDecoBridge.isLoaded) {
                 val workArea = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea()
                 if (workArea != null && workArea.size == 4) {
                     workArea[2].toInt() to workArea[3].toInt()

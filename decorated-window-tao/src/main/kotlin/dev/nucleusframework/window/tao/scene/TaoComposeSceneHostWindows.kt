@@ -434,7 +434,13 @@ internal class TaoComposeSceneHostWindows(
             } else {
                 (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
             }
-        NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
+        if (window.hasSystemDecorations) {
+            // #841: keep the Win32 caption and frame; the subclass still
+            // serves fullscreen, the startup erase and dark mode.
+            NativeTaoWindowsDecoBridge.nativeInstallSystemFrame(hwnd)
+        } else {
+            NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
+        }
         if (borderlessChrome || fullyTransparent) {
             // Kill DWM 1px contour + shadow margin (Compose border is already
             // skipped by the openDecoratedWindowWindows undecorated path).

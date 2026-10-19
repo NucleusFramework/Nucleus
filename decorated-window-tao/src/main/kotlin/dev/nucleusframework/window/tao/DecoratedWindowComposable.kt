@@ -194,6 +194,20 @@ public fun ApplicationScope.DecoratedWindow(
      * does *not* give you (it is not `_NET_WM_WINDOW_TYPE_DESKTOP`).
      */
     alwaysOnBottom: Boolean = false,
+    /**
+     * Let the platform draw the title bar and frame (#841): the standard
+     * AppKit title bar on macOS, the Win32 caption and frame on Windows, the
+     * window manager's decorations on Linux X11 and KWin, and GTK's own title
+     * bar on GNOME (Wayland). Creation-time only; ignored with [undecorated].
+     *
+     * The window then gets none of the Nucleus chrome: [TitleBar],
+     * [dev.nucleusframework.window.DialogTitleBar] and
+     * [dev.nucleusframework.window.WindowScaffold] show no window controls and
+     * reserve no room for them, and a bar left with no content takes no room
+     * at all (see [TaoWindow.hasSystemDecorations]). `nucleus-application`
+     * exposes this as its `Window` / `DialogWindow`.
+     */
+    systemDecorations: Boolean = false,
     content: @Composable @UiComposable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val latestOnClose by rememberUpdatedState(onCloseRequest)
@@ -295,6 +309,7 @@ public fun ApplicationScope.DecoratedWindow(
                     initialCompositionLocalContext = compositionLocalContext,
                     forceX11 = forceX11,
                     exceptionHandlerFactory = windowExceptionHandlerFactory,
+                    systemDecorations = systemDecorations,
                     content = {
                         val backgroundArgb = latestWindowBackgroundArgb.value
                         val clearColorLayers = LocalWindowClearColorLayers.current

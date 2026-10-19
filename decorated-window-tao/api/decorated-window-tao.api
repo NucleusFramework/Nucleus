@@ -268,11 +268,11 @@ public final class dev/nucleusframework/window/tao/D3D11TestTextureProducer$Comp
 }
 
 public final class dev/nucleusframework/window/tao/DecoratedDialogKt {
-	public static final fun DecoratedDialog (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DecoratedDialog (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 }
 
 public final class dev/nucleusframework/window/tao/DecoratedWindowComposableKt {
-	public static final fun DecoratedWindow-P1MFPLo (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/unit/DpSize;ZZZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedWindow-iOoFprE (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/unit/DpSize;ZZZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 }
 
 public final class dev/nucleusframework/window/tao/DecoratedWindowKt {
@@ -280,8 +280,8 @@ public final class dev/nucleusframework/window/tao/DecoratedWindowKt {
 }
 
 public final class dev/nucleusframework/window/tao/DecoratedWindowNucleusV2Kt {
-	public static final fun DecoratedDialog-imfDCbw (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
-	public static final fun DecoratedWindow-Iz9xJ8w (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;JJZZZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedDialog-XixNhL8 (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DecoratedWindow-iXsCOKw (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;JJZZZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 }
 
 public final class dev/nucleusframework/window/tao/DefaultWindowExceptionHandlerFactory : dev/nucleusframework/window/tao/WindowExceptionHandlerFactory {
@@ -1159,8 +1159,8 @@ public final class dev/nucleusframework/window/tao/TaoApplication {
 	public final fun isQuitting ()Z
 	public final fun onResponsive (Lkotlin/jvm/functions/Function0;)V
 	public final fun onUnresponsive (Lkotlin/jvm/functions/Function0;)V
-	public final fun openWindow (Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZZ)Ldev/nucleusframework/window/tao/TaoWindow;
-	public static synthetic fun openWindow$default (Ldev/nucleusframework/window/tao/TaoApplication;Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZZILjava/lang/Object;)Ldev/nucleusframework/window/tao/TaoWindow;
+	public final fun openWindow (Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZZZ)Ldev/nucleusframework/window/tao/TaoWindow;
+	public static synthetic fun openWindow$default (Ldev/nucleusframework/window/tao/TaoApplication;Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZZZILjava/lang/Object;)Ldev/nucleusframework/window/tao/TaoWindow;
 	public final fun run (Lkotlin/jvm/functions/Function1;)V
 }
 
@@ -1421,6 +1421,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun focus ()V
 	public final fun getCanPlaceOnScreen ()Z
 	public final fun getHandle ()J
+	public final fun getHasSystemDecorations ()Z
 	public final fun getNativeHandle ()J
 	public final fun getNsWindowHandle ()Ljava/lang/Long;
 	public final fun getScaleFactor ()F

@@ -516,8 +516,14 @@ internal class TaoComposeSceneHostLinux(
      * makes — GDK's frame clock freezes on the unanswered callback, and with
      * it the flush of pointer motion (GDK holds a lone motion event until
      * the clock's flush-events phase). The in-frame path is not used there.
+     *
+     * System decorations (#841) break the ring-or-covered premise both ways —
+     * GTK's own title bar keeps part of the toplevel visible, while under
+     * server-side decorations the content covers the whole toplevel at any
+     * size — so they always take the path that never waits on the parent.
      */
-    private fun parentObscured(): Boolean = window.isMaximized || window.isFullscreen || window.isTiled
+    private fun parentObscured(): Boolean =
+        window.hasSystemDecorations || window.isMaximized || window.isFullscreen || window.isTiled
 
     /**
      * Extra redraws after a size change so the buffer allocated by the next
@@ -615,10 +621,13 @@ internal class TaoComposeSceneHostLinux(
     // a 12 px radius, and `kdeCornerArc = 10f` paints a 5 px radius. These are
     // *logical* pixels: the carve path multiplies by `scale` before drawing
     // (the canvas works in physical pixels with no scale transform).
+    // System decorations (#841): the window manager's or GTK's frame rounds
+    // (or does not round) the window itself; Compose carves nothing.
     private val cornerRadiusPx: Int =
-        when (LinuxDesktopEnvironment.Current) {
-            LinuxDesktopEnvironment.Gnome -> 12
-            LinuxDesktopEnvironment.KDE -> 5
+        when {
+            window.hasSystemDecorations -> 0
+            LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.Gnome -> 12
+            LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE -> 5
             else -> 0
         }
 
@@ -3075,6 +3084,9 @@ internal class TaoComposeSceneHostLinux(
         yPx: Float,
         forTouch: Boolean = false,
     ): ResizeFrameDecoration.Direction? {
+        // System decorations (#841): the window manager or GTK resizes from
+        // its own frame; the content has no resize band.
+        if (window.hasSystemDecorations) return null
         if (!window.isResizable) return null
         if (window.isFullscreen) return null
         if (window.isMaximized) return null

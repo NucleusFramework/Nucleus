@@ -340,6 +340,11 @@ pub(crate) enum UserEvent {
         // workspace stickiness). Ignored elsewhere, and already satisfied when
         // the process is an X11/XWayland client.
         force_x11: bool,
+        // The platform decorates the window (#841): Linux skips tao's custom
+        // Wayland header bar so GTK negotiates KWin server-side decorations or
+        // draws its own default title bar. Windows and macOS need only
+        // `decorations`; their chrome is configured from Kotlin.
+        system_decorations: bool,
     },
     SetVisible {
         handle: u64,
