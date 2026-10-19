@@ -436,7 +436,7 @@ abstract class AbstractElectronBuilderPackageTask
 
             // Must run before cleanupBuildTemporaries(), which removes the isolated npm cache
             // where the app-builder binary used to regenerate the blockmap lives.
-            recompressDmgWithLzma(outputDir, dist)
+            postProcessDmg(outputDir, dist)
 
             cleanupParasiticFiles(outputDir)
             cleanupBuildTemporaries(outputDir)
@@ -1409,41 +1409,34 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Post-processes the DMG electron-builder just produced by recompressing it with LZMA (ULMO).
+         * Post-processes the DMG electron-builder just produced: recompresses it with LZMA (ULMO)
+         * when [shouldRecompressDmg] allows it, signs it when `dmg.sign = true`, then refreshes the
+         * auto-update blockmap/manifest checksums once for the final image.
          *
-         * electron-builder's bundled dmgbuild caps DMG compression at bzip2 (UDBZ), so we reconvert
-         * with `hdiutil convert -format ULMO` — LZMA, ~20% smaller — then re-sign (reconversion drops
-         * the signature) and refresh the auto-update blockmap/manifest checksums.
+         * Nucleus signs the image itself (#828): electron-builder only finds a DMG identity through
+         * `CSC_NAME` or keychain auto-discovery, both of which the plugin leaves off so it never
+         * re-signs the `.app`, and then skips `dmg.sign` without a word. Signing here also honours
+         * the configured keychain, adds a secure timestamp, and comes after recompression (which
+         * drops any signature) and before the notarization task.
          *
-         * Runs only when the user opted into [CompressionLevel.Ultra], left the DMG format unpinned,
-         * and targets macOS 10.15+ (ULMO images do not mount on older systems). It is also skipped
-         * when electron-builder is publishing inline, since the pre-recompression artifact would
-         * already have been uploaded.
+         * Skipped when electron-builder is publishing inline, since the DMG has already been uploaded.
          */
-        private fun recompressDmgWithLzma(
+        private fun postProcessDmg(
             outputDir: File,
             dist: JvmApplicationDistributions,
         ) {
             if (currentOS != OS.MacOS) return
             if (targetFormat != TargetFormat.Dmg) return
-            if (dist.compressionLevel != CompressionLevel.Ultra) return
 
-            dist.macOS.dmg.format?.let {
-                logger.info("Skipping LZMA DMG recompression: an explicit dmg.format=$it is set")
-                return
-            }
-            if (!MacDmgLzma.isUlmoCompatible(dist.macOS.minimumSystemVersion)) {
-                logger.lifecycle(
-                    "Skipping LZMA (ULMO) DMG recompression: minimumSystemVersion " +
-                        "'${dist.macOS.minimumSystemVersion}' predates macOS 10.15. Keeping bzip2 (UDBZ).",
-                )
-                return
-            }
+            val recompress = shouldRecompressDmg(dist)
+            val signing = if (dist.macOS.dmg.sign) dmgSigningSettings() else null
+            if (!recompress && signing == null) return
+
             if (resolvePublishFlag() != "never") {
                 logger.warn(
-                    "Skipping LZMA (ULMO) DMG recompression: electron-builder is publishing inline " +
-                        "(publish != never), so the DMG has already been uploaded. Use a separate upload " +
-                        "step (publish = never) to benefit from LZMA recompression.",
+                    "Skipping DMG post-processing (LZMA recompression, signing): electron-builder is " +
+                        "publishing inline (publish != never), so the DMG has already been uploaded. Use a " +
+                        "separate upload step (publish = never) to get a recompressed, signed DMG.",
                 )
                 return
             }
@@ -1454,26 +1447,61 @@ abstract class AbstractElectronBuilderPackageTask
                     ?.toList()
                     .orEmpty()
             if (dmgFiles.isEmpty()) {
-                logger.info("No .dmg artifact found to recompress in ${outputDir.absolutePath}")
+                logger.info("No .dmg artifact found to post-process in ${outputDir.absolutePath}")
                 return
             }
 
             val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
             val appBuilder = MacDmgLzma.locateAppBuilder(outputDir, resolvedArch)
             if (appBuilder == null) {
-                logger.info("app-builder not found in npm cache; blockmaps will be dropped after recompression")
+                logger.info("app-builder not found in npm cache; blockmaps will be dropped after post-processing")
             }
             for (dmg in dmgFiles) {
-                recompressSingleDmg(dmg, appBuilder)
+                if (recompress) recompressSingleDmg(dmg)
+                signing?.let { signDmg(dmg, it) }
+                refreshDmgMetadata(dmg, appBuilder)
+                verifyDmg(dmg)
             }
         }
 
-        private fun recompressSingleDmg(
-            dmg: File,
-            appBuilder: File?,
-        ) {
+        /**
+         * Whether to recompress the DMG with LZMA (ULMO): electron-builder's bundled dmgbuild caps DMG
+         * compression at bzip2 (UDBZ), while `hdiutil convert -format ULMO` is ~20% smaller.
+         *
+         * Only when the user opted into [CompressionLevel.Ultra], left the DMG format unpinned, and
+         * targets macOS 10.15+ (ULMO images do not mount on older systems).
+         */
+        private fun shouldRecompressDmg(dist: JvmApplicationDistributions): Boolean {
+            if (dist.compressionLevel != CompressionLevel.Ultra) return false
+
+            dist.macOS.dmg.format?.let {
+                logger.info("Skipping LZMA DMG recompression: an explicit dmg.format=$it is set")
+                return false
+            }
+            if (!MacDmgLzma.isUlmoCompatible(dist.macOS.minimumSystemVersion)) {
+                logger.lifecycle(
+                    "Skipping LZMA (ULMO) DMG recompression: minimumSystemVersion " +
+                        "'${dist.macOS.minimumSystemVersion}' predates macOS 10.15. Keeping bzip2 (UDBZ).",
+                )
+                return false
+            }
+            return true
+        }
+
+        /** The identity `dmg.sign = true` signs with, or null (with a warning) when macOS signing is off. */
+        private fun dmgSigningSettings(): ValidatedMacOSSigningSettings? {
+            val settings = macSigner?.settings
+            if (settings == null) {
+                logger.warn(
+                    "dmg.sign = true but no signing identity is configured " +
+                        "(macOS { signing { sign = true; identity = \"…\" } }): the DMG is left unsigned.",
+                )
+            }
+            return settings
+        }
+
+        private fun recompressSingleDmg(dmg: File) {
             val sizeBefore = dmg.length()
-            val wasSigned = isDmgSigned(dmg)
 
             val recompressed = File(dmg.parentFile, "${dmg.nameWithoutExtension}.ulmo.dmg")
             if (recompressed.exists()) recompressed.delete()
@@ -1495,12 +1523,6 @@ abstract class AbstractElectronBuilderPackageTask
                 recompressed.delete()
             }
 
-            // Reconversion drops the code signature, so re-sign when the source image was signed.
-            if (wasSigned) signDmg(dmg)
-
-            refreshDmgMetadata(dmg, appBuilder)
-            verifyDmg(dmg)
-
             val sizeAfter = dmg.length()
             val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * PERCENT / sizeBefore else 0.0
             logger.lifecycle(
@@ -1515,39 +1537,15 @@ abstract class AbstractElectronBuilderPackageTask
             )
         }
 
-        /** Whether [dmg] currently carries a code signature (electron-builder signs it when dmg.sign = true). */
-        private fun isDmgSigned(dmg: File): Boolean {
-            val stdout = ByteArrayOutputStream()
-            val stderr = ByteArrayOutputStream()
-            return try {
-                val result =
-                    execOperations.exec { spec ->
-                        spec.executable = "codesign"
-                        spec.args = listOf("-v", "--verify", dmg.absolutePath)
-                        spec.isIgnoreExitValue = true
-                        spec.standardOutput = stdout
-                        spec.errorOutput = stderr
-                    }
-                result.exitValue == 0
-            } catch (_: Exception) {
-                false
-            }
-        }
-
         /**
          * Signs [dmg] with the configured Developer ID Application identity. Uses `--force` directly
-         * (no prior `--remove-signature`, which fails on the freshly-converted, unsigned image).
+         * (no prior `--remove-signature`, which fails on an unsigned image).
          */
-        private fun signDmg(dmg: File) {
-            val settings = macSigner?.settings
-            if (settings == null) {
-                logger.warn(
-                    "${dmg.name} was signed before recompression but no Developer ID identity " +
-                        "is available to re-sign it.",
-                )
-                return
-            }
-            logger.info("Re-signing ${dmg.name} with '${settings.fullDeveloperID}' after recompression")
+        private fun signDmg(
+            dmg: File,
+            settings: ValidatedMacOSSigningSettings,
+        ) {
+            logger.lifecycle("Signing ${dmg.name} with '${settings.fullDeveloperID}'")
             execOperations.exec { spec ->
                 spec.executable = "codesign"
                 spec.args =
@@ -1567,7 +1565,7 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Regenerates the differential-update blockmap for the recompressed [dmg] (via electron-builder's
+         * Regenerates the differential-update blockmap for the post-processed [dmg] (via electron-builder's
          * app-builder) and rewrites the sha512/size/blockMapSize any local manifest records for it.
          * When app-builder is unavailable, the stale blockmap is dropped and updaters fall back to a
          * full download.
@@ -1613,7 +1611,7 @@ abstract class AbstractElectronBuilderPackageTask
             }
         }
 
-        /** Verifies the recompressed image mounts and its checksums are intact. */
+        /** Verifies the post-processed image mounts and its checksums are intact. */
         private fun verifyDmg(dmg: File) {
             execOperations.exec { spec ->
                 spec.executable = "hdiutil"
@@ -2593,7 +2591,8 @@ private fun resolveElectronBuilderEnvironment(
 ): Map<String, String> {
     val env = mutableMapOf<String, String>()
 
-    // macOS: disable automatic certificate discovery when no signing identity is configured
+    // macOS: Nucleus signs the .app and the DMG itself, so electron-builder must never pick a
+    // keychain identity on its own and re-sign them
     if (currentOs == OS.MacOS) {
         env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false"
     }
