@@ -165,6 +165,47 @@ class AppImageIntegrationTest {
     }
 
     @Test
+    fun `a system package's entry under another name with this app's StartupWMClass is ExternallyManaged`() {
+        // Nucleus' own deb installs `nucleus-lab.desktop` where the AppImage carries `NucleusLab.desktop`.
+        val systemEntry =
+            File(systemDataDir, "applications/my-app.desktop").apply {
+                parentFile.mkdirs()
+                writeText(
+                    "[Desktop Entry]\nName=My App\nExec=/opt/my-app/my-app %U\nStartupWMClass=com-example-MainKt\n",
+                )
+            }
+
+        assertEquals(AppImageIntegrationStatus.ExternallyManaged(systemEntry), integration().status())
+        assertTrue(integration().integrate() is AppImageIntegrationResult.Failed)
+    }
+
+    @Test
+    fun `a system entry under another name for an unrelated app does not block integration`() {
+        File(systemDataDir, "applications/other.desktop").apply {
+            parentFile.mkdirs()
+            writeText("[Desktop Entry]\nName=Other\nExec=/usr/bin/other %U\nStartupWMClass=org-other-MainKt\n")
+        }
+
+        assertEquals(AppImageIntegrationStatus.NotIntegrated, integration().status())
+    }
+
+    @Test
+    fun `a system entry the user hid with a Hidden override does not count`() {
+        File(systemDataDir, "applications/my-app.desktop").apply {
+            parentFile.mkdirs()
+            writeText(
+                "[Desktop Entry]\nName=My App\nExec=/opt/my-app/my-app %U\nStartupWMClass=com-example-MainKt\n",
+            )
+        }
+        File(dataHome, "applications/my-app.desktop").apply {
+            parentFile.mkdirs()
+            writeText("[Desktop Entry]\nName=My App\nStartupWMClass=com-example-MainKt\nHidden=true\n")
+        }
+
+        assertEquals(AppImageIntegrationStatus.NotIntegrated, integration().status())
+    }
+
+    @Test
     fun `an unrelated same-named system entry does not block integration`() {
         File(systemDataDir, "applications/myapp.desktop").apply {
             parentFile.mkdirs()
