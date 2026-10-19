@@ -271,8 +271,21 @@ internal object NativeLinuxSystemInfoBridge {
     // Idle time
     @JvmStatic external fun nativeIdleTimeSeconds(): Long
 
-    // Connectivity
-    @JvmStatic external fun nativeIsNetworkConnected(): Boolean
+    // Connectivity: { available (0/1), metered, level }, codes mirrored in
+    // nucleus_system_info_connectivity.c and decoded by connectivityInfoOf().
+    @JvmStatic external fun nativeQueryConnectivity(): IntArray
 
-    @JvmStatic external fun nativeGetMeteredStatus(): Int
+    @JvmStatic external fun nativeStartConnectivityMonitor(): Boolean
+
+    @JvmStatic external fun nativeStopConnectivityMonitor()
+
+    // Called from the native monitor thread on every connectivity change.
+    @JvmStatic
+    fun onConnectivityChanged(
+        available: Boolean,
+        metered: Int,
+        level: Int,
+    ) {
+        LinuxConnectivityMonitor.onChanged(connectivityInfoOf(available, metered, level))
+    }
 }

@@ -17,6 +17,8 @@ import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
 import dev.nucleusframework.systeminfo.model.UserInfo
 import dev.nucleusframework.systeminfo.windows.WindowsSystemInfo
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @Suppress("TooManyFunctions")
 public object SystemInfo {
@@ -59,4 +61,18 @@ public object SystemInfo {
     public fun idleTime(): Long = delegate?.idleTime() ?: -1L
 
     public fun connectivityInfo(): ConnectivityInfo? = delegate?.connectivityInfo()
+
+    /**
+     * Observes network connectivity: emits the current [ConnectivityInfo] when collected,
+     * then every change, until the collection is cancelled.
+     *
+     * All collectors share a single native monitor, started with the first one and
+     * stopped with the last. Consecutive identical states are never emitted.
+     *
+     * Linux watches the xdg-desktop-portal NetworkMonitor, falling back to NetworkManager;
+     * when neither is reachable the flow emits a single state with
+     * [dev.nucleusframework.systeminfo.model.ConnectivityLevel.UNKNOWN]. macOS and Windows
+     * currently emit the current state only. The flow is empty on unsupported platforms.
+     */
+    public fun connectivityFlow(): Flow<ConnectivityInfo> = delegate?.connectivityChanges() ?: emptyFlow()
 }

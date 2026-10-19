@@ -11,13 +11,14 @@ import dev.nucleusframework.systeminfo.model.CpuInfo
 import dev.nucleusframework.systeminfo.model.DiskInfo
 import dev.nucleusframework.systeminfo.model.GpuInfo
 import dev.nucleusframework.systeminfo.model.MemoryInfo
-import dev.nucleusframework.systeminfo.model.MeteredStatus
 import dev.nucleusframework.systeminfo.model.MotherboardInfo
 import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
 import dev.nucleusframework.systeminfo.model.OsInfo
 import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
 import dev.nucleusframework.systeminfo.model.UserInfo
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @Suppress("TooManyFunctions", "ReturnCount")
 internal object LinuxSystemInfo : PlatformSystemInfo {
@@ -365,19 +366,10 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
 
     override fun connectivityInfo(): ConnectivityInfo? {
         if (!ready()) return null
-        val connected = bridge.nativeIsNetworkConnected()
-        return ConnectivityInfo(
-            isConnected = connected,
-            meteredStatus =
-                if (!connected) {
-                    MeteredStatus.NOT_AVAILABLE
-                } else {
-                    when (bridge.nativeGetMeteredStatus()) {
-                        1 -> MeteredStatus.UNMETERED
-                        2 -> MeteredStatus.METERED
-                        else -> MeteredStatus.UNKNOWN
-                    }
-                },
-        )
+        val (available, metered, level) = bridge.nativeQueryConnectivity()
+        return connectivityInfoOf(available != 0, metered, level)
     }
+
+    override fun connectivityChanges(): Flow<ConnectivityInfo> =
+        if (ready()) LinuxConnectivityMonitor.changes() else emptyFlow()
 }

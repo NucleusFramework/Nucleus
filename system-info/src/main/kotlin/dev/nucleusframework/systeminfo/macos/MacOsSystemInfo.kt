@@ -5,6 +5,7 @@ import dev.nucleusframework.systeminfo.model.BatteryInfo
 import dev.nucleusframework.systeminfo.model.BatteryState
 import dev.nucleusframework.systeminfo.model.ComponentInfo
 import dev.nucleusframework.systeminfo.model.ConnectivityInfo
+import dev.nucleusframework.systeminfo.model.ConnectivityLevel
 import dev.nucleusframework.systeminfo.model.CpuGlobalInfo
 import dev.nucleusframework.systeminfo.model.CpuInfo
 import dev.nucleusframework.systeminfo.model.DiskInfo
@@ -372,6 +373,7 @@ internal object MacOsSystemInfo : PlatformSystemInfo {
                         else -> MeteredStatus.UNKNOWN
                     }
                 },
+            level = if (connected) ConnectivityLevel.UNKNOWN else ConnectivityLevel.NONE,
         )
     }
 }
