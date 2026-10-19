@@ -13,17 +13,18 @@ use tao::window::WindowBuilder;
 use crate::events::{
     current_modifier_bits, dispatch, dispatch_ime_commit, dispatch_ime_preedit,
     dispatch_ime_replace_commit, dispatch_key, dispatch_scroll_gesture, dispatch_touch_input,
-    handle_for, mouse_button_code, pack_modifiers, UserEvent, AWT_LINE_TO_POINTS,
-    CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED,
-    EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED,
-    EVENT_MAIN_EVENTS_CLEARED, EVENT_MODIFIERS_CHANGED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP,
-    EVENT_MOVED, EVENT_QUIT_REQUESTED, EVENT_REDRAW_REQUESTED, EVENT_RESIZED,
-    EVENT_SCALE_FACTOR_CHANGED, EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED,
-    EVENT_WINDOW_READY, SCROLL_FIXED_SCALE, SCROLL_GESTURE_BEGAN, SCROLL_GESTURE_CANCELLED,
-    SCROLL_GESTURE_CHANGED, SCROLL_GESTURE_ENDED, SCROLL_GESTURE_MAY_BEGIN,
-    SCROLL_GESTURE_MOMENTUM_BEGAN, SCROLL_GESTURE_MOMENTUM_CHANGED, SCROLL_GESTURE_MOMENTUM_ENDED,
-    TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE,
-    TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
+    handle_for, mouse_button_code, pack_modifiers, pointer_kind_code, UserEvent,
+    AWT_LINE_TO_POINTS, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT,
+    EVENT_CURSOR_MOVED, EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED,
+    EVENT_KEY_UP, EVENT_LAUNCHED, EVENT_MAIN_EVENTS_CLEARED, EVENT_MODIFIERS_CHANGED,
+    EVENT_MOUSE_DOWN, EVENT_MOUSE_UP, EVENT_MOVED, EVENT_POINTER_KIND, EVENT_QUIT_REQUESTED,
+    EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED, EVENT_SCROLL_LINE,
+    EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY, POINTER_KIND_MOUSE,
+    SCROLL_FIXED_SCALE, SCROLL_GESTURE_BEGAN, SCROLL_GESTURE_CANCELLED, SCROLL_GESTURE_CHANGED,
+    SCROLL_GESTURE_ENDED, SCROLL_GESTURE_MAY_BEGIN, SCROLL_GESTURE_MOMENTUM_BEGAN,
+    SCROLL_GESTURE_MOMENTUM_CHANGED, SCROLL_GESTURE_MOMENTUM_ENDED, TOUCH_EVENT_CANCEL,
+    TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE, TOUCH_FORCE_FIXED_SCALE,
+    TOUCH_FORCE_UNKNOWN,
 };
 #[cfg(target_os = "windows")]
 use crate::events::{
@@ -165,6 +166,20 @@ fn input_pending() -> bool {
     (status >> 16) & QS_INPUT.0 != 0
 }
 
+/// Tells the JVM which tool the next cursor / button event comes from, when it
+/// is not the one of the previous event on that window.
+fn report_pointer_kind(
+    last: &mut HashMap<u64, jint>,
+    handle: u64,
+    device_id: tao::event::DeviceId,
+) {
+    let kind = pointer_kind_code(device_id);
+    if last.get(&handle).copied().unwrap_or(POINTER_KIND_MOUSE) != kind {
+        last.insert(handle, kind);
+        dispatch(handle, EVENT_POINTER_KIND, kind, 0);
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn serve_pending_redraws(pending: &mut Vec<u64>) {
     if pending.is_empty() {
@@ -269,6 +284,9 @@ pub(crate) fn run_event_loop_blocking() {
     // guards against duplicate callbacks.
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     let mut last_minimized: HashMap<u64, bool> = HashMap::new();
+    // Tool of the last cursor / button event per window: EVENT_POINTER_KIND is
+    // sent only when it changes (absent = the mouse).
+    let mut last_pointer_kind: HashMap<u64, jint> = HashMap::new();
     // Windows: handles that asked for a redraw during the batch being
     // processed, served at `MainEventsCleared`. See UserEvent::RequestRedraw.
     #[cfg(target_os = "windows")]
@@ -955,6 +973,7 @@ pub(crate) fn run_event_loop_blocking() {
                             target_os = "linux"
                         ))]
                         last_minimized.remove(&handle);
+                        last_pointer_kind.remove(&handle);
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
                     }
                     WindowEvent::Resized(size) => {
@@ -1027,7 +1046,12 @@ pub(crate) fn run_event_loop_blocking() {
                         };
                         dispatch(handle, code, 0, 0);
                     }
-                    WindowEvent::CursorMoved { position, .. } => {
+                    WindowEvent::CursorMoved {
+                        position,
+                        device_id,
+                        ..
+                    } => {
+                        report_pointer_kind(&mut last_pointer_kind, handle, device_id);
                         dispatch(
                             handle,
                             EVENT_CURSOR_MOVED,
@@ -1038,12 +1062,18 @@ pub(crate) fn run_event_loop_blocking() {
                     WindowEvent::CursorLeft { .. } => {
                         dispatch(handle, EVENT_CURSOR_LEFT, 0, 0);
                     }
-                    WindowEvent::MouseInput { state, button, .. } => {
+                    WindowEvent::MouseInput {
+                        state,
+                        button,
+                        device_id,
+                        ..
+                    } => {
                         let code = match state {
                             ElementState::Pressed => EVENT_MOUSE_DOWN,
                             ElementState::Released => EVENT_MOUSE_UP,
                             _ => return,
                         };
+                        report_pointer_kind(&mut last_pointer_kind, handle, device_id);
                         dispatch(handle, code, mouse_button_code(button), 0);
                     }
                     WindowEvent::MouseWheel {

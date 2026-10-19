@@ -352,6 +352,22 @@ unsafe extern "C" fn x_error_callback(
   0
 }
 
+pub use crate::platform_impl::PointerSource;
+
+/// Additional methods on `DeviceId` that are specific to Unix.
+pub trait DeviceIdExtUnix {
+  /// The tool of the pointer event that carried this id: tablet pens and
+  /// erasers are told apart from the mouse (PATCH(nucleus)).
+  fn pointer_source(&self) -> PointerSource;
+}
+
+impl DeviceIdExtUnix for crate::event::DeviceId {
+  #[inline]
+  fn pointer_source(&self) -> PointerSource {
+    self.0.pointer_source()
+  }
+}
+
 /// Additional methods on `MonitorHandle` that are specific to Unix.
 pub trait MonitorHandleExtUnix {
   /// Returns the gdk handle of the monitor.
