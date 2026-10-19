@@ -38,7 +38,9 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
      * thread over, so it is non-null as soon as user composition runs. When
      * `Dispatchers.Main` is used before any loop starts, the pre-loop fallback
      * thread captures itself here instead; [TaoApplication.run] later overwrites
-     * it with the real main thread.
+     * it with the real main thread. On macOS, when that thread is not AppKit's
+     * thread 0, the loop's first callback re-points it at the thread the loop
+     * actually runs on (#829).
      *
      * Consumed by [TaoMainCoroutineDispatcher.isDispatchNeeded] and by
      * downstream `Dispatchers.Main` resolvers (most notably AndroidX

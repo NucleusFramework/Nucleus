@@ -491,7 +491,8 @@ internal object NativeMetalBridge {
      * True on the AppKit main thread. [dispatch.TaoMainDispatcher.taoMainThread]
      * cannot answer this on macOS: `nativeRunBlocking` marshals the event loop
      * onto thread 0, so AppKit callbacks run on a different JVM thread than the
-     * one that entered `taoApplication`.
+     * one that entered `taoApplication` — and `taoMainThread` only learns the
+     * real thread on the loop's first callback (#829).
      */
     @JvmStatic
     external fun nativeIsMainThread(): Boolean
