@@ -170,32 +170,41 @@ public class AppImageIntegration internal constructor(
     /**
      * An entry under another name that already launches this image: an integration tool's (Gear
      * Lever and appimaged name theirs after a hash), found by its `Exec=` referencing the image
-     * path. A same-named entry in a *system* applications directory (a deb/rpm install) also
-     * counts when its `StartupWMClass` matches this app's, since it already claims this app's
-     * windows and a second entry would only duplicate the launcher; a same-named entry for an
-     * unrelated app does not block integration.
+     * path. Any visible entry whose `StartupWMClass` matches this app's (a deb/rpm install, whatever
+     * its file name: Nucleus' own deb names it `nucleus-lab.desktop` where the AppImage carries
+     * `NucleusLab.desktop`) also counts, since it already claims this app's windows and a second
+     * entry would only duplicate the launcher; a same-named entry for an unrelated app does not
+     * block integration.
      */
     private fun foreignEntryFor(source: SourceEntry): File? {
         val userEntry =
-            applicationsDir()
-                .listFiles { file -> file.isFile && file.name.endsWith(".desktop") }
-                ?.sortedBy { it.name }
-                ?.firstOrNull { entry ->
+            desktopFiles(applicationsDir())
+                .firstOrNull { entry ->
                     DesktopEntryText(entry.readText()).value("Exec")?.contains(source.appImage.path) == true
                 }
         if (userEntry != null) return userEntry
         val startupWmClass = source.text.value("StartupWMClass")?.takeIf { it.isNotBlank() } ?: return null
-        // XDG precedence: the first existing same-named entry shadows any later ones, so only that
-        // effective entry decides; a matching entry hidden behind an unrelated one is invisible to
-        // the desktop and must not count.
-        val systemEntry =
-            systemDataDirs(source.appDir)
-                .map { File(File(it, "applications"), source.desktopFile.name) }
-                .firstOrNull { it.isFile } ?: return null
-        return systemEntry.takeIf {
-            DesktopEntryText(it.readText()).value("StartupWMClass") == startupWmClass
+        return visibleEntries(source.appDir).firstOrNull { entry ->
+            val text = DesktopEntryText(entry.readText())
+            text.value("StartupWMClass") == startupWmClass && text.value("Hidden") != "true"
         }
     }
+
+    /**
+     * The entries the desktop actually sees, user directory first: by XDG precedence the first
+     * existing file of a given name shadows any later one, so a matching entry hidden behind an
+     * unrelated one (or behind a user override) is invisible to the desktop and must not count.
+     */
+    private fun visibleEntries(appDir: File): List<File> =
+        (listOf(dataHome()) + systemDataDirs(appDir))
+            .flatMap { desktopFiles(File(it, "applications")) }
+            .distinctBy { it.name }
+
+    private fun desktopFiles(dir: File): List<File> =
+        dir
+            .listFiles { file -> file.isFile && file.name.endsWith(".desktop") }
+            ?.sortedBy { it.name }
+            .orEmpty()
 
     /**
      * Copies the hicolor icon tree for the entry's icon name into the user's icon directory,
