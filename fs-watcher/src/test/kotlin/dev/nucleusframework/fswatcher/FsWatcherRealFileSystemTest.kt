@@ -1346,6 +1346,53 @@ class FsWatcherRealFileSystemTest {
                 deleteRecursively(root)
             }
         }
+
+    // #838: notify's recursive walk opens every subdirectory of an already-watched parent. With
+    // IN_OPEN in the inotify mask, that alone queued one event per directory and overflowed the
+    // kernel queue on trees larger than fs.inotify.max_queued_events.
+    @Test
+    fun recursiveWatchOfTreeLargerThanInotifyQueueReportsNoOverflow() =
+        runBlocking {
+            if (!FsWatchers.isSupported() || !isLinuxHost()) return@runBlocking
+            val queueLimit =
+                runCatching {
+                    Files
+                        .readAllLines(Path.of("/proc/sys/fs/inotify/max_queued_events"))
+                        .first()
+                        .trim()
+                        .toInt()
+                }.getOrNull() ?: return@runBlocking
+            // Creating hundreds of thousands of directories is not worth it on a host tuned that high.
+            if (queueLimit > 65_536) return@runBlocking
+
+            val root = createRealTempDirectory("fs-watcher-real-fs-queue-overflow")
+            try {
+                repeat(queueLimit + 1_000) { index -> Files.createDirectory(root.resolve("d$index")) }
+                for (deliveryMode in listOf(FsWatchDeliveryMode.Raw, FsWatchDeliveryMode.Debounced())) {
+                    FsWatchers.create(FsWatcherConfig(deliveryMode = deliveryMode)).use { watcher ->
+                        val seen = java.util.Collections.synchronizedList(mutableListOf<FsWatchEvent>())
+                        val collector =
+                            launch(start = CoroutineStart.UNDISPATCHED) {
+                                watcher.events.collect { seen += it }
+                            }
+                        try {
+                            watcher.watch(root, recursive = true)
+                            // A change after the walk proves the backend drained its queue past it.
+                            val marker = root.resolve("d0").resolve("marker-$deliveryMode.txt")
+                            Files.writeString(marker, "marker")
+                            awaitEvents { synchronized(seen) { seen.anyCoreEventFor(marker) } }
+
+                            val overflows = synchronized(seen) { seen.filterIsInstance<FsWatchEvent.Overflow>() }
+                            assertTrue(overflows.isEmpty(), "$deliveryMode registration overflowed: $overflows")
+                        } finally {
+                            collector.cancelAndJoin()
+                        }
+                    }
+                }
+            } finally {
+                deleteRecursively(root)
+            }
+        }
 }
 
 private suspend fun awaitEvents(

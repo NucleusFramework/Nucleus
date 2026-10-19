@@ -3,8 +3,8 @@ use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE, JNI_VERSION_1_8};
 use jni::{JNIEnv, JavaVM};
 use notify::event::{ModifyKind, RenameMode};
 use notify::{
-    Config, Event, EventHandler, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode,
-    Result as NotifyResult, Watcher, WatcherKind,
+    Config, Event, EventHandler, EventKind, EventKindMask, PollWatcher, RecommendedWatcher,
+    RecursiveMode, Result as NotifyResult, Watcher, WatcherKind,
 };
 use notify_debouncer_full::file_id::FileId;
 use notify_debouncer_full::{
@@ -689,7 +689,12 @@ fn create_native_watcher(
 ) -> Option<NativeWatcher> {
     match backend_mode {
         BackendMode::Native => {
-            let config = Config::default().with_follow_symlinks(follow_symlinks);
+            // Access events are discarded by `classify_event` anyway; subscribing to them made
+            // inotify queue an IN_OPEN for every directory notify's recursive walk opens, which
+            // overflowed the kernel queue on trees larger than `max_queued_events` (#838).
+            let config = Config::default()
+                .with_follow_symlinks(follow_symlinks)
+                .with_event_kinds(EventKindMask::CORE);
             match delivery_mode {
                 DeliveryMode::Raw => RecommendedWatcher::new(
                     move |result| handle_notify_result(watcher_handle, result),
