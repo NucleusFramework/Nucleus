@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.unit.IntRect
 import dev.nucleusframework.core.runtime.ActivationToken
 import dev.nucleusframework.core.runtime.Platform
@@ -301,6 +302,14 @@ public class TaoWindow internal constructor(
 
     @Volatile
     internal var modifierState: Int = 0
+        private set
+
+    /**
+     * Tool behind the cursor and button events: the mouse, or a tablet pen
+     * and its eraser end where the platform names them (#827, Linux).
+     */
+    @Volatile
+    internal var pointerType: PointerType = PointerType.Mouse
         private set
 
     /**
@@ -1740,6 +1749,7 @@ public class TaoWindow internal constructor(
             TaoEventCode.MOUSE_DOWN -> pointerButtonListener?.invoke(a, true)
             TaoEventCode.MOUSE_UP -> pointerButtonListener?.invoke(a, false)
             TaoEventCode.MODIFIERS_CHANGED -> modifierState = a
+            TaoEventCode.POINTER_KIND -> pointerType = taoPointerType(a)
             TaoEventCode.WILL_HIDE -> willHideListener?.invoke()
             TaoEventCode.SHOWN -> shownListener?.invoke()
             TaoEventCode.SIZE_MOVE -> sizeMoveListener?.invoke(a != 0)

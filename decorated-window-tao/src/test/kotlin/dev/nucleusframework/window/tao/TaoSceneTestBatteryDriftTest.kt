@@ -154,6 +154,8 @@ class TaoSceneTestBatteryDriftTest {
                 "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
             TaoMouseButtonWireDriftTest::class.java to
                 "reads events.rs from the repo; wire guard, not a scene behaviour",
+            TaoPointerKindWireDriftTest::class.java to
+                "reads events.rs from the repo; wire guard, not a scene behaviour",
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",

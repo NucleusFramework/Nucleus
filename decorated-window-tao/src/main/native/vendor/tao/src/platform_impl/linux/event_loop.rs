@@ -36,7 +36,7 @@ use crate::{
   event_loop::{ControlFlow, EventLoopClosed, EventLoopWindowTarget as RootELW},
   keyboard::ModifiersState,
   monitor::MonitorHandle as RootMonitorHandle,
-  platform_impl::platform::DEVICE_ID,
+  platform_impl::platform::{pointer_device_id, DEVICE_ID},
   window::{
     CursorIcon, Fullscreen, ProgressBarState, ResizeDirection, Theme, WindowId as RootWindowId,
   },
@@ -881,7 +881,7 @@ impl<T: 'static> EventLoop<T> {
                 window_id: RootWindowId(id),
                 event: WindowEvent::CursorMoved {
                   position: LogicalPosition::new(x, y).to_physical(scale_factor as f64),
-                  device_id: DEVICE_ID,
+                  device_id: pointer_device_id(crossing.source_device()),
                   modifiers: ModifiersState::empty(),
                 },
               }) {
@@ -917,7 +917,7 @@ impl<T: 'static> EventLoop<T> {
                   window_id: RootWindowId(id),
                   event: WindowEvent::CursorMoved {
                     position: LogicalPosition::new(x, y).to_physical(scale_factor as f64),
-                    device_id: DEVICE_ID,
+                    device_id: pointer_device_id(motion.source_device()),
                     // this field is depracted so it is fine to pass empty state
                     modifiers: ModifiersState::empty(),
                   },
@@ -960,7 +960,7 @@ impl<T: 'static> EventLoop<T> {
                     _ => MouseButton::Other(button as u16),
                   },
                   state: ElementState::Pressed,
-                  device_id: DEVICE_ID,
+                  device_id: pointer_device_id(event.source_device()),
                   // this field is depracted so it is fine to pass empty state
                   modifiers: ModifiersState::empty(),
                 },
@@ -986,7 +986,7 @@ impl<T: 'static> EventLoop<T> {
                     _ => MouseButton::Other(button as u16),
                   },
                   state: ElementState::Released,
-                  device_id: DEVICE_ID,
+                  device_id: pointer_device_id(event.source_device()),
                   // this field is depracted so it is fine to pass empty state
                   modifiers: ModifiersState::empty(),
                 },

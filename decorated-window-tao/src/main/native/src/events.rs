@@ -4,7 +4,7 @@
 use jni::objects::JValue;
 use jni::sys::{jint, jlong, JNI_FALSE, JNI_TRUE};
 
-use tao::event::MouseButton;
+use tao::event::{DeviceId, MouseButton};
 use tao::keyboard::ModifiersState;
 use tao::window::WindowId;
 
@@ -190,6 +190,16 @@ pub(crate) const EVENT_QUIT_REQUESTED: jint = 26;
 // `none` / `server`, #816), `0` when it allows client decorations again. See `server_decoration.rs`.
 #[cfg(target_os = "linux")]
 pub(crate) const EVENT_DECORATIONS_SUPPRESSED: jint = 27;
+// `a` = POINTER_KIND_*: the tool behind the cursor / button events that
+// follow (#827). Sent only when it changes, right before the first event of
+// the new tool, so the JVM keeps it as state like the modifiers. Linux only
+// for now: GDK names a tablet pen or eraser as the source of its events.
+pub(crate) const EVENT_POINTER_KIND: jint = 28;
+pub(crate) const POINTER_KIND_MOUSE: jint = 0;
+#[cfg(target_os = "linux")]
+pub(crate) const POINTER_KIND_STYLUS: jint = 1;
+#[cfg(target_os = "linux")]
+pub(crate) const POINTER_KIND_ERASER: jint = 2;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;
@@ -703,6 +713,24 @@ pub(crate) fn handle_for(window_id: WindowId) -> Option<u64> {
     map.iter()
         .find(|(_, w)| w.id() == window_id)
         .map(|(h, _)| *h)
+}
+
+/// The POINTER_KIND_* of the tool that sent a cursor / button event.
+pub(crate) fn pointer_kind_code(device_id: DeviceId) -> jint {
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::unix::{DeviceIdExtUnix, PointerSource};
+        match device_id.pointer_source() {
+            PointerSource::Pen => POINTER_KIND_STYLUS,
+            PointerSource::Eraser => POINTER_KIND_ERASER,
+            _ => POINTER_KIND_MOUSE,
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = device_id;
+        POINTER_KIND_MOUSE
+    }
 }
 
 pub(crate) fn mouse_button_code(b: MouseButton) -> jint {
