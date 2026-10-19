@@ -43,6 +43,11 @@ abstract class JvmApplication {
 
     abstract var mainClass: String?
     abstract val mainJar: RegularFileProperty
+    /**
+     * JDK used by `run` and JVM packaging (jlink / jpackage). Defaults to the project's JVM
+     * toolchain (`java.toolchain` / Kotlin's `jvmToolchain`) when one is configured, and to the
+     * Gradle daemon's JDK otherwise.
+     */
     abstract var javaHome: String
     abstract val args: MutableList<String>
 
