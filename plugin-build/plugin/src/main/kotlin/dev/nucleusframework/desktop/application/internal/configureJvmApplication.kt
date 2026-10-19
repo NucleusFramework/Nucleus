@@ -302,6 +302,13 @@ private fun JvmApplicationContext.registerGenerateAppProperties() {
                     ?.takeIf { it.isNotBlank() }
                     ?: app.mainClass?.replace('.', '-')
             wmClass?.let { startupWmClass.set(it) }
+            // The Linux packages name their .desktop file after the executable
+            // (`linux.packageName ?: packageName`, see `executableName` below), while the
+            // jpackage launcher GTK takes its Wayland app_id from is named after the root
+            // packageName. Baked so the Tao backend can send the entry's name as the app_id.
+            (app.nativeDistributions.linux.packageName ?: app.nativeDistributions.packageName)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { linuxDesktopEntryId.set(it) }
             // Resolve AppX StartupTask TaskId (MSIX auto-launch injection).
             // electron-builder hardcodes TaskId="SlackStartup" in the injected manifest
             // (legacy from its Slack origins) — this is the TaskId the runtime must use

@@ -27,3 +27,27 @@ pub(crate) fn init_xlib_threads() {
         }
     });
 }
+
+/// The `xdg_toplevel` app_id to send on a Wayland display, set from the JVM before the loop
+/// starts (`nativeSetWaylandAppId`). `None` keeps GTK's default.
+pub(crate) static WAYLAND_APP_ID: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Makes GTK send [WAYLAND_APP_ID] as each window's app_id. Call it after GTK is initialised and
+/// before the first window is realized.
+///
+/// GTK 3 (no `GApplication` id, as with Tao) sends `g_get_prgname()` as the app_id, which is
+/// the launcher binary's name; compositors pair the window with the `.desktop` entry of that
+/// name. Only applied on Wayland: on X11 the prgname is also the window's `WM_CLASS`, which must
+/// stay as it is.
+pub(crate) fn apply_wayland_app_id() {
+    use gtk::prelude::*;
+
+    let Some(app_id) = WAYLAND_APP_ID.lock().ok().and_then(|id| id.clone()) else {
+        return;
+    };
+    let wayland =
+        gtk::gdk::Display::default().is_some_and(|display| display.backend().is_wayland());
+    if wayland {
+        glib::set_prgname(Some(app_id.as_str()));
+    }
+}

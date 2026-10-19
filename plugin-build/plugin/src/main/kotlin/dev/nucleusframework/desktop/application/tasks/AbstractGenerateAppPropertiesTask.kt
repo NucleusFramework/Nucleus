@@ -49,6 +49,10 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
 
     @get:Input
     @get:Optional
+    abstract val linuxDesktopEntryId: Property<String>
+
+    @get:Input
+    @get:Optional
     abstract val startupTaskId: Property<String>
 
     @get:Input
@@ -80,6 +84,7 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
         appName.orNull?.let { props["app.name"] = it }
         appAumid.orNull?.let { props["app.aumid"] = it }
         startupWmClass.orNull?.let { props["startup.wm.class"] = it }
+        linuxDesktopEntryId.orNull?.let { props["linux.desktop.entry.id"] = it }
         startupTaskId.orNull?.let { props["startup.task.id"] = it }
         if (idleGc.getOrElse(false)) props[NUCLEUS_IDLE_GC_RESOURCE_KEY] = "true"
         if (partialRedraw.getOrElse(false)) props[NUCLEUS_PARTIAL_REDRAW_RESOURCE_KEY] = "true"

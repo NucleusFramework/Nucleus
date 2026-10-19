@@ -56,6 +56,23 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetWaylandAppId(
+    mut env: JNIEnv,
+    _class: JClass,
+    app_id: JString,
+) {
+    #[cfg(target_os = "linux")]
+    {
+        let app_id: Option<String> = env.get_string(&app_id).ok().map(Into::into);
+        if let Ok(mut guard) = crate::platform::linux::WAYLAND_APP_ID.lock() {
+            *guard = app_id;
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (&mut env, app_id);
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeCreateWindow(
     mut env: JNIEnv,
     _class: JClass,
