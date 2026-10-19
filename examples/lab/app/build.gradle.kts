@@ -149,7 +149,7 @@ nucleus.application {
         linux {
             iconFile.set(project.file("packaging/icons/Icon.png"))
             debMaintainer = "Nucleus <dev@nucleusframework.dev>"
-            debDepends = listOf("libfuse2", "libgtk-3-0")
+            debDepends = listOf("libgtk-3-0")
             debPackageVersion = releaseVersion
             rpmRequires = listOf("gtk3", "libX11")
             rpmPackageVersion = nativePackageVersion
