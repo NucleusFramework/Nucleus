@@ -125,12 +125,7 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("artifactName: ${withTargetSuffix(distributions.artifactName, targetFormat)}")
         generateFileAssociations(yaml, distributions, targetFormat)
 
-        // Use per-platform winCodeSign archives on Windows to avoid extraction failures
-        // caused by macOS symlinks in the legacy combo archive (electron-builder#8149).
-        if (currentOS == OS.Windows) {
-            yaml.appendLine("toolsets:")
-            yaml.appendLine("  winCodeSign: \"1.0.0\"")
-        }
+        appendToolsets(yaml, targetFormat)
 
         // --- Platform-specific config ---
         when (currentOS) {
@@ -905,6 +900,26 @@ internal class ElectronBuilderConfigGenerator {
         }
     }
 
+    private fun appendToolsets(
+        yaml: StringBuilder,
+        targetFormat: TargetFormat,
+    ) {
+        val toolsets =
+            buildList {
+                // Use per-platform winCodeSign archives on Windows to avoid extraction failures
+                // caused by macOS symlinks in the legacy combo archive (electron-builder#8149).
+                if (currentOS == OS.Windows) add("winCodeSign" to "1.0.0")
+                // The legacy (default "0.0.0") AppImage toolset embeds the old runtime, which
+                // links the system's libfuse2: absent by default on current distros (Ubuntu
+                // 22.04+, Fedora 36+), so the image fails to start there. This one embeds the
+                // static type2-runtime, which needs only a `fusermount`/`fusermount3` binary.
+                if (targetFormat == TargetFormat.AppImage) add("appimage" to APPIMAGE_TOOLSET_VERSION)
+            }
+        if (toolsets.isEmpty()) return
+        yaml.appendLine("toolsets:")
+        toolsets.forEach { (name, version) -> yaml.appendLine("  $name: \"$version\"") }
+    }
+
     private fun appendIfNotNull(
         yaml: StringBuilder,
         key: String,
@@ -922,3 +937,9 @@ internal class ElectronBuilderConfigGenerator {
             .replace("\r", "\\r")
             .replace("\t", "\\t")
 }
+
+/**
+ * electron-builder `toolsets.appimage` version: "1.0.3" is the static type2-runtime (build
+ * 20251108) patched for electron-builder#9598. Must be one the pinned electron-builder knows.
+ */
+internal const val APPIMAGE_TOOLSET_VERSION = "1.0.3"
