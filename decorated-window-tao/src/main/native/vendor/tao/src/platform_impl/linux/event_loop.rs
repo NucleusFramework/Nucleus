@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-  cell::RefCell,
+  cell::{Cell, RefCell},
   collections::{HashSet, VecDeque},
   error::Error,
   process,
@@ -329,9 +329,11 @@ impl<T: 'static> EventLoop<T> {
     // Nucleus patch (nucleusframework#558): input contexts keyed by window id.
     // The context is created in the `WireUpEvents` arm and read back by the
     // `SetImePosition` arm, both of which live inside this closure — so it
-    // needs no home on `EventLoopWindowTarget`.
-    let ime_contexts: Rc<RefCell<std::collections::HashMap<u32, gtk::IMMulticontext>>> =
-      Rc::new(RefCell::new(std::collections::HashMap::new()));
+    // needs no home on `EventLoopWindowTarget`. Each context travels with its
+    // `SetImeAllowed` flag (nucleusframework#842).
+    let ime_contexts: Rc<
+      RefCell<std::collections::HashMap<u32, (gtk::IMMulticontext, Rc<Cell<bool>>)>>,
+    > = Rc::new(RefCell::new(std::collections::HashMap::new()));
     window_requests_rx.attach(Some(&context), move |(id, request)| {
       // Nucleus patch: popup overlay windows are plain gtk::Windows with
       // synthesized ids — resolve them from the popup map when the
@@ -553,8 +555,25 @@ impl<T: 'static> EventLoop<T> {
                 }
               })
               .unwrap_or((0, 0));
-            if let Some(ime) = ime_contexts.borrow().get(&id.0) {
+            if let Some((ime, _)) = ime_contexts.borrow().get(&id.0) {
               ime.set_cursor_location(&gdk::Rectangle::new(x + dx, y + dy, w, h));
+            }
+          }
+          // Nucleus patch (nucleusframework#842): a text field took or gave
+          // up the input. The context is focused only while one owns it *and*
+          // the window is active, so the on-screen keyboard that Wayland
+          // compositors raise on text-input `enable` stays down otherwise.
+          WindowRequest::SetImeAllowed(allowed) => {
+            if let Some((ime, ime_allowed)) = ime_contexts.borrow().get(&id.0) {
+              if ime_allowed.replace(allowed) != allowed {
+                if !allowed {
+                  // Drop any composition left open by the field going away.
+                  ime.reset();
+                  ime.focus_out();
+                } else if window.is_active() {
+                  ime.focus_in();
+                }
+              }
             }
           }
           WindowRequest::CursorIgnoreEvents(ignore) => {
@@ -1148,10 +1167,22 @@ impl<T: 'static> EventLoop<T> {
             // Follow the window's focus instead of latching `focus_in` once at
             // construction: an input context that still believes it is focused
             // keeps receiving key events meant for another window.
+            //
+            // Only while a text field owns the input, though
+            // (nucleusframework#842): on Wayland `focus_in` sends text-input
+            // `enable`, and the compositor answers it with the on-screen
+            // keyboard — on every activation of a window with no field at
+            // all. `WindowRequest::SetImeAllowed` flips the flag; keys still
+            // go through `filter_keypress`, whose unfocused fallback keeps
+            // dead keys and Compose sequences working.
+            let ime_allowed = Rc::new(Cell::new(false));
             {
               let ime = ime.clone();
+              let ime_allowed = ime_allowed.clone();
               window.connect_focus_in_event(move |_, _| {
-                ime.focus_in();
+                if ime_allowed.get() {
+                  ime.focus_in();
+                }
                 glib::Propagation::Proceed
               });
             }
@@ -1164,9 +1195,6 @@ impl<T: 'static> EventLoop<T> {
                 glib::Propagation::Proceed
               });
             }
-            if window.is_active() {
-              ime.focus_in();
-            }
 
             // Published so `WindowRequest::SetImePosition` can move the
             // candidate window to the caret; dropped with the window.
@@ -1176,7 +1204,9 @@ impl<T: 'static> EventLoop<T> {
                 ime_contexts.borrow_mut().remove(&id.0);
               });
             }
-            ime_contexts.borrow_mut().insert(id.0, ime.clone());
+            ime_contexts
+              .borrow_mut()
+              .insert(id.0, (ime.clone(), ime_allowed));
 
             let handler = keyboard_handler.clone();
             let ime_ = ime.clone();

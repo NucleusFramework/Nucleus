@@ -1063,6 +1063,22 @@ impl Window {
     }
   }
 
+  /// Nucleus patch (nucleusframework#842): focus the window's input context
+  /// only while a text field owns the input.
+  ///
+  /// Focusing a GTK input context is not free on Wayland: it sends
+  /// text-input-v3 `enable`, which is the request a compositor answers by
+  /// showing its on-screen keyboard. Following the window's focus alone
+  /// raised the keyboard on every activation, text field or not.
+  pub fn set_ime_allowed(&self, allowed: bool) {
+    if let Err(e) = self
+      .window_requests_tx
+      .send((self.window_id, WindowRequest::SetImeAllowed(allowed)))
+    {
+      log::warn!("Fail to send ime allowed request: {}", e);
+    }
+  }
+
   pub fn request_user_attention(&self, request_type: Option<UserAttentionType>) {
     if let Err(e) = self
       .window_requests_tx
@@ -1392,6 +1408,9 @@ pub enum WindowRequest {
   /// Nucleus patch (nucleusframework#558): the rectangle the caret occupies,
   /// in window-local logical pixels, for the input method to steer clear of.
   SetImeCursorArea((i32, i32, i32, i32)),
+  /// Nucleus patch (nucleusframework#842): whether a text field owns the
+  /// input, i.e. whether the window's input context may be focused.
+  SetImeAllowed(bool),
   /// Nucleus patch: anchor a popup overlay at a point of its transient parent
   /// through `gdk_window_move_to_rect` — see `Window::popup_anchor`.
   PopupAnchor {
