@@ -1,5 +1,8 @@
 package dev.nucleusframework.desktop.application.internal.analyzer
 
+import dev.nucleusframework.desktop.application.internal.jarRuntimeVersion
+import dev.nucleusframework.desktop.application.internal.openVersionedJar
+import dev.nucleusframework.desktop.application.internal.versionedClassEntries
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ClassForNameDetector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ClassReferenceCollector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.JarResourceDetector
@@ -16,7 +19,6 @@ import dev.nucleusframework.desktop.application.internal.analyzer.detectors.Serv
 import java.io.File
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
-import java.util.zip.ZipFile
 
 /**
  * Main entry point: scans one or more JARs / class directories and produces an [AnalysisResult].
@@ -36,7 +38,8 @@ internal object BytecodeAnalyzer {
     fun analyzeJar(
         jarPath: File,
         targetJavaVersion: Int? = null,
-    ): AnalysisResult = analyzeJarInternal(jarPath, collectReferences = false, jarVersion(targetJavaVersion)).toResult()
+    ): AnalysisResult =
+        analyzeJarInternal(jarPath, collectReferences = false, jarRuntimeVersion(targetJavaVersion)).toResult()
 
     /**
      * Analyzes a directory of compiled .class files (e.g. build/classes/kotlin/jvm/main).
@@ -68,7 +71,7 @@ internal object BytecodeAnalyzer {
         reflectionForProjectClasses: Boolean = false,
         targetJavaVersion: Int,
     ): AnalysisResult {
-        val version = jarVersion(targetJavaVersion)
+        val version = jarRuntimeVersion(targetJavaVersion)
         val needProjectFacts = detectOrphanProjectClasses || reflectionForProjectClasses
         val needReferences = detectOrphanProjectClasses // all-project path does not need refs
         if (!needProjectFacts) {
@@ -209,13 +212,13 @@ internal object BytecodeAnalyzer {
             // multi-release JAR to the copy native-image compiles: a base class can declare
             // natives its JDK 25 replacement no longer has (LWJGL's Upcalls.shutdown()), and
             // registering a missing method fails the image build.
-            JarFile(jarPath, true, ZipFile.OPEN_READ, version).use { jar ->
+            openVersionedJar(jarPath, version).use { jar ->
                 val serviceResult = ServiceLoaderDetector.detect(jar)
                 scan.serviceLoaderEntries.addAll(serviceResult.reflectionEntries)
                 scan.resourcePatterns.addAll(serviceResult.resourcePatterns)
                 scan.resourcePatterns.addAll(JarResourceDetector.detect(jar))
 
-                for (entry in jar.versionedStream().iterator()) {
+                for (entry in jar.versionedClassEntries()) {
                     val classBytes = readClassEntry(jar, entry) ?: continue
                     scan.addClass(entry.name.removeSuffix(".class"), classBytes, collectReferences)
                 }
@@ -457,22 +460,16 @@ internal object BytecodeAnalyzer {
 private fun File.isWithinAny(dirs: Set<File>): Boolean =
     dirs.any { dir -> this == dir || toPath().startsWith(dir.toPath()) }
 
-/** The version a JAR is opened for: [targetJavaVersion], or the base entries only when null. */
-private fun jarVersion(targetJavaVersion: Int?): Runtime.Version =
-    targetJavaVersion?.let { Runtime.Version.parse(it.toString()) } ?: JarFile.baseVersion()
-
-/** Bytes of a `.class` entry outside `META-INF/`, or null for any other entry or an unreadable one. */
+/** Bytes of a class entry, or null when it cannot be read. */
 private fun readClassEntry(
     jar: JarFile,
     entry: JarEntry,
-): ByteArray? {
-    if (!entry.name.endsWith(".class") || entry.name.startsWith("META-INF/")) return null
-    return try {
+): ByteArray? =
+    try {
         jar.getInputStream(entry).use { it.readBytes() }
     } catch (_: Exception) {
         null
     }
-}
 
 /** Null when ASM does not support the class file version. */
 private fun extractJniCallbackEntryOrNull(classBytes: ByteArray): JniEntry? =

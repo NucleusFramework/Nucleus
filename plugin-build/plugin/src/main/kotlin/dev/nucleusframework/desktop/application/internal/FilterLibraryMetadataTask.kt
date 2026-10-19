@@ -34,6 +34,13 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val runtimeClasspath: ConfigurableFileCollection
 
+    /**
+     * Feature version of the JDK native-image runs on (see [javaFeatureVersion]). Multi-release
+     * JARs count a package as present only when a class of it exists for that JDK.
+     */
+    @get:Input
+    abstract val targetJavaVersion: Property<Int>
+
     /** Output directory where the merged `reachability-metadata.json` is written. */
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -46,7 +53,7 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
      */
     @TaskAction
     fun filter() {
-        val classpathPackages = buildClasspathPackageIndex(runtimeClasspath.files)
+        val classpathPackages = buildClasspathPackageIndex(runtimeClasspath.files, targetJavaVersion.get())
 
         val metadataDir = "nucleus/graalvm/library-metadata"
         val index =
