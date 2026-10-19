@@ -60,6 +60,13 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
     @get:Input
     abstract val reflectionForProjectClasses: Property<Boolean>
 
+    /**
+     * Feature version of the JDK the native image is built with (`graalvm.javaLanguageVersion`).
+     * Multi-release JARs are analyzed as that JDK reads them.
+     */
+    @get:Input
+    abstract val targetJavaVersion: Property<Int>
+
     /** Output directory where reachability-metadata.json is written. */
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -101,6 +108,7 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
                 projectClassDirs = projectDirs,
                 detectOrphanProjectClasses = orphanEnabled,
                 reflectionForProjectClasses = allProjectEnabled,
+                targetJavaVersion = targetJavaVersion.orNull,
             )
 
         val projectEntries = result.projectClassEntries

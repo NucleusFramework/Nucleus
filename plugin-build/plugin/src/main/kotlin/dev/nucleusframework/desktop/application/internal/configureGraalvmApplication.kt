@@ -766,6 +766,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     task.outputDir.set(staticMetadataDir)
                     task.detectOrphanProjectClasses.set(graalvm.detectOrphanProjectClasses)
                     task.reflectionForProjectClasses.set(graalvm.reflectionForProjectClasses)
+                    task.targetJavaVersion.set(graalvm.javaLanguageVersion)
                     if (runtimeCfg != null) {
                         task.runtimeClasspath.from(runtimeCfg)
                     }

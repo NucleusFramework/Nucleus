@@ -16,6 +16,7 @@ import dev.nucleusframework.desktop.application.internal.analyzer.detectors.Serv
 import java.io.File
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
+import java.util.zip.ZipFile
 
 /**
  * Main entry point: scans one or more JARs / class directories and produces an [AnalysisResult].
@@ -27,8 +28,15 @@ import java.util.jar.JarFile
 internal object BytecodeAnalyzer {
     /**
      * Analyzes a single JAR file.
+     *
+     * @param targetJavaVersion the feature version of the JDK the image is built with. A
+     *   multi-release JAR is read as that JDK sees it: each class from the highest
+     *   `META-INF/versions/N` that applies, else the base entry. Null reads the base entries only.
      */
-    fun analyzeJar(jarPath: File): AnalysisResult = analyzeJarInternal(jarPath, collectReferences = false).toResult()
+    fun analyzeJar(
+        jarPath: File,
+        targetJavaVersion: Int? = null,
+    ): AnalysisResult = analyzeJarInternal(jarPath, collectReferences = false, targetJavaVersion).toResult()
 
     /**
      * Analyzes a directory of compiled .class files (e.g. build/classes/kotlin/jvm/main).
@@ -50,17 +58,19 @@ internal object BytecodeAnalyzer {
      * @param reflectionForProjectClasses sledgehammer: register every project class with a
      *   public no-arg ctor. When true, takes precedence over the orphan rule (same registrations
      *   are a superset).
+     * @param targetJavaVersion the JDK feature version multi-release JARs are read for; see [analyzeJar].
      */
     fun analyzeClasspath(
         files: Iterable<File>,
         projectClassDirs: Collection<File> = emptyList(),
         detectOrphanProjectClasses: Boolean = false,
         reflectionForProjectClasses: Boolean = false,
+        targetJavaVersion: Int? = null,
     ): AnalysisResult {
         val needProjectFacts = detectOrphanProjectClasses || reflectionForProjectClasses
         val needReferences = detectOrphanProjectClasses // all-project path does not need refs
         if (!needProjectFacts) {
-            return analyzeClasspathLegacy(files)
+            return analyzeClasspathLegacy(files, targetJavaVersion)
         }
 
         val projectDirSet =
@@ -99,7 +109,7 @@ internal object BytecodeAnalyzer {
                     }
                 }
                 file.isFile && file.name.endsWith(".jar") && file.exists() -> {
-                    val partial = analyzeJarInternal(file, collectReferences = needReferences)
+                    val partial = analyzeJarInternal(file, collectReferences = needReferences, targetJavaVersion)
                     merged += partial.toResult()
                     if (needReferences) {
                         allReferenced += partial.referencedTypes
@@ -148,13 +158,16 @@ internal object BytecodeAnalyzer {
         return merged
     }
 
-    private fun analyzeClasspathLegacy(files: Iterable<File>): AnalysisResult {
+    private fun analyzeClasspathLegacy(
+        files: Iterable<File>,
+        targetJavaVersion: Int?,
+    ): AnalysisResult {
         var merged = AnalysisResult()
         for (file in files) {
             merged = merged +
                 when {
                     file.isDirectory -> analyzeClassDir(file)
-                    file.isFile && file.name.endsWith(".jar") -> analyzeJar(file)
+                    file.isFile && file.name.endsWith(".jar") -> analyzeJar(file, targetJavaVersion)
                     else -> continue
                 }
         }
@@ -181,6 +194,7 @@ internal object BytecodeAnalyzer {
     private fun analyzeJarInternal(
         jarPath: File,
         collectReferences: Boolean,
+        targetJavaVersion: Int?,
     ): PartialScan {
         if (!jarPath.exists() || !jarPath.name.endsWith(".jar")) {
             return PartialScan()
@@ -188,13 +202,18 @@ internal object BytecodeAnalyzer {
 
         val scan = JarScan()
         try {
-            JarFile(jarPath).use { jar ->
+            // Opened for the target JDK so that versionedStream() resolves each class of a
+            // multi-release JAR to the copy native-image compiles: a base class can declare
+            // natives its JDK 25 replacement no longer has (LWJGL's Upcalls.shutdown()), and
+            // registering a missing method fails the image build.
+            val version = targetJavaVersion?.let { Runtime.Version.parse(it.toString()) } ?: JarFile.baseVersion()
+            JarFile(jarPath, true, ZipFile.OPEN_READ, version).use { jar ->
                 val serviceResult = ServiceLoaderDetector.detect(jar)
                 scan.serviceLoaderEntries.addAll(serviceResult.reflectionEntries)
                 scan.resourcePatterns.addAll(serviceResult.resourcePatterns)
                 scan.resourcePatterns.addAll(JarResourceDetector.detect(jar))
 
-                for (entry in jar.entries()) {
+                for (entry in jar.versionedStream().iterator()) {
                     val classBytes = readClassEntry(jar, entry) ?: continue
                     scan.addClass(entry.name.removeSuffix(".class"), classBytes, collectReferences)
                 }
