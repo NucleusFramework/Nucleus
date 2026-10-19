@@ -36,7 +36,7 @@ internal object BytecodeAnalyzer {
     fun analyzeJar(
         jarPath: File,
         targetJavaVersion: Int? = null,
-    ): AnalysisResult = analyzeJarInternal(jarPath, collectReferences = false, targetJavaVersion).toResult()
+    ): AnalysisResult = analyzeJarInternal(jarPath, collectReferences = false, jarVersion(targetJavaVersion)).toResult()
 
     /**
      * Analyzes a directory of compiled .class files (e.g. build/classes/kotlin/jvm/main).
@@ -58,19 +58,21 @@ internal object BytecodeAnalyzer {
      * @param reflectionForProjectClasses sledgehammer: register every project class with a
      *   public no-arg ctor. When true, takes precedence over the orphan rule (same registrations
      *   are a superset).
-     * @param targetJavaVersion the JDK feature version multi-release JARs are read for; see [analyzeJar].
+     * @param targetJavaVersion the feature version of the JDK native-image runs on; multi-release
+     *   JARs are read for it (see [analyzeJar]). Required, so no caller falls back to base classes.
      */
     fun analyzeClasspath(
         files: Iterable<File>,
         projectClassDirs: Collection<File> = emptyList(),
         detectOrphanProjectClasses: Boolean = false,
         reflectionForProjectClasses: Boolean = false,
-        targetJavaVersion: Int? = null,
+        targetJavaVersion: Int,
     ): AnalysisResult {
+        val version = jarVersion(targetJavaVersion)
         val needProjectFacts = detectOrphanProjectClasses || reflectionForProjectClasses
         val needReferences = detectOrphanProjectClasses // all-project path does not need refs
         if (!needProjectFacts) {
-            return analyzeClasspathLegacy(files, targetJavaVersion)
+            return analyzeClasspathLegacy(files, version)
         }
 
         val projectDirSet =
@@ -109,7 +111,7 @@ internal object BytecodeAnalyzer {
                     }
                 }
                 file.isFile && file.name.endsWith(".jar") && file.exists() -> {
-                    val partial = analyzeJarInternal(file, collectReferences = needReferences, targetJavaVersion)
+                    val partial = analyzeJarInternal(file, collectReferences = needReferences, version)
                     merged += partial.toResult()
                     if (needReferences) {
                         allReferenced += partial.referencedTypes
@@ -160,14 +162,15 @@ internal object BytecodeAnalyzer {
 
     private fun analyzeClasspathLegacy(
         files: Iterable<File>,
-        targetJavaVersion: Int?,
+        version: Runtime.Version,
     ): AnalysisResult {
         var merged = AnalysisResult()
         for (file in files) {
             merged = merged +
                 when {
                     file.isDirectory -> analyzeClassDir(file)
-                    file.isFile && file.name.endsWith(".jar") -> analyzeJar(file, targetJavaVersion)
+                    file.isFile && file.name.endsWith(".jar") ->
+                        analyzeJarInternal(file, collectReferences = false, version).toResult()
                     else -> continue
                 }
         }
@@ -194,7 +197,7 @@ internal object BytecodeAnalyzer {
     private fun analyzeJarInternal(
         jarPath: File,
         collectReferences: Boolean,
-        targetJavaVersion: Int?,
+        version: Runtime.Version,
     ): PartialScan {
         if (!jarPath.exists() || !jarPath.name.endsWith(".jar")) {
             return PartialScan()
@@ -206,7 +209,6 @@ internal object BytecodeAnalyzer {
             // multi-release JAR to the copy native-image compiles: a base class can declare
             // natives its JDK 25 replacement no longer has (LWJGL's Upcalls.shutdown()), and
             // registering a missing method fails the image build.
-            val version = targetJavaVersion?.let { Runtime.Version.parse(it.toString()) } ?: JarFile.baseVersion()
             JarFile(jarPath, true, ZipFile.OPEN_READ, version).use { jar ->
                 val serviceResult = ServiceLoaderDetector.detect(jar)
                 scan.serviceLoaderEntries.addAll(serviceResult.reflectionEntries)
@@ -454,6 +456,10 @@ internal object BytecodeAnalyzer {
 
 private fun File.isWithinAny(dirs: Set<File>): Boolean =
     dirs.any { dir -> this == dir || toPath().startsWith(dir.toPath()) }
+
+/** The version a JAR is opened for: [targetJavaVersion], or the base entries only when null. */
+private fun jarVersion(targetJavaVersion: Int?): Runtime.Version =
+    targetJavaVersion?.let { Runtime.Version.parse(it.toString()) } ?: JarFile.baseVersion()
 
 /** Bytes of a `.class` entry outside `META-INF/`, or null for any other entry or an unreadable one. */
 private fun readClassEntry(

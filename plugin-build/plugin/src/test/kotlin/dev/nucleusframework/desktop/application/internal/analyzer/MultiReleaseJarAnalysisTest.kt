@@ -41,6 +41,14 @@ class MultiReleaseJarAnalysisTest {
     }
 
     @Test
+    fun `a class that exists only under the versioned directory is analyzed for its JDK`() {
+        val jar = multiReleaseJar()
+
+        assertEquals(listOf("bind"), nativeMethodsOf(BytecodeAnalyzer.analyzeJar(jar, targetJavaVersion = 25), "demo.UpcallBinder"))
+        assertEquals(emptyList<String>(), nativeMethodsOf(BytecodeAnalyzer.analyzeJar(jar, targetJavaVersion = 21), "demo.UpcallBinder"))
+    }
+
+    @Test
     fun `the classpath scan passes the target JDK down`() {
         val jar = multiReleaseJar()
 
@@ -59,7 +67,10 @@ class MultiReleaseJarAnalysisTest {
             .filter { it != "<init>" }
             .sorted()
 
-    /** `demo/Upcalls` with a native `shutdown()` in the base entry and none in `versions/25`. */
+    /**
+     * `demo/Upcalls` with a native `shutdown()` in the base entry and none in `versions/25`, plus
+     * `demo/UpcallBinder`, which exists only in `versions/25` (like LWJGL's `ffm/UpcallBinder`).
+     */
     private fun multiReleaseJar(): File {
         val file = tmp.newFile("multi-release.jar")
         val manifest =
@@ -74,6 +85,9 @@ class MultiReleaseJarAnalysisTest {
             out.putNextEntry(JarEntry("META-INF/versions/25/demo/Upcalls.class"))
             out.write(upcallsClass(withNativeShutdown = false))
             out.closeEntry()
+            out.putNextEntry(JarEntry("META-INF/versions/25/demo/UpcallBinder.class"))
+            out.write(nativeClass("demo/UpcallBinder", "bind"))
+            out.closeEntry()
         }
         return file
     }
@@ -86,6 +100,17 @@ class MultiReleaseJarAnalysisTest {
         }
         // A native that both copies keep, so the class is a JNI entry either way.
         writer.visitMethod(Opcodes.ACC_STATIC or Opcodes.ACC_NATIVE, "upcallFree", "(J)V", null, null).visitEnd()
+        writer.visitEnd()
+        return writer.toByteArray()
+    }
+
+    private fun nativeClass(
+        internalName: String,
+        nativeMethod: String,
+    ): ByteArray {
+        val writer = ClassWriter(0)
+        writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC or Opcodes.ACC_SUPER, internalName, null, "java/lang/Object", null)
+        writer.visitMethod(Opcodes.ACC_STATIC or Opcodes.ACC_NATIVE, nativeMethod, "()V", null, null).visitEnd()
         writer.visitEnd()
         return writer.toByteArray()
     }

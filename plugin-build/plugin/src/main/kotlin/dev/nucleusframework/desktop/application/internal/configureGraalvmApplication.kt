@@ -766,7 +766,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     task.outputDir.set(staticMetadataDir)
                     task.detectOrphanProjectClasses.set(graalvm.detectOrphanProjectClasses)
                     task.reflectionForProjectClasses.set(graalvm.reflectionForProjectClasses)
-                    task.targetJavaVersion.set(graalvm.javaLanguageVersion)
+                    // The JDK native-image will actually run on, not the requested language version.
+                    task.targetJavaVersion.set(graalvmJavaLauncher.map(::javaFeatureVersion))
                     if (runtimeCfg != null) {
                         task.runtimeClasspath.from(runtimeCfg)
                     }
