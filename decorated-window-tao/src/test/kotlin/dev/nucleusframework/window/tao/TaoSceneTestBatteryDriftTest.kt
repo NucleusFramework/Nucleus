@@ -163,6 +163,8 @@ class TaoSceneTestBatteryDriftTest {
                 "threads a real watchdog against a fake probe (#643); no ComposeScene",
             TaoEventLoopWatchdogSmokeTest::class.java to
                 "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); freezes the real event loop",
+            TaoMainThreadBindingSmokeTest::class.java to
+                "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); runs the real event loop (#829)",
             dev.nucleusframework.window.tao.scene.WaylandBufferScaleTest::class.java to
                 "pure-function buffer alignment; already covered via TaoScenePopupTest in the battery",
             XdgPortalParentTest::class.java to
