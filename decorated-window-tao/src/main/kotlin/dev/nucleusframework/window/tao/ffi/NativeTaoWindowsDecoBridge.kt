@@ -25,6 +25,24 @@ internal object NativeTaoWindowsDecoBridge {
         titleBarHeightPx: Int,
     )
 
+    /**
+     * Installs the subclass for a window that keeps the Win32 caption and
+     * frame (#841), in place of [nativeInstallDecoration]: the non-client area
+     * stays the system's (native hit-testing, Snap Layouts, Alt+Space system
+     * menu, default caption colours), while fullscreen, the startup erase and
+     * the immersive dark mode keep working.
+     */
+    @JvmStatic
+    external fun nativeInstallSystemFrame(hwnd: Long)
+
+    /**
+     * The client area's size in physical pixels as `[width, height]`, or
+     * `null`. Used for the first frame of a maximized system-framed window
+     * (#841), whose client excludes the caption.
+     */
+    @JvmStatic
+    external fun nativeGetClientSize(hwnd: Long): IntArray?
+
     @JvmStatic
     external fun nativeUninstallDecoration(hwnd: Long)
 

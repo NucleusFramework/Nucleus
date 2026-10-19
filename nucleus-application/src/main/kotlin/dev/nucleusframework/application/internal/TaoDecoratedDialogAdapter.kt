@@ -43,6 +43,7 @@ internal object TaoDecoratedDialogAdapter {
         focusable: Boolean,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
+        systemDecorations: Boolean = false,
         content: @Composable NucleusDecoratedDialogScope.() -> Unit,
     ) {
         // Bridge every CompositionLocal across the fresh Tao ComposeScene —
@@ -77,6 +78,7 @@ internal object TaoDecoratedDialogAdapter {
                 // composition (effects run too late — a user local with a
                 // throwing default, e.g. LocalAppGraph, would crash otherwise).
                 compositionLocalContext = outerLocals,
+                systemDecorations = systemDecorations,
             ) {
                 RedirectParentActivation(parentWindow, window, takesActivation)
                 bindNucleusDialogContent(outerLocals, parentLayoutDirection, content)
@@ -100,6 +102,7 @@ internal object TaoDecoratedDialogAdapter {
         maxSize: androidx.compose.ui.unit.DpSize,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
+        systemDecorations: Boolean = false,
         content: @Composable NucleusDecoratedDialogScope.() -> Unit,
     ) {
         val outerLocals = currentCompositionLocalContext
@@ -121,6 +124,7 @@ internal object TaoDecoratedDialogAdapter {
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
                 compositionLocalContext = outerLocals,
+                systemDecorations = systemDecorations,
             ) {
                 RedirectParentActivation(parentWindow, window, takesActivation)
                 bindNucleusDialogContent(outerLocals, parentLayoutDirection, content)

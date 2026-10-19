@@ -175,6 +175,16 @@ internal object NativeMetalBridge {
     @JvmStatic
     external fun nativeConfigureChrome(nsViewPtr: Long)
 
+    /**
+     * Keeps AppKit's standard title bar (#841), in place of
+     * [nativeConfigureChrome]: no full-size content view, AppKit's own window
+     * dragging, and the fullscreen observer leaves the title bar, traffic
+     * lights and toolbar alone. Keeps native fullscreen and the fallback
+     * background.
+     */
+    @JvmStatic
+    external fun nativeConfigureSystemChrome(nsViewPtr: Long)
+
     /** True on macOS 26 (Tahoe) or later. Cached on the native side. */
     @JvmStatic
     external fun nativeIsMacOSTahoeOrLater(): Boolean

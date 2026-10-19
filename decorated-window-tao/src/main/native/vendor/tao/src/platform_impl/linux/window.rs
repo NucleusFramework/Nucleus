@@ -249,7 +249,12 @@ impl Window {
           // translation) and by the content-geometry accessors below.
           window.set_data("nucleus_csd_hidden_titlebar", true);
         }
-      } else if is_wayland {
+      } else if is_wayland && !pl_attribs.system_decorations {
+        // Nucleus patch: system decorations install no custom title bar.
+        // `set_titlebar` latches CSD for good, which would stop GTK from
+        // negotiating server-side decorations with KWin; without it GTK 3
+        // asks for them and draws its own default title bar where the
+        // compositor refuses (GNOME).
         WlHeader::setup(&window, &attributes.title);
       }
 
