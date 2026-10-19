@@ -24,8 +24,7 @@ abstract class AppImageSettings {
      * Archive compression for this AppImage only.
      *
      * Overrides the root [JvmApplicationDistributions.compressionLevel] when set.
-     * AppImages are built on the static type2-runtime, whose squashfs supports gzip and zstd but
-     * not xz: [CompressionLevel.Store] builds a gzip image, every other level a zstd image.
+     * [CompressionLevel.Store] builds a gzip image, every other level a zstd image.
      * [CompressionLevel.Normal], [CompressionLevel.Maximum] and [CompressionLevel.Ultra] produce
      * the same image: electron-builder passes no zstd level to `mksquashfs`, so all three use
      * its default.
