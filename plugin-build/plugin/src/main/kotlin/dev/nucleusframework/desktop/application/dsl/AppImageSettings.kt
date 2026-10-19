@@ -5,29 +5,19 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
-import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.Optional
-
 /** AppImage packaging options (`.desktop` entry metadata and AppImage-specific settings). */
 @Suppress("AbstractClassCanBeConcreteClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class AppImageSettings {
     /** Desktop file category. */
-    @get:Input
-    @get:Optional
     var category: AppImageCategory? = null
 
     /** Desktop file generic name */
-    @get:Input
-    @get:Optional
     var genericName: String? = null
 
     /** Synopsis (short description for .desktop) */
-    @get:Input
-    @get:Optional
     var synopsis: String? = null
 
     /** Additional desktop file entries (key=value) */
-    @get:Input
     var desktopEntries: Map<String, String> = emptyMap()
 
     /**
@@ -38,7 +28,5 @@ abstract class AppImageSettings {
      * [CompressionLevel.Maximum] / [CompressionLevel.Ultra] map to electron-builder
      * `maximum` and can make cold starts very slow (squashfs/FUSE decompression).
      */
-    @get:Input
-    @get:Optional
     var compressionLevel: CompressionLevel? = null
 }

@@ -5,12 +5,6 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
-import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputFiles
-import org.gradle.api.tasks.Optional
-import org.gradle.api.tasks.PathSensitive
-import org.gradle.api.tasks.PathSensitivity
-
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
@@ -24,33 +18,21 @@ abstract class WindowsSigningSettings {
     internal abstract val objects: ObjectFactory
 
     /** Enable Windows code signing. Default: false */
-    @get:Input
     var enabled: Boolean = false
 
     /** Certificate file (.pfx/.p12) */
-    @get:InputFiles
-    @get:Optional
-    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val certificateFile: RegularFileProperty = objects.fileProperty()
 
     /** Certificate password */
-    @get:Input
-    @get:Optional
     var certificatePassword: String? = null
 
     /** Certificate SHA1 thumbprint (for store certs) */
-    @get:Input
-    @get:Optional
     var certificateSha1: String? = null
 
     /** Certificate subject name */
-    @get:Input
-    @get:Optional
     var certificateSubjectName: String? = null
 
     /** Timestamp server URL */
-    @get:Input
-    @get:Optional
     var timestampServer: String? = null
 
     /**
@@ -60,11 +42,9 @@ abstract class WindowsSigningSettings {
      * carry a signature keep it. Only applies when [enabled] is set; the launcher executables are
      * signed regardless. Default: true
      */
-    @get:Input
     var signNativeLibraries: Boolean = true
 
     /** Signing hash algorithm. Default: [SigningAlgorithm.Sha256] */
-    @get:Input
     var algorithm: SigningAlgorithm = SigningAlgorithm.Sha256
 
     /**
@@ -72,29 +52,19 @@ abstract class WindowsSigningSettings {
      * Required by electron-builder when signing with Azure Artifact Signing.
      * If unset, falls back to `nativeDistributions.vendor`.
      */
-    @get:Input
-    @get:Optional
     var publisherName: String? = null
 
     // --- Azure Artifact Signing ---
 
     /** Azure tenant ID for Artifact Signing */
-    @get:Input
-    @get:Optional
     var azureTenantId: String? = null
 
     /** Azure Artifact Signing endpoint URL */
-    @get:Input
-    @get:Optional
     var azureEndpoint: String? = null
 
     /** Azure certificate profile name */
-    @get:Input
-    @get:Optional
     var azureCertificateProfileName: String? = null
 
     /** Azure Code Signing account name */
-    @get:Input
-    @get:Optional
     var azureCodeSigningAccountName: String? = null
 }

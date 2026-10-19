@@ -5,10 +5,6 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
-import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.Nested
-import org.gradle.api.tasks.Optional
-
 import org.gradle.api.Action
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
@@ -22,10 +18,8 @@ abstract class PublishSettings {
     internal abstract val objects: ObjectFactory
 
     /** Publish mode for electron-builder. Default: [PublishMode.Never] */
-    @get:Input
     var publishMode: PublishMode = PublishMode.Never
 
-    @get:Nested
     val github: GitHubPublishSettings = objects.newInstance(GitHubPublishSettings::class.java)
 
     /** Configures publishing to GitHub Releases. */
@@ -33,7 +27,6 @@ abstract class PublishSettings {
         fn.execute(github)
     }
 
-    @get:Nested
     val s3: S3PublishSettings = objects.newInstance(S3PublishSettings::class.java)
 
     /** Configures publishing to an S3 bucket. */
@@ -41,7 +34,6 @@ abstract class PublishSettings {
         fn.execute(s3)
     }
 
-    @get:Nested
     val generic: GenericPublishSettings = objects.newInstance(GenericPublishSettings::class.java)
 
     /** Configures publishing to a generic HTTP server. */
@@ -54,30 +46,21 @@ abstract class PublishSettings {
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class GitHubPublishSettings {
     /** Enable publishing to GitHub Releases. Default: false */
-    @get:Input
     var enabled: Boolean = false
 
     /** GitHub repository owner */
-    @get:Input
-    @get:Optional
     var owner: String? = null
 
     /** GitHub repository name */
-    @get:Input
-    @get:Optional
     var repo: String? = null
 
     /** GitHub token (or use GITHUB_TOKEN env var) */
-    @get:Input
-    @get:Optional
     var token: String? = null
 
     /** Release channel. Default: [ReleaseChannel.Latest] */
-    @get:Input
     var channel: ReleaseChannel = ReleaseChannel.Latest
 
     /** Release type. Default: [ReleaseType.Release] */
-    @get:Input
     var releaseType: ReleaseType = ReleaseType.Release
 }
 
@@ -85,20 +68,15 @@ abstract class GitHubPublishSettings {
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class GenericPublishSettings {
     /** Enable publishing via generic HTTP server. Default: false */
-    @get:Input
     var enabled: Boolean = false
 
     /** Base URL where update files will be hosted (e.g., "https://updates.example.com/releases/") */
-    @get:Input
-    @get:Optional
     var url: String? = null
 
     /** Update channel. Default: [ReleaseChannel.Latest] */
-    @get:Input
     var channel: ReleaseChannel = ReleaseChannel.Latest
 
     /** Use multiple range requests for differential downloads. Default: true */
-    @get:Input
     var useMultipleRangeRequest: Boolean = true
 }
 
@@ -106,26 +84,17 @@ abstract class GenericPublishSettings {
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class S3PublishSettings {
     /** Enable publishing to S3. Default: false */
-    @get:Input
     var enabled: Boolean = false
 
     /** S3 bucket name */
-    @get:Input
-    @get:Optional
     var bucket: String? = null
 
     /** AWS region */
-    @get:Input
-    @get:Optional
     var region: String? = null
 
     /** Path prefix within the bucket */
-    @get:Input
-    @get:Optional
     var path: String? = null
 
     /** ACL for uploaded objects (e.g., "public-read") */
-    @get:Input
-    @get:Optional
     var acl: String? = null
 }

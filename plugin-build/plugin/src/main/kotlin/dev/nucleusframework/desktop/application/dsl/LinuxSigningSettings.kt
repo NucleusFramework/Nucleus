@@ -13,10 +13,7 @@ import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.ProviderFactory
 import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
-import org.gradle.api.tasks.PathSensitive
-import org.gradle.api.tasks.PathSensitivity
 import java.io.File
 import javax.inject.Inject
 
@@ -52,9 +49,8 @@ abstract class LinuxSigningSettings {
      * ASCII-armored private key file to import before signing.
      * Optional: omit when the key is already present in the signing keyring.
      */
-    @get:InputFiles
+    @get:Input
     @get:Optional
-    @get:PathSensitive(PathSensitivity.ABSOLUTE)
     val keyFile: RegularFileProperty =
         objects.fileProperty().apply {
             fileProvider(NucleusProperties.linuxSignKeyFile(providers).map(::File))
