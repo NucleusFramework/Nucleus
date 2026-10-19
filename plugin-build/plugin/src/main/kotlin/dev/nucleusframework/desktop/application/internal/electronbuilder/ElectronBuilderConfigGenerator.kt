@@ -23,6 +23,7 @@ import dev.nucleusframework.desktop.application.internal.validation.stripAppleCe
 import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
+import org.gradle.api.file.RegularFileProperty
 import java.io.File
 
 /**
@@ -49,9 +50,25 @@ internal fun resolveCompressionLevel(
  * Maps Nucleus DSL properties to the electron-builder configuration schema,
  * producing a `electron-builder.yml` file consumed by `electron-builder --prepackaged`.
  *
+ * Every file the config points at is recorded in [referencedFiles], so the package task can make
+ * their content an input. With [redactSecrets], credentials are replaced by a placeholder: the
+ * package task fingerprints the config, and a rotated token or password does not change the
+ * installer it builds.
  */
 @Suppress("TooManyFunctions", "LargeClass")
-internal class ElectronBuilderConfigGenerator {
+internal class ElectronBuilderConfigGenerator(
+    private val redactSecrets: Boolean = false,
+) {
+    private val recordedFiles = linkedSetOf<File>()
+
+    /** The files referenced by the configs generated so far. */
+    val referencedFiles: Set<File> get() = recordedFiles
+
+    private fun File?.ref(): String? = this?.also { recordedFiles += it }?.absolutePath
+
+    private fun RegularFileProperty.ref(): String? = orNull?.asFile.ref()
+
+    private fun secret(value: String?): String? = if (redactSecrets && value != null) REDACTED else value
     /**
      * Generates the electron-builder config YAML content.
      *
@@ -196,9 +213,7 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "  icon",
-            distributions.macOS.iconFile.orNull
-                ?.asFile
-                ?.absolutePath,
+            distributions.macOS.iconFile.ref(),
         )
         appendIfNotNull(yaml, "  minimumSystemVersion", distributions.macOS.minimumSystemVersion)
 
@@ -247,24 +262,18 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("  sign: ${dmg.sign}")
         val backgroundPath =
             dmgBackgroundOverride?.absolutePath
-                ?: dmg.background.orNull
-                    ?.asFile
-                    ?.absolutePath
+                ?: dmg.background.ref()
         appendIfNotNull(yaml, "  background", backgroundPath)
         appendIfNotNull(yaml, "  backgroundColor", dmg.backgroundColor)
         appendIfNotNull(
             yaml,
             "  badgeIcon",
-            dmg.badgeIcon.orNull
-                ?.asFile
-                ?.absolutePath,
+            dmg.badgeIcon.ref(),
         )
         appendIfNotNull(
             yaml,
             "  icon",
-            dmg.icon.orNull
-                ?.asFile
-                ?.absolutePath,
+            dmg.icon.ref(),
         )
         dmg.iconSize?.let { yaml.appendLine("  iconSize: $it") }
         dmg.iconTextSize?.let { yaml.appendLine("  iconTextSize: $it") }
@@ -337,7 +346,7 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "  icon",
-            windowsIcon?.absolutePath,
+            windowsIcon.ref(),
         )
 
         generateWindowsSigningConfig(yaml, distributions)
@@ -401,11 +410,9 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "    certificateFile",
-            signing.certificateFile.orNull
-                ?.asFile
-                ?.absolutePath,
+            signing.certificateFile.ref(),
         )
-        appendIfNotNull(yaml, "    certificatePassword", signing.certificatePassword)
+        appendIfNotNull(yaml, "    certificatePassword", secret(signing.certificatePassword))
         appendIfNotNull(yaml, "    certificateSha1", signing.certificateSha1)
         appendIfNotNull(yaml, "    certificateSubjectName", signing.certificateSubjectName)
         appendIfNotNull(yaml, "    rfc3161TimeStampServer", signing.timestampServer)
@@ -456,7 +463,7 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("  - ext: \"$normalizedExtension\"")
         appendIfNotNull(yaml, "    name", association.description)
         appendIfNotNull(yaml, "    description", association.description)
-        appendIfNotNull(yaml, "    icon", association.iconFile?.absolutePath)
+        appendIfNotNull(yaml, "    icon", association.iconFile.ref())
     }
 
     private fun withTargetSuffix(
@@ -520,53 +527,39 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "${indent}installerIcon",
-            nsis.installerIcon.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.installerIcon.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}uninstallerIcon",
-            nsis.uninstallerIcon.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.uninstallerIcon.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}license",
-            nsis.license.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.license.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}include",
             // The generated include chains the user's own script, so it wins when present.
             nsisInclude?.absolutePath
-                ?: nsis.includeScript.orNull
-                    ?.asFile
-                    ?.absolutePath,
+                ?: nsis.includeScript.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}script",
-            nsis.script.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.script.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}installerHeader",
-            nsis.installerHeader.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.installerHeader.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}installerSidebar",
-            nsis.installerSidebar.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.installerSidebar.ref(),
         )
     }
 
@@ -630,7 +623,7 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "  icon",
-            linuxIcon?.absolutePath,
+            linuxIcon.ref(),
         )
         appendIfNotNull(yaml, "  category", distributions.linux.appCategory)
         appendIfNotNull(yaml, "  maintainer", distributions.linux.debMaintainer)
@@ -776,9 +769,7 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "  license",
-            flatpak.license.orNull
-                ?.asFile
-                ?.absolutePath,
+            flatpak.license.ref(),
         )
         if (flatpak.finishArgs.isNotEmpty()) {
             yaml.appendLine("  finishArgs:")
@@ -809,7 +800,7 @@ internal class ElectronBuilderConfigGenerator {
             yaml.appendLine("  - provider: github")
             appendIfNotNull(yaml, "    owner", github.owner)
             appendIfNotNull(yaml, "    repo", github.repo)
-            appendIfNotNull(yaml, "    token", github.token)
+            appendIfNotNull(yaml, "    token", secret(github.token))
             yaml.appendLine("    channel: ${github.channel.id}")
             yaml.appendLine("    releaseType: ${github.releaseType.id}")
         }
@@ -861,30 +852,34 @@ internal class ElectronBuilderConfigGenerator {
         distributions.linux.beforeInstall.orNull
             ?.asFile
             ?.takeIf { it.isFile }
+            ?.ref()
             ?.let {
                 args += "--before-install"
-                args += it.absolutePath
+                args += it
             }
         distributions.linux.beforeRemove.orNull
             ?.asFile
             ?.takeIf { it.isFile }
+            ?.ref()
             ?.let {
                 args += "--before-remove"
-                args += it.absolutePath
+                args += it
             }
         distributions.linux.afterUpgrade.orNull
             ?.asFile
             ?.takeIf { it.isFile }
+            ?.ref()
             ?.let {
                 args += "--after-upgrade"
-                args += it.absolutePath
+                args += it
             }
         distributions.linux.beforeUpgrade.orNull
             ?.asFile
             ?.takeIf { it.isFile }
+            ?.ref()
             ?.let {
                 args += "--before-upgrade"
-                args += it.absolutePath
+                args += it
             }
         return args
     }
@@ -936,6 +931,10 @@ internal class ElectronBuilderConfigGenerator {
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\t", "\\t")
+
+    private companion object {
+        const val REDACTED = "<redacted>"
+    }
 }
 
 /**

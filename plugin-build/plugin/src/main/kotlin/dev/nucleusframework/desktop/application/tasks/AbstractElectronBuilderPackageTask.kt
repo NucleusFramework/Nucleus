@@ -117,6 +117,7 @@ abstract class AbstractElectronBuilderPackageTask
             private const val APPX_WIDE_LOGO_HEIGHT = 150
             private const val DEFAULT_PACKAGE_VERSION = "1.0.0"
             private val NSIS_FORMATS = setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)
+            private val LINUX_SIGNED_FORMATS = setOf(TargetFormat.Deb, TargetFormat.Rpm)
             internal val CUSTOM_INSTALL_MACRO = Regex("""!macro\s+customInstall\b""")
         }
 
@@ -242,12 +243,27 @@ abstract class AbstractElectronBuilderPackageTask
         val appxWide310x150Logo: RegularFileProperty = objects.fileProperty()
 
         /**
-         * The distributions DSL object providing all platform-specific settings.
-         * Marked @Internal because the individual settings are tracked via other @Input properties
-         * on the DSL objects themselves, and this reference is used for config generation only.
+         * The distributions DSL object providing all platform-specific settings. Not an input as a
+         * whole: [packagingSettings] and [packagingFiles] track the part of it this format's
+         * package is built from, so a setting of another format or OS leaves the task up to date.
          */
         @get:Internal
         var distributions: JvmApplicationDistributions? = null
+
+        /**
+         * The DSL settings this format's package is built from: the electron-builder config
+         * generated for [targetFormat] (credentials redacted), followed by the settings the task
+         * action reads outside that config.
+         */
+        @get:Input
+        internal val packagingSettings: String
+            get() = packagingInputs().settings
+
+        /** The files the electron-builder config of [packagingSettings] points at. */
+        @get:InputFiles
+        @get:PathSensitive(PathSensitivity.ABSOLUTE)
+        internal val packagingFiles: ConfigurableFileCollection
+            get() = objects.fileCollection().from(packagingInputs().files)
 
         @get:InputFile
         @get:Optional
@@ -524,6 +540,83 @@ abstract class AbstractElectronBuilderPackageTask
                 )
             }
             logger.info("Using Node.js: ${node.absolutePath} ($version)")
+        }
+
+        private class PackagingInputs(
+            val settings: String,
+            val files: Set<File>,
+        )
+
+        /**
+         * Generates the config the task action would, without the files it stages at execution
+         * time (icon sets, DMG background padding, NSIS include, Linux script templates): those
+         * derive from inputs tracked on their own.
+         */
+        private fun packagingInputs(): PackagingInputs {
+            val dist = distributions
+            if (dist == null || !targetFormat.isCompatibleWithCurrentOS) return PackagingInputs("", emptySet())
+
+            val generator = ElectronBuilderConfigGenerator(redactSecrets = true)
+            val arch = Arch.entries.first { it.id == targetArch.get() }
+            val settings =
+                buildString {
+                    append(
+                        generator.generateConfig(
+                            distributions = dist,
+                            targetFormat = targetFormat,
+                            appImageDir = appImageRoot.asFile.getOrElse(File("")),
+                            targetArch = arch,
+                            startupWMClass = startupWMClass.orNull,
+                            executableName = resolveExecutableName(),
+                            macBundleName = macBundleName.orNull,
+                        ),
+                    )
+                    appendSettingsReadOutsideConfig(dist, generator, arch)
+                }
+            val files = generator.referencedFiles.toMutableSet()
+            if (currentOS == OS.Linux && targetFormat in LINUX_SIGNED_FORMATS) {
+                dist.linux.signing.keyFile.orNull
+                    ?.let { files += it.asFile }
+            }
+            return PackagingInputs(settings, files)
+        }
+
+        /** What the task action reads from [dist] besides the generated config. */
+        private fun StringBuilder.appendSettingsReadOutsideConfig(
+            dist: JvmApplicationDistributions,
+            generator: ElectronBuilderConfigGenerator,
+            arch: Arch,
+        ) {
+            appendLine("# read by the task action")
+            // resolvePublishFlag(), ensureProjectPackageMetadata()
+            appendLine("publishMode: ${dist.publish.publishMode.id}")
+            appendLine("description: ${dist.description}")
+            appendLine("vendor: ${dist.vendor}")
+            when (currentOS) {
+                OS.Linux ->
+                    if (targetFormat in LINUX_SIGNED_FORMATS) {
+                        // signLinuxPackage(), bundleSilentUpdateArtifacts()
+                        val signing = dist.linux.signing
+                        appendLine("linuxSigning.enabled: ${signing.enabled.get()}")
+                        appendLine("linuxSigning.keyId: ${signing.keyId.orNull}")
+                        appendLine("linuxSigning.passphrase: ${signing.passphrase.isPresent}")
+                        appendLine("linuxSigning.debMethod: ${signing.debMethod}")
+                        appendLine("linuxSigning.silentUpdate: ${signing.silentUpdate.get()}")
+                    }
+                OS.Windows -> {
+                    // signWindowsAppImage(), generateNsisInclude()
+                    appendLine("windowsSigning.signNativeLibraries: ${dist.windows.signing.signNativeLibraries}")
+                    appendLine("appName: ${dist.appName}")
+                }
+                OS.MacOS -> {
+                    // exportMacOSPackagingMetadata() writes the DMG layout and install location
+                    // next to every macOS package, whatever its format.
+                    appendLine("installationPath: ${dist.macOS.installationPath}")
+                    if (targetFormat != TargetFormat.Dmg) {
+                        generator.generateMacConfig(this, dist, TargetFormat.Dmg, arch)
+                    }
+                }
+            }
         }
 
         private fun generateConfig(
