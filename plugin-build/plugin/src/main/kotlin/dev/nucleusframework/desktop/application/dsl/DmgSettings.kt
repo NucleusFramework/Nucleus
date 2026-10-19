@@ -46,7 +46,10 @@ abstract class DmgSettings {
     /** Whether to shrink the DMG image. Default: null (electron-builder uses true) */
     var shrink: Boolean? = null
 
-    /** Sign the DMG image. Default: false */
+    /**
+     * Sign the DMG image with the `macOS { signing { identity } }` Developer ID, after any LZMA
+     * recompression and before notarization. Requires `macOS { signing { sign = true } }`. Default: false
+     */
     var sign: Boolean = false
 
     val window: DmgWindowSettings = objects.newInstance(DmgWindowSettings::class.java)

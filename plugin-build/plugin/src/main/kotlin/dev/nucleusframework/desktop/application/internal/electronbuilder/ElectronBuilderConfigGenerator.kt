@@ -259,7 +259,8 @@ internal class ElectronBuilderConfigGenerator(
         windowOverride: DmgWindowOverride? = null,
     ) {
         yaml.appendLine("dmg:")
-        yaml.appendLine("  sign: ${dmg.sign}")
+        // Nucleus signs the DMG itself after packaging (dmg.sign, #828)
+        yaml.appendLine("  sign: false")
         val backgroundPath =
             dmgBackgroundOverride?.absolutePath
                 ?: dmg.background.ref()
