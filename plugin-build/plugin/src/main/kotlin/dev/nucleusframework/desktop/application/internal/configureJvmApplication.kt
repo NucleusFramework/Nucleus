@@ -85,6 +85,7 @@ internal const val NUCLEUS_TASK_GROUP = "nucleus"
 internal fun JvmApplicationContext.configureJvmApplication() {
     applyNucleusOptimization(app)
     applyNucleusOptimizationJdk(project, app)
+    applyJavaToolchainJdk(project, app)
 
     if (app.isDefaultConfigurationEnabled) {
         configureDefaultApp()
