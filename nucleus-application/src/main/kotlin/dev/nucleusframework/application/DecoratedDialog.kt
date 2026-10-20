@@ -23,6 +23,14 @@ import dev.nucleusframework.window.tao.v2.DialogState as NucleusDialogState
 /**
  * Decorated dialog. Mirrors [DecoratedWindow] but for modal / secondary
  * windows: non-resizable by default, no maximize / minimize affordance.
+ *
+ * Called inside a [DecoratedWindow], the dialog is modal to that window and
+ * owned by it natively: it always stacks above its parent, follows it when
+ * minimised and stays out of the taskbar. The parent ignores pointer input
+ * while the dialog is open, and activating the parent (a click, its taskbar
+ * button, Alt-Tab, `toFront()`) brings the dialog forward with the keyboard
+ * focus instead (#515). For a secondary window the user can put behind its
+ * parent, use a second top-level [DecoratedWindow].
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable

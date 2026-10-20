@@ -337,18 +337,20 @@ internal object ClipboardHeadfulCases {
      * that would not share a selection with the app.
      *
      * `wl-copy` / `wl-paste` own the *Wayland* selection, so they only speak
-     * to the app when the app is on Wayland too. Forcing the window backend
-     * onto XWayland (`NUCLEUS_TAO_LINUX_RENDERER=x11`) inside a Wayland
-     * session — which is how the X11 leg is run on a developer machine —
-     * leaves the two on different selections, and the case can only time out.
-     * The environment is read rather than the window's own surface kind: the
-     * skip is evaluated before any window exists.
+     * to the app when the app is on Wayland too. An app on X11 never shares
+     * that selection, whichever way it got there: forced onto XWayland
+     * (`NUCLEUS_TAO_LINUX_RENDERER=x11`) inside a Wayland session, or on an
+     * X server of its own (Xvfb) with `WAYLAND_DISPLAY` unset — where the
+     * tools still fall back to `wayland-0` and reach the desktop session the
+     * app is not on. Either way the case can only time out. The environment is
+     * read rather than the window's own surface kind: the skip is evaluated
+     * before any window exists.
      */
     private fun clipboardSkipReason(tool: String): String? {
         linuxWithNativeClipboard()?.let { return it }
         val forcedX11 = System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
-        if (forcedX11 && !System.getenv("WAYLAND_DISPLAY").isNullOrBlank()) {
-            return "app forced onto XWayland: $tool owns the Wayland selection"
+        if (forcedX11 || System.getenv("WAYLAND_DISPLAY").isNullOrBlank()) {
+            return "app on X11: $tool owns the Wayland selection"
         }
         return requireTool(tool)
     }

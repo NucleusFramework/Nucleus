@@ -3066,6 +3066,88 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectTrack
     return JNI_TRUE;
 }
 
+/* macOS only, headful e2e (#827): queues a synthetic tablet event with
+ * `-[NSApplication postEvent:atStart:]`, the way a Wacom-class driver delivers
+ * a pen: a proximity event naming the tool when it comes within range, then
+ * ordinary mouse events whose `subtype` is NSEventSubtypeTabletPoint. Posted,
+ * never sent, for the reason given on nativeDiagInjectTrackpadGesture.
+ *
+ * action: 0 proximity enter, 1 proximity leave, 2 move, 3 down, 4 drag, 5 up.
+ * tool:   0 the mouse (plain mouse events, no proximity), 1 pen tip, 2 eraser.
+ * (x, y) are view-local points with a top-left origin (ignored for proximity).
+ *
+ * Field 51 (window number) and the private CGEventSetWindowLocation make the
+ * mouse events land on the view's window at that point, as in the gesture
+ * injector. Same gate as nativeDiagInjectScrollWheel. Returns JNI true once
+ * the event is queued; events posted in order are delivered in order. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectTabletEvent(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr,
+        jint action, jint tool, jfloat x, jfloat y) {
+    (void)env; (void)clazz;
+    if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
+    if (!taoInputInjectionEnabled()) return JNI_FALSE;
+    if (tool < 0 || tool > 2) return JNI_FALSE;
+    typedef void (*SetWindowLocationFn)(CGEventRef, CGPoint);
+    static SetWindowLocationFn sSetWindowLocation = NULL;
+    static BOOL sResolved = NO;
+    if (!sResolved) {
+        sResolved = YES;
+        sSetWindowLocation = (SetWindowLocationFn) dlsym(RTLD_DEFAULT, "CGEventSetWindowLocation");
+    }
+    if (sSetWindowLocation == NULL) return JNI_FALSE;
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    NSWindow *window = view.window;
+    NSScreen *primary = NSScreen.screens.firstObject;
+    if (window == nil || primary == nil) return JNI_FALSE;
+    // CGPointerType of the proximity fields: 1 pen, 3 eraser.
+    int64_t pointerType = tool == 2 ? 3 : 1;
+    CGEventRef cg = NULL;
+    if (action == 0 || action == 1) {
+        if (tool == 0) return JNI_FALSE;
+        cg = CGEventCreate(NULL);
+        if (cg == NULL) return JNI_FALSE;
+        CGEventSetType(cg, kCGEventTabletProximity);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventPointerType, pointerType);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventEnterProximity, action == 0 ? 1 : 0);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventDeviceID, 1);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventCapabilityMask, 0x3F);
+        CGEventSetIntegerValueField(cg, (CGEventField) 51, window.windowNumber);
+    } else {
+        CGEventType type;
+        switch (action) {
+            case 2: type = kCGEventMouseMoved; break;
+            case 3: type = kCGEventLeftMouseDown; break;
+            case 4: type = kCGEventLeftMouseDragged; break;
+            case 5: type = kCGEventLeftMouseUp; break;
+            default: return JNI_FALSE;
+        }
+        // View-local top-left → window base (bottom-left) → window top-left.
+        NSPoint local = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height - y);
+        NSPoint inWindow = [view convertPoint:local toView:nil];
+        NSPoint onScreen = [window convertPointToScreen:inWindow];
+        CGPoint global = CGPointMake(onScreen.x, primary.frame.size.height - onScreen.y);
+        cg = CGEventCreateMouseEvent(NULL, type, global, kCGMouseButtonLeft);
+        if (cg == NULL) return JNI_FALSE;
+        if (tool != 0) {
+            CGEventSetIntegerValueField(cg, kCGMouseEventSubtype, kCGEventMouseSubtypeTabletPoint);
+            CGEventSetIntegerValueField(cg, kCGTabletEventDeviceID, 1);
+            CGEventSetDoubleValueField(cg, kCGTabletEventPointPressure,
+                                       (action == 3 || action == 4) ? 0.5 : 0.0);
+        }
+        if (action == 3 || action == 5) {
+            CGEventSetIntegerValueField(cg, kCGMouseEventClickState, 1);
+        }
+        CGEventSetIntegerValueField(cg, (CGEventField) 51, window.windowNumber);
+        sSetWindowLocation(cg, CGPointMake(inWindow.x, window.frame.size.height - inWindow.y));
+    }
+    NSEvent *event = [NSEvent eventWithCGEvent:cg];
+    CFRelease(cg);
+    if (event == nil) return JNI_FALSE;
+    [NSApp postEvent:event atStart:NO];
+    return JNI_TRUE;
+}
+
 /* CFGetRetainCount of view.window. Only deltas are meaningful (AppKit holds
  * its own references); the set_focusable leak regression compares the count
  * before/after a burst of calls. Returns -1 when view/window is gone. */

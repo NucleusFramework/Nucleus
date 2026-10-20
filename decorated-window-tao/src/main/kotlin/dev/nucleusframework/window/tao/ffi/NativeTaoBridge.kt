@@ -149,6 +149,8 @@ internal object NativeTaoBridge {
          * [TaoEventCode.CURSOR_MOVED]).
          * [forceFixed] is the touch pressure × 10 000 in `[0, 10000]`, or
          * `-1` when the digitizer doesn't report pressure.
+         * [kind] is the [TaoPointerKind] of the contact: a finger, or a pen
+         * (and its eraser end), which WM_POINTER reports the same way (#827).
          *
          * Default no-op so non-Windows callers can ignore it.
          */
@@ -160,6 +162,7 @@ internal object NativeTaoBridge {
             xFixed: Int,
             yFixed: Int,
             forceFixed: Int,
+            kind: Int,
         ) {
         }
 

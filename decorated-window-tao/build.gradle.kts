@@ -195,6 +195,11 @@ val taoHeadfulTest =
         // Arms the macOS scrollWheel: injector (nativeDiagInjectScrollWheel) the
         // trackpad cases drive; it is inert in any process without this variable.
         environment("NUCLEUS_TAO_INPUT_INJECTION", "1")
+        // A fixed glibc mmap threshold: every large block — Mesa llvmpipe's
+        // texture storage among them — is then its own mapping, unmapped on
+        // free. With the default dynamic threshold freed textures stay in the
+        // malloc heap and RSS cannot show the #638 GPU-cache reclaim.
+        environment("MALLOC_MMAP_THRESHOLD_", "131072")
         // Same Kover JVM agent the `test` task uses, so headful window coverage
         // is counted. JavaExec is otherwise invisible to Kover.
         dependsOn(tasks.named("koverFindJar"))

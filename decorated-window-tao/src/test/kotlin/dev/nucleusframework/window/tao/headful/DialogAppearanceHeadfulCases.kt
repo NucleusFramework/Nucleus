@@ -931,7 +931,24 @@ internal object DialogAppearanceHeadfulCases {
     private fun blue(argb: Int): Int = argb and 0xFF
 
     private fun skipReason(): String? =
-        if (java.awt.GraphicsEnvironment.isHeadless()) "no display for Robot capture" else null
+        when {
+            java.awt.GraphicsEnvironment.isHeadless() -> "no display for Robot capture"
+            screenCaptureNeedsPortalGrant() -> "Robot capture on native Wayland waits for a screen-cast portal grant"
+            else -> null
+        }
+
+    /**
+     * On a Wayland session the JDK grabs the screen through the XDG ScreenCast
+     * portal, which asks the user to approve sharing the screen. Unattended,
+     * nobody answers: the grabber thread parks in `ScreencastHelper` and the
+     * film's join waits on it for good, freezing the suite until the global
+     * watchdog halts it. The JDK picks the portal from `WAYLAND_DISPLAY`
+     * alone (`UNIXToolkit.isOnWayland`), so an X server of its own (Xvfb with
+     * `WAYLAND_DISPLAY` unset, the CI leg) keeps the plain X11 grab.
+     */
+    private fun screenCaptureNeedsPortalGrant(): Boolean =
+        System.getProperty("os.name", "").startsWith("Linux") &&
+            !System.getenv("WAYLAND_DISPLAY").isNullOrBlank()
 
     private val DIALOG_COLOR = Color(0xFF1030C0)
     private const val DIALOG_W_DP = 320

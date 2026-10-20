@@ -1,5 +1,7 @@
 package dev.nucleusframework.window.tao.scene
 
+import org.jetbrains.skia.DirectContext
+
 /*
  * Shared policy for the Skia GPU resource cache of the scene hosts'
  * `DirectContext`s.
@@ -47,6 +49,24 @@ internal const val GPU_RESOURCE_CACHE_LIMIT_BYTES: Long = 256L * 1024 * 1024
  * skipped frame is composited as a geometry/content mismatch — trembling).
  */
 internal const val GPU_RESIZE_PURGE_INTERVAL_NS: Long = 250_000_000L
+
+/**
+ * The limit-toggle for a context that will not draw again soon: the window was
+ * minimized (#638). Toggling queues the backend deletes, and inside a frame the
+ * frame's own flush submits them; at rest no frame follows, so the deletes
+ * would sit in the command stream and the driver would keep every byte — the
+ * toggle alone was measured to return nothing on NVIDIA/GL. Flushing and
+ * submitting synchronously is what actually hands the memory back.
+ *
+ * Same calling contract as every toggle: on the owning render thread on Metal,
+ * with this context current on the ANGLE/EGL hosts.
+ */
+internal fun DirectContext.purgeAtRest() {
+    resourceCacheLimit = 0
+    resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+    flush()
+    submit(true)
+}
 
 /*
  * There is deliberately no "settle" constant here. A drag-end purge needs a
