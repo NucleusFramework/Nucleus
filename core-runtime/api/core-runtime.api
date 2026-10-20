@@ -115,6 +115,7 @@ public final class dev/nucleusframework/core/runtime/NucleusApp {
 	public static final fun getAumid ()Ljava/lang/String;
 	public static final fun getDescription ()Ljava/lang/String;
 	public static final fun getLinuxDesktopEntryId ()Ljava/lang/String;
+	public static final fun getLinuxStartupWmClass ()Ljava/lang/String;
 	public static final fun getStartupTaskId ()Ljava/lang/String;
 	public static final fun getVendor ()Ljava/lang/String;
 	public static final fun getVersion ()Ljava/lang/String;

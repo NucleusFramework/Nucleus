@@ -223,7 +223,7 @@ pub(crate) fn run_event_loop_blocking() {
     let mut event_loop = builder.build();
     // After `build()` (GTK is up, its display chosen), before any window exists.
     #[cfg(target_os = "linux")]
-    crate::platform::linux::apply_wayland_app_id();
+    crate::platform::linux::apply_window_identity();
     set_event_loop_proxy(event_loop.create_proxy());
 
     // Event-driven minimize/restore detection (see on_tao_minimized).

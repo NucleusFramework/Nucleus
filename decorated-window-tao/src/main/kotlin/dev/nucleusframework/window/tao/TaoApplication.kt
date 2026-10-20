@@ -105,9 +105,11 @@ public object TaoApplication {
         // first `NavController.setGraph` call.
         LifecycleMainDispatcherPriming.primeWithCurrentThread()
         onLaunched = block
-        // Before the loop creates GTK's first window, which reads the app_id once.
+        // Before the loop creates GTK's first window, which reads the app_id (Wayland) or
+        // WM_CLASS (X11) once. The bridge applies whichever matches the display it opens.
         if (Platform.Current == Platform.Linux) {
             TaoWaylandAppId.current()?.let(NativeTaoBridge::nativeSetWaylandAppId)
+            TaoX11WmClass.current()?.let(NativeTaoBridge::nativeSetX11WmClass)
         }
         // Watch the loop from the outside (#643): a stall deadlocks this
         // thread, so nothing downstream of `nativeRunBlocking` — including
