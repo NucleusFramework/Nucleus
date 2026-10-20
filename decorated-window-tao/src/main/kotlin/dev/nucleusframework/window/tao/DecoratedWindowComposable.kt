@@ -230,6 +230,21 @@ public fun ApplicationScope.DecoratedWindow(
     // [measuredContent]: see the effect that settles it.
     val wrapResolved = remember { mutableStateOf<DpSize?>(null) }
 
+    // A wrap-content window is held hidden until it has its measured size and
+    // position (`showReady`): shown at the creation fallback, it flashed a
+    // 600dp-tall blank frame first, and on Wayland the compositor kept that
+    // size as the window's own and handed it back on a later configure (#532).
+    val sizePolicy =
+        remember {
+            WindowSizePolicy(
+                wrapWidth = wrapWidth,
+                wrapHeight = wrapHeight,
+                onContentMeasured = { size ->
+                    if (measuredContent.value != size) measuredContent.value = size
+                },
+            )
+        }
+
     // Mirrors Compose Desktop's `appliedState` pattern: tracks the last value
     // we wrote to the window so the native→state listeners can ignore echoes.
     val applied =
@@ -311,15 +326,7 @@ public fun ApplicationScope.DecoratedWindow(
                     },
                 )
 
-            w.installSizePolicy(
-                WindowSizePolicy(
-                    wrapWidth = wrapWidth,
-                    wrapHeight = wrapHeight,
-                    onContentMeasured = { size ->
-                        if (measuredContent.value != size) measuredContent.value = size
-                    },
-                ),
-            )
+            w.installSizePolicy(sizePolicy)
 
             // Initial placement / minimised flag are applied imperatively here
             // (Maximized is handled at builder time, above).
@@ -458,6 +465,13 @@ public fun ApplicationScope.DecoratedWindow(
             resolved.width.value.toDouble(),
             resolved.height.value.toDouble(),
         )
+        // GTK has no configure for a window that is not mapped yet, so the
+        // echo the other platforms send back never comes: report the size
+        // ourselves, as the native side does for Win32/AppKit. The window is
+        // still hidden here (see `showReady`), and maps at this size.
+        if (Platform.Current == Platform.Linux && !sizePolicy.showReady.value) {
+            applied.pendingProgrammaticPx?.let { window.dispatch(TaoEventCode.RESIZED, it.width, it.height) }
+        }
         applied.size = resolved
         latestState.size = resolved
         applied.wrapSettled = true
@@ -475,11 +489,18 @@ public fun ApplicationScope.DecoratedWindow(
         repeat(ALIGNED_POSITION_RETRIES) { if (applied.pendingProgrammaticPx != null) delay(ALIGNED_POSITION_RETRY_MS) }
         // The scene now fills the window it was measured for (#546: the
         // TitleBar's fillMaxWidth collapsed under the wrap modifiers).
-        window.resolvedSizePolicy().settled.value = true
+        sizePolicy.settled.value = true
         // #546: the position effect skipped `Aligned` while the size was the
-        // creation fallback; resolve it now.
-        val aligned = applied.initialAligned ?: return@LaunchedEffect
-        alignWithRetries(window, aligned, resolved)
+        // creation fallback; resolve it now, before the window is shown.
+        applied.initialAligned?.let { alignWithRetries(window, it, resolved) }
+        sizePolicy.showReady.value = true
+    }
+    // Content that never measures to a positive size (nothing in it) has no
+    // wrap size to wait for: show it at the fallback rather than never.
+    LaunchedEffect(window) {
+        if (sizePolicy.showReady.value) return@LaunchedEffect
+        delay(WRAP_CONTENT_SHOW_TIMEOUT_MS)
+        sizePolicy.showReady.value = true
     }
     LaunchedEffect(window, state.size, state.placement) {
         // Maximized / Fullscreen windows derive their size from the
@@ -611,8 +632,9 @@ public fun ApplicationScope.DecoratedWindow(
     LaunchedEffect(window, visibleOnAllWorkspaces) {
         window.setVisibleOnAllWorkspaces(visibleOnAllWorkspaces)
     }
-    LaunchedEffect(window, visible) {
+    LaunchedEffect(window, visible, sizePolicy.showReady.value) {
         if (visible) {
+            if (!sizePolicy.showReady.value) return@LaunchedEffect
             window.show()
             // The JVM splash screen auto-closes when the first AWT Window becomes
             // visible. The Tao backend never creates AWT windows, so we close it
@@ -699,6 +721,9 @@ private fun WindowState.applyMacOsInitialMaximizedSize(): DpSize =
  */
 private const val ALIGNED_POSITION_RETRIES = 10
 private const val ALIGNED_POSITION_RETRY_MS = 16L
+
+/** How long a wrap-content window waits hidden for a measurable content size (#532). */
+private const val WRAP_CONTENT_SHOW_TIMEOUT_MS = 1_000L
 
 /** Native px slop when matching a programmatic setInnerSize echo (#576). */
 private const val PROGRAMMATIC_SIZE_ECHO_PX = 1
