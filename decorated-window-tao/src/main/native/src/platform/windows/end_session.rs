@@ -30,9 +30,9 @@
 // the same answers (`awt_session`).
 
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, AtomicUsize, Ordering};
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use jni::objects::{JObject, JValue};
 use jni::sys::jint;
@@ -42,7 +42,9 @@ use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::System::Shutdown::{ShutdownBlockReasonCreate, ShutdownBlockReasonDestroy};
 use windows::Win32::System::Threading::GetCurrentThreadId;
-use windows::Win32::UI::WindowsAndMessaging::{EnumThreadWindows, IsWindow};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumThreadWindows, IsWindow, PeekMessageW, MSG, PM_NOREMOVE, PM_QS_SENDMESSAGE,
+};
 
 use crate::events::UserEvent;
 use crate::state::{send_user_event, EVENT_CALLBACK, JAVA_VM};
@@ -74,6 +76,58 @@ const FLAG_REFUSED: jint = 2;
 
 /// `lParam` flag of a Restart Manager close.
 const ENDSESSION_CLOSEAPP: isize = 0x1;
+
+/// The app is leaving on its own — its loop has ended, or Windows is ending the
+/// session — so a query has nothing left to ask: the app agrees.
+static EXITING: AtomicBool = AtomicBool::new(false);
+
+/// Queries AWT's thread is forwarding to the event-loop thread right now.
+static FORWARDS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// How long [stop_answering] serves forwards already on their way; each one is
+/// answered at once, the bound only covers a forward that never arrives.
+const FORWARD_DRAIN_MS: u64 = 1_000;
+
+/// Starts forwarding a query from AWT's thread; `false` when the app is leaving
+/// and the forward must not be sent. Pair a `true` with [end_forward].
+pub(crate) fn begin_forward() -> bool {
+    FORWARDS_IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+    if EXITING.load(Ordering::SeqCst) {
+        FORWARDS_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+        return false;
+    }
+    true
+}
+
+pub(crate) fn end_forward() {
+    FORWARDS_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+}
+
+/// The event loop has returned: it no longer pumps, so nothing would answer a
+/// forward. AWT's toolkit thread would otherwise sit in its forward (up to
+/// `QUERY_FORWARD_TIMEOUT_MS`) while the process exits, and AWT's
+/// `ToolkitShutdown` hook waits for that thread — the exit stalled and the
+/// Restart Manager, closing an app that was already quitting, got a refusal.
+pub(crate) fn loop_ended() {
+    stop_answering();
+}
+
+/// Makes every later query agree without asking the app, then serves the
+/// forwards already sent or about to be — the `SeqCst` pair with
+/// [begin_forward] guarantees each forward either sees [EXITING] or is
+/// counted here. Event-loop thread only: a sent message is delivered to this
+/// thread's windows when it peeks.
+fn stop_answering() {
+    EXITING.store(true, Ordering::SeqCst);
+    let deadline = Instant::now() + Duration::from_millis(FORWARD_DRAIN_MS);
+    while FORWARDS_IN_FLIGHT.load(Ordering::SeqCst) > 0 && Instant::now() < deadline {
+        let mut msg = MSG::default();
+        // SAFETY: peeks this thread's queue; PM_QS_SENDMESSAGE only dispatches
+        // the messages other threads sent here, nothing is removed.
+        let _ = unsafe { PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE | PM_QS_SENDMESSAGE) };
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
 
 /// Records a FALSE given on the app's behalf without asking it.
 pub(crate) fn refused_unasked() {
@@ -155,6 +209,9 @@ unsafe extern "system" fn find_thread_target(hwnd: HWND, _: LPARAM) -> BOOL {
 
 /// `WM_QUERYENDSESSION`: `true` when the session may end now.
 pub(crate) fn on_query_end_session(hwnd: isize, lparam: isize, nested: bool) -> bool {
+    if EXITING.load(Ordering::SeqCst) {
+        return true;
+    }
     if lparam & ENDSESSION_CRITICAL != 0 {
         // Nothing to ask: the session ends anyway, WM_ENDSESSION tears down.
         release_block();
@@ -201,6 +258,11 @@ pub(crate) fn on_end_session(_hwnd: isize, ending: bool, nested: bool) {
     REFUSED_UNASKED.store(false, Ordering::Relaxed);
     forget();
     release_block();
+    if ending {
+        // The teardown exits the process from inside this call: a forward from
+        // AWT must not be left waiting on this thread (see [loop_ended]).
+        stop_answering();
+    }
     if !nested {
         end_session_kotlin(ending);
     } else if !ending {

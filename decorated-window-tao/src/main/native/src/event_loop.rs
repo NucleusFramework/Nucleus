@@ -1322,6 +1322,10 @@ pub(crate) fn run_event_loop_blocking() {
             _ => {}
         }
     });
+    // Nobody answers a session-end query from here on (#751): AWT's forwards are
+    // answered without the loop, and one already waiting on this thread is served.
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::loop_ended();
     #[cfg(target_os = "linux")]
     flush_displays_after_loop();
 }

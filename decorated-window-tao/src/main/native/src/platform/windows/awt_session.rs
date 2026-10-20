@@ -151,6 +151,10 @@ unsafe extern "system" fn awt_proc(
             if let Some(may_end) = super::end_session::recent_answer() {
                 return LRESULT(may_end as isize);
             }
+            if !super::end_session::begin_forward() {
+                // The app is leaving: its loop no longer answers.
+                return LRESULT(1);
+            }
             let mut answer = 0usize;
             let sent = SendMessageTimeoutW(
                 target.unwrap_or_default(),
@@ -161,6 +165,7 @@ unsafe extern "system" fn awt_proc(
                 QUERY_FORWARD_TIMEOUT_MS,
                 Some(&mut answer),
             );
+            super::end_session::end_forward();
             let may_end = sent.0 != 0 && answer != 0;
             if sent.0 == 0 {
                 // The loop answers later, to nobody: tell it Windows has a FALSE.

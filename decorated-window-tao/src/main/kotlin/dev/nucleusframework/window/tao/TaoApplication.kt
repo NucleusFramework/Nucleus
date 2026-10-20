@@ -349,15 +349,17 @@ public object TaoApplication {
 
     /**
      * Runs the Compose main queue until [settled] or a short budget runs out:
-     * [TaoMainDispatcher.pump] only — no Win32 message is pumped, so nothing
-     * re-enters the window procedure (#640). Tests replace it.
+     * [TaoMainDispatcher.drain] only — no Win32 message is pumped, so nothing
+     * re-enters the window procedure (#640), and no wake is armed, so an
+     * animating app does not come out of each settle with one more wake
+     * circulating in its loop. Tests replace it.
      */
     internal var settleQuitNow: (settled: () -> Boolean) -> Unit = ::pumpUntil
 
     private fun pumpUntil(settled: () -> Boolean) {
         val deadline = System.nanoTime() + SETTLE_NOW_BUDGET_NS
         while (!settled() && System.nanoTime() < deadline) {
-            TaoMainDispatcher.pump()
+            TaoMainDispatcher.drain()
             if (!settled()) Thread.sleep(1)
         }
     }
