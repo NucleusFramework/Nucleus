@@ -71,8 +71,11 @@ public object SystemInfo {
      *
      * Linux watches the xdg-desktop-portal NetworkMonitor, falling back to NetworkManager;
      * when neither is reachable the flow emits a single state with
-     * [dev.nucleusframework.systeminfo.model.ConnectivityLevel.UNKNOWN]. macOS and Windows
-     * currently emit the current state only. The flow is empty on unsupported platforms.
+     * [dev.nucleusframework.systeminfo.model.ConnectivityLevel.UNKNOWN]. macOS watches
+     * `NWPathMonitor`, which does not probe the internet: a usable path reports
+     * [dev.nucleusframework.systeminfo.model.ConnectivityLevel.FULL], and Low Data Mode counts
+     * as metered. Windows currently emits the current state only. The flow is empty on
+     * unsupported platforms.
      */
     public fun connectivityFlow(): Flow<ConnectivityInfo> = delegate?.connectivityChanges() ?: emptyFlow()
 }

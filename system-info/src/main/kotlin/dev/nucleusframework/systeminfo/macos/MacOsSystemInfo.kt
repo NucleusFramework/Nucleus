@@ -1,23 +1,25 @@
 package dev.nucleusframework.systeminfo.macos
 
+import dev.nucleusframework.systeminfo.ConnectivityMonitor
 import dev.nucleusframework.systeminfo.PlatformSystemInfo
+import dev.nucleusframework.systeminfo.connectivityInfoOf
 import dev.nucleusframework.systeminfo.model.BatteryInfo
 import dev.nucleusframework.systeminfo.model.BatteryState
 import dev.nucleusframework.systeminfo.model.ComponentInfo
 import dev.nucleusframework.systeminfo.model.ConnectivityInfo
-import dev.nucleusframework.systeminfo.model.ConnectivityLevel
 import dev.nucleusframework.systeminfo.model.CpuGlobalInfo
 import dev.nucleusframework.systeminfo.model.CpuInfo
 import dev.nucleusframework.systeminfo.model.DiskInfo
 import dev.nucleusframework.systeminfo.model.GpuInfo
 import dev.nucleusframework.systeminfo.model.MemoryInfo
-import dev.nucleusframework.systeminfo.model.MeteredStatus
 import dev.nucleusframework.systeminfo.model.MotherboardInfo
 import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
 import dev.nucleusframework.systeminfo.model.OsInfo
 import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
 import dev.nucleusframework.systeminfo.model.UserInfo
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @Suppress("TooManyFunctions", "ReturnCount")
 internal object MacOsSystemInfo : PlatformSystemInfo {
@@ -360,20 +362,17 @@ internal object MacOsSystemInfo : PlatformSystemInfo {
 
     override fun connectivityInfo(): ConnectivityInfo? {
         if (!bridge.isLoaded) return null
-        val connected = bridge.nativeIsNetworkConnected()
-        return ConnectivityInfo(
-            isConnected = connected,
-            meteredStatus =
-                if (!connected) {
-                    MeteredStatus.NOT_AVAILABLE
-                } else {
-                    when (bridge.nativeGetMeteredStatus()) {
-                        1 -> MeteredStatus.UNMETERED
-                        2 -> MeteredStatus.METERED
-                        else -> MeteredStatus.UNKNOWN
-                    }
-                },
-            level = if (connected) ConnectivityLevel.UNKNOWN else ConnectivityLevel.NONE,
-        )
+        val (available, metered, level) = bridge.nativeQueryConnectivity()
+        return connectivityInfoOf(available != 0, metered, level)
     }
+
+    override fun connectivityChanges(): Flow<ConnectivityInfo> =
+        if (bridge.isLoaded) connectivityMonitor.changes() else emptyFlow()
+
+    val connectivityMonitor =
+        ConnectivityMonitor(
+            start = bridge::nativeStartConnectivityMonitor,
+            stop = bridge::nativeStopConnectivityMonitor,
+            fallback = ::connectivityInfo,
+        )
 }

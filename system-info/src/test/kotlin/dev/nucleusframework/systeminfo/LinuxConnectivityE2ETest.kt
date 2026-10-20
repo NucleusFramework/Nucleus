@@ -1,23 +1,18 @@
 package dev.nucleusframework.systeminfo
 
 import dev.nucleusframework.core.runtime.Platform
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
-import kotlin.system.exitProcess
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.fail
 
-private const val MONITOR_THREAD = "nucleus-connectivity-monitor"
 private const val PYTHON = "/usr/bin/python3"
 
 /**
@@ -185,37 +180,4 @@ class LinuxConnectivityE2ETest {
         builder.environment()["DBUS_SYSTEM_BUS_ADDRESS"] = bus
         return builder.start().also(processes::add)
     }
-}
-
-/** Child-JVM entry point: prints every emission of SystemInfo.connectivityFlow(). */
-object ConnectivityProbe {
-    @JvmStatic
-    fun main(args: Array<String>) {
-        when (args.single()) {
-            "watch" ->
-                runBlocking {
-                    val job = launch { SystemInfo.connectivityFlow().collect { println(format(it)) } }
-                    // Run until the test closes stdin or kills the process.
-                    thread(isDaemon = true) {
-                        System.`in`.read()
-                        job.cancel()
-                    }
-                    job.join()
-                }
-
-            "restart" ->
-                runBlocking {
-                    repeat(2) {
-                        println(format(SystemInfo.connectivityFlow().first()))
-                        val monitors = Thread.getAllStackTraces().keys.count { it.name == MONITOR_THREAD }
-                        println("THREADS $monitors")
-                    }
-                }
-        }
-        System.out.flush()
-        exitProcess(0)
-    }
-
-    private fun format(info: dev.nucleusframework.systeminfo.model.ConnectivityInfo) =
-        "STATE ${info.isConnected} ${info.meteredStatus} ${info.level}"
 }

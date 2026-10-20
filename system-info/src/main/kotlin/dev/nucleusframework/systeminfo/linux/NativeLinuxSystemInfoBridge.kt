@@ -1,6 +1,7 @@
 package dev.nucleusframework.systeminfo.linux
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import dev.nucleusframework.systeminfo.connectivityInfoOf
 
 private const val LIBRARY_NAME = "nucleus_system_info"
 
@@ -286,6 +287,6 @@ internal object NativeLinuxSystemInfoBridge {
         metered: Int,
         level: Int,
     ) {
-        LinuxConnectivityMonitor.onChanged(connectivityInfoOf(available, metered, level))
+        LinuxSystemInfo.connectivityMonitor.onChanged(connectivityInfoOf(available, metered, level))
     }
 }

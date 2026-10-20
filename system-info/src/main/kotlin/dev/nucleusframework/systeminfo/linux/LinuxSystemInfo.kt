@@ -1,7 +1,9 @@
 package dev.nucleusframework.systeminfo.linux
 
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.systeminfo.ConnectivityMonitor
 import dev.nucleusframework.systeminfo.PlatformSystemInfo
+import dev.nucleusframework.systeminfo.connectivityInfoOf
 import dev.nucleusframework.systeminfo.model.BatteryInfo
 import dev.nucleusframework.systeminfo.model.BatteryState
 import dev.nucleusframework.systeminfo.model.ComponentInfo
@@ -371,5 +373,12 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
     }
 
     override fun connectivityChanges(): Flow<ConnectivityInfo> =
-        if (ready()) LinuxConnectivityMonitor.changes() else emptyFlow()
+        if (ready()) connectivityMonitor.changes() else emptyFlow()
+
+    val connectivityMonitor =
+        ConnectivityMonitor(
+            start = bridge::nativeStartConnectivityMonitor,
+            stop = bridge::nativeStopConnectivityMonitor,
+            fallback = ::connectivityInfo,
+        )
 }

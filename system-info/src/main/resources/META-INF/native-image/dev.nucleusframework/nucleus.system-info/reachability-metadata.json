@@ -17,7 +17,16 @@
         {
             "type": "dev.nucleusframework.systeminfo.macos.NativeMacOsSystemInfoBridge",
             "jniAccessible": true,
-            "methods": []
+            "methods": [
+                {
+                    "name": "onConnectivityChanged",
+                    "parameterTypes": [
+                        "boolean",
+                        "int",
+                        "int"
+                    ]
+                }
+            ]
         },
         {
             "type": "dev.nucleusframework.systeminfo.windows.NativeWindowsSystemInfoBridge",

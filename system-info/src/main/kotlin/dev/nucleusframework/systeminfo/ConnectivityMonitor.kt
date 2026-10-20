@@ -1,4 +1,4 @@
-package dev.nucleusframework.systeminfo.linux
+package dev.nucleusframework.systeminfo
 
 import dev.nucleusframework.systeminfo.model.ConnectivityInfo
 import dev.nucleusframework.systeminfo.model.ConnectivityLevel
@@ -10,12 +10,17 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flow
 
 /**
- * Reference-counted owner of the native connectivity monitor: the first collector
+ * Reference-counted owner of a native connectivity monitor: the first collector
  * starts it, the last one stops it. The native side already drops identical states,
  * and the [MutableStateFlow] dedupes whatever slips through.
+ *
+ * When [start] fails, collectors get the [fallback] one-shot state instead.
  */
-internal object LinuxConnectivityMonitor {
-    private val bridge = NativeLinuxSystemInfoBridge
+internal class ConnectivityMonitor(
+    private val start: () -> Boolean,
+    private val stop: () -> Unit,
+    private val fallback: () -> ConnectivityInfo?,
+) {
     private val lock = Any()
     private var collectors = 0
 
@@ -32,28 +37,28 @@ internal object LinuxConnectivityMonitor {
             }
         }
 
-    // Never takes the lock: it runs on the native thread that stop() joins.
+    // Never takes the lock: it runs on the native thread that stop() waits for.
     fun onChanged(info: ConnectivityInfo) {
         state.value = info
     }
 
     private fun acquire() =
         synchronized(lock) {
-            if (collectors++ == 0 && !bridge.nativeStartConnectivityMonitor()) {
-                state.value = LinuxSystemInfo.connectivityInfo()
+            if (collectors++ == 0 && !start()) {
+                state.value = fallback()
             }
         }
 
     private fun release() =
         synchronized(lock) {
             if (--collectors == 0) {
-                bridge.nativeStopConnectivityMonitor()
+                stop()
                 state.value = null
             }
         }
 }
 
-// Codes mirrored in nucleus_system_info_connectivity.c.
+// Codes mirrored in the native nucleus_system_info_connectivity.c of each platform.
 internal fun connectivityInfoOf(
     available: Boolean,
     metered: Int,
