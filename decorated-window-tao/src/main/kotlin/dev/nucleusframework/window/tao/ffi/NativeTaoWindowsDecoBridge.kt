@@ -326,6 +326,10 @@ internal object NativeTaoWindowsDecoBridge {
     @JvmStatic
     external fun nativeIsMaximized(hwnd: Long): Boolean
 
+    /** `DwmFlush()`: blocks until DWM's next composition. False when it failed. */
+    @JvmStatic
+    external fun nativeDwmFlush(): Boolean
+
     /**
      * Atomic unmaximize + reposition under the finger when a touch drag
      * starts on a maximized window. Returns the restored outer rect as
