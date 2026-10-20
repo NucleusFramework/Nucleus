@@ -1,5 +1,8 @@
 package dev.nucleusframework.desktop.application.internal.analyzer
 
+import dev.nucleusframework.desktop.application.internal.jarRuntimeVersion
+import dev.nucleusframework.desktop.application.internal.openVersionedJar
+import dev.nucleusframework.desktop.application.internal.versionedClassEntries
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ClassForNameDetector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ClassReferenceCollector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.JarResourceDetector
@@ -27,8 +30,16 @@ import java.util.jar.JarFile
 internal object BytecodeAnalyzer {
     /**
      * Analyzes a single JAR file.
+     *
+     * @param targetJavaVersion the feature version of the JDK the image is built with. A
+     *   multi-release JAR is read as that JDK sees it: each class from the highest
+     *   `META-INF/versions/N` that applies, else the base entry. Null reads the base entries only.
      */
-    fun analyzeJar(jarPath: File): AnalysisResult = analyzeJarInternal(jarPath, collectReferences = false).toResult()
+    fun analyzeJar(
+        jarPath: File,
+        targetJavaVersion: Int? = null,
+    ): AnalysisResult =
+        analyzeJarInternal(jarPath, collectReferences = false, jarRuntimeVersion(targetJavaVersion)).toResult()
 
     /**
      * Analyzes a directory of compiled .class files (e.g. build/classes/kotlin/jvm/main).
@@ -50,17 +61,21 @@ internal object BytecodeAnalyzer {
      * @param reflectionForProjectClasses sledgehammer: register every project class with a
      *   public no-arg ctor. When true, takes precedence over the orphan rule (same registrations
      *   are a superset).
+     * @param targetJavaVersion the feature version of the JDK native-image runs on; multi-release
+     *   JARs are read for it (see [analyzeJar]). Required, so no caller falls back to base classes.
      */
     fun analyzeClasspath(
         files: Iterable<File>,
         projectClassDirs: Collection<File> = emptyList(),
         detectOrphanProjectClasses: Boolean = false,
         reflectionForProjectClasses: Boolean = false,
+        targetJavaVersion: Int,
     ): AnalysisResult {
+        val version = jarRuntimeVersion(targetJavaVersion)
         val needProjectFacts = detectOrphanProjectClasses || reflectionForProjectClasses
         val needReferences = detectOrphanProjectClasses // all-project path does not need refs
         if (!needProjectFacts) {
-            return analyzeClasspathLegacy(files)
+            return analyzeClasspathLegacy(files, version)
         }
 
         val projectDirSet =
@@ -99,7 +114,7 @@ internal object BytecodeAnalyzer {
                     }
                 }
                 file.isFile && file.name.endsWith(".jar") && file.exists() -> {
-                    val partial = analyzeJarInternal(file, collectReferences = needReferences)
+                    val partial = analyzeJarInternal(file, collectReferences = needReferences, version)
                     merged += partial.toResult()
                     if (needReferences) {
                         allReferenced += partial.referencedTypes
@@ -148,13 +163,17 @@ internal object BytecodeAnalyzer {
         return merged
     }
 
-    private fun analyzeClasspathLegacy(files: Iterable<File>): AnalysisResult {
+    private fun analyzeClasspathLegacy(
+        files: Iterable<File>,
+        version: Runtime.Version,
+    ): AnalysisResult {
         var merged = AnalysisResult()
         for (file in files) {
             merged = merged +
                 when {
                     file.isDirectory -> analyzeClassDir(file)
-                    file.isFile && file.name.endsWith(".jar") -> analyzeJar(file)
+                    file.isFile && file.name.endsWith(".jar") ->
+                        analyzeJarInternal(file, collectReferences = false, version).toResult()
                     else -> continue
                 }
         }
@@ -181,6 +200,7 @@ internal object BytecodeAnalyzer {
     private fun analyzeJarInternal(
         jarPath: File,
         collectReferences: Boolean,
+        version: Runtime.Version,
     ): PartialScan {
         if (!jarPath.exists() || !jarPath.name.endsWith(".jar")) {
             return PartialScan()
@@ -188,13 +208,17 @@ internal object BytecodeAnalyzer {
 
         val scan = JarScan()
         try {
-            JarFile(jarPath).use { jar ->
+            // Opened for the target JDK so that versionedStream() resolves each class of a
+            // multi-release JAR to the copy native-image compiles: a base class can declare
+            // natives its JDK 25 replacement no longer has (LWJGL's Upcalls.shutdown()), and
+            // registering a missing method fails the image build.
+            openVersionedJar(jarPath, version).use { jar ->
                 val serviceResult = ServiceLoaderDetector.detect(jar)
                 scan.serviceLoaderEntries.addAll(serviceResult.reflectionEntries)
                 scan.resourcePatterns.addAll(serviceResult.resourcePatterns)
                 scan.resourcePatterns.addAll(JarResourceDetector.detect(jar))
 
-                for (entry in jar.entries()) {
+                for (entry in jar.versionedClassEntries()) {
                     val classBytes = readClassEntry(jar, entry) ?: continue
                     scan.addClass(entry.name.removeSuffix(".class"), classBytes, collectReferences)
                 }
@@ -460,18 +484,16 @@ internal object BytecodeAnalyzer {
 private fun File.isWithinAny(dirs: Set<File>): Boolean =
     dirs.any { dir -> this == dir || toPath().startsWith(dir.toPath()) }
 
-/** Bytes of a `.class` entry outside `META-INF/`, or null for any other entry or an unreadable one. */
+/** Bytes of a class entry, or null when it cannot be read. */
 private fun readClassEntry(
     jar: JarFile,
     entry: JarEntry,
-): ByteArray? {
-    if (!entry.name.endsWith(".class") || entry.name.startsWith("META-INF/")) return null
-    return try {
+): ByteArray? =
+    try {
         jar.getInputStream(entry).use { it.readBytes() }
     } catch (_: Exception) {
         null
     }
-}
 
 /** Null when ASM does not support the class file version. */
 private fun extractJniCallbackEntryOrNull(classBytes: ByteArray): JniEntry? =

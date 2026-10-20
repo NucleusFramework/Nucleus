@@ -766,6 +766,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     task.outputDir.set(staticMetadataDir)
                     task.detectOrphanProjectClasses.set(graalvm.detectOrphanProjectClasses)
                     task.reflectionForProjectClasses.set(graalvm.reflectionForProjectClasses)
+                    // The JDK native-image will actually run on, not the requested language version.
+                    task.targetJavaVersion.set(graalvmJavaLauncher.map(::javaFeatureVersion))
                     if (runtimeCfg != null) {
                         task.runtimeClasspath.from(runtimeCfg)
                     }
@@ -795,6 +797,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     task.group = NUCLEUS_TASK_GROUP
                     task.outputDir.set(libraryMetadataDir)
                     task.headless.set(graalvm.headless)
+                    task.targetJavaVersion.set(graalvmJavaLauncher.map(::javaFeatureVersion))
                     if (runtimeCfg != null) {
                         task.runtimeClasspath.from(runtimeCfg)
                     }
@@ -862,6 +865,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             if (runtimeCfg != null) {
                 task.runtimeClasspath.from(runtimeCfg)
             }
+            task.targetJavaVersion.set(graalvmJavaLauncher.map(::javaFeatureVersion))
             task.metadataRepoDirsFile.set(project.layout.file(metadataRepoDirsFile.map { it.asFile }))
             task.staticAnalysisDir.from(staticMetadataDir)
             task.staticAnalysisDir.from(libraryMetadataDir)
