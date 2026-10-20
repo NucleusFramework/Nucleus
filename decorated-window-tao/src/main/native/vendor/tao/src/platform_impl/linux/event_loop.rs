@@ -47,7 +47,9 @@ use super::{
   monitor::{self, MonitorHandle},
   taskbar, util,
   window::{
-    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, WindowId, WindowRequest,
+    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, is_system_decorated,
+    reports_content_space, WindowId,
+    WindowRequest,
   },
 };
 
@@ -360,6 +362,13 @@ impl<T: 'static> EventLoop<T> {
             // the request through the widget size request in that case.
             if window.is_resizable() {
               window.resize(w, h);
+            } else if let Some(child) = window.child().filter(|_| is_system_decorated(&window)) {
+              // Nucleus patch: the request is a content size. A toplevel size
+              // request counts GTK's own title bar and shadow (client-side
+              // decorations, GNOME); requesting it on the content child lets
+              // GTK add them around it. `gtk_window_resize` above already
+              // sizes the content.
+              child.set_size_request(w, h);
             } else {
               window.set_size_request(w, h);
             }
@@ -870,7 +879,7 @@ impl<T: 'static> EventLoop<T> {
               // GdkWindow coordinates to the toplevel, then shift into
               // content-area coordinates so the embedder's (0,0) stays the
               // visible window corner.
-              let (x, y) = if is_csd_hidden_titlebar(window) {
+              let (x, y) = if reports_content_space(window) {
                 let (x, y) = event_coords_to_toplevel(window, crossing.window(), x, y);
                 let (cx, cy, _, _) = content_geometry(window);
                 (x - cx as f64, y - cy as f64)
@@ -906,7 +915,7 @@ impl<T: 'static> EventLoop<T> {
                 // PATCH(nucleus): hidden-titlebar CSD — translate from
                 // decorated-surface to content-area coordinates (see the
                 // crossing handler above).
-                let (x, y) = if is_csd_hidden_titlebar(window) {
+                let (x, y) = if reports_content_space(window) {
                   let (x, y) = event_coords_to_toplevel(window, motion.window(), x, y);
                   let (cx, cy, _, _) = content_geometry(window);
                   (x - cx as f64, y - cy as f64)

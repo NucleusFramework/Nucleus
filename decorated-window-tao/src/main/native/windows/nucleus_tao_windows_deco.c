@@ -1178,6 +1178,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBor
     if (!hwnd) return;
     DecoState *state = getState(hwnd);
     if (!state) return;
+    /* A system frame (#841) is real non-client area, never a contour to hide. */
+    if (state->nativeFrame) return;
     BOOL wanted = borderless ? TRUE : FALSE;
     state->borderlessChrome = wanted;
     /* Backdrop sheet-of-glass would re-arm frame extension + shadow. */
