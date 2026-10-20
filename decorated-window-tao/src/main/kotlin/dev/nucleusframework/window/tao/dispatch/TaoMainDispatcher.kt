@@ -273,6 +273,54 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
     /** Drains everything currently pending. New blocks dispatched while
      *  draining run on the next pump (no recursion). */
     fun pump() {
+        drainPending()
+        val pumpEndNs = System.nanoTime()
+        // Open the gate so the next dispatch can re-arm. Order matters:
+        // we open AFTER the drain so any re-dispatches done by the running
+        // blocks above do not double-up the wake — they're already in
+        // pending and will be picked up by either this pump cycle's
+        // remaining iterations or the next one.
+        wakePending.set(false)
+        // Blocks added during drain need a fresh wake to schedule the next
+        // pump. Throttle the re-arm: if we just pumped synchronously and
+        // pending is non-empty due to a re-dispatch, defer the next wake
+        // by `PUMP_RE_ARM_INTERVAL_NS` instead of waking immediately. External
+        // dispatches arriving in the meantime go through the regular
+        // [dispatch] path and wake the loop straight away.
+        val sinceLast = pumpEndNs - lastPumpNs
+        lastPumpNs = pumpEndNs
+        if (!pending.isEmpty() &&
+            NativeTaoBridge.isLoaded &&
+            wakePending.compareAndSet(false, true)
+        ) {
+            if (sinceLast < PUMP_RE_ARM_INTERVAL_NS) {
+                val delayNs = PUMP_RE_ARM_INTERVAL_NS - sinceLast
+                pumpScheduler.schedule(
+                    { if (NativeTaoBridge.isLoaded) NativeTaoBridge.nativeWake() },
+                    delayNs,
+                    TimeUnit.NANOSECONDS,
+                )
+            } else {
+                NativeTaoBridge.nativeWake()
+            }
+        }
+    }
+
+    /**
+     * Runs what is pending like [pump], without touching the wake gate: for a
+     * caller outside the loop's own drain (a Windows session-end settle, #751)
+     * that may call it many times in a row. [pump] reopens the gate and arms a
+     * wake whenever work is left; called in a loop while an animation keeps the
+     * queue busy, every call left one more wake behind, each of which re-armed
+     * itself from then on — the loop then pumped many times per frame and
+     * posted messages (a `WM_CLOSE`) waited behind them. Work left over here is
+     * picked up by the wake already in flight, or armed by the next dispatch.
+     */
+    fun drain() {
+        drainPending()
+    }
+
+    private fun drainPending() {
         var ranAnything = false
         // Drain across multiple passes within this single pump so blocks that the
         // running blocks re-dispatch synchronously (the next hops of a coroutine
@@ -322,36 +370,6 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         // to pump, freezing animations between input events.
         if (ranAnything) {
             Snapshot.sendApplyNotifications()
-        }
-        val pumpEndNs = System.nanoTime()
-        // Open the gate so the next dispatch can re-arm. Order matters:
-        // we open AFTER the drain so any re-dispatches done by the running
-        // blocks above do not double-up the wake — they're already in
-        // pending and will be picked up by either this pump cycle's
-        // remaining iterations or the next one.
-        wakePending.set(false)
-        // Blocks added during drain need a fresh wake to schedule the next
-        // pump. Throttle the re-arm: if we just pumped synchronously and
-        // pending is non-empty due to a re-dispatch, defer the next wake
-        // by `PUMP_RE_ARM_INTERVAL_NS` instead of waking immediately. External
-        // dispatches arriving in the meantime go through the regular
-        // [dispatch] path and wake the loop straight away.
-        val sinceLast = pumpEndNs - lastPumpNs
-        lastPumpNs = pumpEndNs
-        if (!pending.isEmpty() &&
-            NativeTaoBridge.isLoaded &&
-            wakePending.compareAndSet(false, true)
-        ) {
-            if (sinceLast < PUMP_RE_ARM_INTERVAL_NS) {
-                val delayNs = PUMP_RE_ARM_INTERVAL_NS - sinceLast
-                pumpScheduler.schedule(
-                    { if (NativeTaoBridge.isLoaded) NativeTaoBridge.nativeWake() },
-                    delayNs,
-                    TimeUnit.NANOSECONDS,
-                )
-            } else {
-                NativeTaoBridge.nativeWake()
-            }
         }
     }
 }

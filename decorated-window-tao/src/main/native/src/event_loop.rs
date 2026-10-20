@@ -247,6 +247,14 @@ pub(crate) fn run_event_loop_blocking() {
     // Modal resize/move loop → VSync toggle (see on_tao_size_move).
     #[cfg(target_os = "windows")]
     tao::platform::windows::set_size_move_hook(on_tao_size_move);
+    // Logoff / restart / shutdown / Restart Manager → close requests (#751).
+    #[cfg(target_os = "windows")]
+    tao::platform::windows::set_end_session_hooks(
+        crate::platform::windows::end_session::on_query_end_session,
+        crate::platform::windows::end_session::on_end_session,
+    );
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::install();
     #[cfg(target_os = "macos")]
     tao::platform::macos::set_minimized_hook(on_tao_minimized);
     // Tao's cursor rects draw from Nucleus' cursor table (see tao_cursor_hook).
@@ -962,6 +970,14 @@ pub(crate) fn run_event_loop_blocking() {
                 UserEvent::QuitRequested => {
                     dispatch(0, EVENT_QUIT_REQUESTED, 0, 0);
                 }
+                #[cfg(target_os = "windows")]
+                UserEvent::QueryEndSession => {
+                    crate::platform::windows::end_session::on_deferred_query_end_session();
+                }
+                #[cfg(target_os = "windows")]
+                UserEvent::SessionEndCancelled => {
+                    crate::platform::windows::end_session::on_deferred_session_end_cancelled();
+                }
                 UserEvent::Exit => {
                     *control_flow = ControlFlow::Exit;
                 }
@@ -1306,6 +1322,10 @@ pub(crate) fn run_event_loop_blocking() {
             _ => {}
         }
     });
+    // Nobody answers a session-end query from here on (#751): AWT's forwards are
+    // answered without the loop, and one already waiting on this thread is served.
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::loop_ended();
     #[cfg(target_os = "linux")]
     flush_displays_after_loop();
 }
