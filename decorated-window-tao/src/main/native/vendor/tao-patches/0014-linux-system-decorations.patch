@@ -1,0 +1,183 @@
+--- a/src/platform/unix.rs
++++ b/src/platform/unix.rs
+@@ -202,6 +202,14 @@ pub trait WindowBuilderExtUnix {
+   /// (native GTK drop shadow with no visible titlebar). Wayland only; ignored
+   /// on X11. See `PlatformSpecificWindowBuilderAttributes::csd_hidden_titlebar`.
+   fn with_csd_hidden_titlebar(self, csd: bool) -> WindowBuilder;
++
++  /// Nucleus patch: leave the decorations to GTK and the compositor. On
++  /// Wayland the window gets no tao `WlHeader`, so GTK 3 asks for server-side
++  /// decorations where the compositor offers them (KWin's
++  /// `org_kde_kwin_server_decoration`) and otherwise draws its own default
++  /// client-side title bar (GNOME). On X11 the window manager decorates it
++  /// either way. Requires `with_decorations(true)`.
++  fn with_system_decorations(self, system: bool) -> WindowBuilder;
+ }
+ 
+ impl WindowBuilderExtUnix for WindowBuilder {
+@@ -256,6 +264,11 @@ impl WindowBuilderExtUnix for WindowBuilder {
+     self.platform_specific.csd_hidden_titlebar = csd;
+     self
+   }
++
++  fn with_system_decorations(mut self, system: bool) -> WindowBuilder {
++    self.platform_specific.system_decorations = system;
++    self
++  }
+ }
+ 
+ /// Additional methods on `EventLoopWindowTarget` that are specific to Unix.
+--- a/src/platform_impl/linux/event_loop.rs
++++ b/src/platform_impl/linux/event_loop.rs
+@@ -47,7 +47,9 @@ use super::{
+   monitor::{self, MonitorHandle},
+   taskbar, util,
+   window::{
+-    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, WindowId, WindowRequest,
++    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, is_system_decorated,
++    reports_content_space, WindowId,
++    WindowRequest,
+   },
+ };
+ 
+@@ -360,6 +362,13 @@ impl<T: 'static> EventLoop<T> {
+             // the request through the widget size request in that case.
+             if window.is_resizable() {
+               window.resize(w, h);
++            } else if let Some(child) = window.child().filter(|_| is_system_decorated(&window)) {
++              // Nucleus patch: the request is a content size. A toplevel size
++              // request counts GTK's own title bar and shadow (client-side
++              // decorations, GNOME); requesting it on the content child lets
++              // GTK add them around it. `gtk_window_resize` above already
++              // sizes the content.
++              child.set_size_request(w, h);
+             } else {
+               window.set_size_request(w, h);
+             }
+@@ -870,7 +879,7 @@ impl<T: 'static> EventLoop<T> {
+               // GdkWindow coordinates to the toplevel, then shift into
+               // content-area coordinates so the embedder's (0,0) stays the
+               // visible window corner.
+-              let (x, y) = if is_csd_hidden_titlebar(window) {
++              let (x, y) = if reports_content_space(window) {
+                 let (x, y) = event_coords_to_toplevel(window, crossing.window(), x, y);
+                 let (cx, cy, _, _) = content_geometry(window);
+                 (x - cx as f64, y - cy as f64)
+@@ -906,7 +915,7 @@ impl<T: 'static> EventLoop<T> {
+                 // PATCH(nucleus): hidden-titlebar CSD — translate from
+                 // decorated-surface to content-area coordinates (see the
+                 // crossing handler above).
+-                let (x, y) = if is_csd_hidden_titlebar(window) {
++                let (x, y) = if reports_content_space(window) {
+                   let (x, y) = event_coords_to_toplevel(window, motion.window(), x, y);
+                   let (cx, cy, _, _) = content_geometry(window);
+                   (x - cx as f64, y - cy as f64)
+--- a/src/platform_impl/linux/mod.rs
++++ b/src/platform_impl/linux/mod.rs
+@@ -68,6 +68,9 @@ pub struct PlatformSpecificWindowBuilderAttributes {
+   /// on X11 the EGL embedder renders straight into the toplevel, which is
+   /// incompatible with GTK-drawn frame pixels, so the flag is ignored there.
+   pub csd_hidden_titlebar: bool,
++  /// Nucleus patch: no tao `WlHeader` on Wayland, so GTK 3 picks server-side
++  /// decorations where offered and draws its default title bar otherwise.
++  pub system_decorations: bool,
+ }
+ 
+ impl Default for PlatformSpecificWindowBuilderAttributes {
+@@ -83,6 +86,7 @@ impl Default for PlatformSpecificWindowBuilderAttributes {
+       default_vbox: true,
+       popup_transient_for: None,
+       csd_hidden_titlebar: false,
++      system_decorations: false,
+     }
+   }
+ }
+--- a/src/platform_impl/linux/window.rs
++++ b/src/platform_impl/linux/window.rs
+@@ -86,6 +86,28 @@ pub(crate) fn is_csd_hidden_titlebar<W: IsA<gtk::Window>>(window: &W) -> bool {
+   }
+ }
+ 
++/// PATCH(nucleus): whether the window was built with
++/// `WindowBuilderExtUnix::with_system_decorations`.
++pub(crate) fn is_system_decorated<W: IsA<gtk::Window>>(window: &W) -> bool {
++  unsafe {
++    window
++      .as_ref()
++      .data::<bool>("nucleus_system_decorations")
++      .map(|ptr| *ptr.as_ref())
++      .unwrap_or(false)
++  }
++}
++
++/// PATCH(nucleus): whether sizes and pointer positions are reported in the
++/// content area's own space rather than the toplevel's. True for the
++/// hidden-titlebar CSD (shadow ring around the content) and for system
++/// decorations, where GTK may draw its own title bar and shadow on Wayland
++/// (GNOME). Under server-side or X11 window-manager decorations the content
++/// fills the toplevel, so the mapping is the identity there.
++pub(crate) fn reports_content_space<W: IsA<gtk::Window>>(window: &W) -> bool {
++  is_csd_hidden_titlebar(window) || is_system_decorated(window)
++}
++
+ /// PATCH(nucleus): content-area geometry of a toplevel, in toplevel-widget
+ /// logical coordinates: `(x, y, w, h)` of the child (default vbox) GTK
+ /// allocated inside the client-side decorations. For a hidden-titlebar CSD
+@@ -157,7 +179,7 @@ pub(crate) fn configure_client_size<W: IsA<gtk::Window>>(
+   event_w: u32,
+   event_h: u32,
+ ) -> (u32, u32) {
+-  if !is_csd_hidden_titlebar(window) {
++  if !reports_content_space(window) {
+     return (event_w, event_h);
+   }
+   let widget = window.as_ref();
+@@ -249,6 +271,18 @@ impl Window {
+           // translation) and by the content-geometry accessors below.
+           window.set_data("nucleus_csd_hidden_titlebar", true);
+         }
++      } else if pl_attribs.system_decorations {
++        // Nucleus patch: system decorations install no custom title bar.
++        // `set_titlebar` latches CSD for good, which would stop GTK from
++        // negotiating server-side decorations with KWin; without it GTK 3
++        // asks for them and draws its own default title bar where the
++        // compositor refuses (GNOME).
++        unsafe {
++          // Read back by `reports_content_space`: GTK's own title bar and
++          // shadow (GNOME on Wayland) sit around the content like the hidden
++          // header's ring does.
++          window.set_data("nucleus_system_decorations", true);
++        }
+       } else if is_wayland {
+         WlHeader::setup(&window, &attributes.title);
+       }
+@@ -274,7 +308,13 @@ impl Window {
+     // 200×40 overlay came up 200×200. Pin the requested size through the
+     // widget size request (the only sizing channel GTK honours when
+     // `resizable == false`). Applies to both X11 and Wayland.
+-    if !attributes.resizable && !attributes.maximized {
++    // Nucleus patch: a system-decorated window (GTK's own title bar and shadow
++    // on GNOME) takes the request on its content box instead, once that exists
++    // below: a toplevel size request counts the decorations, so the content
++    // would come up a title bar too short.
++    let content_size_request =
++      !attributes.resizable && !attributes.maximized && pl_attribs.system_decorations;
++    if !attributes.resizable && !attributes.maximized && !content_size_request {
+       window.set_size_request(width, height);
+     }
+ 
+@@ -342,8 +382,14 @@ impl Window {
+     let default_vbox = if pl_attribs.default_vbox {
+       let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
+       window.add(&box_);
++      if content_size_request {
++        box_.set_size_request(width, height);
++      }
+       Some(box_)
+     } else {
++      if content_size_request {
++        window.set_size_request(width, height);
++      }
+       None
+     };
+ 

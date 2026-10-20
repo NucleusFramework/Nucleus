@@ -159,6 +159,14 @@ typedef struct {
      * window still shows a 1px system contour (themed border, often black
      * when the clear colour is alpha-0). */
     BOOL    borderlessChrome;
+    /* System decorations (#841, nativeInstallSystemFrame): the window keeps
+     * the Win32 caption and frame. The subclass then stays out of non-client
+     * work — no caption removal in WM_NCCALCSIZE, default WM_NCHITTEST (so
+     * native Snap Layouts, drag and double-click), no NC-mouse re-posting, no
+     * WS_SYSMENU strip, Alt+Space reaches the system menu, and DWM keeps its
+     * default caption and border colours. Fullscreen, the startup erase and
+     * the immersive dark mode stay. */
+    BOOL    nativeFrame;
 } DecoState;
 
 /* Order inside DecoState.captionButtonRects. */
@@ -417,6 +425,18 @@ static void applyCaptionColors(HWND hwnd, DecoState *state) {
         border = (COLORREF)DWMWA_COLOR_NONE;
         thickness = 0;
         corner = NUCLEUS_DWMWCP_DONOTROUND;
+    } else if (state && state->nativeFrame) {
+        /* System decorations: the caption, border and corners are the
+         * system's own. Only the immersive dark mode (set elsewhere) tints
+         * them, like any native window. */
+        caption = (COLORREF)DWMWA_COLOR_DEFAULT;
+        border = (COLORREF)DWMWA_COLOR_DEFAULT;
+        DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
+        DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
+        int defaultCorner = 0; /* DWMWCP_DEFAULT */
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                              &defaultCorner, sizeof(defaultCorner));
+        return;
     } else if (!backdrop) {
         border = (state && state->hasBorderColor)
             ? state->borderColor
@@ -447,7 +467,10 @@ static void applyFrameMargins(HWND hwnd, DecoState *state) {
     BOOL sheet = state && state->sheetOfGlass && !borderless;
     BOOL fs = state && state->isFullscreen;
     MARGINS margins;
-    if (borderless) {
+    /* A system frame already has its shadow: no 1px bottom band. A backdrop
+     * still takes the sheet of glass, the standard native-frame Mica setup. */
+    BOOL nativeFrame = state && state->nativeFrame;
+    if (borderless || (nativeFrame && !sheet)) {
         margins.cxLeftWidth = margins.cxRightWidth = 0;
         margins.cyTopHeight = margins.cyBottomHeight = 0;
     } else {
@@ -597,6 +620,40 @@ static LRESULT CALLBACK decoWndProc(
     DecoState *state = getState(hwnd);
     if (!state) return DefWindowProcW(hwnd, msg, wParam, lParam);
 
+    /* System decorations (#841): the non-client area is the system's. Hand it
+     * to Tao's proc (DefWindowProc for a decorated window), which gives the
+     * native caption, drag, double-click, resize frame and Snap Layouts. Only
+     * fullscreen still owns the frame: there the whole window is client. */
+    if (state->nativeFrame) {
+        switch (msg) {
+        case WM_NCCALCSIZE:
+            if (wParam && state->isFullscreen) return 0;
+            return CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+        case WM_NCHITTEST:
+        case WM_NCLBUTTONDOWN:
+        case WM_NCLBUTTONUP:
+        case WM_NCLBUTTONDBLCLK:
+        case WM_NCMOUSEMOVE:
+        case WM_NCMOUSELEAVE:
+        case WM_MENUCHAR:
+            return CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+        case WM_SYSCOMMAND:
+            /* Alt+Space opens the system menu (lParam = the space key). A bare
+             * Alt / F10 (lParam 0) would only enter menu mode for a menu bar
+             * this window does not have, freezing the pump like on the custom
+             * frame below, so it stays suppressed. */
+            if ((wParam & 0xFFF0) == SC_KEYMENU) {
+                if (lParam == ' ') {
+                    return CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+                }
+                return 0;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
     /* Touch title-bar drag → Aero Snap.
      *
      * Tao routes touch through WM_POINTER and consumes it, so Windows never
@@ -614,7 +671,7 @@ static LRESULT CALLBACK decoWndProc(
      * interaction is consumed, Compose never receives a touch press for that
      * contact (no stuck pointer); title-bar content/buttons still work via the
      * synthesised mouse click. */
-    if (!state->titleBarDragArmed && msg == WM_POINTERDOWN) {
+    if (!state->nativeFrame && !state->titleBarDragArmed && msg == WM_POINTERDOWN) {
         POINT pt; pt.x = (int)(short)LOWORD(lParam); pt.y = (int)(short)HIWORD(lParam);
         ScreenToClient(hwnd, &pt);
         if (pt.y >= 0 && pt.y < state->titleBarHeightPx) {
@@ -661,7 +718,7 @@ static LRESULT CALLBACK decoWndProc(
     }
 
     case WM_STYLECHANGING:
-        if (wParam == GWL_STYLE && state->backdropActive) {
+        if (wParam == GWL_STYLE && state->backdropActive && !state->nativeFrame) {
             STYLESTRUCT *ss = (STYLESTRUCT *)lParam;
             ss->styleNew &= ~(DWORD)WS_SYSMENU;
         }
@@ -985,12 +1042,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 /*  Class:   NativeTaoWindowsDecoBridge                                */
 /* ================================================================== */
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
-    JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
+static void installDecoration(JNIEnv *env, HWND hwnd, int titleBarHeightPx, BOOL nativeFrame)
 {
-    (void)clazz;
-    HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd || !IsWindow(hwnd)) return;
 
     /* Prime the native → JVM upcall for the fullscreen-transition prepare:
@@ -999,7 +1052,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
 
     DecoState *existing = getState(hwnd);
     if (existing) {
-        existing->titleBarHeightPx = (int)titleBarHeightPx;
+        existing->titleBarHeightPx = existing->nativeFrame ? 0 : titleBarHeightPx;
         return;
     }
 
@@ -1007,7 +1060,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
         GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(DecoState));
     if (!state) return;
 
-    state->titleBarHeightPx = (int)titleBarHeightPx;
+    state->nativeFrame = nativeFrame;
+    state->titleBarHeightPx = nativeFrame ? 0 : titleBarHeightPx;
     state->bgColor = RGB(255, 255, 255);
     state->startupBackgroundErase = TRUE;
 
@@ -1017,16 +1071,53 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
         hwnd, GWLP_WNDPROC, (LONG_PTR)decoWndProc);
     state->originalWndProc = (WNDPROC)prevWndProc;
 
-    /* Extend bottom by 1px to keep DWM shadow without enabling glass over the
-     * client area. With {0,0,0,1} DWM treats the client area as opaque, so
-     * transparent pixels render as black (invisible on dark themes). */
-    MARGINS margins = {0, 0, 0, 1};
-    DwmExtendFrameIntoClientArea(hwnd, &margins);
+    /* Custom frame: extend bottom by 1px to keep DWM shadow without enabling
+     * glass over the client area. With {0,0,0,1} DWM treats the client area as
+     * opaque, so transparent pixels render as black (invisible on dark
+     * themes). A system frame has its own shadow (applyFrameMargins). */
+    applyFrameMargins(hwnd, state);
     applyCaptionColors(hwnd, state);
 
     SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
         SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
         SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
+{
+    (void)clazz;
+    installDecoration(env, (HWND)(uintptr_t)hwndLong, (int)titleBarHeightPx, FALSE);
+}
+
+/* The client area's size in physical pixels as [width, height], or NULL. A
+ * maximized system-framed window (#841) keeps its caption, so its client is
+ * not the work area the custom-frame path assumes for the first frame. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetClientSize(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    RECT rc;
+    if (!hwnd || !IsWindow(hwnd) || !GetClientRect(hwnd, &rc)) return NULL;
+    if (rc.right <= 0 || rc.bottom <= 0) return NULL;
+    jint size[2] = { (jint)rc.right, (jint)rc.bottom };
+    jintArray out = (*env)->NewIntArray(env, 2);
+    if (!out) return NULL;
+    (*env)->SetIntArrayRegion(env, out, 0, 2, size);
+    return out;
+}
+
+/* System decorations (#841): the subclass for a window that keeps the Win32
+ * caption and frame. See DecoState.nativeFrame. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallSystemFrame(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)clazz;
+    installDecoration(env, (HWND)(uintptr_t)hwndLong, 0, TRUE);
 }
 
 JNIEXPORT void JNICALL
@@ -1060,7 +1151,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetTit
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd) return;
     DecoState *state = getState(hwnd);
-    if (state) state->titleBarHeightPx = (int)heightPx;
+    /* A system frame has no Compose caption zone. */
+    if (state && !state->nativeFrame) state->titleBarHeightPx = (int)heightPx;
 }
 
 /**
@@ -1086,6 +1178,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBor
     if (!hwnd) return;
     DecoState *state = getState(hwnd);
     if (!state) return;
+    /* A system frame (#841) is real non-client area, never a contour to hide. */
+    if (state->nativeFrame) return;
     BOOL wanted = borderless ? TRUE : FALSE;
     state->borderlessChrome = wanted;
     /* Backdrop sheet-of-glass would re-arm frame extension + shadow. */
@@ -1310,7 +1404,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBac
      * offset from the app-drawn ones, and intercepts their hover; stripping
      * the bit removes them while the backdrop keeps showing. Restored when
      * the backdrop goes. Costs the system menu (Alt+Space) while active. */
-    if (state) {
+    /* A system frame (#841) draws real caption buttons from WS_SYSMENU: keep it. */
+    if (state && !state->nativeFrame) {
         LONG_PTR winStyle = GetWindowLongPtrW(hwnd, GWL_STYLE);
         if (sheetOfGlass && (winStyle & WS_SYSMENU)) {
             SetWindowLongPtrW(hwnd, GWL_STYLE, winStyle & ~(LONG_PTR)WS_SYSMENU);
@@ -1419,22 +1514,26 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetSta
  * normal case (WM_NCCALCSIZE keeps the full top and the default side/bottom
  * frame); the maximized case approximates with the work area. */
 static void estimateRestoredClientSize(HWND hwnd, DecoState *state, int *w, int *h) {
+    UINT dpi = getDpi(hwnd);
+    /* A system frame (#841) keeps its caption above the client. */
+    int caption = state->nativeFrame ? getSystemMetrics(SM_CYCAPTION, dpi) : 0;
     if (state->savedPlacement.showCmd == SW_SHOWMAXIMIZED) {
         HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi;
         mi.cbSize = sizeof(mi);
         GetMonitorInfoW(hMon, &mi);
         *w = mi.rcWork.right - mi.rcWork.left;
-        *h = mi.rcWork.bottom - mi.rcWork.top;
+        *h = mi.rcWork.bottom - mi.rcWork.top - caption;
     } else {
-        UINT dpi = getDpi(hwnd);
         int fx = getSystemMetrics(SM_CXSIZEFRAME, dpi)
                + getSystemMetrics(SM_CXPADDEDBORDERWIDTH, dpi);
         int fy = getSystemMetrics(SM_CYSIZEFRAME, dpi)
                + getSystemMetrics(SM_CXPADDEDBORDERWIDTH, dpi);
         RECT nr = state->savedPlacement.rcNormalPosition;
         *w = (nr.right - nr.left) - 2 * fx;
-        *h = (nr.bottom - nr.top) - fy;
+        /* The custom frame keeps the full top (no top frame, no caption); a
+         * system frame has both. */
+        *h = (nr.bottom - nr.top) - (state->nativeFrame ? 2 * fy + caption : fy);
     }
 }
 

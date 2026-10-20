@@ -81,12 +81,15 @@ public fun DecoratedDialogScope.DialogTitleBar(
     // content but loses the close button and the room reserved for controls,
     // and takes no room at all when nothing is left (its measured height,
     // then 0, is what reaches [heightHolder]).
-    val decorationSuppressed = taoWindow.isDecorationSuppressed
+    // System decorations (#841) are treated the same way: the platform draws
+    // the title bar and its buttons.
+    val systemDecorations = taoWindow.hasSystemDecorations
+    val decorationSuppressed = taoWindow.isDecorationSuppressed || systemDecorations
     if (!decorationSuppressed) SideEffect { heightHolder.value = style.metrics.height.value }
 
     // macOS: flip the AppKit traffic-lights to the right edge when RTL is
     // active. Same path as the windowed [TitleBar].
-    if (Platform.Current == Platform.MacOS) {
+    if (Platform.Current == Platform.MacOS && !systemDecorations) {
         LaunchedEffect(taoWindow, controlIsRtl) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
             if (nsView != 0L && NativeMetalBridge.isLoaded) {

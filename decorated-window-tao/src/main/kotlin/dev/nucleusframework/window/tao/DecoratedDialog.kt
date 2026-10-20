@@ -71,6 +71,12 @@ public fun ApplicationScope.DecoratedDialog(
     // dialog content sees the parent window's theme/user locals without
     // hijacking popup routing. See [LocalTaoCompositionLocalContextBridge].
     compositionLocalContext: CompositionLocalContext? = null,
+    /**
+     * Let the platform draw the title bar and frame (#841); see
+     * [DecoratedWindow]. [dev.nucleusframework.window.DialogTitleBar] then
+     * shows no close button and reserves no room for it.
+     */
+    systemDecorations: Boolean = false,
     content: @Composable @UiComposable TaoDecoratedDialogScope.() -> Unit,
 ) {
     // Captured in the parent's composition: `LocalTaoWindow.current` here is
@@ -142,6 +148,7 @@ public fun ApplicationScope.DecoratedDialog(
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
         compositionLocalContext = compositionLocalContext,
+        systemDecorations = systemDecorations,
         content = {
             val windowScope = this
             val dialogScope =

@@ -251,6 +251,11 @@ internal object NativeTaoBridge {
         // when no X server is reachable — callers check the surface kind
         // (`nativeLinuxHandles`) rather than a return value.
         forceX11: Boolean,
+        // The platform decorates the window (#841). Linux: no custom Wayland
+        // header bar, so GTK negotiates KWin server-side decorations or draws
+        // its own default title bar. Needs `decorations`. Windows and macOS
+        // read only `decorations` here; their chrome is configured later.
+        systemDecorations: Boolean,
     )
 
     @JvmStatic

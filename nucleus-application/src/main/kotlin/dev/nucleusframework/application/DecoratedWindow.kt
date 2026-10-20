@@ -130,6 +130,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
                 minimumSize = minimumSize,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
+                systemDecorations = false,
                 content = content,
             )
     }
@@ -273,6 +274,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
                 maxSize = maxSize,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
+                systemDecorations = false,
                 content = content,
             )
     }

@@ -62,6 +62,7 @@ internal object TaoDecoratedWindowAdapter {
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
+        systemDecorations: Boolean,
         content: @Composable NucleusDecoratedWindowScope.() -> Unit,
     ) {
         // Tao opens a fresh ComposeScene per window; CompositionLocals from
@@ -117,6 +118,7 @@ internal object TaoDecoratedWindowAdapter {
                 // ("[DecoratedDialog] forwards its parent's locals here") — this
                 // adapter is the one top-level-window caller that never did.
                 compositionLocalContext = outerLocals,
+                systemDecorations = systemDecorations,
             ) {
                 bindNucleusContent(outerLocals, parentLayoutDirection, nativeContextMenu, content)
             }
@@ -152,6 +154,7 @@ internal object TaoDecoratedWindowAdapter {
         maxSize: DpSize,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
+        systemDecorations: Boolean,
         content: @Composable NucleusDecoratedWindowScope.() -> Unit,
     ) {
         val outerLocals = currentCompositionLocalContext
@@ -183,6 +186,7 @@ internal object TaoDecoratedWindowAdapter {
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
                 compositionLocalContext = outerLocals,
+                systemDecorations = systemDecorations,
             ) {
                 bindNucleusContent(outerLocals, parentLayoutDirection, nativeContextMenu, content)
             }

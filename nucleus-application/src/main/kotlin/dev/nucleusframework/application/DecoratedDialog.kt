@@ -62,6 +62,7 @@ public fun NucleusApplicationScope.DecoratedDialog(
                 focusable = focusable,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
+                systemDecorations = false,
                 content = content,
             )
     }
@@ -147,6 +148,7 @@ public fun NucleusApplicationScope.DecoratedDialog(
                 maxSize = maxSize,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
+                systemDecorations = false,
                 content = content,
             )
     }

@@ -70,7 +70,10 @@ public fun DecoratedWindowScope.WindowScaffold(
     // Honour the marker modifier like `BasicTitleBar` does, so a scaffold-based
     // window can opt into the macOS 26 large corner radius without going
     // through the `MacOSStyle` window-creation parameter.
-    if (Platform.Current == Platform.MacOS && modifier.hasMacOSLargeCornerRadius()) {
+    if (Platform.Current == Platform.MacOS &&
+        modifier.hasMacOSLargeCornerRadius() &&
+        !taoWindow.hasSystemDecorations
+    ) {
         LaunchedEffect(taoWindow) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
             if (nsView != 0L && NativeMetalBridge.isLoaded) {
@@ -88,9 +91,13 @@ public fun DecoratedWindowScope.WindowScaffold(
     val controlDir = controlButtonsDirection.resolve()
     val controlIsRtl = controlDir == LayoutDirection.Rtl
 
+    // System decorations (#841): the platform draws the title bar and its
+    // buttons, so nothing here may reserve room for controls or drive them.
+    val systemDecorations = taoWindow.hasSystemDecorations
+
     // macOS: flip the AppKit traffic-lights to the right edge when RTL is
     // active — mirrors `BasicTitleBar`.
-    if (Platform.Current == Platform.MacOS) {
+    if (Platform.Current == Platform.MacOS && !systemDecorations) {
         LaunchedEffect(taoWindow, controlIsRtl) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
             if (nsView != 0L && NativeMetalBridge.isLoaded) {
@@ -117,7 +124,7 @@ public fun DecoratedWindowScope.WindowScaffold(
     val chromeInsets =
         WindowChromeInsets(
             controlsInsets =
-                if (hideBar || taoWindow.isDecorationSuppressed) {
+                if (hideBar || taoWindow.isDecorationSuppressed || systemDecorations) {
                     PaddingValues(0.dp)
                 } else {
                     titleBarPadding(
@@ -167,7 +174,7 @@ public fun DecoratedWindowScope.WindowScaffold(
     // restore-from-maximized anchor). In `Overlay` mode the bar floats over
     // the content but still occupies the same top band, so the same measured
     // height applies; a hidden bar reserves nothing.
-    if (Platform.Current == Platform.Windows) {
+    if (Platform.Current == Platform.Windows && !systemDecorations) {
         val captionPx = with(density) { chromeInsets.titleBarHeight.roundToPx() }
         LaunchedEffect(taoWindow, captionPx) {
             if (!NativeTaoWindowsDecoBridge.isLoaded) return@LaunchedEffect
