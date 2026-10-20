@@ -178,7 +178,7 @@ internal object MacOsGpuCacheReclaimHeadfulCases {
                 .downcallHandle(
                     objc.find("sel_registerName").orElseThrow(),
                     FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS),
-                ).invokeWithArguments(Arena.global().allocateFrom("currentAllocatedSize")) as MemorySegment
+                ).invokeWithArguments(cString("currentAllocatedSize")) as MemorySegment
         private val msgSend =
             linker.downcallHandle(
                 objc.find("objc_msgSend").orElseThrow(),
@@ -186,6 +186,19 @@ internal object MacOsGpuCacheReclaimHeadfulCases {
             )
 
         fun read(): Long = msgSend.invokeWithArguments(device, selector) as Long
+
+        /**
+         * NUL-terminated copy of [text]. By hand: `Arena.allocateFrom` is JDK 22+
+         * and its JDK 21 preview twin has another name, while the build may run
+         * on either.
+         */
+        private fun cString(text: String): MemorySegment {
+            val bytes = text.toByteArray(Charsets.US_ASCII)
+            val segment = Arena.global().allocate(bytes.size + 1L)
+            bytes.forEachIndexed { i, b -> segment.set(ValueLayout.JAVA_BYTE, i.toLong(), b) }
+            segment.set(ValueLayout.JAVA_BYTE, bytes.size.toLong(), 0)
+            return segment
+        }
     }
 
     private fun Long.mb(): Long = this / (1024 * 1024)
