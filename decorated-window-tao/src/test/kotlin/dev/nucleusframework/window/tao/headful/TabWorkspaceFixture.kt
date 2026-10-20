@@ -23,6 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -120,6 +123,14 @@ internal class TabWorkspaceFixture(
 
     /** How many hover cards have been composed over the run. */
     val hoverCardBuilds = mutableIntStateOf(0)
+
+    /**
+     * Sees every pointer event over a strip in the Initial pass, before the
+     * strip's own drag handle does — the place for a case to hold the event
+     * loop *between* a sample arriving and the drag acting on it. Runs on the
+     * event loop.
+     */
+    var onStripPointerEvent: ((PointerEvent) -> Unit)? = null
 
     /**
      * The card the strip is given when the fixture was built with
@@ -244,7 +255,18 @@ internal class TabWorkspaceFixture(
             },
             strip = {
                 CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
-                    TabStrip(hoverPreview = hoverCard)
+                    Box(
+                        Modifier.pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    onStripPointerEvent?.invoke(event)
+                                }
+                            }
+                        },
+                    ) {
+                        TabStrip(hoverPreview = hoverCard)
+                    }
                 }
             },
             // The app's window-level chrome: a strip of its own above the tab
