@@ -14,6 +14,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 
@@ -45,6 +46,11 @@ internal class TaoWindowsScrollConfig : ScrollConfig {
         event: PointerEvent,
         bounds: IntSize,
     ): Offset {
+        // A trackpad pan (#706) is already in pixels — stock configs answer
+        // the same (CMP-1610), which `transformable`'s Ctrl+pan zoom reads.
+        if (event.type == PointerEventType.PanMove) {
+            return -event.changes.fold(Offset.Zero) { acc, change -> acc + change.panOffset }
+        }
         val totalScrollDelta =
             event.changes.fold(Offset.Zero) { acc, change -> acc + change.scrollDelta }
         // WindowsWinUIConfig formula, negated for its sign convention (it
