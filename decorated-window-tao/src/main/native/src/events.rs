@@ -192,13 +192,14 @@ pub(crate) const EVENT_QUIT_REQUESTED: jint = 26;
 pub(crate) const EVENT_DECORATIONS_SUPPRESSED: jint = 27;
 // `a` = POINTER_KIND_*: the tool behind the cursor / button events that
 // follow (#827). Sent only when it changes, right before the first event of
-// the new tool, so the JVM keeps it as state like the modifiers. Linux only
-// for now: GDK names a tablet pen or eraser as the source of its events.
+// the new tool, so the JVM keeps it as state like the modifiers. Linux: GDK
+// names a tablet pen or eraser as the source of its events; macOS: mouse
+// events with the `TabletPoint` subtype, the tool named by proximity.
 pub(crate) const EVENT_POINTER_KIND: jint = 28;
 pub(crate) const POINTER_KIND_MOUSE: jint = 0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) const POINTER_KIND_STYLUS: jint = 1;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) const POINTER_KIND_ERASER: jint = 2;
 
 // Sub-pixel precision through the JNI int payload.
@@ -726,7 +727,16 @@ pub(crate) fn pointer_kind_code(device_id: DeviceId) -> jint {
             _ => POINTER_KIND_MOUSE,
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        use tao::platform::macos::{DeviceIdExtMacOS, PointerSource};
+        match device_id.pointer_source() {
+            PointerSource::Pen => POINTER_KIND_STYLUS,
+            PointerSource::Eraser => POINTER_KIND_ERASER,
+            _ => POINTER_KIND_MOUSE,
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = device_id;
         POINTER_KIND_MOUSE

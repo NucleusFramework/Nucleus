@@ -306,7 +306,7 @@ public class TaoWindow internal constructor(
 
     /**
      * Tool behind the cursor and button events: the mouse, or a tablet pen
-     * and its eraser end where the platform names them (#827, Linux).
+     * and its eraser end where the platform names them (#827, Linux and macOS).
      */
     @Volatile
     internal var pointerType: PointerType = PointerType.Mouse

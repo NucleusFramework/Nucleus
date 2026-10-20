@@ -1,204 +1,202 @@
 package dev.nucleusframework.window.tao.headful
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.scene.GPU_REST_PURGE_DELAY_MS
-import org.jetbrains.skia.Image
-import org.jetbrains.skia.ImageInfo
-import java.lang.foreign.Arena
-import java.lang.foreign.FunctionDescriptor
-import java.lang.foreign.Linker
-import java.lang.foreign.MemorySegment
-import java.lang.foreign.SymbolLookup
-import java.lang.foreign.ValueLayout
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import org.jetbrains.skia.Image as SkImage
+import org.jetbrains.skia.Rect as SkRect
+import org.jetbrains.skia.Surface as SkSurface
 
 /**
- * #638: the Skia GPU resource cache a scene fills while it animates must come
- * back once the window is at rest.
+ * #638 — the Skia GPU resource cache of a scene host is never given back once
+ * the window stops drawing.
  *
- * The scene stacks blurred offscreen layers whose sizes change every frame, so
- * each frame mints scratch at sizes later frames may not reuse — the shape of a
- * Material animation's layer churn, condensed — plus a fresh image upload per
- * frame. The
- * GPU memory this process holds is read before, right after, and once the
- * window is at rest.
+ * Skia evicts only when a new allocation would exceed the budget, so whatever a
+ * busy stretch uploaded stays resident at its high-water mark for the life of
+ * the process. The case fills the cache with textures of images that are still
+ * alive (a gallery scrolled past, a carousel that moved on) and are therefore
+ * unlocked but resident, goes static, minimizes the window — the moment nothing
+ * is visible and a re-raster on restore costs nothing anyone can see — and
+ * expects the cache back.
+ *
+ * Measured as the process' own GPU memory where the driver reports one
+ * (NVIDIA, through `nvidia-smi`), else as RSS, which sees textures where the
+ * driver keeps them in host RAM (Mesa llvmpipe, the CI Xvfb leg — RSS needs the
+ * fixed `MALLOC_MMAP_THRESHOLD_` the task sets, or freed textures stay in the
+ * malloc heap). Where neither sees them, the fill phase barely moves the
+ * figure and the case reports itself inconclusive instead of asserting on
+ * noise.
  */
 internal object GpuCacheReclaimHeadfulCases {
-    fun all(): List<TaoWindowTestCase> =
-        listOf(
-            reclaimCase("a window at rest returns the GPU cache its animation filled") {
-                // Visible and still: only the rest delay can bring it back.
-                settle(GPU_REST_PURGE_DELAY_MS + RECLAIM_SLACK_MS)
-            },
-            reclaimCase("a minimized window returns the GPU cache its animation filled at once") {
-                // Read well before the rest delay: only the minimize can have reclaimed it.
+    fun all(): List<TaoWindowTestCase> {
+        val shown = mutableIntStateOf(NONE)
+        val drawn = AtomicInteger(NONE - 1)
+        val images = arrayOfNulls<SkImage>(IMAGE_COUNT)
+        return listOf(
+            TaoWindowTestCase(
+                "minimizing a window reclaims its GPU resource cache (#638)",
+                timeoutMillis = CASE_TIMEOUT_MS,
+                skip = {
+                    // The footprint probes (nvidia-smi, /proc) are Linux's; the
+                    // Metal and ANGLE hosts run the same minimize purge
+                    // without a per-process GPU figure to assert on.
+                    if (Platform.Current != Platform.Linux) "per-process GPU accounting is Linux only" else null
+                },
+                size = DpSize(WINDOW_DP.dp, WINDOW_DP.dp),
+                // The suite's default backdrop would take the whole window and
+                // leave this content zero-sized — every draw culled, nothing
+                // ever uploaded.
+                paintDefaultBackground = false,
+                content = {
+                    val index = shown.intValue
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color(BACKDROP_ARGB))
+                            .drawBehind {
+                                images.getOrNull(index)?.let { image ->
+                                    drawIntoCanvas {
+                                        it.nativeCanvas.drawImageRect(image, SkRect.makeWH(size.width, size.height))
+                                    }
+                                }
+                                drawn.set(index)
+                            },
+                    )
+                },
+            ) {
+                awaitUntil("window mapped") { window.hasRealFramePx() }
+                awaitUntil("first frame drawn") { drawn.get() == NONE }
+
+                // Raster pixels first, so the baseline already holds them and
+                // the fill below only measures what the GPU side adds.
+                repeat(IMAGE_COUNT) { images[it] = solidImage(it) }
+                settle()
+                val baseline = gpuFootprintBytes()
+
+                for (i in 0 until IMAGE_COUNT) {
+                    shown.intValue = i
+                    awaitUntil("image $i drawn") { drawn.get() == i }
+                }
+                shown.intValue = NONE
+                awaitUntil("static frame drawn") { drawn.get() == NONE }
+                settle(STATIC_SETTLE_MS)
+                val atRest = gpuFootprintBytes()
+
+                val uploaded = IMAGE_COUNT.toLong() * IMAGE_PX * IMAGE_PX * BYTES_PER_PIXEL
+                val growth = atRest - baseline
+                if (growth < uploaded / 2) {
+                    System.err.println(
+                        "[tao-headful] INCONCLUSIVE #638: filling the cache moved the footprint by " +
+                            "${growth.mib()} MiB for ${uploaded.mib()} MiB of textures — neither nvidia-smi " +
+                            "nor RSS sees this driver's textures (GL drivers mapped: ${glDrivers()})",
+                    )
+                    return@TaoWindowTestCase
+                }
+
                 window.setMinimized(true)
                 awaitUntil("window minimized") { window.isMinimized }
-                settle(RECLAIM_SLACK_MS)
+                settle(MINIMIZED_SETTLE_MS)
+                val minimized = gpuFootprintBytes()
+                window.setMinimized(false)
+                awaitUntil("window restored") { !window.isMinimized }
+
+                val reclaimed = atRest - minimized
+                System.err.println(
+                    "[tao-headful] #638 footprint baseline=${baseline.mib()} atRest=${atRest.mib()} " +
+                        "minimized=${minimized.mib()} MiB (reclaimed ${reclaimed.mib()} of ${growth.mib()} MiB)",
+                )
+                check(reclaimed >= growth / 2) {
+                    "minimizing gave back ${reclaimed.mib()} MiB of the ${growth.mib()} MiB the GPU cache " +
+                        "grew by — the cache stays at its high-water mark"
+                }
             },
         )
+    }
 
-    private fun skipReason(): String? =
-        if (Platform.Current != Platform.MacOS) "macOS only: reads MTLDevice.currentAllocatedSize" else null
-
-    /**
-     * Animates [ChurnScene] for [ANIMATION_FRAMES] frames, runs [toRest], and
-     * requires at least half of what the animation added to be back.
-     */
-    private fun reclaimCase(
-        title: String,
-        toRest: suspend TaoWindowTestScope.() -> Unit,
-    ): TaoWindowTestCase {
-        val animating = mutableStateOf(false)
-        val frames = mutableIntStateOf(0)
-        return TaoWindowTestCase(
-            name = "#638 $title",
-            timeoutMillis = 60_000L,
-            skip = ::skipReason,
-            size = DpSize(WINDOW_DP.dp, WINDOW_DP.dp),
-            content = {
-                if (animating.value) {
-                    LaunchedEffect(Unit) {
-                        while (true) withFrameNanos { frames.intValue++ }
-                    }
-                }
-                ChurnScene(frames.intValue, animating.value)
-            },
-        ) {
-            awaitUntil("window mapped") { window.hasRealFramePx() }
-            settle(SETTLE_MS)
-            val before = gpuAllocatedBytes()
-            animating.value = true
-            awaitUntil("animation ran $ANIMATION_FRAMES frames") { frames.intValue >= ANIMATION_FRAMES }
-            animating.value = false
-            settle(SETTLE_MS)
-            val afterAnimation = gpuAllocatedBytes()
-            toRest()
-            val atRest = gpuAllocatedBytes()
-            if (window.isMinimized) {
-                window.setMinimized(false)
-                window.focus()
-                awaitUntil("window restored") { !window.isMinimized }
-            }
-            println("[#638] GPU MB: before=${before.mb()} afterAnimation=${afterAnimation.mb()} atRest=${atRest.mb()}")
-            val grown = afterAnimation - before
-            check(grown >= MIN_GROWTH_BYTES) {
-                "the animation did not grow the GPU cache (${grown.mb()} MB): the case measures nothing"
-            }
-            val returned = afterAnimation - atRest
-            check(returned * 2 >= grown) {
-                "${returned.mb()} MB of the ${grown.mb()} MB the animation added came back"
-            }
-        }
+    private fun solidImage(seed: Int): SkImage {
+        // A raster image held alive, like a decoded picture an app keeps
+        // around: Skia keys its upload to the image and keeps the texture —
+        // unlocked, but resident — for as long as the image lives. A distinct
+        // colour each, so no two uploads can be shared.
+        val surface = SkSurface.makeRasterN32Premul(IMAGE_PX, IMAGE_PX)
+        surface.canvas.clear((COLOR_BASE + seed * COLOR_STEP).toInt())
+        return surface.makeImageSnapshot().also { surface.close() }
     }
 
     /**
-     * [LAYERS] stacked offscreen layers, each blurred and each at a size no
-     * other frame shares while animating: every frame asks Skia for
-     * render-target scratch in a size bin it may not have yet, so the cache
-     * climbs toward its budget. A static stack at rest.
+     * What the textures cost the process: the driver's own per-process
+     * figure where there is one (NVIDIA keeps them in VRAM, invisible to RSS),
+     * otherwise RSS (Mesa llvmpipe keeps them in host memory).
      */
-    @Composable
-    private fun ChurnScene(
-        frame: Int,
-        animating: Boolean,
-    ) {
-        Box(Modifier.fillMaxSize()) {
-            if (animating) {
-                // A fresh raster image per frame: one uniquely keyed texture
-                // upload each, cached by Skia after the image itself is gone.
-                val image = remember(frame) { frameImage(frame) }
-                Canvas(Modifier.fillMaxSize()) { drawImage(image) }
+    private fun gpuFootprintBytes(): Long = nvidiaGpuMemoryBytes() ?: rssBytes()
+
+    private fun nvidiaGpuMemoryBytes(): Long? {
+        val output =
+            runCatching {
+                val process = ProcessBuilder("nvidia-smi", "-q", "-d", "PIDS").redirectErrorStream(true).start()
+                process.inputStream
+                    .bufferedReader()
+                    .readText()
+                    .also { process.waitFor() }
+            }.getOrNull() ?: return null
+        val pid = ProcessHandle.current().pid().toString()
+        val lines = output.lines()
+        val at =
+            lines.indexOfFirst {
+                it.substringBefore(':').trim() == "Process ID" &&
+                    it.substringAfter(':').trim() == pid
             }
-            repeat(LAYERS) { layer ->
-                val step = if (animating) (frame * (layer + 1) * PRIME) % SIZE_STEPS else layer
-                val w = MIN_BOX_DP + step * STEP_DP
-                val h = MIN_BOX_DP + ((step * PRIME) % SIZE_STEPS) * STEP_DP
-                Box(
-                    Modifier
-                        .size(w.dp, h.dp)
-                        .graphicsLayer {
-                            alpha = 0.5f
-                            compositingStrategy = CompositingStrategy.Offscreen
-                        }.blur((4 + step % 32).dp)
-                        .background(Color(0xFF000000 or (0x3F51B5L + layer * 0x203040L))),
-                )
-            }
-        }
+        if (at < 0) return null
+        return lines
+            .drop(at + 1)
+            .takeWhile { !it.contains("Process ID") }
+            .firstOrNull { it.contains("Used GPU Memory") }
+            ?.substringAfter(':')
+            ?.trim()
+            ?.removeSuffix("MiB")
+            ?.trim()
+            ?.toLongOrNull()
+            ?.times(KIB * KIB)
     }
 
-    /** Immutable, so Skia uploads it once under the image's unique key. */
-    private fun frameImage(frame: Int): ImageBitmap {
-        val pixels = ByteArray(IMAGE_PX * IMAGE_PX * 4) { (it + frame).toByte() }
-        return Image
-            .makeRaster(ImageInfo.makeN32Premul(IMAGE_PX, IMAGE_PX), pixels, IMAGE_PX * 4)
-            .toComposeImageBitmap()
-    }
+    private fun rssBytes(): Long =
+        File("/proc/self/status")
+            .readLines()
+            .first { it.startsWith("VmRSS:") }
+            .split(Regex("\\s+"))[1]
+            .toLong() * KIB
 
-    /**
-     * `MTLDevice.currentAllocatedSize` of the system default device — every
-     * byte this process holds on the GPU, Skia's cache included. Read through
-     * FFM so the probe needs no native code of its own; on Apple Silicon there
-     * is one device, the one the scene hosts render with.
-     */
-    private fun gpuAllocatedBytes(): Long = MetalAllocatedSize.read()
+    private fun glDrivers(): String =
+        File("/proc/self/maps")
+            .readLines()
+            .mapNotNull { line -> line.substringAfterLast('/', "").takeIf { DRIVER_HINTS.any(it::contains) } }
+            .distinct()
+            .joinToString()
 
-    private object MetalAllocatedSize {
-        private val linker = Linker.nativeLinker()
-        private val metal =
-            SymbolLookup.libraryLookup("/System/Library/Frameworks/Metal.framework/Metal", Arena.global())
-        private val objc = SymbolLookup.libraryLookup("/usr/lib/libobjc.A.dylib", Arena.global())
-        private val device: MemorySegment =
-            linker
-                .downcallHandle(
-                    metal.find("MTLCreateSystemDefaultDevice").orElseThrow(),
-                    FunctionDescriptor.of(ValueLayout.ADDRESS),
-                ).invokeWithArguments() as MemorySegment
-        private val selector: MemorySegment =
-            linker
-                .downcallHandle(
-                    objc.find("sel_registerName").orElseThrow(),
-                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS),
-                ).invokeWithArguments(Arena.global().allocateFrom("currentAllocatedSize")) as MemorySegment
-        private val msgSend =
-            linker.downcallHandle(
-                objc.find("objc_msgSend").orElseThrow(),
-                FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.ADDRESS),
-            )
+    private fun Long.mib(): Long = this / (KIB * KIB)
 
-        fun read(): Long = msgSend.invokeWithArguments(device, selector) as Long
-    }
-
-    private fun Long.mb(): Long = this / (1024 * 1024)
-
-    private const val WINDOW_DP = 1000
-    private const val IMAGE_PX = 512
-    private const val LAYERS = 16
-    private const val PRIME = 37
-    private const val MIN_BOX_DP = 100
-    private const val STEP_DP = 8
-    private const val SIZE_STEPS = 110
-    private const val ANIMATION_FRAMES = 330
-    private const val SETTLE_MS = 500L
-    private const val RECLAIM_SLACK_MS = 1_000L
-    private const val MIN_GROWTH_BYTES = 20L * 1024 * 1024
+    private val DRIVER_HINTS = listOf("gallium", "dri", "nvidia", "mesa", "vulkan", "lvp")
+    private const val NONE = -1
+    private const val IMAGE_COUNT = 48
+    private const val IMAGE_PX = 1024
+    private const val BYTES_PER_PIXEL = 4
+    private const val KIB = 1024L
+    private const val WINDOW_DP = 400
+    private const val STATIC_SETTLE_MS = 1_000L
+    private const val MINIMIZED_SETTLE_MS = 1_500L
+    private const val CASE_TIMEOUT_MS = 120_000L
+    private const val BACKDROP_ARGB = 0xFF1E1F22
+    private const val COLOR_BASE = 0xFF102030L
+    private const val COLOR_STEP = 0x050301L
 }

@@ -637,6 +637,7 @@ internal fun ApplicationScope.openDecoratedWindow(
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
         }
+        host.onMinimizedChanged(minimized)
     }
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)
@@ -956,6 +957,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
         }
+        host.onMinimizedChanged(minimized)
     }
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)
@@ -1481,6 +1483,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
         }
+        host.onMinimizedChanged(minimized)
     }
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)

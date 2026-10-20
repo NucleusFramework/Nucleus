@@ -99,7 +99,7 @@ public object TaoEventCode {
 
     /**
      * `a` = the [TaoPointerKind] of the cursor / button events that follow,
-     * sent only when it changes. Linux only for now (#827).
+     * sent only when it changes. Linux and macOS (#827).
      */
     internal const val POINTER_KIND: Int = 28
 }

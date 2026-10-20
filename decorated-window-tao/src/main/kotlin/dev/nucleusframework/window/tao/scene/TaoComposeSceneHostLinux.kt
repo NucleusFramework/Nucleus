@@ -537,12 +537,13 @@ internal class TaoComposeSceneHostLinux(
     private var lastResizePurgeNs: Long = 0L
     private var resizePurgeDue: Boolean = false
 
-    /** Reclaims the cache an animation filled once the window is at rest (#638). */
-    private val restReclaimer = GpuCacheRestReclaimer(::purgeAtRest)
-
-    private val restReclaimOnMinimize: (Boolean) -> Unit = { minimized ->
-        if (minimized) restReclaimer.onMinimized()
-    }
+    /**
+     * Reclaims the cache an animation filled once the window is at rest but
+     * still visible (#638); [onMinimizedChanged] covers minimize. Never waits
+     * on the swap thread: the event loop is idle, not parked, and a busy swap
+     * just moves the purge to the next rest period.
+     */
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest(swapWaitNs = 0L) }
 
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
@@ -674,7 +675,6 @@ internal class TaoComposeSceneHostLinux(
 
     fun attach() {
         attachGpu()
-        window.onMinimizedChanged(restReclaimOnMinimize)
         if (isCsdActive) {
             // Round the GTK frame to the same radius as the Compose corner
             // carve so the native decoration and the content coincide.
@@ -1929,27 +1929,48 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * The limit-toggle for [restReclaimer], outside any frame. Same rules as
-     * the render pass, the only other place this host's context is bound on
-     * the event-loop thread: never while the swap thread holds the context for
-     * its `eglSwapBuffers`, never before a pending size reached the native
-     * window (`eglMakeCurrent` would acquire a back buffer at the old size,
-     * #444), and with Skia's GL state reset if a `NativeView` compositor ran GL
-     * here since the last frame. Either of the first two defers the purge to
-     * the next rest period. Nothing to do while the window is hidden on
-     * Wayland: [suspendGpu] closed the whole context.
+     * Minimize is the at-rest moment #638 is after: nothing of the window is
+     * visible, so the cache a busy stretch filled can go back to the system and
+     * the re-mint is paid at restore, where a first frame redraws everything
+     * anyway. Without it the cache stays at its high-water mark for the life
+     * of the process — Skia only evicts when a new allocation would exceed the
+     * budget, and a minimized window allocates nothing.
      */
-    private fun purgeAtRest(): Boolean {
+    fun onMinimizedChanged(minimized: Boolean) {
+        if (minimized) purgeGpuResourceCacheAtRest(REST_PURGE_SWAP_WAIT_NS)
+    }
+
+    /**
+     * [purgeAtRest] outside a frame. It issues `glDelete*`, so this host's EGL
+     * context has to be current — which it can only be once the swap thread
+     * has handed it back. Only the render thread
+     * (this one) queues swaps, so a swap thread found idle stays idle until we
+     * release the context again. A present that does not drain within
+     * [swapWaitNs] (a Wayland compositor withholding the frame callback of a
+     * hidden surface) skips the purge: binding now would steal the context
+     * mid-swap. So does a size not yet pushed to the native window —
+     * `eglMakeCurrent` would acquire a back buffer at the old one (#444).
+     * Returns `false` when skipped, `true` when done or nothing to do (no
+     * context: a Wayland hide closed it in [suspendGpu]).
+     *
+     * Not under a live [TaoGpuRenderContextConsumers] consumer: an in-process
+     * renderer drawing on this context must not lose its cache mid-frame (#478).
+     */
+    private fun purgeGpuResourceCacheAtRest(swapWaitNs: Long): Boolean {
         val ctx = directContext ?: return true
         if (attachmentHandle == 0L || TaoGpuRenderContextConsumers.isActive(ctx)) return true
-        if (swapThread?.awaitIdle(0L) == false) return false
+        if (swapThread?.awaitIdle(swapWaitNs) == false) {
+            linuxHostLogger.fine("swap still in flight; GPU resource cache purge skipped")
+            return false
+        }
         if (widthPx != lastAppliedWidthPx || heightPx != lastAppliedHeightPx || scale != lastAppliedScale) {
             return false
         }
         NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
+        // Same reason as the frame path: an embed may have run GL on this
+        // thread since, leaving Skia's cached GL state stale.
         if (foreignGlInterop) ctx.resetGLAll()
-        ctx.resourceCacheLimit = 0
-        ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+        ctx.purgeAtRest()
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         return true
     }
@@ -3689,7 +3710,6 @@ internal class TaoComposeSceneHostLinux(
         if (NativeTaoLinuxTouchBridge.isLoaded && window.handle != 0L) {
             NativeTaoLinuxTouchBridge.nativeRevoke(window.handle)
         }
-        window.removeMinimizedListener(restReclaimOnMinimize)
         restReclaimer.close()
         // Stop the swap thread first. It may be parked inside
         // `eglSwapBuffers` waiting on a frame callback — joining without a
@@ -3794,6 +3814,10 @@ internal class TaoComposeSceneHostLinux(
          * on virgl); past it the frame simply lands one GTK commit late.
          */
         private const val IN_FRAME_SWAP_WAIT_NS = 50_000_000L // 50 ms
+
+        // Longest the minimize purge waits for an in-flight present to hand the
+        // context back — a few vsyncs; past that the purge is skipped.
+        private const val REST_PURGE_SWAP_WAIT_NS = 50_000_000L // 50 ms
 
         /**
          * Longest a `queue_draw` may go unanswered before in-frame rendering

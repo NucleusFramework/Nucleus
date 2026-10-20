@@ -50,6 +50,13 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val runtimeClasspath: ConfigurableFileCollection
 
+    /**
+     * Feature version of the JDK native-image runs on (see [javaFeatureVersion]). A type that
+     * exists only in a multi-release JAR's `META-INF/versions/N` with `N` above it is unresolvable.
+     */
+    @get:Input
+    abstract val targetJavaVersion: Property<Int>
+
     /** File listing Oracle repo metadata directories (output of resolveGraalvmReachabilityMetadata). */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.NONE)
@@ -135,7 +142,7 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
         // typos/stale renames never match a baseline. Classify each survivor once.
         // Kotlin mapped-type phantoms are always removed (AGENT_NOISE); other missing
         // types stay report-only unless removeUnresolvable is on.
-        val classIndex = buildClasspathClassIndex(runtimeClasspath.files)
+        val classIndex = buildClasspathClassIndex(runtimeClasspath.files, targetJavaVersion.get())
         logger.lifecycle("Classpath class index: ${classIndex.size} types")
         for (section in TYPE_SECTIONS_WITH_SERIALIZATION) {
             @Suppress("UNCHECKED_CAST")
@@ -420,7 +427,7 @@ private class CleanupBaseline {
         try {
             java.util.jar.JarFile(file).use { jar ->
                 for (entry in jar.entries()) {
-                    if (entry.name.contains("META-INF/native-image/")) {
+                    if (entry.name.startsWith(NATIVE_IMAGE_META_INF)) {
                         added += collectFromJarEntry(slurper, jar, entry)
                     }
                 }

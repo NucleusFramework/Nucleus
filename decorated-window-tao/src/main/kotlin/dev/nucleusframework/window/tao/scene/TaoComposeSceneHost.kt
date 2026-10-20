@@ -28,7 +28,6 @@ import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoFatalCoroutineExceptionHandler
-import dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
 import dev.nucleusframework.window.tao.TaoKeyLocation
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoMonitors
@@ -417,7 +416,6 @@ internal class TaoComposeSceneHost(
                     it.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
                 }
             }
-        window.onMinimizedChanged(restReclaimOnMinimize)
 
         scale = initialMacOsScaleFactor(window)
 
@@ -754,23 +752,7 @@ internal class TaoComposeSceneHost(
     private var lastResizePurgeNs: Long = 0
 
     /** Reclaims the cache an animation filled once the window is at rest (#638). */
-    private val restReclaimer = GpuCacheRestReclaimer(::purgeAtRest)
-
-    private val restReclaimOnMinimize: (Boolean) -> Unit = { minimized ->
-        if (minimized) restReclaimer.onMinimized()
-    }
-
-    /**
-     * [purgeGpuResourceCache] for [restReclaimer], unless a
-     * [TaoGpuRenderContextConsumers] consumer renders on this context: it may
-     * keep resources across frames of its own, and an idle scene says nothing
-     * about it being idle too.
-     */
-    private fun purgeAtRest(): Boolean {
-        val ctx = directContext ?: return true
-        if (!TaoGpuRenderContextConsumers.isActive(ctx)) purgeGpuResourceCache()
-        return true
-    }
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest() }
 
     /**
      * Set by [onResized] once its same-turn present is on its way; the next
@@ -890,6 +872,35 @@ internal class TaoComposeSceneHost(
         NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         updateWindowInfoSize()
         window.requestRedraw()
+    }
+
+    /**
+     * Reclaims the GPU resource cache when the window is minimized (#638) —
+     * the at-rest moment: nothing is visible, and the re-mint is paid by the
+     * restore frame, which redraws everything anyway. Without it the cache an
+     * animation filled stays at its high-water mark for the life of the
+     * process (the reporter's 299 MB of idle graphics footprint).
+     *
+     * Hops to the render thread like [purgeGpuResourceCache], so the purge
+     * lands between two frames like the in-drag one. Skipped under a live
+     * [dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers] consumer
+     * (#478), whose renderer must not lose its cache mid-frame.
+     */
+    fun onMinimizedChanged(minimized: Boolean) {
+        if (minimized) purgeGpuResourceCacheAtRest()
+    }
+
+    /** [onMinimizedChanged]'s purge, also [restReclaimer]'s. Always `true`: nothing to retry. */
+    private fun purgeGpuResourceCacheAtRest(): Boolean {
+        val ctx = directContext ?: return true
+        if (dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
+                .isActive(ctx)
+        ) {
+            return true
+        }
+        // Rejected once detach() shut the executor down — nothing to reclaim then.
+        runCatching { renderExecutor.submit { ctx.purgeAtRest() } }
+        return true
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -1307,7 +1318,7 @@ internal class TaoComposeSceneHost(
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
+            type = window.pointerType,
             keyboardModifiers = currentKeyboardModifiers,
         )
     }
@@ -1365,7 +1376,7 @@ internal class TaoComposeSceneHost(
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
+            type = window.pointerType,
             keyboardModifiers = currentKeyboardModifiers,
             button = composeButton,
         )
@@ -2139,7 +2150,6 @@ internal class TaoComposeSceneHost(
         frameDispatcher?.cancel()
         frameDispatcher = null
         renderLoopJob.cancel()
-        window.removeMinimizedListener(restReclaimOnMinimize)
         restReclaimer.close()
         textToolbar.hide()
         window.clearContentMeasurer()

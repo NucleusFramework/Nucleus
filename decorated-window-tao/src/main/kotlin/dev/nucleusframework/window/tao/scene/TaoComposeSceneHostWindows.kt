@@ -235,11 +235,7 @@ internal class TaoComposeSceneHostWindows(
     private var lastResizePurgeNs: Long = 0L
 
     /** Reclaims the cache an animation filled once the window is at rest (#638). */
-    private val restReclaimer = GpuCacheRestReclaimer(::purgeAtRest)
-
-    private val restReclaimOnMinimize: (Boolean) -> Unit = { minimized ->
-        if (minimized) restReclaimer.onMinimized()
-    }
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest() }
 
     /** A size change awaits push into the GL surface + ComposeScene at the next paint. */
     private var pendingResizeApply: Boolean = false
@@ -487,7 +483,6 @@ internal class TaoComposeSceneHostWindows(
                 it.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
             }
         attachedHostCount.incrementAndGet()
-        window.onMinimizedChanged(restReclaimOnMinimize)
 
         @OptIn(ExperimentalComposeUiApi::class)
         val dndManager =
@@ -1190,23 +1185,6 @@ internal class TaoComposeSceneHostWindows(
     }
 
     /**
-     * [purgeGpuResourceCache] for [restReclaimer] — on the event-loop thread,
-     * between two frames, with this host's context made current like on the
-     * resize path. Skipped while a
-     * [dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers] consumer
-     * renders on this context: an idle scene says nothing about it being idle.
-     */
-    private fun purgeAtRest(): Boolean {
-        val ctx = directContext ?: return true
-        if (!dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
-                .isActive(ctx)
-        ) {
-            purgeGpuResourceCache()
-        }
-        return true
-    }
-
-    /**
      * Enter/leave the OS modal resize/move loop (WM_ENTERSIZEMOVE /
      * WM_EXITSIZEMOVE). VSync is dropped for the whole loop, exactly like the
      * outbound-drag session ([launchWindowsOutboundDrag]): the per-WM_SIZE
@@ -1286,6 +1264,36 @@ internal class TaoComposeSceneHostWindows(
         )
         updateWindowInfoSize()
         window.requestRedraw()
+    }
+
+    /**
+     * Reclaims the GPU resource cache when the window is minimized (#638) —
+     * the at-rest moment: nothing is visible, and the re-mint is paid by the
+     * restore frame, which redraws everything anyway. The resize purges above
+     * only ever run on the drag path, so a cache an animation filled would
+     * otherwise stay at its high-water mark for the life of the process.
+     *
+     * Rendering is inline on this thread, so making this host's context
+     * current is all the context discipline needed. Skipped under a live
+     * [dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers] consumer
+     * (#478), whose renderer must not lose its cache mid-frame.
+     */
+    fun onMinimizedChanged(minimized: Boolean) {
+        if (minimized) purgeGpuResourceCacheAtRest()
+    }
+
+    /** [onMinimizedChanged]'s purge, also [restReclaimer]'s. Always `true`: nothing to retry. */
+    private fun purgeGpuResourceCacheAtRest(): Boolean {
+        val ctx = directContext ?: return true
+        if (dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
+                .isActive(ctx)
+        ) {
+            return true
+        }
+        // Same foreign-context hazard as [purgeGpuResourceCache] (#514).
+        if (attachmentHandle != 0L) NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+        ctx.purgeAtRest()
+        return true
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -2862,7 +2870,6 @@ internal class TaoComposeSceneHostWindows(
         pinchEndJob?.cancel()
         pinchEndJob = null
         gestureScope.cancel()
-        window.removeMinimizedListener(restReclaimOnMinimize)
         restReclaimer.close()
         // Make THIS host's ES context current before tearing down Skia
         // resources. A sibling host (e.g. the main window opened while this

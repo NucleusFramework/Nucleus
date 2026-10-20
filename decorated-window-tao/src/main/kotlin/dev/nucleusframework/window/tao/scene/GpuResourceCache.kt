@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.skia.DirectContext
 
 /*
  * Shared policy for the Skia GPU resource cache of the scene hosts'
@@ -56,6 +57,24 @@ internal const val GPU_RESOURCE_CACHE_LIMIT_BYTES: Long = 256L * 1024 * 1024
  */
 internal const val GPU_RESIZE_PURGE_INTERVAL_NS: Long = 250_000_000L
 
+/**
+ * The limit-toggle for a context that will not draw again soon: the window was
+ * minimized (#638). Toggling queues the backend deletes, and inside a frame the
+ * frame's own flush submits them; at rest no frame follows, so the deletes
+ * would sit in the command stream and the driver would keep every byte — the
+ * toggle alone was measured to return nothing on NVIDIA/GL. Flushing and
+ * submitting synchronously is what actually hands the memory back.
+ *
+ * Same calling contract as every toggle: on the owning render thread on Metal,
+ * with this context current on the ANGLE/EGL hosts.
+ */
+internal fun DirectContext.purgeAtRest() {
+    resourceCacheLimit = 0
+    resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+    flush()
+    submit(true)
+}
+
 /*
  * There is deliberately no "settle" constant here. A drag-end purge needs a
  * drag-end signal, and only Windows has one (`WM_EXITSIZEMOVE`); standing a
@@ -74,10 +93,12 @@ internal const val GPU_RESIZE_PURGE_INTERVAL_NS: Long = 250_000_000L
 internal const val GPU_REST_PURGE_DELAY_MS: Long = 3_000L
 
 /**
- * Reclaims a scene host's GPU resource cache once its window is at rest (#638):
- * [GPU_REST_PURGE_DELAY_MS] after the last frame, and at once when the window is
- * minimized. Skia evicts only to fit a new allocation, so without this the cache
- * an animation filled stays resident for as long as the window is still.
+ * Reclaims a scene host's GPU resource cache once its window is at rest but
+ * still on screen (#638): [GPU_REST_PURGE_DELAY_MS] after the last frame. Skia
+ * evicts only to fit a new allocation, so without this the cache an animation
+ * filled stays resident for as long as the window is still. Minimize, the
+ * other at-rest moment, purges at once through the hosts' `onMinimizedChanged`;
+ * both go through [purgeAtRest].
  *
  * The [purge] runs on the Tao main thread, where every host renders or records
  * its frames; it returns `false` when the context cannot be purged right now
@@ -118,14 +139,6 @@ internal class GpuCacheRestReclaimer(
                     }
                 }
             }
-    }
-
-    /** The window was minimized: nothing of it is visible, purge now. Main thread. */
-    fun onMinimized() {
-        pending?.cancel()
-        pending = null
-        // A context that cannot be purged now is retried after the rest delay.
-        if (!purge()) onFrame()
     }
 
     /** The host is going away. */

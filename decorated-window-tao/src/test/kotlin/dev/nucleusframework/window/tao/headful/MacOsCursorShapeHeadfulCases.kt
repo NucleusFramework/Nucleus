@@ -39,35 +39,42 @@ internal object MacOsCursorShapeHeadfulCases {
     fun all(): List<TaoWindowTestCase> = listOf(everyCursorInWindow(), awtCursorsInWindow(), cursorsInNativePopup())
 
     /** Every `TaoCursorIcon` code, through Nucleus' own pointer icons. */
-    private fun everyCursorInWindow(): TaoWindowTestCase {
-        val cells = (0 until CODE_COUNT).map { code -> Cell(code, TaoPointerIcon(code)) }
-        return cursorCase("#746 every cursor shape in the window", cells, inPopup = false)
-    }
+    private fun everyCursorInWindow(): TaoWindowTestCase =
+        cursorCase("#746 every cursor shape in the window", inPopup = false) {
+            (0 until CODE_COUNT).map { code -> Cell(code, TaoPointerIcon(code)) }
+        }
 
     /** The issue's own repro: Compose Desktop's AWT-backed icons (MOVE, SW / SE resize). */
-    private fun awtCursorsInWindow(): TaoWindowTestCase {
-        val cells =
+    private fun awtCursorsInWindow(): TaoWindowTestCase =
+        cursorCase("#746 AWT MOVE / SW / SE cursors in the window", inPopup = false) {
             listOf(
                 Cell(TaoCursorIcon.MOVE, PointerIcon(Cursor(Cursor.MOVE_CURSOR))),
                 Cell(TaoCursorIcon.NESW_RESIZE, PointerIcon(Cursor(Cursor.SW_RESIZE_CURSOR))),
                 Cell(TaoCursorIcon.NWSE_RESIZE, PointerIcon(Cursor(Cursor.SE_RESIZE_CURSOR))),
             )
-        return cursorCase("#746 AWT MOVE / SW / SE cursors in the window", cells, inPopup = false)
-    }
+        }
 
     /** The native popup panel resolves codes through the same table. */
-    private fun cursorsInNativePopup(): TaoWindowTestCase {
-        val cells =
+    private fun cursorsInNativePopup(): TaoWindowTestCase =
+        cursorCase("#746 cursor shapes in a native popup panel", inPopup = true) {
             listOf(TaoCursorIcon.MOVE, TaoCursorIcon.NESW_RESIZE, TaoCursorIcon.NWSE_RESIZE, TaoCursorIcon.HELP)
                 .map { code -> Cell(code, TaoPointerIcon(code)) }
-        return cursorCase("#746 cursor shapes in a native popup panel", cells, inPopup = true)
-    }
+        }
 
+    /**
+     * [cellsOf] runs on first use, never while the suite builds its case list:
+     * the AWT cells construct a `java.awt.Cursor`, whose class init loads
+     * `libawt_xawt` — and that library `putenv`s `GDK_BACKEND=x11`. Built
+     * eagerly, it ran before the Tao loop opened GTK and put the whole suite
+     * on XWayland, skipping every native-Wayland path on every platform's run
+     * (this case is macOS-only, its construction is not).
+     */
     private fun cursorCase(
         name: String,
-        cells: List<Cell>,
         inPopup: Boolean,
+        cellsOf: () -> List<Cell>,
     ): TaoWindowTestCase {
+        val cells by lazy(cellsOf)
         val scene = SceneSize()
         val centers = ConcurrentHashMap<Int, Offset>()
         return TaoWindowTestCase(

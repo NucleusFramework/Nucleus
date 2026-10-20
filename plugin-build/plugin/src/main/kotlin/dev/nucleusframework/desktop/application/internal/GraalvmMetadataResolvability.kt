@@ -4,7 +4,6 @@
 package dev.nucleusframework.desktop.application.internal
 
 import java.io.File
-import java.util.jar.JarFile
 
 /**
  * Prefixes treated as always resolvable without scanning the runtime classpath.
@@ -165,15 +164,22 @@ internal fun formatDispositionLine(
  * Scans classpath JARs and class directories for fully-qualified binary class names
  * (dots, `$` for nested types). Reads only entry names / file paths — no classloading,
  * so static initializers never run and no toolchain JVM is required.
+ *
+ * Multi-release JARs are read as a JDK of [targetJavaVersion] (the one native-image runs on)
+ * reads them: a class that exists only under `META-INF/versions/N` with `N` above it is absent.
  */
-internal fun buildClasspathClassIndex(files: Collection<File>): Set<String> {
+internal fun buildClasspathClassIndex(
+    files: Collection<File>,
+    targetJavaVersion: Int,
+): Set<String> {
+    val version = jarRuntimeVersion(targetJavaVersion)
     val classes = mutableSetOf<String>()
     for (file in files) {
         if (!file.exists()) continue
         if (file.isDirectory) {
             indexClassDirectory(file, classes)
         } else if (file.name.endsWith(".jar")) {
-            indexJar(file, classes)
+            indexJar(file, version, classes)
         }
     }
     return classes
@@ -194,12 +200,12 @@ private fun indexClassDirectory(
 
 private fun indexJar(
     file: File,
+    version: Runtime.Version,
     classes: MutableSet<String>,
 ) {
     try {
-        JarFile(file).use { jar ->
-            for (entry in jar.entries()) {
-                if (entry.isDirectory) continue
+        openVersionedJar(file, version).use { jar ->
+            for (entry in jar.versionedClassEntries()) {
                 classNameFromClassPath(entry.name)?.let { classes.add(it) }
             }
         }
@@ -212,8 +218,11 @@ private fun indexJar(
  * Package names present on the classpath, derived from [buildClasspathClassIndex].
  * Shared by library-metadata filtering and any other package-presence checks.
  */
-internal fun buildClasspathPackageIndex(files: Collection<File>): Set<String> =
-    buildClasspathClassIndex(files)
+internal fun buildClasspathPackageIndex(
+    files: Collection<File>,
+    targetJavaVersion: Int,
+): Set<String> =
+    buildClasspathClassIndex(files, targetJavaVersion)
         .mapNotNull { className ->
             val lastDot = className.lastIndexOf('.')
             if (lastDot <= 0) null else className.substring(0, lastDot)
@@ -221,21 +230,15 @@ internal fun buildClasspathPackageIndex(files: Collection<File>): Set<String> =
 
 /**
  * Converts a classpath-relative `.class` path into a binary name, or `null` when the
- * path is not a regular class (e.g. `module-info.class`). Handles multi-release JAR
- * prefixes (`META-INF/versions/N/...`).
+ * path is not a regular class (e.g. `module-info.class`, or anything under `META-INF/`).
+ * Multi-release JAR entries arrive already resolved to their unversioned path (see
+ * [versionedClassEntries]); a raw `META-INF/versions/N/...` path is never a class by itself.
  */
 internal fun classNameFromClassPath(entryName: String): String? {
     if (!entryName.endsWith(".class")) return null
     if (entryName.endsWith("module-info.class")) return null
-    var path = entryName
-    if (path.startsWith("META-INF/versions/")) {
-        val afterVersion = path.removePrefix("META-INF/versions/")
-        val slash = afterVersion.indexOf('/')
-        if (slash < 0) return null
-        path = afterVersion.substring(slash + 1)
-        if (path.endsWith("module-info.class")) return null
-    }
-    return path.removeSuffix(".class").replace('/', '.')
+    if (entryName.startsWith("META-INF/")) return null
+    return entryName.removeSuffix(".class").replace('/', '.')
 }
 
 /**
