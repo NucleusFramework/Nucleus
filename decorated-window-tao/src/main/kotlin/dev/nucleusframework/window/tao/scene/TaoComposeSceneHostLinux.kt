@@ -1589,6 +1589,14 @@ internal class TaoComposeSceneHostLinux(
         }
 
     /**
+     * Recomposes and lays the scene out without drawing — for a window that is
+     * not mapped yet, so no frame will do it (wrap-content sizing, #532).
+     */
+    fun layoutNow() {
+        sceneBundle?.composeAndLayoutNow()
+    }
+
+    /**
      * Forwards a parent composition's locals into this scene via
      * `ComposeScene.compositionLocalContext` — applied above the scene's own
      * `LocalComposeSceneContext`, so popups keep routing into THIS scene. See

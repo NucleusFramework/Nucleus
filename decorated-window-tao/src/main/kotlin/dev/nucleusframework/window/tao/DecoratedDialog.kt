@@ -156,18 +156,21 @@ public fun ApplicationScope.DecoratedDialog(
             // Native owner relationship. Runs inside the dialog's composition,
             // so `windowScope.window` is the dialog's TaoWindow and its HWND
             // is already resolvable via [TaoWindow.nativeHandle].
-            // Do not wait for wrap-content size: on Wayland a hidden dialog
-            // without an owner never receives a configure, so setContent
-            // never runs and wrap-content deadlocks (#532). macOS centres the
-            // creation-size frame on the owner here; the size bridge below
-            // moves it again once measured (#546).
-            DisposableEffect(windowScope.window, parent) {
-                applyWindowOwnerRelationship(
-                    child = windowScope.window,
-                    owner = parent,
-                    autoCenter = autoCenterRequested,
-                )
-                ownerApplied.value = true
+            // macOS: `addChildWindow:` orders the child front, so a
+            // wrap-content dialog waits until it may be shown at its measured
+            // size (#532) — it centres natively at that size, too. Elsewhere
+            // the owner goes on at once: GTK places a transient at map time.
+            val sizePolicy = windowScope.window.resolvedSizePolicy()
+            val ownerReady = Platform.Current != Platform.MacOS || sizePolicy.showReady.value
+            DisposableEffect(windowScope.window, parent, ownerReady) {
+                if (ownerReady) {
+                    applyWindowOwnerRelationship(
+                        child = windowScope.window,
+                        owner = parent,
+                        autoCenter = autoCenterRequested,
+                    )
+                    ownerApplied.value = true
+                }
                 onDispose { /* native handle destruction restores focus to owner */ }
             }
 
