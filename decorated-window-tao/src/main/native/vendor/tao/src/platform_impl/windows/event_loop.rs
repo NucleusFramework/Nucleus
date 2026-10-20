@@ -61,7 +61,7 @@ use crate::{
     raw_input, util,
     window::set_skip_taskbar,
     window_state::{CursorFlags, WindowFlags, WindowState},
-    wrap_device_id, WindowId, DEVICE_ID,
+    wrap_device_id, WindowId, DEVICE_ID, ERASER_DEVICE_ID, PEN_DEVICE_ID,
   },
   window::{Fullscreen, Theme, WindowId as RootWindowId},
 };
@@ -1741,7 +1741,12 @@ unsafe fn public_window_callback_inner<T: 'static>(
       result = ProcResult::Value(LRESULT(win32wm::PA_ACTIVATE as isize));
     }
 
-    win32wm::WM_POINTERDOWN | win32wm::WM_POINTERUPDATE | win32wm::WM_POINTERUP => {
+    // PATCH(nucleus): WM_POINTERLEAVE too, reported for pens only (#827): a
+    // hovering pen that leaves the window or the digitizer's range.
+    win32wm::WM_POINTERDOWN
+    | win32wm::WM_POINTERUPDATE
+    | win32wm::WM_POINTERUP
+    | win32wm::WM_POINTERLEAVE => {
       if msg == win32wm::WM_POINTERDOWN {
         focus_pointer_input_window(window);
       }
@@ -1790,6 +1795,12 @@ unsafe fn public_window_callback_inner<T: 'static>(
         // The information retrieved appears in reverse chronological order, with the most recent entry in the first
         // row of the returned array
         for pointer_info in pointer_infos.iter().rev() {
+          let leave = msg == win32wm::WM_POINTERLEAVE;
+          if leave
+            && (pointer_info.pointerType != win32wm::PT_PEN || pointer_info.pointerId != pointer_id)
+          {
+            continue;
+          }
           let mut device_rect = mem::MaybeUninit::uninit();
           let mut display_rect = mem::MaybeUninit::uninit();
 
@@ -1830,28 +1841,38 @@ unsafe fn public_window_callback_inner<T: 'static>(
             continue;
           }
 
-          let force = match pointer_info.pointerType {
+          // PATCH(nucleus): a pen reports itself through the device id (#827):
+          // the eraser end while it is inverted or erasing, the tip otherwise.
+          let (force, device_id) = match pointer_info.pointerType {
             win32wm::PT_TOUCH => {
               let mut touch_info = mem::MaybeUninit::uninit();
-              GET_POINTER_TOUCH_INFO.and_then(|GetPointerTouchInfo| {
+              let force = GET_POINTER_TOUCH_INFO.and_then(|GetPointerTouchInfo| {
                 if GetPointerTouchInfo(pointer_info.pointerId, touch_info.as_mut_ptr()).as_bool() {
                   normalize_pointer_pressure(touch_info.assume_init().pressure)
                 } else {
                   None
                 }
-              })
+              });
+              (force, DEVICE_ID)
             }
             win32wm::PT_PEN => {
               let mut pen_info = mem::MaybeUninit::uninit();
-              GET_POINTER_PEN_INFO.and_then(|GetPointerPenInfo| {
+              let pen_info = GET_POINTER_PEN_INFO.and_then(|GetPointerPenInfo| {
                 if GetPointerPenInfo(pointer_info.pointerId, pen_info.as_mut_ptr()).as_bool() {
-                  normalize_pointer_pressure(pen_info.assume_init().pressure)
+                  Some(pen_info.assume_init())
                 } else {
                   None
                 }
-              })
+              });
+              let eraser = pen_info.is_some_and(|info| {
+                info.penFlags & (win32wm::PEN_FLAG_INVERTED | win32wm::PEN_FLAG_ERASER) != 0
+              });
+              (
+                pen_info.and_then(|info| normalize_pointer_pressure(info.pressure)),
+                if eraser { ERASER_DEVICE_ID } else { PEN_DEVICE_ID },
+              )
             }
-            _ => None,
+            _ => (None, DEVICE_ID),
           };
 
           let x = location.x as f64 + x.fract();
@@ -1860,7 +1881,9 @@ unsafe fn public_window_callback_inner<T: 'static>(
           subclass_input.send_event(Event::WindowEvent {
             window_id: RootWindowId(WindowId(window.0 as _)),
             event: WindowEvent::Touch(Touch {
-              phase: if (pointer_info.pointerFlags & POINTER_FLAG_DOWN) != Default::default() {
+              phase: if leave {
+                TouchPhase::Cancelled
+              } else if (pointer_info.pointerFlags & POINTER_FLAG_DOWN) != Default::default() {
                 TouchPhase::Started
               } else if (pointer_info.pointerFlags & POINTER_FLAG_UP) != Default::default() {
                 TouchPhase::Ended
@@ -1872,12 +1895,18 @@ unsafe fn public_window_callback_inner<T: 'static>(
               location,
               force,
               id: pointer_info.pointerId as u64,
-              device_id: DEVICE_ID,
+              device_id,
             }),
           });
+          if leave {
+            // One exit, not one per history entry.
+            break;
+          }
         }
 
-        let _ = SkipPointerFrameMessages(pointer_id);
+        if msg != win32wm::WM_POINTERLEAVE {
+          let _ = SkipPointerFrameMessages(pointer_id);
+        }
       }
 
       result = ProcResult::Value(LRESULT(0));

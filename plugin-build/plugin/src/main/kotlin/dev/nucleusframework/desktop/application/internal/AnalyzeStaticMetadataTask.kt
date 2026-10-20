@@ -17,6 +17,7 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.gradle.jvm.toolchain.JavaLauncher
 import java.io.File
 
 /**
@@ -60,6 +61,13 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
     @get:Input
     abstract val reflectionForProjectClasses: Property<Boolean>
 
+    /**
+     * Feature version of the JDK native-image runs on, read from the resolved GraalVM toolchain
+     * (see [javaFeatureVersion]). Multi-release JARs are analyzed as that JDK reads them.
+     */
+    @get:Input
+    abstract val targetJavaVersion: Property<Int>
+
     /** Output directory where reachability-metadata.json is written. */
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -101,6 +109,7 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
                 projectClassDirs = projectDirs,
                 detectOrphanProjectClasses = orphanEnabled,
                 reflectionForProjectClasses = allProjectEnabled,
+                targetJavaVersion = targetJavaVersion.get(),
             )
 
         val projectEntries = result.projectClassEntries
@@ -233,3 +242,10 @@ private fun ResourcePattern.toJsonMap(): Map<String, Any?> {
     if (module != null) map["module"] = module
     return map
 }
+
+/**
+ * Feature version of the JDK behind [launcher]. For the auto-provisioned GraalVM this comes from
+ * the installation's own `release` file, so it follows `toolchain { version / channel }`, a
+ * `GRAALVM_HOME` override and the Liberica NIK fallback rather than `graalvm.javaLanguageVersion`.
+ */
+internal fun javaFeatureVersion(launcher: JavaLauncher): Int = launcher.metadata.languageVersion.asInt()

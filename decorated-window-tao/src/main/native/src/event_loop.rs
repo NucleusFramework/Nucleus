@@ -13,7 +13,7 @@ use tao::window::WindowBuilder;
 use crate::events::{
     current_modifier_bits, dispatch, dispatch_ime_commit, dispatch_ime_preedit,
     dispatch_ime_replace_commit, dispatch_key, dispatch_scroll_gesture, dispatch_touch_input,
-    handle_for, mouse_button_code, pack_modifiers, pointer_kind_code, UserEvent,
+    handle_for, mouse_button_code, pack_modifiers, pointer_kind_code, touch_kind_code, UserEvent,
     AWT_LINE_TO_POINTS, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT,
     EVENT_CURSOR_MOVED, EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED,
     EVENT_KEY_UP, EVENT_LAUNCHED, EVENT_MAIN_EVENTS_CLEARED, EVENT_MODIFIERS_CHANGED,
@@ -1276,6 +1276,8 @@ pub(crate) fn run_event_loop_blocking() {
                             (touch.location.x * CURSOR_FIXED_SCALE) as jint,
                             (touch.location.y * CURSOR_FIXED_SCALE) as jint,
                             force_fixed,
+                            // A pen comes through WM_POINTER as a touch too (#827).
+                            touch_kind_code(touch.device_id),
                         );
                     }
                     _ => {}

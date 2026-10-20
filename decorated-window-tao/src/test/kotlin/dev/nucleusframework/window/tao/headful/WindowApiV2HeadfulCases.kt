@@ -51,6 +51,7 @@ internal object WindowApiV2HeadfulCases {
             )
         return TaoWindowTestCase(
             name = "window v2 clone: initial provider centres a fixed size on the screen",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -110,6 +111,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: requestSize / requestPosition reach the native window",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -143,6 +145,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: scoped bounds provider reads live window metrics",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -234,6 +237,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: a burst of position requests lands on the last one",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -375,6 +379,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: requests sent from a background thread are applied",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -401,6 +406,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: a frame-paced move animation ends on its last frame",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -471,6 +477,23 @@ internal object WindowApiV2HeadfulCases {
     private val DpRect.width: Float get() = (right - left).value
 
     private val DpRect.height: Float get() = (bottom - top).value
+
+    /**
+     * Native Wayland keeps the outer rectangle these cases assert on to the
+     * compositor: xdg-shell has no client positioning (a position request is
+     * a documented no-op and the window reports no global origin), and GTK's
+     * client-side decorations put the shadow margins inside the outer size
+     * (952×692 for a 900×640 request). Neither can be verified there; the
+     * X11 leg and the other platforms cover them.
+     */
+    private fun outerGeometryUnverifiable(): String? {
+        if (!isLinux) return null
+        val forcedX11 =
+            System.getenv("GDK_BACKEND")?.split(',')?.firstOrNull() == "x11" ||
+                System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
+        val wayland = !System.getenv("WAYLAND_DISPLAY").isNullOrBlank() && !forcedX11
+        return if (wayland) "outer window geometry is the compositor's on native Wayland" else null
+    }
 
     private fun closeEnough(
         expected: Float,

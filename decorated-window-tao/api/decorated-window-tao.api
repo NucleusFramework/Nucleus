@@ -1847,3 +1847,67 @@ public final class dev/nucleusframework/window/tao/v2/WindowStateKt {
 	public static final fun rememberWindowStateWithBounds-dpC4h7o (Landroidx/compose/ui/unit/DpOffset;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/v2/WindowState;
 }
 
+public abstract interface class dev/nucleusframework/window/tao/workspace/TransferDrag {
+	public abstract fun cancel ()V
+	public abstract fun end ()V
+	public abstract fun getGhostSizePx-NH-jbRc ()J
+	public abstract fun getGhostSource ()Ldev/nucleusframework/window/tao/workspace/TransferGhostSource;
+	public abstract fun getTitle ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/workspace/TransferDragGesture {
+	public fun onDrag-k-4lQ0M (J)Z
+	public fun onEnd (Z)V
+	public fun onStart-k-4lQ0M (J)V
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferDragGesture$DefaultImpls {
+	public static fun onDrag-k-4lQ0M (Ldev/nucleusframework/window/tao/workspace/TransferDragGesture;J)Z
+	public static fun onEnd (Ldev/nucleusframework/window/tao/workspace/TransferDragGesture;Z)V
+	public static fun onStart-k-4lQ0M (Ldev/nucleusframework/window/tao/workspace/TransferDragGesture;J)V
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferDragGesture$Immediate : dev/nucleusframework/window/tao/workspace/TransferDragGesture {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/workspace/TransferDragGesture$Immediate;
+	public fun onDrag-k-4lQ0M (J)Z
+	public fun onEnd (Z)V
+	public fun onStart-k-4lQ0M (J)V
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferDragKt {
+	public static final fun positionInWindowPx (Landroidx/compose/ui/draganddrop/DragAndDropEvent;)J
+	public static final fun transferDragHandle (Landroidx/compose/ui/Modifier;Ljava/lang/Object;Ldev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/workspace/TransferDragGesture;Landroidx/compose/runtime/Composer;II)Landroidx/compose/ui/Modifier;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/workspace/TransferGhostSource {
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferGhostSource$None : dev/nucleusframework/window/tao/workspace/TransferGhostSource {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$None;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferGhostSource$Region : dev/nucleusframework/window/tao/workspace/TransferGhostSource {
+	public static final field $stable I
+	public fun <init> (Landroidx/compose/ui/unit/IntRect;)V
+	public final fun component1 ()Landroidx/compose/ui/unit/IntRect;
+	public final fun copy (Landroidx/compose/ui/unit/IntRect;)Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$Region;
+	public static synthetic fun copy$default (Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$Region;Landroidx/compose/ui/unit/IntRect;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$Region;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRectPx ()Landroidx/compose/ui/unit/IntRect;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferGhostSource$WholeWindow : dev/nucleusframework/window/tao/workspace/TransferGhostSource {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$WholeWindow;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+

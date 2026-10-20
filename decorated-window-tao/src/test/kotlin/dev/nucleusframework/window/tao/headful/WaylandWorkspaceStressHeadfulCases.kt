@@ -464,7 +464,11 @@ internal object WaylandWorkspaceStressHeadfulCases {
                 val floating = awaitFloatingOnWayland(fixture)
                 val dialog = requireNotNull(dialogWindow)
                 awaitUntil("both members joined") { workspace.members.size == 2 }
-                check(workspace.owner === window) { "the case window should own the satellite to start with" }
+                // Ownership follows focus, and on Wayland focus is the
+                // compositor's to give — it went to the dialog, mapped last.
+                // Pinned, so the drop below really names the non-owner.
+                workspace.pinTo(window)
+                awaitUntil("the case window owns the satellite") { workspace.owner === window }
 
                 // The owner is one window, the drop names the other: the record
                 // decides, since it is the window the pointer was actually over.

@@ -308,7 +308,7 @@ private class LibraryBaseline {
         try {
             java.util.jar.JarFile(file).use { jar ->
                 for (entry in jar.entries()) {
-                    if (entry.name.contains("META-INF/native-image/")) {
+                    if (entry.name.startsWith(NATIVE_IMAGE_META_INF)) {
                         collectFromJarEntry(slurper, jar, entry)
                     }
                 }

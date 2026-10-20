@@ -597,6 +597,24 @@ internal object NativeMetalBridge {
     ): Boolean
 
     /**
+     * Headful e2e only (#827): queues a synthetic tablet event on `NSApp`
+     * (`postEvent`, delivered after the current callback returns), as a
+     * tablet driver sends it — a proximity event naming the tool, then mouse
+     * events with the `TabletPoint` subtype. [action]: 0 proximity enter,
+     * 1 proximity leave, 2 move, 3 down, 4 drag, 5 up; [tool]: 0 the mouse,
+     * 1 pen tip, 2 eraser; [x] / [y] content-local points, top-left origin.
+     * `false` when injection is disabled or the view or its window is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagInjectTabletEvent(
+        nsViewPtr: Long,
+        action: Int,
+        tool: Int,
+        x: Float,
+        y: Float,
+    ): Boolean
+
+    /**
      * Disables native → JVM callbacks and removes any active menu bar
      * monitors. Called from a JVM shutdown hook so AppKit can't fire a
      * callback into a half-destroyed JVM.

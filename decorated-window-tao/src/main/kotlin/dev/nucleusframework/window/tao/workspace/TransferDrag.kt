@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.dnd.TaoPrivateTransfer
@@ -64,39 +65,62 @@ import kotlin.math.roundToInt
  *
  * The compositor draws the drag icon; [title] on a card the size of
  * [ghostSizePx] is what it shows.
+ *
+ * Public so that a library with cross-window gestures of its own (a docking
+ * or tab layout that does not use [dev.nucleusframework.window.tao.SatelliteWorkspace]
+ * or [dev.nucleusframework.window.tao.TabWorkspace]) can carry them on native
+ * Wayland the same way. The pattern:
+ *
+ * - **Source:** [Modifier.transferDragHandle] on the grip; `begin` returns the
+ *   session and records it somewhere every window of the app can see (one
+ *   in-flight drag per process).
+ * - **Target:** Compose's `Modifier.dragAndDropTarget`, accepting only while
+ *   that session is in flight (`shouldStartDragAndDrop = { current != null }`),
+ *   resolving [DragAndDropEvent.positionInWindowPx] against its own drop zones
+ *   and writing the outcome onto the session in `onDrop`.
+ * - **Outcome:** [end] runs on the source once the platform session is over,
+ *   whether or not anything was dropped, and acts on what the target wrote.
+ *
+ * Linux only: the payload is an in-process token that only the Linux Tao host
+ * offers to the platform session. Elsewhere the session does not start and
+ * [cancel] is called; branch on [TaoWindow.canPlaceOnScreen] and use
+ * screen-coordinate drags there, as the workspaces do.
  */
-internal interface TransferDrag {
+@ExperimentalNucleusApi
+public interface TransferDrag {
     /** What the drag icon reads when it falls back to a title card. */
-    val title: String
+    public val title: String
 
     /** The title card's size in physical pixels — the grabbed strip, not the grip. */
-    val ghostSizePx: Size
+    public val ghostSizePx: Size
 
     /**
      * What the drag icon pictures: the source window's whole content, one
      * region of it (a docked panel, a tab), or nothing but the title card.
      */
-    val ghostSource: TransferGhostSource
+    public val ghostSource: TransferGhostSource
 
     /** The session is over; act on what a target recorded, if any. */
-    fun end()
+    public fun end()
 
     /** The session never started; publish nothing and change nothing. */
-    fun cancel()
+    public fun cancel()
 }
 
 /** The part of the source window a transfer drag's icon is a picture of. */
-internal sealed interface TransferGhostSource {
+@ExperimentalNucleusApi
+public sealed interface TransferGhostSource {
     /** The whole content area: a floating palette. */
-    data object WholeWindow : TransferGhostSource
+    public data object WholeWindow : TransferGhostSource
 
     /** One region, in the source window's content pixels: a docked panel, a tab. */
-    data class Region(
-        val rectPx: IntRect,
+    public data class Region(
+        /** The pictured region, in the source window's content pixels. */
+        public val rectPx: IntRect,
     ) : TransferGhostSource
 
     /** No picture; the title card stands in. */
-    data object None : TransferGhostSource
+    public data object None : TransferGhostSource
 }
 
 /**
@@ -109,9 +133,14 @@ internal sealed interface TransferGhostSource {
  * Compose's own `dragAndDropSource` leaves the press unclaimed, which is why
  * this builds on the same public [DragAndDropSourceModifierNode] rather than
  * on the finished modifier.
+ *
+ * [key] identifies the grip across recompositions (an inspector property
+ * only); [window] is the window the grip is in, whose content the drag icon
+ * pictures. [begin] may return `null` to refuse the drag.
  */
+@ExperimentalNucleusApi
 @Composable
-internal fun Modifier.transferDragHandle(
+public fun Modifier.transferDragHandle(
     key: Any?,
     window: TaoWindow,
     begin: () -> TransferDrag?,
@@ -138,18 +167,19 @@ internal fun Modifier.transferDragHandle(
  * windows can show a drop where it is aimed: until the platform session
  * exists, no other window of the app hears anything about the pointer.
  */
-internal interface TransferDragGesture {
+@ExperimentalNucleusApi
+public interface TransferDragGesture {
     /** The gesture has passed the slop, pressed at [pressPosition] in the grip. */
-    fun onStart(pressPosition: Offset) = Unit
+    public fun onStart(pressPosition: Offset): Unit = Unit
 
     /** A sample at [position] in the grip; `true` hands the gesture to the platform session. */
-    fun onDrag(position: Offset): Boolean = true
+    public fun onDrag(position: Offset): Boolean = true
 
     /** The gesture ended in the caller's hands; [released] tells a release from an abandon. */
-    fun onEnd(released: Boolean) = Unit
+    public fun onEnd(released: Boolean): Unit = Unit
 
     /** Hands over at once: every grip with nothing of its own to do. */
-    object Immediate : TransferDragGesture
+    public object Immediate : TransferDragGesture
 }
 
 /**
@@ -430,9 +460,13 @@ private const val GHOST_TITLE_SP = 13
  * AWT events in (see `TaoSceneDnD`). Compose keeps its own `positionInRoot`
  * internal, so the position is read back off the native event; `Unspecified`
  * for an event that is not one of the hosts', which no zone then contains.
+ *
+ * What a [TransferDrag] target resolves its drop zones against: the source
+ * cannot tell where the pointer is, so the window under it decides.
  */
+@ExperimentalNucleusApi
 @OptIn(ExperimentalComposeUiApi::class)
-internal fun DragAndDropEvent.positionInWindowPx(): Offset =
+public fun DragAndDropEvent.positionInWindowPx(): Offset =
     when (val native = nativeEvent) {
         is DropTargetDragEvent -> Offset(native.location.x.toFloat(), native.location.y.toFloat())
         is DropTargetDropEvent -> Offset(native.location.x.toFloat(), native.location.y.toFloat())

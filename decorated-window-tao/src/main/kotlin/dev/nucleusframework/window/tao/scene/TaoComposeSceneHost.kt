@@ -877,6 +877,30 @@ internal class TaoComposeSceneHost(
         window.requestRedraw()
     }
 
+    /**
+     * Reclaims the GPU resource cache when the window is minimized (#638) —
+     * the at-rest moment: nothing is visible, and the re-mint is paid by the
+     * restore frame, which redraws everything anyway. Without it the cache an
+     * animation filled stays at its high-water mark for the life of the
+     * process (the reporter's 299 MB of idle graphics footprint).
+     *
+     * Hops to the render thread like [purgeGpuResourceCache], so the purge
+     * lands between two frames like the in-drag one. Skipped under a live
+     * [dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers] consumer
+     * (#478), whose renderer must not lose its cache mid-frame.
+     */
+    fun onMinimizedChanged(minimized: Boolean) {
+        if (!minimized) return
+        val ctx = directContext ?: return
+        if (dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
+                .isActive(ctx)
+        ) {
+            return
+        }
+        // Rejected once detach() shut the executor down — nothing to reclaim then.
+        runCatching { renderExecutor.submit { ctx.purgeAtRest() } }
+    }
+
     fun onFocusChanged(focused: Boolean) {
         windowInfo.isWindowFocused = focused
         if (!focused) interruptRotation()
@@ -1292,7 +1316,7 @@ internal class TaoComposeSceneHost(
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
+            type = window.pointerType,
             keyboardModifiers = currentKeyboardModifiers,
         )
     }
@@ -1350,7 +1374,7 @@ internal class TaoComposeSceneHost(
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
+            type = window.pointerType,
             keyboardModifiers = currentKeyboardModifiers,
             button = composeButton,
         )

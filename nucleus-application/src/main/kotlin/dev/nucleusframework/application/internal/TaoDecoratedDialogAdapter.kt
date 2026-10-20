@@ -5,10 +5,12 @@ package dev.nucleusframework.application.internal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -22,7 +24,10 @@ import dev.nucleusframework.window.DecoratedDialogState
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.tao.LocalTaoCompositionLocalContextBridge
+import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
+import dev.nucleusframework.window.tao.TaoWindow
+import kotlinx.coroutines.flow.filter
 import dev.nucleusframework.window.tao.DecoratedDialog as TaoDecoratedDialog
 
 internal object TaoDecoratedDialogAdapter {
@@ -65,6 +70,8 @@ internal object TaoDecoratedDialogAdapter {
             parentModalCount.value++
             onDispose { parentModalCount.value-- }
         }
+        val parentWindow = LocalTaoWindow.current
+        val takesActivation = visible && enabled && focusable
 
         with(scope.taoScope) {
             TaoDecoratedDialog(
@@ -84,6 +91,7 @@ internal object TaoDecoratedDialogAdapter {
                 compositionLocalContext = outerLocals,
                 systemDecorations = systemDecorations,
             ) {
+                RedirectParentActivation(parentWindow, window, takesActivation)
                 bindNucleusDialogContent(outerLocals, parentLayoutDirection, content)
             }
         }
@@ -115,6 +123,8 @@ internal object TaoDecoratedDialogAdapter {
             parentModalCount.value++
             onDispose { parentModalCount.value-- }
         }
+        val parentWindow = LocalTaoWindow.current
+        val takesActivation = visible && enabled && focusable
         with(scope.taoScope) {
             TaoDecoratedDialog(
                 onCloseRequest = onCloseRequest,
@@ -132,9 +142,33 @@ internal object TaoDecoratedDialogAdapter {
                 compositionLocalContext = outerLocals,
                 systemDecorations = systemDecorations,
             ) {
+                RedirectParentActivation(parentWindow, window, takesActivation)
                 bindNucleusDialogContent(outerLocals, parentLayoutDirection, content)
             }
         }
+    }
+}
+
+/**
+ * Hands activation back to the dialog whenever its [parent] gets it (#515).
+ *
+ * The parent stays enabled while a dialog is open — the modal blocker only swallows its pointer
+ * input — and every OS keeps an owned dialog above its owner. A click on the uncovered part of the
+ * parent, its taskbar button, Alt-Tab or `toFront()` therefore focused the parent under the dialog,
+ * and keystrokes reached the content the dialog is blocking. A modal dialog takes that activation,
+ * as AWT does for a blocked window. Stacked dialogs chain: each one redirects its own parent.
+ */
+@Composable
+private fun RedirectParentActivation(
+    parent: TaoWindow?,
+    dialog: TaoWindow,
+    takesActivation: Boolean,
+) {
+    if (parent == null || !takesActivation) return
+    LaunchedEffect(parent, dialog) {
+        snapshotFlow { parent.isFocused }
+            .filter { it }
+            .collect { dialog.focus() }
     }
 }
 
