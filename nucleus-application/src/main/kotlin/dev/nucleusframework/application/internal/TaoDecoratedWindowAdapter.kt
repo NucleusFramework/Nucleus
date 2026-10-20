@@ -62,7 +62,7 @@ internal object TaoDecoratedWindowAdapter {
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
-        systemDecorations: Boolean = false,
+        systemDecorations: Boolean,
         content: @Composable NucleusDecoratedWindowScope.() -> Unit,
     ) {
         // Tao opens a fresh ComposeScene per window; CompositionLocals from
@@ -154,7 +154,7 @@ internal object TaoDecoratedWindowAdapter {
         maxSize: DpSize,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
-        systemDecorations: Boolean = false,
+        systemDecorations: Boolean,
         content: @Composable NucleusDecoratedWindowScope.() -> Unit,
     ) {
         val outerLocals = currentCompositionLocalContext

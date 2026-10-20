@@ -441,7 +441,9 @@ internal class TaoComposeSceneHostWindows(
         } else {
             NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
         }
-        if (borderlessChrome || fullyTransparent) {
+        // A system frame (#841) stays the system's even when the content is
+        // transparent: it is real non-client area, not a contour to hide.
+        if (!window.hasSystemDecorations && (borderlessChrome || fullyTransparent)) {
             // Kill DWM 1px contour + shadow margin (Compose border is already
             // skipped by the openDecoratedWindowWindows undecorated path).
             // Fully transparent windows (#416) need the same treatment even

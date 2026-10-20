@@ -324,8 +324,9 @@ internal fun ApplicationScope.openDecoratedWindow(
             // `undecorated` opts out entirely (borderless, no traffic lights).
             // Linux still gets the native GTK drop shadow through
             // `undecoratedShadow` below (yaru.dart-style hidden-titlebar CSD).
-            // System decorations (#841) keep them on every platform.
-            decorations = systemChrome || (!undecorated && Platform.Current == Platform.MacOS),
+            // System decorations (#841) keep them on every platform —
+            // `openWindow` turns them on for `systemDecorations`.
+            decorations = !undecorated && Platform.Current == Platform.MacOS,
             systemDecorations = systemChrome,
             resizable = resizable,
             visible = false, // we show after first paint
@@ -1084,6 +1085,12 @@ private fun initialLinuxSize(
     // directly to `nativeResize` and used by Compose with `Density(scale)`),
     // and monitor.rs already returns the work area in physical pixels, so we
     // pass the values through unchanged.
+    //
+    // System decorations (#841): the client is the work area minus the window
+    // manager's or GTK's title bar, a height no API answers before the window
+    // is framed. The estimate is then one title bar too tall for this single
+    // frame — the compositor's first configure follows at once — which beats
+    // the requested-size frame (content in a corner of a maximized window).
     if (!maximized || !NativeTaoBridge.isLoaded) return fallbackW to fallbackH
     val workArea =
         NativeTaoBridge.nativeLinuxPrimaryMonitorWorkArea(window.handle)

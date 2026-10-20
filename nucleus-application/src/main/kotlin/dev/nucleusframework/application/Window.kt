@@ -49,6 +49,11 @@ import dev.nucleusframework.window.tao.v2.WindowState as NucleusWindowState
  * decorations from either side.
  *
  * Inside [content], `nucleusWindow` is a portable [NucleusWindow] handle.
+ *
+ * The name is Compose's on purpose. A file importing both
+ * `androidx.compose.ui.window.*` and `dev.nucleusframework.application.*` must
+ * import this one explicitly (`import dev.nucleusframework.application.Window`),
+ * or the call is ambiguous.
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable

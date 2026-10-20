@@ -12,6 +12,8 @@ import dev.nucleusframework.window.TitleBar
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
 import dev.nucleusframework.window.tao.TaoWindow
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * System decorations (#841): the platform draws the title bar and frame. Asserted
@@ -47,7 +49,11 @@ internal object SystemDecorationsHeadfulCases {
             driver = {
                 check(window.hasSystemDecorations) { "the window must report system decorations" }
                 awaitFramed(window) { contentSize.get() }
+                assertContentSize(window, 480, 320, exactWidth = true) { contentSize.get() }
                 assertNoNucleusCaption(requestedTitleBar.get())
+                // A programmatic resize sizes the content, not the decorated toplevel.
+                window.setInnerSize(560.0, 360.0)
+                assertContentSize(window, 560, 360, exactWidth = true) { contentSize.get() }
             },
         )
     }
@@ -66,8 +72,30 @@ internal object SystemDecorationsHeadfulCases {
                 val dialog = awaitDialog()
                 check(dialog.hasSystemDecorations) { "the dialog must report system decorations" }
                 awaitFramed(dialog) { contentSize.get() }
+                // GTK may widen a window to fit its own title bar around a long title.
+                assertContentSize(dialog, 360, 200, exactWidth = false) { contentSize.get() }
             },
         )
+    }
+
+    /** Waits until the content is [widthDp] × [heightDp] (width at least that, unless [exactWidth]). */
+    private suspend fun TaoWindowTestScope.assertContentSize(
+        target: TaoWindow,
+        widthDp: Int,
+        heightDp: Int,
+        exactWidth: Boolean,
+        content: () -> IntSize?,
+    ) {
+        val scale = target.scaleFactor
+        val w = (widthDp * scale).roundToInt()
+        val h = (heightDp * scale).roundToInt()
+        awaitUntil(
+            "content of ${widthDp}x$heightDp dp",
+            detail = { "content=${content()} expected=${w}x$h px" },
+        ) {
+            val c = content()
+            c != null && abs(c.height - h) <= 1 && (if (exactWidth) abs(c.width - w) <= 1 else c.width >= w - 1)
+        }
     }
 
     /** The suite publishes the dialog before the driver runs. */
