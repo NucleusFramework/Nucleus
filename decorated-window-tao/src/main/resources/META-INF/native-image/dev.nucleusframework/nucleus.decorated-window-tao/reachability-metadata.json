@@ -83,6 +83,7 @@
                         "long",
                         "int",
                         "int",
+                        "int",
                         "int"
                     ]
                 },
@@ -163,6 +164,7 @@
                         "long",
                         "int",
                         "long",
+                        "int",
                         "int",
                         "int",
                         "int"

@@ -297,6 +297,13 @@ public class TaoWindow internal constructor(
     @Volatile
     private var touchInputListener: TouchInputListener? = null
 
+    /**
+     * Tool behind the touch event being dispatched to [touchInputListener]:
+     * a finger, or a Windows pen and its eraser end (#827).
+     */
+    internal var touchPointerType: PointerType = PointerType.Touch
+        private set
+
     @Volatile
     private var keyListener: KeyEventListener? = null
 
@@ -1538,7 +1545,9 @@ public class TaoWindow internal constructor(
         xFixed: Int,
         yFixed: Int,
         forceFixed: Int,
+        kind: Int,
     ) {
+        touchPointerType = taoPointerType(kind)
         touchInputListener?.onTouch(phase, id, xFixed, yFixed, forceFixed)
     }
 
