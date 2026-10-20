@@ -1286,7 +1286,7 @@ internal class TaoComposeSceneHost(
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
+            type = window.pointerType,
             keyboardModifiers = currentKeyboardModifiers,
         )
     }
@@ -1344,7 +1344,7 @@ internal class TaoComposeSceneHost(
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
+            type = window.pointerType,
             keyboardModifiers = currentKeyboardModifiers,
             button = composeButton,
         )

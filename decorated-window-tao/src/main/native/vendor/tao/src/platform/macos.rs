@@ -16,6 +16,22 @@ use crate::{
   window::{Window, WindowBuilder},
 };
 
+pub use crate::platform_impl::PointerSource;
+
+/// Additional methods on `DeviceId` that are specific to MacOS.
+pub trait DeviceIdExtMacOS {
+  /// The tool of the pointer event that carried this id: tablet pens and
+  /// erasers are told apart from the mouse (PATCH(nucleus)).
+  fn pointer_source(&self) -> PointerSource;
+}
+
+impl DeviceIdExtMacOS for crate::event::DeviceId {
+  #[inline]
+  fn pointer_source(&self) -> PointerSource {
+    self.0.pointer_source()
+  }
+}
+
 /// Additional methods on `Window` that are specific to MacOS.
 pub trait WindowExtMacOS {
   /// Returns a pointer to the cocoa `NSWindow` that is used by this window.
