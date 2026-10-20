@@ -28,6 +28,7 @@ import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoFatalCoroutineExceptionHandler
+import dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
 import dev.nucleusframework.window.tao.TaoKeyLocation
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoMonitors
@@ -416,6 +417,7 @@ internal class TaoComposeSceneHost(
                     it.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
                 }
             }
+        window.onMinimizedChanged(restReclaimOnMinimize)
 
         scale = initialMacOsScaleFactor(window)
 
@@ -751,6 +753,25 @@ internal class TaoComposeSceneHost(
 
     private var lastResizePurgeNs: Long = 0
 
+    /** Reclaims the cache an animation filled once the window is at rest (#638). */
+    private val restReclaimer = GpuCacheRestReclaimer(::purgeAtRest)
+
+    private val restReclaimOnMinimize: (Boolean) -> Unit = { minimized ->
+        if (minimized) restReclaimer.onMinimized()
+    }
+
+    /**
+     * [purgeGpuResourceCache] for [restReclaimer], unless a
+     * [TaoGpuRenderContextConsumers] consumer renders on this context: it may
+     * keep resources across frames of its own, and an idle scene says nothing
+     * about it being idle too.
+     */
+    private fun purgeAtRest(): Boolean {
+        val ctx = directContext ?: return true
+        if (!TaoGpuRenderContextConsumers.isActive(ctx)) purgeGpuResourceCache()
+        return true
+    }
+
     /**
      * Set by [onResized] once its same-turn present is on its way; the next
      * render-loop frame then skips its own replay + present (#576). That frame
@@ -792,7 +813,7 @@ internal class TaoComposeSceneHost(
      * on an animating window as a visible stall — a window with a live
      * `NativeView` embed dropped below 4 frames per 400 ms right after a storm.
      * Cost with no measured benefit. The reclaim that #638 is actually after is
-     * at rest, not at drag end, and belongs on the idle path.
+     * at rest, not at drag end — that is [restReclaimer].
      */
     private fun purgeResizeScratchIfDue() {
         val now = System.nanoTime()
@@ -1785,6 +1806,7 @@ internal class TaoComposeSceneHost(
         // quiesces instead of rendering into a hidden surface. Restored via
         // TaoWindow's requestRedraw on the MINIMIZED-off event.
         if (window.isMinimized) return
+        restReclaimer.onFrame()
 
         // ── interop transaction snapshot (main) ──
         val tx = retrieveTransaction()
@@ -2117,6 +2139,8 @@ internal class TaoComposeSceneHost(
         frameDispatcher?.cancel()
         frameDispatcher = null
         renderLoopJob.cancel()
+        window.removeMinimizedListener(restReclaimOnMinimize)
+        restReclaimer.close()
         textToolbar.hide()
         window.clearContentMeasurer()
         sceneBundle?.close()

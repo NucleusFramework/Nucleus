@@ -537,6 +537,13 @@ internal class TaoComposeSceneHostLinux(
     private var lastResizePurgeNs: Long = 0L
     private var resizePurgeDue: Boolean = false
 
+    /** Reclaims the cache an animation filled once the window is at rest (#638). */
+    private val restReclaimer = GpuCacheRestReclaimer(::purgeAtRest)
+
+    private val restReclaimOnMinimize: (Boolean) -> Unit = { minimized ->
+        if (minimized) restReclaimer.onMinimized()
+    }
+
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
@@ -667,6 +674,7 @@ internal class TaoComposeSceneHostLinux(
 
     fun attach() {
         attachGpu()
+        window.onMinimizedChanged(restReclaimOnMinimize)
         if (isCsdActive) {
             // Round the GTK frame to the same radius as the Compose corner
             // carve so the native decoration and the content coincide.
@@ -1920,6 +1928,32 @@ internal class TaoComposeSceneHostLinux(
         ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
     }
 
+    /**
+     * The limit-toggle for [restReclaimer], outside any frame. Same rules as
+     * the render pass, the only other place this host's context is bound on
+     * the event-loop thread: never while the swap thread holds the context for
+     * its `eglSwapBuffers`, never before a pending size reached the native
+     * window (`eglMakeCurrent` would acquire a back buffer at the old size,
+     * #444), and with Skia's GL state reset if a `NativeView` compositor ran GL
+     * here since the last frame. Either of the first two defers the purge to
+     * the next rest period. Nothing to do while the window is hidden on
+     * Wayland: [suspendGpu] closed the whole context.
+     */
+    private fun purgeAtRest(): Boolean {
+        val ctx = directContext ?: return true
+        if (attachmentHandle == 0L || TaoGpuRenderContextConsumers.isActive(ctx)) return true
+        if (swapThread?.awaitIdle(0L) == false) return false
+        if (widthPx != lastAppliedWidthPx || heightPx != lastAppliedHeightPx || scale != lastAppliedScale) {
+            return false
+        }
+        NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
+        if (foreignGlInterop) ctx.resetGLAll()
+        ctx.resourceCacheLimit = 0
+        ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+        NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+        return true
+    }
+
     fun onFocusChanged(focused: Boolean) {
         // NB: do NOT clear compositorDragActive on focus-in here. GNOME toggles
         // keyboard focus *during* a compositor resize/move grab, and clearing on
@@ -2193,6 +2227,7 @@ internal class TaoComposeSceneHostLinux(
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
         if (widthPx <= 0 || heightPx <= 0) return
+        restReclaimer.onFrame()
         if (isWayland && attachedKind == 2 && !window.isPopup) ensureToplevelDrawHook()
 
         val now = System.nanoTime()
@@ -3654,6 +3689,8 @@ internal class TaoComposeSceneHostLinux(
         if (NativeTaoLinuxTouchBridge.isLoaded && window.handle != 0L) {
             NativeTaoLinuxTouchBridge.nativeRevoke(window.handle)
         }
+        window.removeMinimizedListener(restReclaimOnMinimize)
+        restReclaimer.close()
         // Stop the swap thread first. It may be parked inside
         // `eglSwapBuffers` waiting on a frame callback — joining without a
         // wakeup would hang. `shutdownAndJoin` requests shutdown before

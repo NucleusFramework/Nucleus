@@ -234,6 +234,13 @@ internal class TaoComposeSceneHostWindows(
     /** Monotonic ns of the last in-drag GPU cache purge (see [onResized]). */
     private var lastResizePurgeNs: Long = 0L
 
+    /** Reclaims the cache an animation filled once the window is at rest (#638). */
+    private val restReclaimer = GpuCacheRestReclaimer(::purgeAtRest)
+
+    private val restReclaimOnMinimize: (Boolean) -> Unit = { minimized ->
+        if (minimized) restReclaimer.onMinimized()
+    }
+
     /** A size change awaits push into the GL surface + ComposeScene at the next paint. */
     private var pendingResizeApply: Boolean = false
 
@@ -480,6 +487,7 @@ internal class TaoComposeSceneHostWindows(
                 it.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
             }
         attachedHostCount.incrementAndGet()
+        window.onMinimizedChanged(restReclaimOnMinimize)
 
         @OptIn(ExperimentalComposeUiApi::class)
         val dndManager =
@@ -1182,6 +1190,23 @@ internal class TaoComposeSceneHostWindows(
     }
 
     /**
+     * [purgeGpuResourceCache] for [restReclaimer] — on the event-loop thread,
+     * between two frames, with this host's context made current like on the
+     * resize path. Skipped while a
+     * [dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers] consumer
+     * renders on this context: an idle scene says nothing about it being idle.
+     */
+    private fun purgeAtRest(): Boolean {
+        val ctx = directContext ?: return true
+        if (!dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
+                .isActive(ctx)
+        ) {
+            purgeGpuResourceCache()
+        }
+        return true
+    }
+
+    /**
      * Enter/leave the OS modal resize/move loop (WM_ENTERSIZEMOVE /
      * WM_EXITSIZEMOVE). VSync is dropped for the whole loop, exactly like the
      * outbound-drag session ([launchWindowsOutboundDrag]): the per-WM_SIZE
@@ -1752,6 +1777,7 @@ internal class TaoComposeSceneHostWindows(
         // TaoWindow.requestRedraw on the MINIMIZED-off event. The scene's
         // coroutines keep running meanwhile, between frames (#754).
         if (window.isMinimized) return
+        restReclaimer.onFrame()
         val frameStartNanos = System.nanoTime()
 
         if (heldAfterIdleFrame(sameTurnResize)) return
@@ -2836,6 +2862,8 @@ internal class TaoComposeSceneHostWindows(
         pinchEndJob?.cancel()
         pinchEndJob = null
         gestureScope.cancel()
+        window.removeMinimizedListener(restReclaimOnMinimize)
+        restReclaimer.close()
         // Make THIS host's ES context current before tearing down Skia
         // resources. A sibling host (e.g. the main window opened while this
         // one — the onboarding window — closes) may have left its own
