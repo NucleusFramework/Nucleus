@@ -522,3 +522,34 @@ pub(crate) static SIZE_MOVE_HOOK: std::sync::OnceLock<fn(crate::window::WindowId
 pub fn set_size_move_hook(hook: fn(crate::window::WindowId, bool)) {
   let _ = SIZE_MOVE_HOOK.set(hook);
 }
+
+// PATCH(nucleus): screen position of the last mouse message (#837).
+//
+// A window that follows the pointer (a tab or a satellite dragged by its own
+// strip) is moved by the drag one sample late. When the cursor has already
+// moved on by the time the window moves, the one WM_MOUSEMOVE Windows
+// generates for both lands at the client position of the sample before: a
+// step equal to the window's own reads as no move at all to everything keyed
+// on client coordinates (the WM_MOUSEMOVE dedupe here, the embedder's
+// deadband, Compose's hit path), and a drop resolves one sample short. The
+// window procedure records the screen point of every mouse move and button
+// message, converted while the window still sits where that message was
+// hit-tested, and the embedder reads the release's back.
+static LAST_MOUSE_SCREEN_POSITION: std::sync::Mutex<Option<(i32, i32)>> =
+  std::sync::Mutex::new(None);
+
+pub(crate) fn record_mouse_screen_position(x: i32, y: i32) {
+  if let Ok(mut position) = LAST_MOUSE_SCREEN_POSITION.lock() {
+    *position = Some((x, y));
+  }
+}
+
+/// Screen position, in physical pixels, of the last mouse move or button
+/// message any window of this process received; `None` before the first one.
+/// See [`LAST_MOUSE_SCREEN_POSITION`].
+pub fn last_mouse_screen_position() -> Option<(i32, i32)> {
+  LAST_MOUSE_SCREEN_POSITION
+    .lock()
+    .ok()
+    .and_then(|position| *position)
+}
