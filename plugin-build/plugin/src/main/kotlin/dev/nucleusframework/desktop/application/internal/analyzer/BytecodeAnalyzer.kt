@@ -199,19 +199,18 @@ internal object BytecodeAnalyzer {
                     scan.addClass(entry.name.removeSuffix(".class"), classBytes, collectReferences)
                 }
 
-                val allJniCallbackCandidates = scan.jniFieldTypes + scan.jniReferencedTypes + scan.jniSuperclassTypes
-                resolveJniCallbackTypes(allJniCallbackCandidates, scan.classBytesIndex, scan.jniEntries)
-                enrichJniClassEntries(scan.classBytesIndex, scan.jniEntries)
             }
         } catch (_: Exception) {
             // Corrupt JAR — return whatever was collected
         }
 
-        for (refType in scan.jniReferencedTypes) {
-            if (scan.jniEntries.none { it.type == refType }) {
-                scan.jniEntries.add(JniEntry(type = refType))
-            }
-        }
+        finishJniEntries(
+            fieldTypes = scan.jniFieldTypes,
+            referencedTypes = scan.jniReferencedTypes,
+            superclassTypes = scan.jniSuperclassTypes,
+            classBytesIndex = scan.classBytesIndex,
+            jniEntries = scan.jniEntries,
+        )
 
         return PartialScan(
             reflectionEntries = scan.reflectionEntries,
@@ -344,15 +343,13 @@ internal object BytecodeAnalyzer {
                 }
             }
 
-        val allJniCallbackCandidates = jniFieldTypes + jniReferencedTypes + jniSuperclassTypes
-        resolveJniCallbackTypes(allJniCallbackCandidates, classBytesIndex, jniEntries)
-        enrichJniClassEntries(classBytesIndex, jniEntries)
-
-        for (refType in jniReferencedTypes) {
-            if (jniEntries.none { it.type == refType }) {
-                jniEntries.add(JniEntry(type = refType))
-            }
-        }
+        finishJniEntries(
+            fieldTypes = jniFieldTypes,
+            referencedTypes = jniReferencedTypes,
+            superclassTypes = jniSuperclassTypes,
+            classBytesIndex = classBytesIndex,
+            jniEntries = jniEntries,
+        )
 
         return PartialScan(
             reflectionEntries = reflectionEntries,
@@ -362,6 +359,33 @@ internal object BytecodeAnalyzer {
             referencedTypes = referencedTypes,
             projectFacts = projectFacts,
         )
+    }
+
+    /**
+     * Turns the per-class native-method results of one JAR or class directory into its JNI
+     * entries: callback types reached from JNI classes, the full member lists of those classes,
+     * and a bare entry for every type in a native signature.
+     *
+     * GraalVM word types are dropped last, whichever of those routes added them. A `@CStruct`
+     * interface is a word-sized pointer, not an object, and registering one for JNI crashes
+     * native-image's points-to analysis ("Should not reach here: This method should never be
+     * called"). They can arrive through a nested-class expansion, a field or a native signature.
+     */
+    private fun finishJniEntries(
+        fieldTypes: Set<String>,
+        referencedTypes: Set<String>,
+        superclassTypes: Set<String>,
+        classBytesIndex: Map<String, ByteArray>,
+        jniEntries: MutableSet<JniEntry>,
+    ) {
+        resolveJniCallbackTypes(fieldTypes + referencedTypes + superclassTypes, classBytesIndex, jniEntries)
+        enrichJniClassEntries(classBytesIndex, jniEntries)
+        for (refType in referencedTypes) {
+            if (jniEntries.none { it.type == refType }) {
+                jniEntries.add(JniEntry(type = refType))
+            }
+        }
+        jniEntries.removeAll { NativeMethodDetector.isGraalvmWordType(it.type.replace('.', '/'), classBytesIndex) }
     }
 
     private fun resolveJniCallbackTypes(
