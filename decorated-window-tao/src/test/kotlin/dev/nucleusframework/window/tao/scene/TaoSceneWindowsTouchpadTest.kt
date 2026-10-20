@@ -1,7 +1,10 @@
 package dev.nucleusframework.window.tao.scene
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -215,6 +219,41 @@ class TaoSceneWindowsTouchpadTest {
             assertFalse(touchpadPinchOpen, "the end still arrives")
             assertEquals(1.5f, zoom, 1e-3f)
         }
+
+    @Test
+    fun `a pinch taken away cancels the scene's input, one that ends does not`() {
+        for (end in listOf(TaoDirectManipulationStatus.READY, TaoDirectManipulationStatus.SUSPENDED)) {
+            runTaoSceneTest(width = 400, height = 300) {
+                var outcome = "pending"
+                setContent {
+                    Box(
+                        Modifier.fillMaxSize().pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown()
+                                outcome = if (waitForUpOrCancellation() == null) "cancelled" else "released"
+                            }
+                        },
+                    )
+                }
+                moveMouse(200f, 150f)
+                pointerButton(PointerButton.Primary, pressed = true)
+                val dm = Stream(this, focal = Offset(200f, 150f))
+                dm.status(TaoDirectManipulationStatus.RUNNING)
+                dm.content(scale = 1.2f)
+                dm.status(end)
+                frameUntilIdle()
+                assertFalse(touchpadPinchOpen)
+                if (end == TaoDirectManipulationStatus.SUSPENDED) {
+                    assertEquals("cancelled", outcome, "SUSPENDED takes the gesture away (#799)")
+                } else {
+                    assertEquals("pending", outcome, "READY is a pinch that ended, nothing to cancel")
+                    pointerButton(PointerButton.Primary, pressed = false)
+                    frameUntilIdle()
+                    assertEquals("released", outcome)
+                }
+            }
+        }
+    }
 
     private companion object {
         const val FRAME_MILLIS = 16L

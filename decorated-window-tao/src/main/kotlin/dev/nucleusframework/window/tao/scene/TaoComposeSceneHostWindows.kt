@@ -75,8 +75,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.coroutines.CoroutineContext as KCoroutineContext
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Windows variant of [TaoComposeSceneHost]. Drives a Compose scene onto the

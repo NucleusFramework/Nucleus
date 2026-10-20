@@ -1489,6 +1489,9 @@ public object TaoSceneTestBattery {
         run("TaoSceneWindowsTouchpadTest: a disabled window drops the steps but still closes the gesture") {
             TaoSceneWindowsTouchpadTest().`a disabled window drops the steps but still closes the gesture`()
         }
+        run("TaoSceneWindowsTouchpadTest: a pinch taken away cancels the scene's input, one that ends does not") {
+            TaoSceneWindowsTouchpadTest().`a pinch taken away cancels the scene's input, one that ends does not`()
+        }
         return results
     }
 }

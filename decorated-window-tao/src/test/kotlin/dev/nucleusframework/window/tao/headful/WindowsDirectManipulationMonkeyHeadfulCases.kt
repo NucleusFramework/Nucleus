@@ -9,7 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
 import dev.nucleusframework.window.tao.event.TaoDirectManipulationStatus
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDirectManipulationBridge
 import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.DmStream
 import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.GestureRecorder
 import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.Recording
@@ -18,6 +18,7 @@ import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulC
 import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.ScrollableColumn
 import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.Transformable
 import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.Zoom
+import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.awaitViewportEnabled
 import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.ctrlWheel
 import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.injectionSkipReason
 import dev.nucleusframework.window.tao.headful.WindowsDirectManipulationHeadfulCases.isScale
@@ -72,6 +73,7 @@ internal object WindowsDirectManipulationMonkeyHeadfulCases {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("scene measured") { scene.value.width > 0 }
             awaitUntil("column measured") { (scroll.state?.maxValue ?: 0) > 0 }
+            awaitViewportEnabled()
             DmMonkey(this, recorder, scene, zoom, scroll, seed, steps).run()
         }
     }
@@ -138,7 +140,7 @@ internal object WindowsDirectManipulationMonkeyHeadfulCases {
                 }
                 quiesce()
             } finally {
-                NativeTaoBridge.nativeDiagDirectManipulationWheelFocus(false)
+                NativeTaoWindowsDirectManipulationBridge.nativeDiagDirectManipulationWheelFocus(false)
                 val worst = watchdog.stop()
                 check(worst < MONKEY_MAX_STALL_MILLIS) {
                     journal.failure("Dispatchers.Main stalled for ${worst}ms", state())
@@ -332,7 +334,7 @@ internal object WindowsDirectManipulationMonkeyHeadfulCases {
 
         /** DirectManipulation itself runs a manipulation (a wheel notch handed to it). */
         private suspend fun realManipulation() {
-            NativeTaoBridge.nativeDiagDirectManipulationWheelFocus(true)
+            NativeTaoWindowsDirectManipulationBridge.nativeDiagDirectManipulationWheelFocus(true)
             try {
                 robot { it.mouseWheel(if (random.nextBoolean()) 2 else -2) }
                 scope.awaitUntilOrTimeout(REAL_SETTLE_MILLIS) {
@@ -341,7 +343,7 @@ internal object WindowsDirectManipulationMonkeyHeadfulCases {
                         scope.stats()[WindowsDirectManipulationHeadfulCases.STAT_RESETTING] == 0
                 }
             } finally {
-                NativeTaoBridge.nativeDiagDirectManipulationWheelFocus(false)
+                NativeTaoWindowsDirectManipulationBridge.nativeDiagDirectManipulationWheelFocus(false)
             }
         }
 

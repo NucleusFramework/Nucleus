@@ -722,7 +722,7 @@ fn injection_armed() -> bool {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetDirectManipulationEnabled(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDirectManipulationBridge_nativeSetDirectManipulationEnabled(
     _env: JNIEnv,
     _class: JClass,
     enabled: jboolean,
@@ -732,7 +732,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 
 /// Event-loop thread only: the registry is that thread's.
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeDirectManipulationAttached(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDirectManipulationBridge_nativeDirectManipulationAttached(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -747,7 +747,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 /// `[attached, hitTests, claimedContacts, status, deliveredEvents, resetting,
 /// processHitTests]`. Event-loop thread only.
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeDiagDirectManipulationStats(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDirectManipulationBridge_nativeDiagDirectManipulationStats(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -784,7 +784,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 /// Test hook — see [WHEEL_FOCUS]. `false` (and no effect) outside an
 /// injection-armed process.
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeDiagDirectManipulationWheelFocus(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDirectManipulationBridge_nativeDiagDirectManipulationWheelFocus(
     _env: JNIEnv,
     _class: JClass,
     enabled: jboolean,
@@ -803,7 +803,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 /// cannot be injected). `false` outside an injection-armed process or for a
 /// window without a viewport. Event-loop thread only.
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeDiagDirectManipulationReplay(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDirectManipulationBridge_nativeDiagDirectManipulationReplay(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,

@@ -7,6 +7,7 @@ import dev.nucleusframework.window.tao.dispatch.LifecycleMainDispatcherPriming
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.event.TaoDirectManipulationGesture
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDirectManipulationBridge
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
@@ -108,7 +109,9 @@ public object TaoApplication {
         LifecycleMainDispatcherPriming.primeWithCurrentThread()
         onLaunched = block
         if (Platform.Current == Platform.Windows) {
-            NativeTaoBridge.nativeSetDirectManipulationEnabled(TaoDirectManipulationGesture.enabled)
+            NativeTaoWindowsDirectManipulationBridge.nativeSetDirectManipulationEnabled(
+                TaoDirectManipulationGesture.enabled,
+            )
         }
         // Watch the loop from the outside (#643): a stall deadlocks this
         // thread, so nothing downstream of `nativeRunBlocking` — including

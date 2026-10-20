@@ -54,8 +54,17 @@ internal class TaoWindowsTouchpadInput(
     }
 
     private var pinchCenter = Offset.Zero
+
+    // A pinch the viewport takes away cancels every gesture in the scene, as
+    // on macOS and Linux (#799) — an open pan included, so it is closed first:
+    // Compose would forget it and its next step would open a second PanStart.
     private val scaleSession =
-        TaoTrackpadScaleSession { type, factor ->
+        TaoTrackpadScaleSession(
+            cancelPointerInput = {
+                scrollRouter.finishPan()
+                target.scene?.cancelPointerInput()
+            },
+        ) { type, factor ->
             target.scene?.dispatchTrackpadScale(
                 x = pinchCenter.x,
                 y = pinchCenter.y,
@@ -202,7 +211,7 @@ internal class TaoWindowsTouchpadInput(
             TaoTrackpadPhase.CHANGED -> if (inputEnabled) scaleSession.change(factor)
             else -> {
                 manipulationPinchOpen = false
-                scaleSession.end()
+                scaleSession.end(cancelled = phase == TaoTrackpadPhase.CANCELLED)
             }
         }
     }

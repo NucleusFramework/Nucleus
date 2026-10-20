@@ -24,7 +24,7 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent
 import dev.nucleusframework.window.tao.event.TaoDirectManipulationStatus
-import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDirectManipulationBridge
 import kotlinx.coroutines.delay
 import java.awt.event.KeyEvent
 import java.util.Collections
@@ -72,7 +72,7 @@ internal object WindowsDirectManipulationHeadfulCases {
             skip = ::windowsOnly,
         ) {
             awaitUntil("window mapped") { bounds() != null }
-            check(NativeTaoBridge.nativeDirectManipulationAttached(window.handle)) {
+            check(NativeTaoWindowsDirectManipulationBridge.nativeDirectManipulationAttached(window.handle)) {
                 "the window has no DirectManipulation viewport: ${stats().contentToString()}"
             }
             val status = stats()[STAT_STATUS]
@@ -99,9 +99,12 @@ internal object WindowsDirectManipulationHeadfulCases {
         ) {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("scene measured") { scene.value.width > 0 }
+            awaitViewportEnabled()
             val tap = DmTap(window)
             try {
-                check(NativeTaoBridge.nativeDiagDirectManipulationWheelFocus(true)) { "wheel focus hook refused" }
+                check(NativeTaoWindowsDirectManipulationBridge.nativeDiagDirectManipulationWheelFocus(true)) {
+                    "wheel focus hook refused"
+                }
                 val centre = Offset(scene.value.width / 2f, scene.value.height / 2f)
                 val driver = RobotPointerDriver(window) { scene.value }
                 driver.moveTo(centre)
@@ -142,7 +145,7 @@ internal object WindowsDirectManipulationHeadfulCases {
                     "the reset must bring the content back to identity, got $first"
                 }
             } finally {
-                NativeTaoBridge.nativeDiagDirectManipulationWheelFocus(false)
+                NativeTaoWindowsDirectManipulationBridge.nativeDiagDirectManipulationWheelFocus(false)
                 tap.remove()
             }
         }
@@ -159,6 +162,7 @@ internal object WindowsDirectManipulationHeadfulCases {
         ) {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("scene measured") { scene.value.width > 0 }
+            awaitViewportEnabled()
             val focal = Offset(scene.value.width * 0.3f, scene.value.height * 0.6f)
             val stream = DmStream(focal)
             recorder.reset()
@@ -205,6 +209,7 @@ internal object WindowsDirectManipulationHeadfulCases {
         ) {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("scene measured") { scene.value.width > 0 }
+            awaitViewportEnabled()
             val stream = DmStream(Offset(scene.value.width / 2f, scene.value.height / 2f))
             zoom.reset()
             pinch(stream, factor = 2.5f, steps = 20)
@@ -236,6 +241,7 @@ internal object WindowsDirectManipulationHeadfulCases {
         ) {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("column measured") { (scroll.state?.maxValue ?: 0) > PAN_MIN_RANGE_PX }
+            awaitViewportEnabled()
             val stream = DmStream(Offset(scene.value.width / 2f, scene.value.height / 2f))
             val before = scroll.value()
             recorder.reset()
@@ -287,6 +293,7 @@ internal object WindowsDirectManipulationHeadfulCases {
         ) {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("scene measured") { scene.value.width > 0 }
+            awaitViewportEnabled()
             val stream = DmStream(Offset(scene.value.width / 2f, scene.value.height / 2f))
             recorder.reset()
             replay(stream.status(TaoDirectManipulationStatus.RUNNING))
@@ -324,6 +331,7 @@ internal object WindowsDirectManipulationHeadfulCases {
         ) {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("scene measured") { scene.value.width > 0 }
+            awaitViewportEnabled()
             val stream = DmStream(Offset(scene.value.width / 2f, scene.value.height / 2f))
             recorder.reset()
             replay(stream.status(TaoDirectManipulationStatus.RUNNING))
@@ -361,6 +369,7 @@ internal object WindowsDirectManipulationHeadfulCases {
         ) {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("scene measured") { scene.value.width > 0 }
+            awaitViewportEnabled()
             val centre = Offset(scene.value.width / 2f, scene.value.height / 2f)
             val driver = RobotPointerDriver(window) { scene.value }
             driver.moveTo(centre)
@@ -423,9 +432,20 @@ internal object WindowsDirectManipulationHeadfulCases {
         ) = floatArrayOf(kind.toFloat(), current.toFloat(), previous.toFloat(), scale, x, y, focal.x, focal.y)
     }
 
+    /**
+     * Waits for the window's real viewport to report ENABLED: `Enable()` settles
+     * asynchronously, a few frames after the window maps, and that status
+     * change, landing in the middle of a replayed stream, would read as the
+     * manipulation being taken away — a cancel no touchpad could produce.
+     */
+    internal suspend fun TaoWindowTestScope.awaitViewportEnabled() {
+        awaitUntil("the viewport enabled") { stats()[STAT_STATUS] == TaoDirectManipulationStatus.ENABLED }
+        delay(FRAME_MILLIS)
+    }
+
     /** One replayed step, then a frame for the loop to deliver it. */
     internal suspend fun TaoWindowTestScope.replay(event: FloatArray) {
-        check(NativeTaoBridge.nativeDiagDirectManipulationReplay(window.handle, event)) {
+        check(NativeTaoWindowsDirectManipulationBridge.nativeDiagDirectManipulationReplay(window.handle, event)) {
             "the viewport refused the replay (injection armed? viewport bound? ${stats().contentToString()})"
         }
         delay(FRAME_MILLIS)
@@ -447,7 +467,8 @@ internal object WindowsDirectManipulationHeadfulCases {
     }
 
     internal fun TaoWindowTestScope.stats(): IntArray =
-        NativeTaoBridge.nativeDiagDirectManipulationStats(window.handle) ?: IntArray(STAT_COUNT)
+        NativeTaoWindowsDirectManipulationBridge.nativeDiagDirectManipulationStats(window.handle)
+            ?: IntArray(STAT_COUNT)
 
     internal suspend fun robot(gesture: (java.awt.Robot) -> Unit) {
         val ok =
