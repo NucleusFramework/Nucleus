@@ -15,6 +15,7 @@ import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
@@ -215,6 +216,38 @@ public val LocalTaoWindow: ProvidableCompositionLocal<TaoWindow?> = staticCompos
  * dialog's elevation in the absence of a compositor-drawn drop shadow.
  */
 private val ModalScrimColor = Color(0x66000000)
+
+/**
+ * Covers the window's content with a blocker that swallows every pointer
+ * event while a [DecoratedDialog] is modal over it (#832): one opened from
+ * this window ([modalCount], this window's [LocalModalDialogCount]) or one
+ * composed at application scope ([GlobalModalDialogCount]), which is
+ * application-modal — it blocks every window except dialog windows themselves,
+ * so the app-modal dialog stays interactive. On Windows the window is also
+ * disabled natively ([TaoWindowModality]), which takes care of keys and the
+ * non-client area too.
+ */
+@Composable
+private fun ModalInputBlocker(
+    modalCount: State<Int>,
+    isDialog: Boolean,
+    scrim: Boolean,
+) {
+    if (modalCount.value == 0 && (isDialog || GlobalModalDialogCount.value == 0)) return
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .then(if (scrim) Modifier.background(ModalScrimColor) else Modifier)
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial)
+                        }
+                    }
+                },
+    )
+}
 
 /**
  * Tao-backed equivalent of the legacy AWT backend's `DecoratedWindow`.
@@ -552,8 +585,14 @@ internal fun ApplicationScope.openDecoratedWindow(
                         }
                     }
                 }
-                WindowSceneColumn {
-                    scopeFactory().hotReloadContent()
+                val modalCount = remember { mutableStateOf(0) }
+                CompositionLocalProvider(LocalModalDialogCount provides modalCount) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        WindowSceneColumn {
+                            scopeFactory().hotReloadContent()
+                        }
+                        ModalInputBlocker(modalCount, isDialog, scrim = false)
+                    }
                 }
             }
         }
@@ -784,7 +823,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                         mutableStateOf(0)
                     }
                 CompositionLocalProvider(
-                    dev.nucleusframework.window.LocalModalDialogCount provides modalCount,
+                    LocalModalDialogCount provides modalCount,
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         FullscreenOverlayHost(
@@ -796,30 +835,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                                 scopeFactory().content()
                             }
                         }
-                        if (modalCount.value > 0 || (!isDialog && GlobalModalDialogCount.value > 0)) {
-                            // Dim the whole parent window while a dialog is open.
-                            // Linux dialogs are undecorated (no compositor
-                            // shadow), so the scrim is what visually pushes the
-                            // parent back and lifts the dialog forward — on top
-                            // of swallowing pointer events. GlobalModalDialogCount
-                            // covers dialogs composed at application scope, which
-                            // are application-modal: they block every window
-                            // except dialog windows themselves (the app-modal
-                            // dialog must stay interactive).
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .fillMaxSize()
-                                        .background(ModalScrimColor)
-                                        .pointerInput(Unit) {
-                                            awaitPointerEventScope {
-                                                while (true) {
-                                                    awaitPointerEvent(PointerEventPass.Initial)
-                                                }
-                                            }
-                                        },
-                            )
-                        }
+                        // Linux dialogs are undecorated (no compositor shadow),
+                        // so the scrim is what visually pushes the parent back
+                        // and lifts the dialog forward.
+                        ModalInputBlocker(modalCount, isDialog, scrim = true)
                     }
                 }
             }
@@ -1246,7 +1265,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                         mutableStateOf(0)
                     }
                 CompositionLocalProvider(
-                    dev.nucleusframework.window.LocalModalDialogCount provides modalCount,
+                    LocalModalDialogCount provides modalCount,
                     dev.nucleusframework.window.LocalIsDarkTheme provides chromeIsDark,
                     LocalRequestedAppearanceOverride provides appearanceOverride,
                 ) {
@@ -1260,20 +1279,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                                 scopeFactory().content()
                             }
                         }
-                        if (modalCount.value > 0 || (!isDialog && GlobalModalDialogCount.value > 0)) {
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .fillMaxSize()
-                                        .pointerInput(Unit) {
-                                            awaitPointerEventScope {
-                                                while (true) {
-                                                    awaitPointerEvent(PointerEventPass.Initial)
-                                                }
-                                            }
-                                        },
-                            )
-                        }
+                        ModalInputBlocker(modalCount, isDialog, scrim = false)
                     }
                 }
             }

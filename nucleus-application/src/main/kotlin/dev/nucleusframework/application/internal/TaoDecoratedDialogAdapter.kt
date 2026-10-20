@@ -4,7 +4,6 @@ package dev.nucleusframework.application.internal
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.derivedStateOf
@@ -20,7 +19,6 @@ import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
 import dev.nucleusframework.window.DecoratedDialogState
 import dev.nucleusframework.window.DecoratedWindowState
-import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.tao.LocalTaoCompositionLocalContextBridge
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
 import dev.nucleusframework.window.tao.DecoratedDialog as TaoDecoratedDialog
@@ -54,16 +52,6 @@ internal object TaoDecoratedDialogAdapter {
         // content (below ProvideCommonCompositionLocals); it's not a routing
         // local, so popups stay anchored to the dialog scene.
         val parentLayoutDirection = LocalLayoutDirection.current
-
-        // Tell the parent window to block its pointer input while this dialog
-        // is alive. The parent provides LocalModalDialogCount with a shared
-        // MutableState; we increment it here and decrement on dispose.
-        // outerLocals includes that state by reference, so the parent reacts.
-        val parentModalCount = LocalModalDialogCount.current
-        DisposableEffect(Unit) {
-            parentModalCount.value++
-            onDispose { parentModalCount.value-- }
-        }
 
         with(scope.taoScope) {
             TaoDecoratedDialog(
@@ -107,11 +95,6 @@ internal object TaoDecoratedDialogAdapter {
     ) {
         val outerLocals = currentCompositionLocalContext
         val parentLayoutDirection = LocalLayoutDirection.current
-        val parentModalCount = LocalModalDialogCount.current
-        DisposableEffect(Unit) {
-            parentModalCount.value++
-            onDispose { parentModalCount.value-- }
-        }
         with(scope.taoScope) {
             TaoDecoratedDialog(
                 onCloseRequest = onCloseRequest,
