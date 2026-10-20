@@ -845,6 +845,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         }
         val (initialW, initialH) = initialLinuxSize(window, w, h, maximized)
         host.onResized(initialW, initialH)
+        // Nothing is drawn before the map below, so nothing is laid out either:
+        // a wrap-content window would only learn its size once shown at the
+        // creation fallback (#532). Lay it out now, still hidden.
+        if (window.resolvedSizePolicy().wraps) host.layoutNow()
         // First paint must happen *after* the surface is shown:
         //  - X11: a pre-show synchronous render leaves the GLX backbuffer
         //    invalidated by the subsequent map, so the dialog stayed black

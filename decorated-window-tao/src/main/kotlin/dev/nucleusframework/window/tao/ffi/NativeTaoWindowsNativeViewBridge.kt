@@ -170,4 +170,21 @@ internal object NativeTaoWindowsNativeViewBridge {
         w: Int,
         h: Int,
     ): IntArray?
+
+    /**
+     * Injects one step of a pen stroke at [clientX], [clientY] (client px of
+     * [hwnd]) through a synthetic `PT_PEN` pointer device — real
+     * `WM_POINTER*` messages, hit-tested by the system (#827). [action] is
+     * 0 hover, 1 down, 2 drag, 3 up, 4 leave; [eraser] puts the eraser end
+     * down. False when injection is disabled (`NUCLEUS_TAO_INPUT_INJECTION`
+     * unset), unsupported (before Windows 10 1809) or refused.
+     */
+    @JvmStatic
+    external fun nativeDiagInjectPen(
+        hwnd: Long,
+        action: Int,
+        eraser: Boolean,
+        clientX: Int,
+        clientY: Int,
+    ): Boolean
 }

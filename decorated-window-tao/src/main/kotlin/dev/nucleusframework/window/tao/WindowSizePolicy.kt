@@ -39,7 +39,7 @@ internal fun TaoWindow.resolvedSizePolicy(): WindowSizePolicy = sizePolicies[han
  * has [Dp.Unspecified] on one or both dimensions (#532).
  *
  * [settled] flips once the measured size has been applied to the native
- * window: the scene then fills it like any other window's. The wrap
+ * window, [showReady] once it may be shown at that size: the scene then fills it like any other window's. The wrap
  * modifiers hand children an unbounded axis, under which `fillMaxWidth` /
  * `fillMaxHeight` collapse to content — a `TitleBar` shrank to its buttons
  * (#546).
@@ -51,6 +51,13 @@ internal class WindowSizePolicy(
 ) {
     val wraps: Boolean get() = wrapWidth || wrapHeight
     val settled: MutableState<Boolean> = mutableStateOf(false)
+
+    /**
+     * Whether the window may be shown: at once unless it wraps, else once its
+     * measured size and position are applied — shown before, it mapped at the
+     * creation fallback (#532).
+     */
+    val showReady: MutableState<Boolean> = mutableStateOf(!wraps)
 }
 
 internal fun Dp.toWindowCreationDp(fallback: Double): Double =

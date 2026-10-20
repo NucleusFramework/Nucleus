@@ -24,6 +24,7 @@ class TaoPointerKindWireDriftTest {
                 "MOUSE" to TaoPointerKind.MOUSE,
                 "STYLUS" to TaoPointerKind.STYLUS,
                 "ERASER" to TaoPointerKind.ERASER,
+                "TOUCH" to TaoPointerKind.TOUCH,
             )
         assertEquals(kotlin, rust, "events.rs POINTER_KIND_* vs TaoPointerKind")
     }
@@ -40,6 +41,7 @@ class TaoPointerKindWireDriftTest {
         assertEquals(PointerType.Mouse, taoPointerType(TaoPointerKind.MOUSE))
         assertEquals(PointerType.Stylus, taoPointerType(TaoPointerKind.STYLUS))
         assertEquals(PointerType.Eraser, taoPointerType(TaoPointerKind.ERASER))
+        assertEquals(PointerType.Touch, taoPointerType(TaoPointerKind.TOUCH))
         assertEquals(PointerType.Mouse, taoPointerType(UNKNOWN_KIND), "an unknown kind falls back to the mouse")
     }
 
