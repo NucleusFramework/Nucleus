@@ -80,6 +80,7 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
                 dir.file(mangledName)
             }
 
+    /** Rewrites every input JAR into [outputDir] and writes the marker manifest into [manifestOutputDir]. */
     @Suppress("CyclomaticComplexMethod", "NestedBlockDepth", "LoopWithTooManyJumpStatements")
     @TaskAction
     fun strip() {

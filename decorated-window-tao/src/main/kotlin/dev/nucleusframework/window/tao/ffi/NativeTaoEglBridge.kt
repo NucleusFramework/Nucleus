@@ -148,6 +148,38 @@ internal object NativeTaoEglBridge {
     external fun nativePresent(handle: Long)
 
     /**
+     * Age of the back buffer this frame renders into (#755): `0` when its
+     * content is undefined, `N` when it still holds the frame presented `N`
+     * swaps ago, `-1` when the surface supports no partial redraw (no
+     * `EGL_EXT_buffer_age` or no swap-with-damage). The context must be
+     * current on the calling thread.
+     */
+    @JvmStatic
+    external fun nativeBufferAge(handle: Long): Int
+
+    /**
+     * Asks for `EGL_BUFFER_PRESERVED` on the surface (#755), for a driver
+     * whose buffer age stays 0: [nativeBufferAge] then reports 1. Returns
+     * whether the surface took it — only one with swap-with-damage is asked,
+     * since a preserved swap can cost a full-surface copy per frame.
+     */
+    @JvmStatic
+    external fun nativeTryPreserve(handle: Long): Boolean
+
+    /**
+     * Presents like [nativePresent], telling the compositor which part of
+     * the buffer changed: [rects] holds [count] `(x, y, w, h)` quadruples in
+     * buffer pixels with a **bottom-left** origin (the EGL convention). A
+     * [count] of 0 presents the whole buffer.
+     */
+    @JvmStatic
+    external fun nativePresentWithDamage(
+        handle: Long,
+        rects: IntArray,
+        count: Int,
+    )
+
+    /**
      * Calls `eglSwapInterval` on the EGL display. Must be called while the
      * EGL context is current (after [nativeMakeCurrent]).
      * Use `interval = 0` to disable vsync during resize (avoids blocking

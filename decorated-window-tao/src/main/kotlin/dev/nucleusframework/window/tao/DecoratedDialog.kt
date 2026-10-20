@@ -108,6 +108,13 @@ public fun ApplicationScope.DecoratedDialog(
             position = initialPosition,
         )
 
+    // Set once the native owner relationship is in place. On macOS that step
+    // centres the dialog natively, at whatever size its frame has at that
+    // moment; the wrap-content recentre below waits for it so it always has
+    // the last word — run first, it was undone by a native centring of the
+    // creation-size frame (top edge left at the parent's top, #546).
+    val ownerApplied = remember { mutableStateOf(false) }
+
     DecoratedWindow(
         onCloseRequest = {
             // Just delegate: the user callback typically toggles the `showDialog`
@@ -149,17 +156,21 @@ public fun ApplicationScope.DecoratedDialog(
             // Native owner relationship. Runs inside the dialog's composition,
             // so `windowScope.window` is the dialog's TaoWindow and its HWND
             // is already resolvable via [TaoWindow.nativeHandle].
-            // Do not wait for wrap-content size: on Wayland a hidden dialog
-            // without an owner never receives a configure, so setContent
-            // never runs and wrap-content deadlocks (#532). macOS centres the
-            // creation-size frame on the owner here; the size bridge below
-            // moves it again once measured (#546).
-            DisposableEffect(windowScope.window, parent) {
-                applyWindowOwnerRelationship(
-                    child = windowScope.window,
-                    owner = parent,
-                    autoCenter = autoCenterRequested,
-                )
+            // macOS: `addChildWindow:` orders the child front, so a
+            // wrap-content dialog waits until it may be shown at its measured
+            // size (#532) — it centres natively at that size, too. Elsewhere
+            // the owner goes on at once: GTK places a transient at map time.
+            val sizePolicy = windowScope.window.resolvedSizePolicy()
+            val ownerReady = Platform.Current != Platform.MacOS || sizePolicy.showReady.value
+            DisposableEffect(windowScope.window, parent, ownerReady) {
+                if (ownerReady) {
+                    applyWindowOwnerRelationship(
+                        child = windowScope.window,
+                        owner = parent,
+                        autoCenter = autoCenterRequested,
+                    )
+                    ownerApplied.value = true
+                }
                 onDispose { /* native handle destruction restores focus to owner */ }
             }
 
@@ -174,7 +185,11 @@ public fun ApplicationScope.DecoratedDialog(
     val recenterPending = remember { mutableStateOf(autoCenterRequested && !sizeSpecified) }
     LaunchedEffect(windowState.size) {
         if (state.size != windowState.size) state.size = windowState.size
-        if (recenterPending.value) recenterPending.value = !recenterOnParent(parent, windowState, state)
+    }
+    LaunchedEffect(windowState.size, ownerApplied.value) {
+        if (recenterPending.value && ownerApplied.value) {
+            recenterPending.value = !recenterOnParent(parent, windowState, state)
+        }
     }
     LaunchedEffect(windowState.position) {
         val p = windowState.position

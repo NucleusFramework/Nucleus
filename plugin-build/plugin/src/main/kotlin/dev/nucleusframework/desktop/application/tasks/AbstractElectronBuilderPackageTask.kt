@@ -14,6 +14,7 @@ import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
+import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
 import dev.nucleusframework.desktop.application.internal.MacPkgScripts
@@ -24,12 +25,12 @@ import dev.nucleusframework.desktop.application.internal.NodeToolchainProvisione
 import dev.nucleusframework.desktop.application.internal.NodeToolchainRequest
 import dev.nucleusframework.desktop.application.internal.NucleusProperties
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
+import dev.nucleusframework.desktop.application.internal.WindowsAppImageSigner
 import dev.nucleusframework.desktop.application.internal.WindowsKitsLocator
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderConfigGenerator
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderInvocation
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderToolManager
 import dev.nucleusframework.desktop.application.internal.electronbuilder.NodeJsDetector
-import dev.nucleusframework.desktop.application.internal.electronbuilder.resolveCompressionLevel
 import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import dev.nucleusframework.desktop.application.internal.MACOS_DMG_TITLE_BAR_HEIGHT
 import dev.nucleusframework.desktop.application.internal.padDmgBackgroundForTitleBar
@@ -106,7 +107,9 @@ abstract class AbstractElectronBuilderPackageTask
     constructor(
         @get:Input val targetFormat: TargetFormat,
     ) : AbstractNucleusTask() {
+        /** Packaging constants shared by the electron-builder pipeline. */
         companion object {
+            private const val PERCENT = 100.0
             private const val APPX_STORE_LOGO_SIZE = 50
             private const val APPX_SQUARE44_LOGO_SIZE = 44
             private const val APPX_SQUARE150_LOGO_SIZE = 150
@@ -114,6 +117,8 @@ abstract class AbstractElectronBuilderPackageTask
             private const val APPX_WIDE_LOGO_HEIGHT = 150
             private const val DEFAULT_PACKAGE_VERSION = "1.0.0"
             private val NSIS_FORMATS = setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)
+            private val LINUX_SIGNED_FORMATS = setOf(TargetFormat.Deb, TargetFormat.Rpm)
+            internal val CUSTOM_INSTALL_MACRO = Regex("""!macro\s+customInstall\b""")
         }
 
         @get:InputDirectory
@@ -238,12 +243,27 @@ abstract class AbstractElectronBuilderPackageTask
         val appxWide310x150Logo: RegularFileProperty = objects.fileProperty()
 
         /**
-         * The distributions DSL object providing all platform-specific settings.
-         * Marked @Internal because the individual settings are tracked via other @Input properties
-         * on the DSL objects themselves, and this reference is used for config generation only.
+         * The distributions DSL object providing all platform-specific settings. Not an input as a
+         * whole: [packagingSettings] and [packagingFiles] track the part of it this format's
+         * package is built from, so a setting of another format or OS leaves the task up to date.
          */
         @get:Internal
         var distributions: JvmApplicationDistributions? = null
+
+        /**
+         * The DSL settings this format's package is built from: the electron-builder config
+         * generated for [targetFormat] (credentials redacted), followed by the settings the task
+         * action reads outside that config.
+         */
+        @get:Input
+        internal val packagingSettings: String
+            get() = packagingInputs().settings
+
+        /** The files the electron-builder config of [packagingSettings] points at. */
+        @get:InputFiles
+        @get:PathSensitive(PathSensitivity.ABSOLUTE)
+        internal val packagingFiles: ConfigurableFileCollection
+            get() = objects.fileCollection().from(packagingInputs().files)
 
         @get:InputFile
         @get:Optional
@@ -302,6 +322,7 @@ abstract class AbstractElectronBuilderPackageTask
             }
         }
 
+        /** Prepares a private copy of the app image and packages it into [destinationDir] with electron-builder. */
         @TaskAction
         fun run() {
             val dist =
@@ -327,13 +348,15 @@ abstract class AbstractElectronBuilderPackageTask
             // Create a task-private copy of the app image so parallel tasks don't
             // interfere when modifying .cfg files or signing the bundle. On macOS the copy is
             // renamed to the resolved bundle name so every format ships the same .app.
-            val workingAppDir = copyAppImage(originalAppDir, outputDir, resolveWorkingAppDirName(originalAppDir), logger)
+            val workingAppDir =
+                copyAppImage(originalAppDir, outputDir, resolveWorkingAppDirName(originalAppDir), logger)
 
             ensureResourcesDirForElectronBuilder(workingAppDir)
             bundleSilentUpdateArtifacts(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
-            val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir, dist)
+            val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir)
+            signWindowsAppImage(workingAppDir, outputDir, dist)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
             val (node, npm) = resolveNodeJs()
@@ -364,8 +387,7 @@ abstract class AbstractElectronBuilderPackageTask
                     outputDir = outputDir,
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
-                    linuxAfterInstallTemplate = linuxAfterInstallTemplate,
-                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
+                    linuxScripts = LinuxScriptTemplates(linuxAfterInstallTemplate, linuxAfterRemoveTemplate),
                     hotUpdateLayout = hotUpdateLayout,
                 )
             ensureProjectPackageMetadata(outputDir, dist)
@@ -414,7 +436,7 @@ abstract class AbstractElectronBuilderPackageTask
 
             // Must run before cleanupBuildTemporaries(), which removes the isolated npm cache
             // where the app-builder binary used to regenerate the blockmap lives.
-            recompressDmgWithLzma(outputDir, dist)
+            postProcessDmg(outputDir, dist)
 
             cleanupParasiticFiles(outputDir)
             cleanupBuildTemporaries(outputDir)
@@ -520,14 +542,90 @@ abstract class AbstractElectronBuilderPackageTask
             logger.info("Using Node.js: ${node.absolutePath} ($version)")
         }
 
+        private class PackagingInputs(
+            val settings: String,
+            val files: Set<File>,
+        )
+
+        /**
+         * Generates the config the task action would, without the files it stages at execution
+         * time (icon sets, DMG background padding, NSIS include, Linux script templates): those
+         * derive from inputs tracked on their own.
+         */
+        private fun packagingInputs(): PackagingInputs {
+            val dist = distributions
+            if (dist == null || !targetFormat.isCompatibleWithCurrentOS) return PackagingInputs("", emptySet())
+
+            val generator = ElectronBuilderConfigGenerator(redactSecrets = true)
+            val arch = Arch.entries.first { it.id == targetArch.get() }
+            val settings =
+                buildString {
+                    append(
+                        generator.generateConfig(
+                            distributions = dist,
+                            targetFormat = targetFormat,
+                            appImageDir = appImageRoot.asFile.getOrElse(File("")),
+                            targetArch = arch,
+                            startupWMClass = startupWMClass.orNull,
+                            executableName = resolveExecutableName(),
+                            macBundleName = macBundleName.orNull,
+                        ),
+                    )
+                    appendSettingsReadOutsideConfig(dist, generator, arch)
+                }
+            val files = generator.referencedFiles.toMutableSet()
+            if (currentOS == OS.Linux && targetFormat in LINUX_SIGNED_FORMATS) {
+                dist.linux.signing.keyFile.orNull
+                    ?.let { files += it.asFile }
+            }
+            return PackagingInputs(settings, files)
+        }
+
+        /** What the task action reads from [dist] besides the generated config. */
+        private fun StringBuilder.appendSettingsReadOutsideConfig(
+            dist: JvmApplicationDistributions,
+            generator: ElectronBuilderConfigGenerator,
+            arch: Arch,
+        ) {
+            appendLine("# read by the task action")
+            // resolvePublishFlag(), ensureProjectPackageMetadata()
+            appendLine("publishMode: ${dist.publish.publishMode.id}")
+            appendLine("description: ${dist.description}")
+            appendLine("vendor: ${dist.vendor}")
+            when (currentOS) {
+                OS.Linux ->
+                    if (targetFormat in LINUX_SIGNED_FORMATS) {
+                        // signLinuxPackage(), bundleSilentUpdateArtifacts()
+                        val signing = dist.linux.signing
+                        appendLine("linuxSigning.enabled: ${signing.enabled.get()}")
+                        appendLine("linuxSigning.keyId: ${signing.keyId.orNull}")
+                        appendLine("linuxSigning.passphrase: ${signing.passphrase.isPresent}")
+                        appendLine("linuxSigning.debMethod: ${signing.debMethod}")
+                        appendLine("linuxSigning.silentUpdate: ${signing.silentUpdate.get()}")
+                    }
+                OS.Windows -> {
+                    // signWindowsAppImage(), generateNsisInclude()
+                    appendLine("windowsSigning.signNativeLibraries: ${dist.windows.signing.signNativeLibraries}")
+                    appendLine("appName: ${dist.appName}")
+                }
+                OS.MacOS -> {
+                    // exportMacOSPackagingMetadata() writes the DMG layout and install location
+                    // next to every macOS package, whatever its format.
+                    appendLine("installationPath: ${dist.macOS.installationPath}")
+                    if (targetFormat != TargetFormat.Dmg) {
+                        generator.generateMacConfig(this, dist, TargetFormat.Dmg, arch)
+                    }
+                }
+            }
+        }
+
         private fun generateConfig(
             distributions: JvmApplicationDistributions,
             appDir: File,
             outputDir: File,
             linuxIconOverride: File?,
             windowsIconOverride: File?,
-            linuxAfterInstallTemplate: File?,
-            linuxAfterRemoveTemplate: File?,
+            linuxScripts: LinuxScriptTemplates,
             hotUpdateLayout: Boolean,
         ): File {
             val configGenerator = ElectronBuilderConfigGenerator()
@@ -548,21 +646,7 @@ abstract class AbstractElectronBuilderPackageTask
                 null to null
             }
 
-            // Both Maximum and Ultra map to electron-builder's "maximum"; warn for either.
-            // Honor the AppImage-local override so Ultra globally + Normal on AppImage stays quiet.
-            val effectiveCompression =
-                resolveCompressionLevel(distributions, targetFormat)
-            if (targetFormat == TargetFormat.AppImage && effectiveCompression?.id == "maximum") {
-                logger.warn(
-                    "AppImage with 'maximum' compression can cause extremely slow startup times (60s+) " +
-                        "due to squashfs/FUSE decompression overhead. Prefer " +
-                        "linux { appImage { compressionLevel = CompressionLevel.Normal } } " +
-                        "(or Store), or lower the root compressionLevel. " +
-                        "See https://github.com/electron-userland/electron-builder/issues/7483",
-                )
-            }
-
-            val nsisInclude = generateNsisInclude(distributions, outputDir, hotUpdateLayout)
+            val nsisInclude = generateNsisInclude(distributions, appDir, outputDir, hotUpdateLayout)
 
             val configContent =
                 configGenerator.generateConfig(
@@ -573,8 +657,8 @@ abstract class AbstractElectronBuilderPackageTask
                     startupWMClass = startupWMClass.orNull,
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
-                    linuxAfterInstallTemplate = linuxAfterInstallTemplate,
-                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
+                    linuxAfterInstallTemplate = linuxScripts.afterInstall,
+                    linuxAfterRemoveTemplate = linuxScripts.afterRemove,
                     executableName = resolveExecutableName(),
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
@@ -593,10 +677,7 @@ abstract class AbstractElectronBuilderPackageTask
          * Returns whether the layout was applied, which is what the NSIS include keys its hot
          * update support on.
          */
-        private fun applyWindowsHotUpdateLayout(
-            appDir: File,
-            distributions: JvmApplicationDistributions,
-        ): Boolean {
+        private fun applyWindowsHotUpdateLayout(appDir: File): Boolean {
             if (currentOS != OS.Windows || targetFormat !in NSIS_FORMATS) return false
             val version = packageVersion.orNull?.takeIf { it.isNotBlank() } ?: DEFAULT_PACKAGE_VERSION
             val applied = WindowsHotUpdateLayout.apply(appDir, version)
@@ -612,6 +693,29 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
+         * Signs the app image's launchers (and, with `signNativeLibraries`, its DLLs) before
+         * electron-builder packages it: `--prepackaged` skips electron-builder's own app signing,
+         * which only covers the installer it produces. Runs after the hot update layout, which
+         * moves the binaries but does not touch their bytes.
+         */
+        private fun signWindowsAppImage(
+            appDir: File,
+            outputDir: File,
+            distributions: JvmApplicationDistributions,
+        ) {
+            val signing = distributions.windows.signing
+            if (currentOS != OS.Windows || !signing.enabled) return
+            WindowsAppImageSigner(
+                settings = signing,
+                description = distributions.appName ?: distributions.packageName ?: packageName.get(),
+                architecture = currentArch,
+                workDir = File(outputDir, ".nucleus-signing"),
+                runTool = runExternalTool,
+                logger = logger,
+            ).sign(appDir)
+        }
+
+        /**
          * Generates the NSIS include script passed to electron-builder, or null when nothing needs
          * one. It chains, in order: the user's `nsis.includeScript`, the URL protocol registration and
          * app data removal (only without a user script, see [nucleusNsisMacros]) and the hot update hooks
@@ -619,6 +723,7 @@ abstract class AbstractElectronBuilderPackageTask
          */
         private fun generateNsisInclude(
             distributions: JvmApplicationDistributions,
+            appDir: File,
             outputDir: File,
             hotUpdateLayout: Boolean,
         ): File? {
@@ -626,18 +731,31 @@ abstract class AbstractElectronBuilderPackageTask
             val userInclude =
                 distributions.windows.nsis.includeScript.orNull
                     ?.asFile
-            val nucleusMacros = nucleusNsisMacros(distributions, hasUserInclude = userInclude != null)
-            if (nucleusMacros == null && !hotUpdateLayout) return null
+            val aotJarDir = aotJarDirOrNull(appDir)
+            val nucleusMacros =
+                nucleusNsisMacros(distributions, hasUserInclude = userInclude != null, pinAotJars = aotJarDir != null)
+            // A user script may insert the pinning macro, so it is defined whenever there is one.
+            if (nucleusMacros == null && !hotUpdateLayout && aotJarDir == null && userInclude == null) return null
 
             val script =
                 buildString {
                     if (userInclude != null) {
                         if (hotUpdateLayout) WindowsHotUpdateNsis.warnOnConflicts(userInclude, logger)
+                        if (aotJarDir != null) warnIfCustomInstallSkipsAotPinning(userInclude)
                         appendLine("!include \"${userInclude.absolutePath}\"")
                         appendLine()
                     }
+                    appendLine(aotJarDir?.let { AotJarTimestamps.nsisMacros(it) } ?: AotJarTimestamps.NSIS_NO_OP_MACRO)
                     nucleusMacros?.let { appendLine(it) }
                     if (hotUpdateLayout) append(WindowsHotUpdateNsis.MACROS)
+                    if (aotJarDir != null) {
+                        // Neither the user's script nor the Nucleus macros declared customInstall.
+                        appendLine("!ifmacrondef customInstall")
+                        appendLine("  !macro customInstall")
+                        appendLine("    !insertmacro ${AotJarTimestamps.NSIS_MACRO}")
+                        appendLine("  !macroend")
+                        appendLine("!endif")
+                    }
                 }
 
             val nshFile = File(outputDir, "nucleus-installer.nsh")
@@ -648,6 +766,35 @@ abstract class AbstractElectronBuilderPackageTask
             nshFile.writeText("﻿$script", Charsets.UTF_8)
             logger.info("Generated NSIS include script at ${nshFile.absolutePath}")
             return nshFile
+        }
+
+        /**
+         * The directory holding the image's AOT cache and classpath JARs, relative to the install
+         * directory with Windows separators, or null when the image has no AOT cache.
+         */
+        private fun aotJarDirOrNull(appDir: File): String? =
+            appDir
+                .walk()
+                .firstOrNull { it.isFile && it.name == AOT_CACHE_FILENAME }
+                ?.parentFile
+                ?.relativeTo(appDir)
+                ?.path
+                ?.replace('/', '\\')
+
+        /**
+         * A user `customInstall` replaces the one pinning the JARs' timestamps, so the installed app
+         * would lose its AOT cache unless the script inserts the macro itself.
+         */
+        private fun warnIfCustomInstallSkipsAotPinning(userInclude: File) {
+            val text = userInclude.readText()
+            // `\b` keeps electron-builder's customInstallMode macro from matching.
+            if (CUSTOM_INSTALL_MACRO.containsMatchIn(text) && AotJarTimestamps.NSIS_MACRO !in text) {
+                logger.warn(
+                    "nsis.includeScript declares customInstall: add `!insertmacro ${AotJarTimestamps.NSIS_MACRO}` " +
+                        "to it, or the installed app's AOT cache is refused (the installer resets the JARs' " +
+                        "modification times). The macro is always defined, empty without an AOT cache.",
+                )
+            }
         }
 
         /**
@@ -668,6 +815,7 @@ abstract class AbstractElectronBuilderPackageTask
         private fun nucleusNsisMacros(
             distributions: JvmApplicationDistributions,
             hasUserInclude: Boolean,
+            pinAotJars: Boolean,
         ): String? {
             val appDataDir =
                 runtimeAppId.orNull
@@ -718,6 +866,7 @@ abstract class AbstractElectronBuilderPackageTask
                 buildString {
                     if (handlers.isNotEmpty()) {
                         appendLine("!macro customInstall")
+                        if (pinAotJars) appendLine("  !insertmacro ${AotJarTimestamps.NSIS_MACRO}")
                         for ((scheme, friendlyName) in handlers) {
                             val key = "Software\\Classes\\$scheme"
                             appendLine("  DetailPrint \"Registering $scheme:// URL handler\"")
@@ -1040,10 +1189,10 @@ abstract class AbstractElectronBuilderPackageTask
 
             val plugInsDir = appDir.resolve("Contents/PlugIns")
             for (extension in extensions) {
-                val appexName = extension.appex?.name ?: continue
-                val appex = plugInsDir.resolve(appexName)
-                if (!appex.exists()) continue
-                signBundleInsideOut(appex, extension.entitlements, signer)
+                val appex = extension.appex?.name?.let(plugInsDir::resolve)
+                if (appex != null && appex.exists()) {
+                    signBundleInsideOut(appex, extension.entitlements, signer)
+                }
             }
         }
 
@@ -1239,7 +1388,7 @@ abstract class AbstractElectronBuilderPackageTask
                     processStdout = { output = it },
                 )
             if (output.contains("no signature")) {
-                val keychainHint = settings.keychain?.let { " in keychain ${it.absolutePath}" } ?: ""
+                val keychainHint = settings.keychain?.let { " in keychain ${it.absolutePath}" }.orEmpty()
                 throw GradleException(
                     "${pkgFile.name} is not signed: electron-builder found no \"Developer ID Installer\" " +
                         "certificate matching '${settings.bareIdentityName}'$keychainHint. Import the " +
@@ -1260,41 +1409,34 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Post-processes the DMG electron-builder just produced by recompressing it with LZMA (ULMO).
+         * Post-processes the DMG electron-builder just produced: recompresses it with LZMA (ULMO)
+         * when [shouldRecompressDmg] allows it, signs it when `dmg.sign = true`, then refreshes the
+         * auto-update blockmap/manifest checksums once for the final image.
          *
-         * electron-builder's bundled dmgbuild caps DMG compression at bzip2 (UDBZ), so we reconvert
-         * with `hdiutil convert -format ULMO` — LZMA, ~20% smaller — then re-sign (reconversion drops
-         * the signature) and refresh the auto-update blockmap/manifest checksums.
+         * Nucleus signs the image itself (#828): electron-builder only finds a DMG identity through
+         * `CSC_NAME` or keychain auto-discovery, both of which the plugin leaves off so it never
+         * re-signs the `.app`, and then skips `dmg.sign` without a word. Signing here also honours
+         * the configured keychain, adds a secure timestamp, and comes after recompression (which
+         * drops any signature) and before the notarization task.
          *
-         * Runs only when the user opted into [CompressionLevel.Ultra], left the DMG format unpinned,
-         * and targets macOS 10.15+ (ULMO images do not mount on older systems). It is also skipped
-         * when electron-builder is publishing inline, since the pre-recompression artifact would
-         * already have been uploaded.
+         * Skipped when electron-builder is publishing inline, since the DMG has already been uploaded.
          */
-        private fun recompressDmgWithLzma(
+        private fun postProcessDmg(
             outputDir: File,
             dist: JvmApplicationDistributions,
         ) {
             if (currentOS != OS.MacOS) return
             if (targetFormat != TargetFormat.Dmg) return
-            if (dist.compressionLevel != CompressionLevel.Ultra) return
 
-            dist.macOS.dmg.format?.let {
-                logger.info("Skipping LZMA DMG recompression: an explicit dmg.format=$it is set")
-                return
-            }
-            if (!MacDmgLzma.isUlmoCompatible(dist.macOS.minimumSystemVersion)) {
-                logger.lifecycle(
-                    "Skipping LZMA (ULMO) DMG recompression: minimumSystemVersion " +
-                        "'${dist.macOS.minimumSystemVersion}' predates macOS 10.15. Keeping bzip2 (UDBZ).",
-                )
-                return
-            }
+            val recompress = shouldRecompressDmg(dist)
+            val signing = if (dist.macOS.dmg.sign) dmgSigningSettings() else null
+            if (!recompress && signing == null) return
+
             if (resolvePublishFlag() != "never") {
                 logger.warn(
-                    "Skipping LZMA (ULMO) DMG recompression: electron-builder is publishing inline " +
-                        "(publish != never), so the DMG has already been uploaded. Use a separate upload " +
-                        "step (publish = never) to benefit from LZMA recompression.",
+                    "Skipping DMG post-processing (LZMA recompression, signing): electron-builder is " +
+                        "publishing inline (publish != never), so the DMG has already been uploaded. Use a " +
+                        "separate upload step (publish = never) to get a recompressed, signed DMG.",
                 )
                 return
             }
@@ -1305,26 +1447,61 @@ abstract class AbstractElectronBuilderPackageTask
                     ?.toList()
                     .orEmpty()
             if (dmgFiles.isEmpty()) {
-                logger.info("No .dmg artifact found to recompress in ${outputDir.absolutePath}")
+                logger.info("No .dmg artifact found to post-process in ${outputDir.absolutePath}")
                 return
             }
 
             val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
             val appBuilder = MacDmgLzma.locateAppBuilder(outputDir, resolvedArch)
             if (appBuilder == null) {
-                logger.info("app-builder not found in npm cache; blockmaps will be dropped after recompression")
+                logger.info("app-builder not found in npm cache; blockmaps will be dropped after post-processing")
             }
             for (dmg in dmgFiles) {
-                recompressSingleDmg(dmg, appBuilder)
+                if (recompress) recompressSingleDmg(dmg)
+                signing?.let { signDmg(dmg, it) }
+                refreshDmgMetadata(dmg, appBuilder)
+                verifyDmg(dmg)
             }
         }
 
-        private fun recompressSingleDmg(
-            dmg: File,
-            appBuilder: File?,
-        ) {
+        /**
+         * Whether to recompress the DMG with LZMA (ULMO): electron-builder's bundled dmgbuild caps DMG
+         * compression at bzip2 (UDBZ), while `hdiutil convert -format ULMO` is ~20% smaller.
+         *
+         * Only when the user opted into [CompressionLevel.Ultra], left the DMG format unpinned, and
+         * targets macOS 10.15+ (ULMO images do not mount on older systems).
+         */
+        private fun shouldRecompressDmg(dist: JvmApplicationDistributions): Boolean {
+            if (dist.compressionLevel != CompressionLevel.Ultra) return false
+
+            dist.macOS.dmg.format?.let {
+                logger.info("Skipping LZMA DMG recompression: an explicit dmg.format=$it is set")
+                return false
+            }
+            if (!MacDmgLzma.isUlmoCompatible(dist.macOS.minimumSystemVersion)) {
+                logger.lifecycle(
+                    "Skipping LZMA (ULMO) DMG recompression: minimumSystemVersion " +
+                        "'${dist.macOS.minimumSystemVersion}' predates macOS 10.15. Keeping bzip2 (UDBZ).",
+                )
+                return false
+            }
+            return true
+        }
+
+        /** The identity `dmg.sign = true` signs with, or null (with a warning) when macOS signing is off. */
+        private fun dmgSigningSettings(): ValidatedMacOSSigningSettings? {
+            val settings = macSigner?.settings
+            if (settings == null) {
+                logger.warn(
+                    "dmg.sign = true but no signing identity is configured " +
+                        "(macOS { signing { sign = true; identity = \"…\" } }): the DMG is left unsigned.",
+                )
+            }
+            return settings
+        }
+
+        private fun recompressSingleDmg(dmg: File) {
             val sizeBefore = dmg.length()
-            val wasSigned = isDmgSigned(dmg)
 
             val recompressed = File(dmg.parentFile, "${dmg.nameWithoutExtension}.ulmo.dmg")
             if (recompressed.exists()) recompressed.delete()
@@ -1346,14 +1523,8 @@ abstract class AbstractElectronBuilderPackageTask
                 recompressed.delete()
             }
 
-            // Reconversion drops the code signature, so re-sign when the source image was signed.
-            if (wasSigned) signDmg(dmg)
-
-            refreshDmgMetadata(dmg, appBuilder)
-            verifyDmg(dmg)
-
             val sizeAfter = dmg.length()
-            val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * 100.0 / sizeBefore else 0.0
+            val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * PERCENT / sizeBefore else 0.0
             logger.lifecycle(
                 String.format(
                     Locale.ROOT,
@@ -1366,39 +1537,15 @@ abstract class AbstractElectronBuilderPackageTask
             )
         }
 
-        /** Whether [dmg] currently carries a code signature (electron-builder signs it when dmg.sign = true). */
-        private fun isDmgSigned(dmg: File): Boolean {
-            val stdout = ByteArrayOutputStream()
-            val stderr = ByteArrayOutputStream()
-            return try {
-                val result =
-                    execOperations.exec { spec ->
-                        spec.executable = "codesign"
-                        spec.args = listOf("-v", "--verify", dmg.absolutePath)
-                        spec.isIgnoreExitValue = true
-                        spec.standardOutput = stdout
-                        spec.errorOutput = stderr
-                    }
-                result.exitValue == 0
-            } catch (_: Exception) {
-                false
-            }
-        }
-
         /**
          * Signs [dmg] with the configured Developer ID Application identity. Uses `--force` directly
-         * (no prior `--remove-signature`, which fails on the freshly-converted, unsigned image).
+         * (no prior `--remove-signature`, which fails on an unsigned image).
          */
-        private fun signDmg(dmg: File) {
-            val settings = macSigner?.settings
-            if (settings == null) {
-                logger.warn(
-                    "${dmg.name} was signed before recompression but no Developer ID identity " +
-                        "is available to re-sign it.",
-                )
-                return
-            }
-            logger.info("Re-signing ${dmg.name} with '${settings.fullDeveloperID}' after recompression")
+        private fun signDmg(
+            dmg: File,
+            settings: ValidatedMacOSSigningSettings,
+        ) {
+            logger.lifecycle("Signing ${dmg.name} with '${settings.fullDeveloperID}'")
             execOperations.exec { spec ->
                 spec.executable = "codesign"
                 spec.args =
@@ -1418,7 +1565,7 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Regenerates the differential-update blockmap for the recompressed [dmg] (via electron-builder's
+         * Regenerates the differential-update blockmap for the post-processed [dmg] (via electron-builder's
          * app-builder) and rewrites the sha512/size/blockMapSize any local manifest records for it.
          * When app-builder is unavailable, the stale blockmap is dropped and updaters fall back to a
          * full download.
@@ -1430,6 +1577,8 @@ abstract class AbstractElectronBuilderPackageTask
             val blockmap = File(dmg.parentFile, "${dmg.name}.blockmap")
             var newBlockMapSize: Long? = null
             if (appBuilder != null) {
+                // Best effort: whatever app-builder fails with, the stale blockmap is dropped instead.
+                @Suppress("TooGenericExceptionCaught")
                 try {
                     execOperations.exec { spec ->
                         spec.executable = appBuilder.absolutePath
@@ -1462,7 +1611,7 @@ abstract class AbstractElectronBuilderPackageTask
             }
         }
 
-        /** Verifies the recompressed image mounts and its checksums are intact. */
+        /** Verifies the post-processed image mounts and its checksums are intact. */
         private fun verifyDmg(dmg: File) {
             execOperations.exec { spec ->
                 spec.executable = "hdiutil"
@@ -1575,7 +1724,7 @@ abstract class AbstractElectronBuilderPackageTask
                 refreshDebMetadata(deb)
 
                 val sizeAfter = deb.length()
-                val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * 100.0 / sizeBefore else 0.0
+                val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * PERCENT / sizeBefore else 0.0
                 logger.lifecycle(
                     String.format(
                         Locale.ROOT,
@@ -1784,6 +1933,12 @@ abstract class AbstractElectronBuilderPackageTask
             }
             return iconFile
         }
+
+        /** Prepared Linux package maintainer script templates, `null` when the format has none. */
+        private data class LinuxScriptTemplates(
+            val afterInstall: File?,
+            val afterRemove: File?,
+        )
 
         private data class AppXAsset(
             val targetFileName: String,
@@ -2436,7 +2591,8 @@ private fun resolveElectronBuilderEnvironment(
 ): Map<String, String> {
     val env = mutableMapOf<String, String>()
 
-    // macOS: disable automatic certificate discovery when no signing identity is configured
+    // macOS: Nucleus signs the .app and the DMG itself, so electron-builder must never pick a
+    // keychain identity on its own and re-sign them
     if (currentOs == OS.MacOS) {
         env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false"
     }
@@ -2550,6 +2706,7 @@ internal fun File.deleteRecursivelyClearingReadOnly(): Boolean {
 /**
  * On Windows, kills any running processes whose executable path is inside [dir].
  */
+@Suppress("TooGenericExceptionCaught") // Best effort: any failure to enumerate or kill processes is only logged.
 private fun killProcessesIn(
     dir: File,
     logger: Logger,

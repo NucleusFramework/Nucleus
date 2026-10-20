@@ -50,6 +50,7 @@ import dev.nucleusframework.window.tao.event.TaoTrackpadRotationContacts
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.utils.linux.LinuxTitleBarButton
 import dev.nucleusframework.window.utils.linux.rememberLinuxButtonLayout
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -75,6 +76,9 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
  *   theme drives the bar height, content color, and gradient bounds.
  * - [controlButtonsDirection] flips the system control buttons to the other
  *   side independently of the content's [LocalLayoutDirection].
+ * - [layoutPolicy] decides how the children are measured and placed;
+ *   [TitleBarLayoutPolicy.FillCenter] gives the center child exactly the space
+ *   left between the Start/End items and the platform controls.
  * - [backgroundContent] is rendered behind the content layer (full bleed).
  *
  * Tao-specific behavior preserved on top of the canonical contract:
@@ -85,13 +89,14 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
  * - KDE breeze 4 dp edge padding applied on the controls side.
  * - Linux + Windows control buttons are injected here (no native chrome).
  */
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "LongParameterList")
 @Composable
 public fun DecoratedWindowScope.TitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
@@ -100,17 +105,14 @@ public fun DecoratedWindowScope.TitleBar(
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlButtonsDirection,
-        layoutPolicy = TitleBarLayoutPolicy.Default,
+        layoutPolicy = layoutPolicy,
         backgroundContent = backgroundContent,
         content = content,
     )
 }
 
 /**
- * [TitleBar] with the measure policy left open, for chrome that needs a
- * different arrangement than the platform default — a strip that fills the
- * space between the platform controls, for instance
- * ([TitleBarLayoutPolicy.FillCenter]).
+ * [TitleBar] with control over the platform window drag.
  *
  * @param nativeWindowDrag whether pressing the bar starts the platform's own
  *   interactive move. On by default, which is what gives the window the OS
@@ -143,6 +145,11 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // Publish the resolved height up to DecoratedWindow, which applies the
     // native button-centering constraints once the window is shown.
     val heightHolder = LocalRequestedTitleBarHeight.current
+
+    // The compositor wants no decorations (#816): the bar keeps whatever the
+    // app put in it (tabs, title, menus) but loses the window controls and the
+    // room reserved for them, and takes no room at all when nothing is left.
+    val decorationSuppressed = taoWindow.isDecorationSuppressed
 
     // Modifier-driven flags. `macOSLargeCornerRadius` re-runs the NSToolbar
     // install at composition time so the modifier-driven path matches the
@@ -328,12 +335,16 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 if (!useOverlay) {
                     heightHolder.value = measuredHeight.value
                 }
-                titleBarPadding(
-                    measuredHeight = measuredHeight,
-                    isFullscreen = titleBarState.isFullscreen,
-                    controlIsRtl = controlDir == LayoutDirection.Rtl,
-                    linuxControlsOnRight = linuxLayout?.controlsOnRight,
-                )
+                if (decorationSuppressed) {
+                    PaddingValues(0.dp)
+                } else {
+                    titleBarPadding(
+                        measuredHeight = measuredHeight,
+                        isFullscreen = titleBarState.isFullscreen,
+                        controlIsRtl = controlDir == LayoutDirection.Rtl,
+                        linuxControlsOnRight = linuxLayout?.controlsOnRight,
+                    )
+                }
             },
             onPlace = {
                 // macOS fullscreen: keep the AppKit replacement traffic-lights
@@ -347,6 +358,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 }
             },
             backgroundContent = backgroundContent,
+            collapseWhenEmpty = decorationSuppressed,
             content = { titleBarState ->
                 // Window controls are declared BEFORE user content so core's
                 // [TitleBarMeasurePolicy] places them at the extreme edge first
@@ -356,7 +368,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 // ahead of `content()`.
                 when (Platform.Current) {
                     Platform.Linux ->
-                        if (linuxLayout != null) {
+                        if (linuxLayout != null && (!decorationSuppressed || useOverlay)) {
                             WindowControlsLinux(
                                 win = taoWindow,
                                 state = titleBarState,
@@ -364,7 +376,24 @@ public fun DecoratedWindowScope.BasicTitleBar(
                                 isMinimizable = taoWindow.isMinimizable,
                                 isMaximizable = taoWindow.isMaximizable,
                                 style = style,
-                                layout = linuxLayout,
+                                // Suppressed (#816): no window controls. The
+                                // fullscreen overlay, revealed on demand like
+                                // GNOME's and Firefox's, keeps the way out the
+                                // layout already offers (maximize turns into
+                                // exit-fullscreen); an inline fullscreen bar
+                                // collapses like Qt's, leaving it to the app.
+                                layout =
+                                    if (decorationSuppressed) {
+                                        linuxLayout.copy(
+                                            buttons =
+                                                linuxLayout.buttons.filter {
+                                                    it ==
+                                                        LinuxTitleBarButton.MAXIMIZE
+                                                },
+                                        )
+                                    } else {
+                                        linuxLayout
+                                    },
                                 isFullscreen = titleBarState.isFullscreen,
                                 onExitFullscreen = { taoWindow.setFullscreen(false) },
                             )

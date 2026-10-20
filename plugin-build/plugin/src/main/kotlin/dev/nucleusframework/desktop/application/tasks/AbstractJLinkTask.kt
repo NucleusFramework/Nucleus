@@ -24,6 +24,11 @@ import java.io.File
 
 // todo: public DSL
 // todo: deduplicate if multiple runtimes are created
+
+/**
+ * Builds the application's Java runtime image with `jlink`, from either [modules] or, with
+ * [includeAllModules], every module of the packaging JDK (except `jdk.jlink`).
+ */
 @DisableCachingByDefault(because = "Depends on external jlink tool")
 @Suppress("UnnecessaryAbstractClass")
 abstract class AbstractJLinkTask : AbstractJvmToolOperationTask("jlink") {

@@ -6,7 +6,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.unit.IntRect
+import dev.nucleusframework.core.runtime.ActivationToken
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.core.runtime.UpdateHandoff
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
@@ -37,6 +39,13 @@ private const val STALE_REDRAW_NANOS: Long = 1_000_000_000L
  * does place at the origin is reported.
  */
 private const val PLACEHOLDER_MOVE_WINDOW_NANOS: Long = 2_000_000_000L
+
+/**
+ * Called on every [TaoWindow.show], before the native visibility flip, for
+ * every window. A test probe: the headful suite reads what a window looks
+ * like at the instant it maps (#532).
+ */
+internal val showObservers: MutableList<(TaoWindow) -> Unit> = CopyOnWriteArrayList()
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
@@ -254,6 +263,24 @@ public class TaoWindow internal constructor(
     public var isFocused: Boolean by mutableStateOf(false)
         private set
 
+    /**
+     * `true` while the compositor asks this window not to draw any decoration:
+     * KWin answers the window's client-side decoration request with "none" on
+     * Plasma Mobile or under a "No titlebar and frame" window rule, or with
+     * "server" (it draws its own frame) under a rule forcing its titlebar. The
+     * stock title bars ([dev.nucleusframework.window.BasicTitleBar] and every
+     * bar built on it, [dev.nucleusframework.window.DialogTitleBar]) then drop
+     * their window controls but keep the app's content (tabs, title, menus),
+     * and take no room at all when that content is empty;
+     * [dev.nucleusframework.window.WindowScaffold] reserves no room for window
+     * controls. Custom chrome reads this to do the same. Follows the
+     * compositor when it changes its mind.
+     * Snapshot-backed; always `false` outside Wayland and on compositors
+     * without KDE's server-decoration protocol.
+     */
+    public var isDecorationSuppressed: Boolean by mutableStateOf(false)
+        private set
+
     @Volatile
     private var willHideListener: (() -> Unit)? = null
     private var shownListener: (() -> Unit)? = null
@@ -277,11 +304,26 @@ public class TaoWindow internal constructor(
     @Volatile
     private var touchInputListener: TouchInputListener? = null
 
+    /**
+     * Tool behind the touch event being dispatched to [touchInputListener]:
+     * a finger, or a Windows pen and its eraser end (#827).
+     */
+    internal var touchPointerType: PointerType = PointerType.Touch
+        private set
+
     @Volatile
     private var keyListener: KeyEventListener? = null
 
     @Volatile
     internal var modifierState: Int = 0
+        private set
+
+    /**
+     * Tool behind the cursor and button events: the mouse, or a tablet pen
+     * and its eraser end where the platform names them (#827, Linux and macOS).
+     */
+    @Volatile
+    internal var pointerType: PointerType = PointerType.Mouse
         private set
 
     /**
@@ -327,6 +369,20 @@ public class TaoWindow internal constructor(
             modifiers: Int, // TaoModifierMask bitmask
             codePoint: Int, // First Unicode scalar of typed text (or 0)
         )
+
+        /**
+         * [onKey] with [isRepeat]: whether a key-down is an auto-repeat of a
+         * held key rather than a new press (always `false` for other types).
+         * A listener that cares overrides this one; by default it drops the flag.
+         */
+        public fun onKey(
+            type: Int,
+            vkCode: Int,
+            keyLocation: Int,
+            modifiers: Int,
+            codePoint: Int,
+            isRepeat: Boolean,
+        ): Unit = onKey(type, vkCode, keyLocation, modifiers, codePoint)
     }
 
     public fun setTitle(title: String) {
@@ -1253,6 +1309,7 @@ public class TaoWindow internal constructor(
         startupEraseActive = true
         setStartupBackgroundEraseEnabled(true)
         showHook?.invoke()
+        showObservers.forEach { it(this) }
         NativeTaoBridge.nativeSetVisible(handle, true)
         // Queued behind the show above (both ride the same event loop), so the
         // click-through state lands on the mapped window — see
@@ -1273,9 +1330,21 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetVisible(handle, false)
     }
 
-    /** Raises the window, restores it if minimized, and gives it keyboard focus. */
+    /**
+     * Raises the window, restores it if minimized, and gives it keyboard focus.
+     *
+     * On Wayland a window may only take focus with an `xdg-activation` token the compositor
+     * handed out for a user action; this uses the one a global hotkey or a notification click
+     * just delivered ([ActivationToken]), so focusing a window in response to either works
+     * (#739). Without one, the compositor may refuse and flag the window instead.
+     */
     public fun focus() {
-        NativeTaoBridge.nativeFocus(handle)
+        val token = if (Platform.Current == Platform.Linux) ActivationToken.take() else null
+        if (token != null) {
+            NativeTaoBridge.nativeFocusWithActivationToken(handle, token)
+        } else {
+            NativeTaoBridge.nativeFocus(handle)
+        }
     }
 
     /**
@@ -1454,6 +1523,31 @@ public class TaoWindow internal constructor(
         keyListener = listener
     }
 
+    /** [onKeyEvent] for a listener that reads [KeyEventListener]'s repeat flag. */
+    internal fun onKeyInput(
+        block: (type: Int, vkCode: Int, keyLocation: Int, modifiers: Int, codePoint: Int, isRepeat: Boolean) -> Unit,
+    ) {
+        keyListener =
+            object : KeyEventListener {
+                override fun onKey(
+                    type: Int,
+                    vkCode: Int,
+                    keyLocation: Int,
+                    modifiers: Int,
+                    codePoint: Int,
+                ) = block(type, vkCode, keyLocation, modifiers, codePoint, false)
+
+                override fun onKey(
+                    type: Int,
+                    vkCode: Int,
+                    keyLocation: Int,
+                    modifiers: Int,
+                    codePoint: Int,
+                    isRepeat: Boolean,
+                ) = block(type, vkCode, keyLocation, modifiers, codePoint, isRepeat)
+            }
+    }
+
     /**
      * Trackpad gesture stream — see [TrackpadGestureListener]. macOS/Linux emit
      * magnify/rotate/smart-magnify; Windows emits magnify only (Ctrl+wheel /
@@ -1474,7 +1568,9 @@ public class TaoWindow internal constructor(
         xFixed: Int,
         yFixed: Int,
         forceFixed: Int,
+        kind: Int,
     ) {
+        touchPointerType = taoPointerType(kind)
         touchInputListener?.onTouch(phase, id, xFixed, yFixed, forceFixed)
     }
 
@@ -1530,8 +1626,9 @@ public class TaoWindow internal constructor(
         keyLocation: Int,
         modifiers: Int,
         codePoint: Int,
+        isRepeat: Boolean = false,
     ) {
-        keyListener?.onKey(type, vkCode, keyLocation, modifiers, codePoint)
+        keyListener?.onKey(type, vkCode, keyLocation, modifiers, codePoint, isRepeat)
     }
 
     /**
@@ -1674,11 +1771,13 @@ public class TaoWindow internal constructor(
                 if (!minimized) requestRedraw()
                 minimizedListeners.forEach { it.invoke(minimized) }
             }
+            TaoEventCode.DECORATIONS_SUPPRESSED -> isDecorationSuppressed = a != 0
             TaoEventCode.CURSOR_MOVED -> pointerMoveListener?.invoke(a, b)
             TaoEventCode.CURSOR_LEFT -> pointerExitedListener?.invoke()
             TaoEventCode.MOUSE_DOWN -> pointerButtonListener?.invoke(a, true)
             TaoEventCode.MOUSE_UP -> pointerButtonListener?.invoke(a, false)
             TaoEventCode.MODIFIERS_CHANGED -> modifierState = a
+            TaoEventCode.POINTER_KIND -> pointerType = taoPointerType(a)
             TaoEventCode.WILL_HIDE -> willHideListener?.invoke()
             TaoEventCode.SHOWN -> shownListener?.invoke()
             TaoEventCode.SIZE_MOVE -> sizeMoveListener?.invoke(a != 0)

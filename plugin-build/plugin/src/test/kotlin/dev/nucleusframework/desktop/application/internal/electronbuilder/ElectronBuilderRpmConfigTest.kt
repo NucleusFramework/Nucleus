@@ -100,4 +100,36 @@ class ElectronBuilderRpmConfigTest {
         assertTrue(yaml, yaml.contains("--before-remove"))
         assertTrue(yaml, yaml.contains(yamlQuoted(beforeRemove.absolutePath)))
     }
+
+    @Test
+    fun `desktop entry keeps the display name while productName is the executable name`() {
+        val distributions = distributions()
+        distributions.appName = "Nucleus Demo"
+
+        val yaml = renderLinux(distributions, TargetFormat.Deb)
+
+        assertTrue(yaml, yaml.contains("      \"Name\": \"Nucleus Demo\""))
+    }
+
+    @Test
+    fun `explicit desktop Name entry wins over appName`() {
+        val distributions = distributions()
+        distributions.appName = "Nucleus Demo"
+        distributions.linux.appImage.desktopEntries = mapOf("Name" to "Custom")
+
+        val yaml = renderLinux(distributions, TargetFormat.Deb)
+
+        assertTrue(yaml, yaml.contains("      \"Name\": \"Custom\""))
+        assertFalse(yaml, yaml.contains("Nucleus Demo"))
+    }
+
+    @Test
+    fun `snap title is the display name`() {
+        val distributions = distributions()
+        distributions.appName = "Nucleus Demo"
+
+        val yaml = renderLinux(distributions, TargetFormat.Snap)
+
+        assertTrue(yaml, yaml.contains("  title: \"Nucleus Demo\""))
+    }
 }

@@ -37,6 +37,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.http.HttpClient
 import java.nio.file.Files
+import java.security.DigestOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -268,8 +269,9 @@ public class NucleusUpdater(
         val totalBytes = targetFile.size
         var bytesDownloaded = 0L
 
+        val digest = ChecksumVerifier.newSha512Digest()
         fetcher.open(targetFile.url).use { inputStream ->
-            tempFile.outputStream().use { outputStream ->
+            DigestOutputStream(tempFile.outputStream(), digest).use { outputStream ->
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 var bytesRead: Int
                 while (inputStream.read(buffer).also { bytesRead = it } != -1) {
@@ -280,9 +282,9 @@ public class NucleusUpdater(
             }
         }
 
-        // Verify checksum
-        if (!ChecksumVerifier.verify(tempFile, targetFile.sha512)) {
-            val actual = ChecksumVerifier.computeSha512Base64(tempFile)
+        // Verify checksum (hashed while writing, so the artifact is not read back)
+        val actual = ChecksumVerifier.encode(digest)
+        if (actual != targetFile.sha512) {
             tempFile.delete()
             throw ChecksumException(targetFile.sha512, actual)
         }
@@ -326,15 +328,16 @@ public class NucleusUpdater(
     }
 
     /**
-     * Downloads `<url>.asc` to [dest] if present. Failures are swallowed: the detached signature is
-     * optional and only used by the Linux passwordless self-update helper.
+     * Downloads the detached signature ([UpdateProvider.getSignatureUrl]) to [dest] if present.
+     * Failures are swallowed: it is optional and only used by the Linux passwordless self-update
+     * helper.
      */
     private fun downloadDetachedSignature(
         url: String,
         dest: File,
     ) {
         try {
-            fetcher.readBytesOrNull("$url.asc")?.let(dest::writeBytes)
+            fetcher.readBytesOrNull(provider.getSignatureUrl(url))?.let(dest::writeBytes)
         } catch (
             @Suppress("TooGenericExceptionCaught", "SwallowedException") e: Exception,
         ) {
@@ -497,7 +500,14 @@ public class NucleusUpdater(
     private fun doCheckForUpdates(): UpdateResult {
         val platform = PlatformInfo.currentPlatform()
         val arch = PlatformInfo.currentArch()
-        val metadataUrl = provider.resolveMetadataUrl(config.channel, platform, httpClient)
+        val metadataUrl =
+            provider.resolveMetadataUrl(
+                config.channel,
+                platform,
+                httpClient,
+                config.currentVersion,
+                config.resolvedAllowPrerelease(),
+            )
         val metadata = YamlParser.parse(fetcher.readText(metadataUrl))
         val currentVersion = Version.fromString(config.currentVersion)
         val remoteVersion = Version.fromString(metadata.version)
@@ -550,7 +560,7 @@ public class NucleusUpdater(
                 files =
                     metadata.files.map { file ->
                         UpdateFile(
-                            url = provider.getDownloadUrl(file.url, metadata.version),
+                            url = provider.getDownloadUrl(file.url, metadata.version, metadataUrl),
                             sha512 = file.sha512,
                             size = file.size,
                             blockMapSize = file.blockMapSize,
@@ -559,7 +569,7 @@ public class NucleusUpdater(
                     },
                 currentFile =
                     UpdateFile(
-                        url = provider.getDownloadUrl(selectedFile.url, metadata.version),
+                        url = provider.getDownloadUrl(selectedFile.url, metadata.version, metadataUrl),
                         sha512 = selectedFile.sha512,
                         size = selectedFile.size,
                         blockMapSize = selectedFile.blockMapSize,

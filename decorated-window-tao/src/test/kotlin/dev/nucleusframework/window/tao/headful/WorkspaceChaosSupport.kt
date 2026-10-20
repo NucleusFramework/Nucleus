@@ -286,7 +286,9 @@ internal fun Modifier.fileDropRecorder(
  * the windows, and one [SatelliteWorkspace] **per tab window** whose palette
  * draws whichever tab that window is showing.
  *
- * The wiring mirrors `examples/tab-satellites-demo` down to where each piece
+ * The wiring mirrors the original tab-satellites demo (now the Lab's
+ * `workspace.tab-satellites` probe, which hangs its [DockLayout] on
+ * `windowBodyWrapper` instead) down to where each piece
  * lives — the window joins its workspace from the window wrapper, the
  * [DockLayout] is inside the tab body, and the satellites are declared at
  * application scope per group — because that placement is the whole design:

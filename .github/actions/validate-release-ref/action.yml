@@ -40,7 +40,7 @@ runs:
         fi
 
         # The branch that owns a prerelease tag is the one named after its release line:
-        # `v2.6.0-rc.1` belongs on `nucleus-2.6`. Derived rather than hard-coded, because a
+        # `v3.0.0-rc.1` belongs on `nucleus-3.0`. Derived rather than hard-coded, because a
         # pinned branch name silently protects the *previous* line once the work moves on
         # (the default was still `nucleus-2.0` while 2.6 was in development, and that branch
         # no longer exists on origin — every rc would have failed to fetch).

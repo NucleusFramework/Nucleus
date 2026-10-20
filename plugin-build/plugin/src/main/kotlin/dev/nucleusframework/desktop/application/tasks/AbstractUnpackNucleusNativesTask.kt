@@ -6,6 +6,7 @@ import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.OutputDirectory
@@ -19,7 +20,9 @@ import org.gradle.work.DisableCachingByDefault
  * Splits the uber JAR the GraalVM native image is compiled from: the Nucleus JNI libraries of
  * [platformDir] go to [libsDir], to be shipped next to the executable, and [strippedJar] is the
  * same JAR without any library a Nucleus module lists, so native-image embeds none of them.
- * Everything else — including other `nucleus/native/` entries — is left as it is.
+ * [droppedEntries] — Skiko's library, which the packaging copies beside the executable itself
+ * (#821) — are left out of [strippedJar] as well. Everything else — including other
+ * `nucleus/native/` entries — is left as it is.
  *
  * Embedded libraries could only be loaded by extracting them to the user's cache on first launch;
  * next to the executable, `GraalVmInitializer`'s `java.library.path` resolves them directly.
@@ -33,6 +36,13 @@ abstract class AbstractUnpackNucleusNativesTask : AbstractNucleusTask() {
     /** The `nucleus/native/<dir>/` of the image's platform, e.g. `win32-x64`. */
     @get:Input
     abstract val platformDir: Property<String>
+
+    /**
+     * Entries the packaging already copies next to the executable (Skiko's library), left out of
+     * [strippedJar] so a resource glob cannot embed a second copy in the image (#821).
+     */
+    @get:Input
+    abstract val droppedEntries: SetProperty<String>
 
     @get:OutputFile
     abstract val strippedJar: RegularFileProperty
@@ -52,6 +62,7 @@ abstract class AbstractUnpackNucleusNativesTask : AbstractNucleusTask() {
             libsDir = libs,
             platformDir = platformDir.get(),
             nucleusEntries = source.nucleusNativeEntries(),
+            droppedEntries = droppedEntries.get(),
         )
     }
 }

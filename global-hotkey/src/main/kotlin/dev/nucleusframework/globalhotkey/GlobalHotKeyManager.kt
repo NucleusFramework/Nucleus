@@ -115,6 +115,11 @@ public object GlobalHotKeyManager {
      * [register] calls produces a single system dialog. Call [commitRegistrations]
      * to flush immediately and surface portal errors synchronously.
      *
+     * [listener] is called for every press, auto-repeats included. To tell repeats apart,
+     * observe releases or bring a window to the front on Wayland (activation token), register
+     * a [HotKeyEventListener] instead. On Wayland a Nucleus window may take focus from
+     * [listener]: `requestFocus()` uses the hotkey's activation token on its own.
+     *
      * @param keyCode AWT virtual key code (e.g., [java.awt.event.KeyEvent.VK_F12]).
      * @param modifiers bitmask of [HotKeyModifier] values (e.g., `HotKeyModifier.CONTROL + HotKeyModifier.ALT`).
      *                  Use 0 for no modifiers.
@@ -129,6 +134,34 @@ public object GlobalHotKeyManager {
         modifiers: Int = 0,
         description: String? = null,
         listener: HotKeyListener,
+    ): Long = register(keyCode, modifiers, description, listener.pressesOnly())
+
+    /**
+     * Register a global hotkey whose [listener] receives every [HotKeyEvent]: presses (with
+     * [HotKeyEvent.isRepeat]), releases where the platform reports them, and the Wayland
+     * [HotKeyEvent.activationToken].
+     *
+     * ```kotlin
+     * GlobalHotKeyManager.register(
+     *     keyCode = KeyEvent.VK_SPACE,
+     *     modifiers = HotKeyModifier.CONTROL + HotKeyModifier.ALT,
+     *     description = "Quick entry",
+     *     listener = HotKeyEventListener { event ->
+     *         if (event.state == HotKeyState.PRESSED && !event.isRepeat) {
+     *             quickEntry.show()
+     *             quickEntry.requestFocus() // takes the activation token on Wayland
+     *         }
+     *     },
+     * )
+     * ```
+     *
+     * Same parameters and return value as the [HotKeyListener] overload.
+     */
+    public fun register(
+        keyCode: Int,
+        modifiers: Int = 0,
+        description: String? = null,
+        listener: HotKeyEventListener,
     ): Long {
         if (!ensureReady()) return -1
 
@@ -150,6 +183,18 @@ public object GlobalHotKeyManager {
     public fun register(
         mediaKey: MediaKey,
         listener: HotKeyListener,
+    ): Long = register(mediaKey, listener.pressesOnly())
+
+    /**
+     * Register a media key as a global hotkey whose [listener] receives every [HotKeyEvent].
+     *
+     * @param mediaKey the media key to register.
+     * @param listener callback invoked for each press and release, on the host UI thread.
+     * @return a registration handle for [unregister], or -1 on failure.
+     */
+    public fun register(
+        mediaKey: MediaKey,
+        listener: HotKeyEventListener,
     ): Long {
         if (!ensureReady()) return -1
 
@@ -247,7 +292,7 @@ public object GlobalHotKeyManager {
     private fun registerWindows(
         keyCode: Int,
         modifiers: Int,
-        listener: HotKeyListener,
+        listener: HotKeyEventListener,
     ): Long {
         val id = NativeWindowsHotKeyBridge.registerListener(listener)
 
@@ -284,7 +329,7 @@ public object GlobalHotKeyManager {
     private fun registerMacOs(
         keyCode: Int,
         modifiers: Int,
-        listener: HotKeyListener,
+        listener: HotKeyEventListener,
     ): Long {
         val id = NativeMacOsHotKeyBridge.registerListener(listener)
 
@@ -314,7 +359,7 @@ public object GlobalHotKeyManager {
         keyCode: Int,
         modifiers: Int,
         description: String?,
-        listener: HotKeyListener,
+        listener: HotKeyEventListener,
     ): Long {
         val id = NativeLinuxHotKeyBridge.registerListener(listener)
         val error = NativeLinuxHotKeyBridge.nativeRegister(id, modifiers, keyCode, description)
@@ -377,6 +422,12 @@ public object GlobalHotKeyManager {
         }
         return true
     }
+
+    /** Adapts a [HotKeyListener] to the event stream: every press, repeats included, as before. */
+    private fun HotKeyListener.pressesOnly(): HotKeyEventListener =
+        HotKeyEventListener { event ->
+            if (event.state == HotKeyState.PRESSED) onHotKey(event.keyCode, event.modifiers)
+        }
 
     private fun ensureReady(): Boolean {
         if (!isAvailable) {

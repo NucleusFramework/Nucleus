@@ -79,6 +79,8 @@ internal object NativeTaoBridge {
          * conventions so Compose's `Key(nativeKeyCode, nativeKeyLocation)`
          * works unchanged. [modifiers] is a bitmask: 1=Shift, 2=Ctrl, 4=Alt,
          * 8=Meta. [codePoint] is the UTF-32 code-point produced by the key, or 0.
+         * [isRepeat] is tao's `KeyEvent.repeat`: a key-down sent again because the
+         * key is held. Always `false` for a key-up and for [TaoEventCode.KEY_TYPED].
          */
         @Suppress("LongParameterList", "FunctionParameterNaming")
         fun onKeyEvent(
@@ -88,6 +90,7 @@ internal object NativeTaoBridge {
             keyLocation: Int,
             modifiers: Int,
             codePoint: Int,
+            isRepeat: Boolean,
         )
 
         /**
@@ -146,6 +149,8 @@ internal object NativeTaoBridge {
          * [TaoEventCode.CURSOR_MOVED]).
          * [forceFixed] is the touch pressure × 10 000 in `[0, 10000]`, or
          * `-1` when the digitizer doesn't report pressure.
+         * [kind] is the [TaoPointerKind] of the contact: a finger, or a pen
+         * (and its eraser end), which WM_POINTER reports the same way (#827).
          *
          * Default no-op so non-Windows callers can ignore it.
          */
@@ -157,6 +162,7 @@ internal object NativeTaoBridge {
             xFixed: Int,
             yFixed: Int,
             forceFixed: Int,
+            kind: Int,
         ) {
         }
 
@@ -771,6 +777,16 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeFocus(handle: Long)
 
+    /**
+     * [nativeFocus] with an xdg-activation token from the compositor. Wayland only: hands the
+     * token to `xdg_activation_v1.activate` through GDK; ignored elsewhere.
+     */
+    @JvmStatic
+    external fun nativeFocusWithActivationToken(
+        handle: Long,
+        activationToken: String,
+    )
+
     /** [width]/[height] in logical pixels; pass negative values to clear. */
     @JvmStatic
     external fun nativeSetMinInnerSize(
@@ -850,6 +866,14 @@ internal object NativeTaoBridge {
     )
 
     /**
+     * Headful-suite diagnostic (macOS): what the cursor for [code] looks like —
+     * hotspot, size and a pixel hash — or `[NSCursor currentCursor]` when
+     * [code] is negative. Equal signatures draw the same shape. `null` elsewhere.
+     */
+    @JvmStatic
+    external fun nativeDiagCursorSignature(code: Int): String?
+
+    /**
      * The last cursor code requested per window handle, exactly as it was
      * handed to [nativeSetCursorIcon]. The platform cursor itself cannot be
      * read back portably (and never under Xvfb), so this is what the headful
@@ -885,6 +909,18 @@ internal object NativeTaoBridge {
         y: Int,
         width: Int,
         height: Int,
+    )
+
+    /**
+     * Linux only (#842): whether a text field owns the input of [handle]. The
+     * GTK input context is focused only while it does — on Wayland, focusing
+     * it sends text-input `enable`, which compositors answer by raising the
+     * on-screen keyboard. Off until the first `true`.
+     */
+    @JvmStatic
+    external fun nativeSetImeAllowed(
+        handle: Long,
+        allowed: Boolean,
     )
 
     /**

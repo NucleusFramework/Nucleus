@@ -60,6 +60,7 @@ internal object WaylandWorkspaceHeadfulCases {
             tabTransferDragTearsOffAndMergesBack(),
             aTransferDropResolvesARankAndReorders(),
             chromeIsToldTheCompositorPlacesTheWindow(),
+            theBarMovesTheWindowWhenTheSatelliteAsksForIt(),
             theStripReordersAndDefersItsDrops(),
         )
 
@@ -214,6 +215,63 @@ internal object WaylandWorkspaceHeadfulCases {
                 check(workspace.beginDrag(NOTES, floatingOrigin(floating), Offset.Zero) == null) {
                     "a screen drag started on a window the app cannot place"
                 }
+            },
+        )
+    }
+
+    /**
+     * `floatingBarMovesWindow`: the compositor gets the whole title bar, so no
+     * caption strip is reserved nor composed, and the chrome is told the bar
+     * moves the window — its own grip is what docks the satellite. The
+     * satellite drag itself is unchanged: a [WorkspaceDragKind.Transfer].
+     */
+    private fun theBarMovesTheWindowWhenTheSatelliteAsksForIt(): TaoWindowTestCase {
+        val fixture =
+            DockLayoutFixture(
+                specs =
+                    listOf(
+                        DockPanelSpec(TREE, SatellitePlacement.Docked(DockSide.Right, extent = 120.dp)),
+                        DockPanelSpec(
+                            NOTES,
+                            SatellitePlacement.Floating(
+                                positioner = workspaceRightEdgePositioner(),
+                                size = workspaceSatelliteSize(),
+                            ),
+                            floatingBarMovesWindow = true,
+                        ),
+                    ),
+            )
+        return TaoWindowTestCase(
+            name = "native Wayland: floatingBarMovesWindow gives the compositor the whole title bar",
+            skip = ::waylandSkipReason,
+            windowState = workspaceParentWindowState(),
+            size = DpSize(PARENT_W_DP.dp, PARENT_H_DP.dp),
+            paintDefaultBackground = false,
+            content = { fixture.Body() },
+            applicationContent = { with(fixture) { Satellites() } },
+            driver = {
+                val workspace = fixture.workspace
+                awaitDockedBodiesInWindow(fixture, TREE)
+                awaitUntil("the palette floats") {
+                    fixture.floatingWindows.value[NOTES]?.hasRealFramePx() == true
+                }
+                settle(SETTLE_AFTER_MAP_MILLIS)
+                val floating = requireNotNull(fixture.floatingWindows.value[NOTES])
+                check(!floating.canPlaceOnScreen) { "case premise: the palette must be compositor-placed" }
+
+                awaitUntil("the palette's chrome learned that its bar moves the window") {
+                    fixture.barMovesWindow.value[NOTES] == true
+                }
+                check(fixture.captionBounds.value[NOTES] == null) {
+                    "a caption strip was reserved on a bar given over to the compositor"
+                }
+
+                val session = requireNotNull(workspace.beginTransferDrag(NOTES, floatingOrigin(floating)))
+                check(workspace.dragKind == WorkspaceDragKind.Transfer) {
+                    "the platform session carries it, but the kind is ${workspace.dragKind}"
+                }
+                session.cancel()
+                check(workspace.dragKind == null && workspace.publishesNoDragFeedback()) { "feedback left behind" }
             },
         )
     }

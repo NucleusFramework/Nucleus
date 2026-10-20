@@ -113,7 +113,7 @@ static JavaVM *sJVM = NULL;
 static jclass sEventCbClass = NULL;
 static jmethodID sOnPointerMethod = NULL; /* (IFFII)V */
 static jmethodID sOnScrollMethod = NULL;  /* (FFFF)V */
-static jmethodID sOnKeyMethod = NULL;     /* (IIII)V */
+static jmethodID sOnKeyMethod = NULL;     /* (IIIIZ)V */
 static jclass sOutsideClass = NULL;
 static jmethodID sOnOutsideClickMethod = NULL; /* (II)V */
 static volatile LONG sCacheInitedBits = 0;
@@ -173,7 +173,7 @@ static void ensureEventCallbackCache(JNIEnv *env, jobject sample) {
     if (!global) return;
     jmethodID m1 = (*env)->GetMethodID(env, global, "onPointerEvent", "(IFFII)V");
     jmethodID m2 = (*env)->GetMethodID(env, global, "onScroll", "(FFFF)V");
-    jmethodID m3 = (*env)->GetMethodID(env, global, "onKeyEvent", "(IIII)V");
+    jmethodID m3 = (*env)->GetMethodID(env, global, "onKeyEvent", "(IIIIZ)V");
     if (m1 && m2 && m3) {
         sEventCbClass = global;
         sOnPointerMethod = m1; sOnScrollMethod = m2; sOnKeyMethod = m3;
@@ -553,6 +553,9 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         if (!p || !p->eventCb || !sOnKeyMethod) break;
         int type = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) ? 1 : 2;
         int vk = (int)w;
+        /* Bit 30 of lParam is the key's previous state: set on a key-down
+         * means the key was already down, i.e. an auto-repeat. */
+        jboolean repeat = (type == 1 && (l & (1L << 30))) ? JNI_TRUE : JNI_FALSE;
         int mods = 0;
         if (GetKeyState(VK_SHIFT)   & 0x8000) mods |= 0x1;
         if (GetKeyState(VK_CONTROL) & 0x8000) mods |= 0x2;
@@ -581,7 +584,7 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         JNIEnv *envK = attachThread();
         if (envK) {
             (*envK)->CallVoidMethod(envK, p->eventCb, sOnKeyMethod,
-                (jint)type, (jint)vk, (jint)codePoint, (jint)mods);
+                (jint)type, (jint)vk, (jint)codePoint, (jint)mods, repeat);
             nucleus_jni_clear_exception(envK);
         }
         return 0;

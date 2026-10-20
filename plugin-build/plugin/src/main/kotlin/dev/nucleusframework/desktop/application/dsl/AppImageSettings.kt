@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+/** AppImage packaging options (`.desktop` entry metadata and AppImage-specific settings). */
 @Suppress("AbstractClassCanBeConcreteClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class AppImageSettings {
     /** Desktop file category. */
@@ -23,9 +24,10 @@ abstract class AppImageSettings {
      * Archive compression for this AppImage only.
      *
      * Overrides the root [JvmApplicationDistributions.compressionLevel] when set.
-     * Prefer [CompressionLevel.Normal] or [CompressionLevel.Store]:
-     * [CompressionLevel.Maximum] / [CompressionLevel.Ultra] map to electron-builder
-     * `maximum` and can make cold starts very slow (squashfs/FUSE decompression).
+     * [CompressionLevel.Store] builds a gzip image, every other level a zstd image.
+     * [CompressionLevel.Normal], [CompressionLevel.Maximum] and [CompressionLevel.Ultra] produce
+     * the same image: electron-builder passes no zstd level to `mksquashfs`, so all three use
+     * its default.
      */
     var compressionLevel: CompressionLevel? = null
 }

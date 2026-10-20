@@ -215,6 +215,12 @@ public object NativeLibraryLoader {
             System.load(loadPath.toAbsolutePath().toString())
             loadedLibraries += libraryName
             return true
+        } catch (e: UnsatisfiedLinkError) {
+            // A library that is present but cannot be linked (wrong architecture, a dyld
+            // rejection, a missing system dependency) is "not available", like a missing one:
+            // callers fall back instead of dying in their class initializer.
+            logger.log(Level.WARNING, "Failed to link $libraryName native library", e)
+            return false
         } catch (e: Exception) {
             logger.log(Level.WARNING, "Failed to load $libraryName native library", e)
             return false

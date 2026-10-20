@@ -129,15 +129,22 @@ internal class WindowClearColorLayers(
     }
 
     /**
-     * Publishes [argb] as this [key]'s content contribution. Re-entry moves
-     * [key] to the top so co-composed writers resolve by SideEffect order.
+     * Publishes [argb] as this [key]'s content contribution and moves [key] to
+     * the top: among co-composed writers, the last to change its colour wins.
+     * Re-publishing an unchanged colour keeps the order — a writer's
+     * SideEffect runs on every recomposition, and the resolved colour itself
+     * recomposes the chrome (its light/dark), so re-ranking on every call made
+     * a `TitleBar` and a `WindowBackground` of opposite darkness take turns,
+     * one frame each, forever (#755).
      */
     fun setContent(
         key: Any,
         argb: Int,
     ) {
+        val coerced = coerce(argb)
+        if (contentWriters[key] == coerced) return
         contentWriters.remove(key)
-        contentWriters[key] = coerce(argb)
+        contentWriters[key] = coerced
         push()
     }
 
@@ -596,9 +603,9 @@ internal fun ApplicationScope.openDecoratedWindow(
     window.onPointerExited { exceptionHandler.catchExceptions { if (enabled) host.onPointerExited() } }
     window.onPointerButton { b, p -> exceptionHandler.catchExceptions { if (enabled) host.onPointerButton(b, p) } }
     window.onPointerScroll { event -> exceptionHandler.catchExceptions { if (enabled) host.onPointerScroll(event) } }
-    window.onKeyEvent { type, vk, loc, mods, cp ->
+    window.onKeyInput { type, vk, loc, mods, cp, repeat ->
         exceptionHandler.catchExceptions(fallback = false) {
-            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp, repeat) else false
         }
     }
     window.onRedrawRequested { host.requestFrame() }
@@ -630,6 +637,7 @@ internal fun ApplicationScope.openDecoratedWindow(
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
         }
+        host.onMinimizedChanged(minimized)
     }
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)
@@ -818,6 +826,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         }
         val (initialW, initialH) = initialLinuxSize(window, w, h, maximized)
         host.onResized(initialW, initialH)
+        // Nothing is drawn before the map below, so nothing is laid out either:
+        // a wrap-content window would only learn its size once shown at the
+        // creation fallback (#532). Lay it out now, still hidden.
+        if (window.resolvedSizePolicy().wraps) host.layoutNow()
         // First paint must happen *after* the surface is shown:
         //  - X11: a pre-show synchronous render leaves the GLX backbuffer
         //    invalidated by the subsequent map, so the dialog stayed black
@@ -922,9 +934,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     }
     window.onPointerScroll { event -> exceptionHandler.catchExceptions { if (enabled) host.onPointerScroll(event) } }
     window.onDragWindow { host.onNativeWindowDragStarted() }
-    window.onKeyEvent { type, vk, loc, mods, cp ->
+    window.onKeyInput { type, vk, loc, mods, cp, repeat ->
         exceptionHandler.catchExceptions(fallback = false) {
-            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp, repeat) else false
         }
     }
     window.onRedrawRequested { host.onRedrawRequested() }
@@ -949,6 +961,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
         }
+        host.onMinimizedChanged(minimized)
     }
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)
@@ -1445,9 +1458,9 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         }
         host.onResizeLoopChanged(active)
     }
-    window.onKeyEvent { type, vk, loc, mods, cp ->
+    window.onKeyInput { type, vk, loc, mods, cp, repeat ->
         exceptionHandler.catchExceptions(fallback = false) {
-            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+            if (enabled) host.onKeyEvent(type, vk, loc, mods, cp, repeat) else false
         }
     }
     window.onRedrawRequested { host.onRedrawRequested() }
@@ -1474,6 +1487,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         if (stateHolder.value.isMinimized != minimized) {
             stateHolder.value = stateHolder.value.copy(minimized = minimized)
         }
+        host.onMinimizedChanged(minimized)
     }
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)

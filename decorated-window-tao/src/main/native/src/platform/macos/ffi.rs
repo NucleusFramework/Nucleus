@@ -45,6 +45,8 @@ extern "C" {
         h_px: f64,
     );
     pub(crate) fn nucleus_tao_set_cursor_icon(code: i32);
+    pub(crate) fn nucleus_tao_cursor_ptr(code: i32) -> *mut std::ffi::c_void;
+    pub(crate) fn nucleus_tao_diag_cursor_signature(code: i32, out: *mut std::ffi::c_char, capacity: usize);
     pub(crate) fn nucleus_tao_a11y_attach(ns_view_handle: i64);
     pub(crate) fn nucleus_tao_a11y_detach(ns_view_handle: i64);
     pub(crate) fn nucleus_tao_a11y_apply_snapshot(

@@ -122,14 +122,17 @@ internal class RobotPointerDriver(
     override suspend fun press(button: Int) {
         val mask = mask(button)
         inject { robot ->
-            HeadfulRobot.notePress()
+            HeadfulRobot.notePress(mask)
             robot.mousePress(mask)
         }
     }
 
     override suspend fun release(button: Int) {
         val mask = mask(button)
-        inject { robot -> robot.mouseRelease(mask) }
+        inject { robot ->
+            robot.mouseRelease(mask)
+            HeadfulRobot.noteRelease(mask)
+        }
     }
 
     override suspend fun exit() {

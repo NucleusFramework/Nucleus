@@ -18,6 +18,10 @@ import dev.nucleusframework.window.DialogTitleBar
 import dev.nucleusframework.window.TitleBar
 import dev.nucleusframework.window.tao.TaoMonitors
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.resolvedSizePolicy
+import dev.nucleusframework.window.tao.showObservers
+import kotlinx.coroutines.delay
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
@@ -38,7 +42,24 @@ internal object UnspecifiedSizeHeadfulCases {
             dialogWrapContentCentredOnScreen(),
             dialogWrapContentCentredOnParent(),
             windowWrapContentWidthTitleBarSpans(),
+            windowWrapContentMapsAtMeasuredSize(),
+            dialogWrapContentMapsAtMeasuredSize(),
         )
+
+    /** What each window looked like at the instant [TaoWindow.show] ran, by handle — first show only. */
+    private val firstShow = ConcurrentHashMap<Long, ShowSnapshot>()
+
+    /** [bounds] is null when the native window did not even exist yet. */
+    private class ShowSnapshot(
+        val bounds: LongArray?,
+        val wrapSettled: Boolean,
+    )
+
+    init {
+        showObservers += { w ->
+            firstShow.putIfAbsent(w.handle, ShowSnapshot(w.outerBoundsPx(), w.resolvedSizePolicy().settled.value))
+        }
+    }
 
     private fun windowWrapContentHeight(): TaoWindowTestCase =
         TaoWindowTestCase(
@@ -180,6 +201,56 @@ internal object UnspecifiedSizeHeadfulCases {
         }
     }
 
+    /**
+     * #532 follow-up: a wrap-content window used to be shown at its creation
+     * fallback (600dp tall) and only shrunk once the content was measured — a
+     * blank frame of the wrong size on every open. It must map at the measured
+     * size, and stay there.
+     */
+    private fun windowWrapContentMapsAtMeasuredSize(): TaoWindowTestCase =
+        TaoWindowTestCase(
+            name = "#532 window wrap-content height is shown at its measured size",
+            paintDefaultBackground = false,
+            size = DpSize(WRAP_WIDTH_DP.dp, Dp.Unspecified),
+            content = { RedBox() },
+        ) {
+            assertMappedAndStaysAtWrapSize(window)
+        }
+
+    private fun dialogWrapContentMapsAtMeasuredSize(): TaoWindowTestCase =
+        TaoWindowTestCase(
+            name = "#532 dialog wrap-content height is shown at its measured size",
+            paintDefaultBackground = false,
+            dialogSize = DpSize(WRAP_WIDTH_DP.dp, Dp.Unspecified),
+            dialogContent = {
+                DialogTitleBar { }
+                RedBox()
+            },
+        ) {
+            assertMappedAndStaysAtWrapSize(checkNotNull(dialogWindow) { "dialog window never published" })
+        }
+
+    private suspend fun TaoWindowTestScope.assertMappedAndStaysAtWrapSize(target: TaoWindow) {
+        awaitUntil(
+            "window shown and settled at its wrap-content size",
+            detail = { "bounds=${target.outerBoundsPx()?.toList()}" },
+        ) {
+            firstShow.containsKey(target.handle) && target.outerBoundsPx()?.wrapsContent(target) == true
+        }
+        val atShow = checkNotNull(firstShow[target.handle])
+        val shownBounds =
+            checkNotNull(atShow.bounds) { "shown before its native window existed — at the creation fallback size" }
+        check(atShow.wrapSettled && shownBounds.wrapsContent(target)) {
+            "shown at ${shownBounds[3] / target.scaleFactor}dp tall (wrap size applied: ${atShow.wrapSettled}), " +
+                "expected the wrap-content height (${CONTENT_HEIGHT_DP}dp + chrome)"
+        }
+        // The size must not drift back to the fallback once settled (#532: it
+        // jumped to 600dp later on, when the pointer left the dialog).
+        delay(STABILITY_HOLD_MILLIS)
+        val after = checkNotNull(target.outerBoundsPx())
+        check(after.wrapsContent(target)) { "drifted to ${after[3] / target.scaleFactor}dp tall after settling" }
+    }
+
     @Composable
     private fun RedBox() {
         Box(
@@ -223,6 +294,7 @@ internal object UnspecifiedSizeHeadfulCases {
     private const val WRAP_WIDTH_DP = 300f
     private const val WRAP_HEIGHT_DP = 300f
     private const val CONTENT_HEIGHT_DP = 137f
+    private const val STABILITY_HOLD_MILLIS = 1_000L
 
     // Title bar + Linux CSD shadow / macOS traffic-light chrome.
     private const val MAX_CHROME_DP = 220f

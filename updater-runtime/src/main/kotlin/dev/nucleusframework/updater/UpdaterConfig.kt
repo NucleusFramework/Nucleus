@@ -15,6 +15,12 @@ public class UpdaterConfig {
     public lateinit var provider: UpdateProvider
     public var channel: String = "latest"
     public var allowDowngrade: Boolean = false
+
+    /**
+     * Whether a pre-release may be offered. Also on, whatever this says, when [currentVersion] is a
+     * pre-release or [channel] is not `latest`: `channel = "beta"` alone follows the beta channel,
+     * which electron-updater would not do without `allowPrerelease`.
+     */
     public var allowPrerelease: Boolean = false
     public var executableType: String? = null
 
@@ -128,7 +134,8 @@ internal data class ResolvedUpdaterConfig(
     val allowLaunchOverrides: Boolean = false,
     val simulation: UpdateSimulation? = null,
 ) {
-    fun resolvedAllowPrerelease(): Boolean = allowPrerelease || currentVersion.contains("-")
+    fun resolvedAllowPrerelease(): Boolean =
+        allowPrerelease || currentVersion.contains("-") || !channel.equals("latest", ignoreCase = true)
 
     fun isDevMode(): Boolean = currentVersion == UpdaterConfig.DEV_VERSION
 }

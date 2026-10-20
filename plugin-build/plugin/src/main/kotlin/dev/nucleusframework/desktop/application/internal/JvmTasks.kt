@@ -37,6 +37,8 @@ internal class JvmTasks(
         return register(taskName, klass = T::class.java, args = args, configureFn = configureFn)
     }
 
+    // Gradle's register only takes constructor arguments as a vararg.
+    @Suppress("SpreadOperator")
     fun <T : Task> register(
         name: String,
         klass: Class<T>,

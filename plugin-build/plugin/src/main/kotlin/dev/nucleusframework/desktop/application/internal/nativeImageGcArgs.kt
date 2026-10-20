@@ -1,3 +1,6 @@
+// Named after its main entry point, nativeImageGcArgs(); the class is only its helper result.
+@file:Suppress("MatchingDeclarationName")
+
 package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.NativeImageGarbageCollector
@@ -38,7 +41,7 @@ internal fun resolveNativeImageGc(
             minimum != null && !isLinux && graalvmVersion == null ->
                 "${requested.flag} requires GraalVM $minimum or newer outside Linux, and the " +
                     "version of $graalvmHome could not be read"
-            minimum != null && !isLinux && !isAtLeastVersion(graalvmVersion!!, minimum) ->
+            minimum != null && !isLinux && graalvmVersion != null && !isAtLeastVersion(graalvmVersion, minimum) ->
                 "${requested.flag} requires GraalVM $minimum or newer outside Linux " +
                     "(current toolchain: $graalvmVersion)"
             else -> return NativeImageGcResolution(gc = requested, warning = null)

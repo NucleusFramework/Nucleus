@@ -41,6 +41,7 @@ use crate::{
     app_state::AppState,
     event::{code_to_key, create_key_event, event_mods, get_scancode, EventWrapper},
     ffi::*,
+    pointer_device_id,
     util::{self},
     window::get_window_id,
     DEVICE_ID,
@@ -1121,7 +1122,7 @@ fn mouse_click(this: &Object, event: &NSEvent, button: MouseButton, button_state
     let window_event = Event::WindowEvent {
       window_id: WindowId(get_window_id(&state.ns_window.load().unwrap())),
       event: WindowEvent::MouseInput {
-        device_id: DEVICE_ID,
+        device_id: pointer_device_id(event),
         state: button_state,
         button,
         modifiers: event_mods(event),
@@ -1202,7 +1203,7 @@ fn mouse_motion(this: &NSView, event: &NSEvent) {
     let window_event = Event::WindowEvent {
       window_id: WindowId(get_window_id(&state.ns_window.load().unwrap())),
       event: WindowEvent::CursorMoved {
-        device_id: DEVICE_ID,
+        device_id: pointer_device_id(event),
         position: logical_position.to_physical(state.get_scale_factor()),
         modifiers: event_mods(event),
       },

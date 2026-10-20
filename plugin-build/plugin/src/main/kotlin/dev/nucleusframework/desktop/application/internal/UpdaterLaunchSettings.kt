@@ -22,7 +22,10 @@ internal object UpdaterLaunchSettings {
     fun environment(providers: ProviderFactory): Map<String, String> =
         systemProperties(providers).mapKeys { (key, _) -> environmentName(key) }
 
-    /** `nucleus.updater.simulate.justUpdatedFrom` → `NUCLEUS_UPDATER_SIMULATE_JUST_UPDATED_FROM`, as the runtime reads it. */
+    /**
+     * `nucleus.updater.simulate.justUpdatedFrom` → `NUCLEUS_UPDATER_SIMULATE_JUST_UPDATED_FROM`,
+     * as the runtime reads it.
+     */
     fun environmentName(key: String): String =
         key
             .replace(CAMEL_HUMP, "$1_$2")

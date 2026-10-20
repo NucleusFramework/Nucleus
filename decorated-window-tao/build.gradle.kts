@@ -19,7 +19,14 @@ val publishVersion =
         ?.removePrefix("refs/tags/v")
         ?: "1.0.0"
 
+// Compile-time stand-in for the class the Nucleus plugin generates into
+// Compose's ui-desktop jar for partial redraw (#755, LayerDamageTransform).
+// compileOnly and never packaged: at run time the class comes from the
+// patched jar, or is absent and the redraw stays full-frame.
+val composeStubs: SourceSet by sourceSets.creating
+
 dependencies {
+    compileOnly(composeStubs.output)
     api(project(":decorated-window-core"))
     implementation(project(":core-runtime"))
     // Compose `Modifier.keepScreenOn()` is a no-op on desktop unless the
@@ -46,7 +53,7 @@ dependencies {
     testImplementation(kotlin("test"))
     // Skiko native runtime for the opt-in real-window smoke test
     testImplementation(compose.desktop.currentOs)
-    // The Material 3 AlertDialog the headful appearance film compares against nucleus-demo
+    // The Material 3 AlertDialog the headful appearance film compares against (the Lab's gallery)
     testImplementation(libs.compose.material3)
 }
 
@@ -188,6 +195,11 @@ val taoHeadfulTest =
         // Arms the macOS scrollWheel: injector (nativeDiagInjectScrollWheel) the
         // trackpad cases drive; it is inert in any process without this variable.
         environment("NUCLEUS_TAO_INPUT_INJECTION", "1")
+        // A fixed glibc mmap threshold: every large block — Mesa llvmpipe's
+        // texture storage among them — is then its own mapping, unmapped on
+        // free. With the default dynamic threshold freed textures stay in the
+        // malloc heap and RSS cannot show the #638 GPU-cache reclaim.
+        environment("MALLOC_MMAP_THRESHOLD_", "131072")
         // Same Kover JVM agent the `test` task uses, so headful window coverage
         // is counted. JavaExec is otherwise invisible to Kover.
         dependsOn(tasks.named("koverFindJar"))
@@ -223,6 +235,22 @@ val taoHeadfulTest =
         }
         System.getProperty("nucleus.tao.headful.filter")?.let {
             systemProperty("nucleus.tao.headful.filter", it)
+        }
+        // Out-of-frame executor switch, for OutOfFrameExecutorHeadfulCases' A/B runs.
+        System.getProperty("nucleus.tao.outOfFrameExecutor")?.let {
+            systemProperty("nucleus.tao.outOfFrameExecutor", it)
+        }
+        // Opts into the tear-off flash film (TearOffFlashHeadfulCases).
+        System.getProperty("nucleus.tao.headful.tearOffFlash")?.let {
+            systemProperty("nucleus.tao.headful.tearOffFlash", it)
+        }
+        // Opts into the known-gap programmatic resize film (ResizeSyncHeadfulCases).
+        System.getProperty("nucleus.tao.headful.programmaticResizeSync")?.let {
+            systemProperty("nucleus.tao.headful.programmaticResizeSync", it)
+        }
+        // Where the off-screen present case writes its captures (OffScreenPresentHeadfulCases).
+        System.getProperty("nucleus.tao.headful.offscreenDumpDir")?.let {
+            systemProperty("nucleus.tao.headful.offscreenDumpDir", it)
         }
         // Replays a red monkey run: the case prints the seed it used.
         System.getProperty("nucleus.tao.headful.monkeySeed")?.let {

@@ -111,10 +111,13 @@ public fun DecoratedWindowScope.WindowScaffold(
     // fullscreen), reserve nothing: a non-zero controlsInsets based on the
     // last measured height would leave a phantom traffic-light / KDE pad over
     // full-window content (macOS fullscreen used to keep 80.dp).
+    // A compositor that wants no decorations (#816) gets no window controls:
+    // the stock bars drop them (and collapse when nothing else is left), so
+    // whatever the slot still holds has no controls to make room for.
     val chromeInsets =
         WindowChromeInsets(
             controlsInsets =
-                if (hideBar) {
+                if (hideBar || taoWindow.isDecorationSuppressed) {
                     PaddingValues(0.dp)
                 } else {
                     titleBarPadding(

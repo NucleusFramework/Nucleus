@@ -140,6 +140,9 @@ internal class TaoPopupSceneLayerLinux(
      */
     private var compositorPlaced: Boolean? = null
 
+    /** Where the content sat when the compositor last anchored it — a move re-anchors. */
+    private var anchoredContentOrigin: IntOffset? = null
+
     /** EGL attachment ready — flips on WINDOW_READY once the GPU side is up. */
     private var attachment: Long = 0
     private var directContext: DirectContext? = null
@@ -620,10 +623,12 @@ internal class TaoPopupSceneLayerLinux(
             // whose items measure late) therefore cannot be applied in place:
             // resizing the EGL buffer alone would leave the `xdg_surface`
             // geometry at the anchored size, which is the buffer/geometry
-            // disagreement of #502. Re-map instead — hide, re-anchor at the new
-            // size, show — which is also what re-runs the compositor's flip for
-            // the size it now has.
-            if (!shown || sizeChanged) {
+            // disagreement of #502. Neither can a move: a popup whose anchor
+            // moved (a hover card following the pointer to another tab) would
+            // stay where it was mapped. Re-map instead — hide, re-anchor at the
+            // new place and size, show — which is also what re-runs the
+            // compositor's flip for the size it now has.
+            if (!shown || sizeChanged || contentInParent.topLeft != anchoredContentOrigin) {
                 if (shown) {
                     trace { "re-anchor ${widthPx}x$heightPx -> ${w}x$h" }
                     popupWindow.hide()
@@ -639,6 +644,7 @@ internal class TaoPopupSceneLayerLinux(
                     shadowRightDp = ((drawBounds.right - contentBounds.right) / scale).roundToInt(),
                     shadowBottomDp = ((drawBounds.bottom - contentBounds.bottom) / scale).roundToInt(),
                 )
+                anchoredContentOrigin = contentInParent.topLeft
                 TaoPopupDiagnostics.compositorAnchorCount++
             }
         } else {

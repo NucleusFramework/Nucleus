@@ -196,6 +196,13 @@ class ChromeLogicTest {
         layers.setContent(background, Color.Red.toArgb())
         layers.setContent(titleBar, Color.Blue.toArgb())
         assertEquals(Color.Blue.toArgb(), layers.resolved)
+        // A writer re-publishing an unchanged colour (any recomposition) does
+        // not take the top back: only a change does.
+        layers.setContent(background, Color.Red.toArgb())
+        assertEquals(Color.Blue.toArgb(), layers.resolved)
+        layers.setContent(background, Color.Green.toArgb())
+        assertEquals(Color.Green.toArgb(), layers.resolved)
+        layers.setContent(background, Color.Red.toArgb())
 
         layers.clearContent(titleBar)
         assertEquals(Color.Red.toArgb(), layers.resolved)

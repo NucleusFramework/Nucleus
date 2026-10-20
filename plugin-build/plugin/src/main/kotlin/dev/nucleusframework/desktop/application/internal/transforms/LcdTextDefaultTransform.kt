@@ -109,8 +109,21 @@ internal fun configureLcdTextDefaultTransform(project: Project) {
         spec.to.attribute(LCD_TEXT_PATCHED, true)
     }
 
+    requestPatchedRuntimeVariant(project, LCD_TEXT_PATCHED)
+}
+
+/**
+ * Requests the `[attribute] = true` variant of every jar on each non-test
+ * runtime classpath of [project] (`runtimeClasspath`, `jvmRuntimeClasspath`,
+ * …), and marks plain jars `false` so a registered transform bridges the two.
+ * Shared by every Compose bytecode patch the plugin applies.
+ */
+internal fun requestPatchedRuntimeVariant(
+    project: Project,
+    attribute: Attribute<Boolean>,
+) {
     // KMP desktop runtime classpaths resolve project dependencies to their
-    // `classes`/`resources` directory sub-variants, which carry no LCD
+    // `classes`/`resources` directory sub-variants, which carry no patch
     // attribute — requesting it would make artifact selection ambiguous.
     // Pinning the jar LibraryElements restores plain-JVM resolution (same
     // reasoning as registerCleanNativeLibsTransform).
@@ -124,7 +137,7 @@ internal fun configureLcdTextDefaultTransform(project: Project) {
             val isAndroid = configuration.attributes.keySet().any { it.name.startsWith("com.android") }
             val isHotReload = name.contains("HotReload", ignoreCase = true)
             if (!isAndroid && !isHotReload) {
-                configuration.attributes.attribute(LCD_TEXT_PATCHED, true)
+                configuration.attributes.attribute(attribute, true)
                 if (isMultiplatform) {
                     configuration.attributes.attribute(
                         LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE,
@@ -137,7 +150,7 @@ internal fun configureLcdTextDefaultTransform(project: Project) {
 
     project.dependencies.artifactTypes.configureEach { artifactType ->
         if (artifactType.name == "jar") {
-            artifactType.attributes.attribute(LCD_TEXT_PATCHED, false)
+            artifactType.attributes.attribute(attribute, false)
         }
     }
 }

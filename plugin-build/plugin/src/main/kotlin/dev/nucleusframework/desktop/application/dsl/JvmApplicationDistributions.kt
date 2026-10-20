@@ -22,10 +22,15 @@ internal val DEFAULT_RUNTIME_MODULES =
         "jdk.unsupported",
     )
 
+/**
+ * The `nativeDistributions { }` block of a JVM application: the bundled runtime image, per-platform
+ * packaging (Linux, macOS, Windows), signing, file associations, URL protocols and update publishing.
+ */
 abstract class JvmApplicationDistributions : AbstractDistributions() {
     @Suppress("DoubleMutabilityForCollection", "SpreadOperator")
     var modules = arrayListOf(*DEFAULT_RUNTIME_MODULES)
 
+    /** Appends JDK modules to [modules], the module list of the bundled runtime image. */
     fun modules(vararg modules: String) {
         this.modules.addAll(modules.toList())
     }
@@ -59,6 +64,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      */
     val aotCache: AotCacheSettings = objects.newInstance(AotCacheSettings::class.java)
 
+    /** Configures [aotCache]. */
     fun aotCache(fn: Action<AotCacheSettings>) {
         fn.execute(aotCache)
     }
@@ -74,14 +80,17 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         }
 
     /**
-     * Whether [format] is built through the sandboxed (store) pipeline: AppX and Flatpak always
-     * are, PKG only when it targets the Mac App Store (`macOS { pkg { appStore } }`, the default).
-     * A Developer ID PKG shares the non-sandboxed pipeline with DMG.
+     * Whether [format] is built through the sandboxed (store) pipeline: Flatpak always is, PKG
+     * only when it targets the Mac App Store (`macOS { pkg { appStore } }`, the default). A
+     * Developer ID PKG shares the non-sandboxed pipeline with DMG. AppX is not sandboxed:
+     * electron-builder always declares `runFullTrust`, so the app runs as a packaged Win32 process,
+     * not in an AppContainer, and is built like any other Windows format.
      */
     internal fun isSandboxed(format: TargetFormat): Boolean =
         when (format) {
             TargetFormat.Pkg -> macOS.pkg.appStore
-            else -> format.isAlwaysSandboxed
+            TargetFormat.Flatpak -> true
+            else -> false
         }
 
     /**
@@ -93,18 +102,21 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     val linux: LinuxPlatformSettings = objects.newInstance(LinuxPlatformSettings::class.java)
 
+    /** Configures Linux packaging. */
     open fun linux(fn: Action<LinuxPlatformSettings>) {
         fn.execute(linux)
     }
 
     val macOS: JvmMacOSPlatformSettings = objects.newInstance(JvmMacOSPlatformSettings::class.java)
 
+    /** Configures macOS packaging. */
     open fun macOS(fn: Action<JvmMacOSPlatformSettings>) {
         fn.execute(macOS)
     }
 
     val windows: WindowsPlatformSettings = objects.newInstance(WindowsPlatformSettings::class.java)
 
+    /** Configures Windows packaging. */
     fun windows(fn: Action<WindowsPlatformSettings>) {
         fn.execute(windows)
     }
@@ -114,6 +126,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      */
     val sandboxing: SandboxingSettings = objects.newInstance(SandboxingSettings::class.java)
 
+    /** Configures [sandboxing]. */
     fun sandboxing(fn: Action<SandboxingSettings>) {
         fn.execute(sandboxing)
     }
@@ -126,6 +139,10 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         fn.execute(UnifiedSigningSettings(macOS.signing, windows.signing, linux.signing))
     }
 
+    /**
+     * Associates files with [extension] / [mimeType] with the application on every platform,
+     * optionally with a per-platform icon.
+     */
     @JvmOverloads
     fun fileAssociation(
         mimeType: String,
@@ -144,6 +161,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     val publish: PublishSettings = objects.newInstance(PublishSettings::class.java)
 
+    /** Configures where release artifacts and update metadata are published. */
     fun publish(fn: Action<PublishSettings>) {
         fn.execute(publish)
     }
@@ -198,6 +216,7 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     val protocols: MutableList<UrlProtocol> = mutableListOf()
 
+    /** Registers the URL [schemes] (deep links) handled by the application under the display [name]. */
     fun protocol(
         name: String,
         vararg schemes: String,
@@ -206,10 +225,12 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
     }
 }
 
+/** A URL protocol handler: the URL [schemes] the application opens, registered under [name]. */
 data class UrlProtocol(
     val name: String,
     val schemes: List<String>,
 ) : Serializable {
+    /** Serialization constants. */
     companion object {
         private const val serialVersionUID: Long = 1L
     }

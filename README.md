@@ -188,7 +188,7 @@ each step.
 * [nucleusframework.dev/en/docs](https://nucleusframework.dev/en/docs) — all of Nucleus's documentation
 * [Quickstart](https://nucleusframework.dev/en/docs/start/quickstart) — build and package your first app
 * [Architecture](https://nucleusframework.dev/en/docs/concepts/architecture) — the layered model behind the framework
-* [examples/](examples/) — demo and sample applications, including the flagship `nucleus-demo`
+* [examples/lab](examples/lab) — the Nucleus Lab, one app that exercises every runtime module, plus the [other samples](examples/)
 
 ## What Nucleus provides
 

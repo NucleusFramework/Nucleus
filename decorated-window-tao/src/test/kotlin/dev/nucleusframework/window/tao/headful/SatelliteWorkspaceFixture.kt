@@ -260,6 +260,7 @@ internal fun robotAim(): String = HeadfulRobot.lastAimReport
 internal suspend fun robotRelease(): Boolean? =
     HeadfulRobot.inject { robot ->
         robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
+        HeadfulRobot.noteRelease()
         true
     }
 

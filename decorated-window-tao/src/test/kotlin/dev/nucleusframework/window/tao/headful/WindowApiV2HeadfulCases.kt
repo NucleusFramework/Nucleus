@@ -51,6 +51,7 @@ internal object WindowApiV2HeadfulCases {
             )
         return TaoWindowTestCase(
             name = "window v2 clone: initial provider centres a fixed size on the screen",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -110,6 +111,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: requestSize / requestPosition reach the native window",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -143,6 +145,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: scoped bounds provider reads live window metrics",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -234,6 +237,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: a burst of position requests lands on the last one",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -243,6 +247,7 @@ internal object WindowApiV2HeadfulCases {
             // gets a turn, so it must drain to the newest request without
             // applying stale ones after it.
             var last = DpOffset.Zero
+            val sentAt = System.nanoTime()
             repeat(BURST_COUNT) { i ->
                 last = DpOffset(available.left + (STEP_DP * (i + 1)).dp, available.top + (STEP_DP * (i + 1)).dp)
                 state.requestPosition(last)
@@ -250,6 +255,13 @@ internal object WindowApiV2HeadfulCases {
             awaitUntil("outer position landed on the last of the burst") {
                 val outer = outerDp()
                 closeEnough(last.x.value, outer.left) && closeEnough(last.y.value, outer.top)
+            }
+            // Promptly, too: a bridge that applies the queue one by one also ends
+            // within TOLERANCE_DP of the last request, only seconds later — it
+            // crawled 4, 8, 12 … one settle (~250 ms) at a time, and passed.
+            val landedMs = (System.nanoTime() - sentAt) / NANOS_PER_MILLI
+            check(landedMs <= BURST_LAND_BUDGET_MS) {
+                "the burst took ${landedMs}ms to land: it was applied request by request, not drained to the last"
             }
             // ...and stays there: a stale request applied late would move it back.
             settle()
@@ -367,6 +379,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: requests sent from a background thread are applied",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -393,6 +406,7 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: a frame-paced move animation ends on its last frame",
+            skip = ::outerGeometryUnverifiable,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -464,6 +478,23 @@ internal object WindowApiV2HeadfulCases {
 
     private val DpRect.height: Float get() = (bottom - top).value
 
+    /**
+     * Native Wayland keeps the outer rectangle these cases assert on to the
+     * compositor: xdg-shell has no client positioning (a position request is
+     * a documented no-op and the window reports no global origin), and GTK's
+     * client-side decorations put the shadow margins inside the outer size
+     * (952×692 for a 900×640 request). Neither can be verified there; the
+     * X11 leg and the other platforms cover them.
+     */
+    private fun outerGeometryUnverifiable(): String? {
+        if (!isLinux) return null
+        val forcedX11 =
+            System.getenv("GDK_BACKEND")?.split(',')?.firstOrNull() == "x11" ||
+                System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
+        val wayland = !System.getenv("WAYLAND_DISPLAY").isNullOrBlank() && !forcedX11
+        return if (wayland) "outer window geometry is the compositor's on native Wayland" else null
+    }
+
     private fun closeEnough(
         expected: Float,
         actual: Float,
@@ -493,6 +524,14 @@ internal object WindowApiV2HeadfulCases {
     private val MEASURE_BOX = DpSize(400.dp, 300.dp)
 
     private const val BURST_COUNT = 40
+
+    /**
+     * How long a burst may take to land. Drained to the last request it lands in
+     * ~650 ms on Windows (one move plus the wait for the frame); applied request
+     * by request it took ~9 s.
+     */
+    private const val BURST_LAND_BUDGET_MS = 3_000L
+    private const val NANOS_PER_MILLI = 1_000_000L
     private const val BACKGROUND_BURST = 10
     private const val TOGGLE_COUNT = 6
     private const val TOGGLE_GAP_MS = 40L

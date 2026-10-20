@@ -2,13 +2,16 @@ package dev.nucleusframework.window.tao
 
 import dev.nucleusframework.window.TitleBarHitTestTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
+import dev.nucleusframework.window.tao.deco.FullscreenOverlayVisibilityTest
 import dev.nucleusframework.window.tao.dnd.TaoSyntheticDndTest
 import dev.nucleusframework.window.tao.dnd.TaoTransferableAccessGuardTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
 import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
+import dev.nucleusframework.window.tao.event.TaoKeyRepeatTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
+import dev.nucleusframework.window.tao.event.TaoTouchEventTimeTest
 import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSessionTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
@@ -16,6 +19,8 @@ import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
 import dev.nucleusframework.window.tao.scene.LcdTextCaptureTest
 import dev.nucleusframework.window.tao.scene.LcdTextTest
+import dev.nucleusframework.window.tao.scene.PartialRedrawTest
+import dev.nucleusframework.window.tao.scene.TaoOutOfFrameExecutorTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
@@ -25,6 +30,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerSlopTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
+import dev.nucleusframework.window.tao.scene.TaoScenePopupDisposedInLayoutTest
 import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRectManagerRaceTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
@@ -64,7 +70,10 @@ class TaoSceneTestBatteryDriftTest {
             NativePopupLayersTest::class.java,
             dev.nucleusframework.window.tao.popup.MacPopupPictureCullTest::class.java,
             TaoKeyboardModifiersDecodeTest::class.java,
+            TaoKeyRepeatTest::class.java,
             TaoSyntheticMouseWheelEventTest::class.java,
+            TaoTouchEventTimeTest::class.java,
+            FullscreenOverlayVisibilityTest::class.java,
             Win32WheelDeltaTest::class.java,
             LinuxWheelDeltaTest::class.java,
             MacOsWheelDeltaTest::class.java,
@@ -85,7 +94,9 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneTrackpadScaleTest::class.java,
             TaoTrackpadScaleSessionTest::class.java,
             TaoScenePopupTest::class.java,
+            TaoScenePopupDisposedInLayoutTest::class.java,
             TaoSceneOuterLocalsBridgeTest::class.java,
+            TaoOutOfFrameExecutorTest::class.java,
             TaoSceneAnimationTest::class.java,
             TaoSceneContentSwapTest::class.java,
             TaoSceneExceptionHandlerTest::class.java,
@@ -114,6 +125,7 @@ class TaoSceneTestBatteryDriftTest {
             TransferDragTest::class.java,
             TabWorkspaceTest::class.java,
             TabHoverPreviewTest::class.java,
+            PartialRedrawTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */
@@ -121,6 +133,7 @@ class TaoSceneTestBatteryDriftTest {
         mapOf(
             TaoMainDispatcherHandoffTest::class.java to "spawns real threads against the JVM dispatcher",
             TaoMainDispatcherReproTest::class.java to "spawns real threads against the JVM dispatcher",
+            TaoDecorationEventWireTest::class.java to "reads events.rs from the source tree",
             StandalonePanelNativeSmokeTest::class.java to "loads the Windows native popup chain",
             StandalonePanelLinuxNativeSmokeTest::class.java to "loads the Linux native popup chain",
             OutboundDragPumpNativeSmokeTest::class.java to "resolves the platform DnD JNI entry points",
@@ -135,9 +148,13 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneRectManagerRaceTest::class.java to
                 "races the real AWT EDT against wall-clock frames; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
+            TaoReachabilityMetadataDriftTest::class.java to
+                "reads the source tree's metadata file and resolves its classes reflectively",
             TaoScrollWireDriftTest::class.java to
                 "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
             TaoMouseButtonWireDriftTest::class.java to
+                "reads events.rs from the repo; wire guard, not a scene behaviour",
+            TaoPointerKindWireDriftTest::class.java to
                 "reads events.rs from the repo; wire guard, not a scene behaviour",
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
@@ -148,6 +165,8 @@ class TaoSceneTestBatteryDriftTest {
                 "threads a real watchdog against a fake probe (#643); no ComposeScene",
             TaoEventLoopWatchdogSmokeTest::class.java to
                 "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); freezes the real event loop",
+            TaoMainThreadBindingSmokeTest::class.java to
+                "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); runs the real event loop (#829)",
             dev.nucleusframework.window.tao.scene.WaylandBufferScaleTest::class.java to
                 "pure-function buffer alignment; already covered via TaoScenePopupTest in the battery",
             XdgPortalParentTest::class.java to

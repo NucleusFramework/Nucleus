@@ -51,7 +51,8 @@
                         "int",
                         "int",
                         "int",
-                        "int"
+                        "int",
+                        "boolean"
                     ]
                 },
                 {
@@ -80,6 +81,7 @@
                         "long",
                         "int",
                         "long",
+                        "int",
                         "int",
                         "int",
                         "int"
@@ -144,7 +146,8 @@
                         "int",
                         "int",
                         "int",
-                        "int"
+                        "int",
+                        "boolean"
                     ]
                 },
                 {
@@ -173,6 +176,7 @@
                         "long",
                         "int",
                         "long",
+                        "int",
                         "int",
                         "int",
                         "int"
@@ -334,7 +338,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -350,7 +354,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -366,7 +370,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -382,7 +386,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean","int"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -402,7 +406,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -438,7 +442,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean","int"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -643,7 +647,7 @@
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge$Callback",
             "jniAccessible": true,
             "methods": [
-                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
+                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long","long"] },
                 { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
             ]
         },
@@ -651,7 +655,7 @@
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux$InboundTouchCallback",
             "jniAccessible": true,
             "methods": [
-                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
+                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long","long"] },
                 { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
             ]
         },

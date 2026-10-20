@@ -1,4 +1,4 @@
-﻿# Exact expected-vs-measured UIA tree verification for tao-demo.
+﻿# Exact expected-vs-measured UIA tree verification for the Lab a11y-surface fixture.
 #
 # Method:
 #   1. EXPECTED = scripts/ci/a11y-goldens/<fixture>.expected.json
@@ -19,7 +19,7 @@
 # Exit 0 = every expected node matches measured properties exactly.
 
 param(
-    [string]$Title = "Tao Backend Demo",
+    [string]$Title = "Nucleus A11y Surface",
     [string]$Fixture = "a11y-tab",
     [string]$GoldensDir = "",
     [string]$OutDir = "",
@@ -411,7 +411,7 @@ if ($StrictExtra) {
         if ($m.controlType -eq "Button" -and $m.patterns -contains "Invoke" -and $m.depth -le 3) {
             if ($m.name -match '^(Minimize|Maximize|Close|Restore|R.duire|Agrandir|Fermer|Restaurer)$') { continue }
         }
-        if ($m.name -eq "Tao Backend Demo") { continue }
+        if ($m.name -eq "Nucleus A11y Surface") { continue }
         # Reorder arrows (up/down) often surface as single-glyph names without a stable string.
         if ($m.name.Length -le 2 -and $m.controlType -eq "Button") { continue }
         # Expand/collapse groups: covered by contains-match on settings/advanced/always shown

@@ -15,6 +15,7 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
 #import <Metal/Metal.h>
+#import <IOSurface/IOSurface.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Carbon/Carbon.h>
 #import <mach/mach_time.h>
@@ -2422,6 +2423,51 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresent(
     [commandBuffer commit];
 }
 
+// ── Partial redraw (#755) ────────────────────────────────────────────────
+//
+// The layer recycles a few drawables; a partial frame repaints only what the
+// drawable it gets has missed since it last held a frame, which assumes the
+// recycled drawable kept its pixels. These two calls let the Kotlin side tell
+// the buffers apart and notice the one documented way that assumption breaks.
+
+// Identifies the buffer behind an acquired drawable: (IOSurfaceID << 1) | lost,
+// where `lost` means its IOSurface was purged — contents discarded — since it
+// was last drawn. -1 when the drawable has no IOSurface (always repaint).
+// Read by setting NonVolatile, which returns the previous state: a purged
+// surface stays Empty — and volatile, purgeable again — until someone makes
+// it non-volatile, and Core Animation never does, so a KeepCurrent read
+// reported that buffer lost (repainted in full) on every frame after one
+// purge. The drawable is about to be drawn and presented: non-volatile is
+// the state Core Animation keeps its drawables in anyway.
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDrawableBufferState(
+        JNIEnv *env, jclass clazz, jlong drawablePtr) {
+    (void) env; (void) clazz;
+    if (drawablePtr == 0) return -1;
+    id<CAMetalDrawable> drawable = (__bridge id<CAMetalDrawable>)(void *)(uintptr_t) drawablePtr;
+    IOSurfaceRef surface = drawable.texture.iosurface;
+    if (surface == NULL) return -1;
+    uint32_t oldState = kIOSurfacePurgeableNonVolatile;
+    kern_return_t kr = IOSurfaceSetPurgeable(surface, kIOSurfacePurgeableNonVolatile, &oldState);
+    jlong lost = (kr != KERN_SUCCESS || oldState == kIOSurfacePurgeableEmpty) ? 1 : 0;
+    return ((jlong) IOSurfaceGetID(surface) << 1) | lost;
+}
+
+// CAMetalLayer.framebufferOnly. Off only for the partial-redraw oracle, which
+// reads the presented drawable back.
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetFramebufferOnly(
+        JNIEnv *env, jclass clazz, jlong handle, jboolean flag) {
+    (void) env; (void) clazz;
+    if (handle == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    CAMetalLayer *layer = att->layer;
+    BOOL value = flag == JNI_TRUE;
+    dispatch_block_t apply = ^{ layer.framebufferOnly = value; };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
 // ── VSync-paced rendering via CVDisplayLink ──────────────────────────────
 
 // Blocks the calling (background) thread until the NEXT display refresh after
@@ -3016,6 +3062,88 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectTrack
     NSEvent *event = [NSEvent eventWithCGEvent:cg];
     CFRelease(cg);
     if (event == nil || event.window != window) return JNI_FALSE;
+    [NSApp postEvent:event atStart:NO];
+    return JNI_TRUE;
+}
+
+/* macOS only, headful e2e (#827): queues a synthetic tablet event with
+ * `-[NSApplication postEvent:atStart:]`, the way a Wacom-class driver delivers
+ * a pen: a proximity event naming the tool when it comes within range, then
+ * ordinary mouse events whose `subtype` is NSEventSubtypeTabletPoint. Posted,
+ * never sent, for the reason given on nativeDiagInjectTrackpadGesture.
+ *
+ * action: 0 proximity enter, 1 proximity leave, 2 move, 3 down, 4 drag, 5 up.
+ * tool:   0 the mouse (plain mouse events, no proximity), 1 pen tip, 2 eraser.
+ * (x, y) are view-local points with a top-left origin (ignored for proximity).
+ *
+ * Field 51 (window number) and the private CGEventSetWindowLocation make the
+ * mouse events land on the view's window at that point, as in the gesture
+ * injector. Same gate as nativeDiagInjectScrollWheel. Returns JNI true once
+ * the event is queued; events posted in order are delivered in order. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectTabletEvent(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr,
+        jint action, jint tool, jfloat x, jfloat y) {
+    (void)env; (void)clazz;
+    if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
+    if (!taoInputInjectionEnabled()) return JNI_FALSE;
+    if (tool < 0 || tool > 2) return JNI_FALSE;
+    typedef void (*SetWindowLocationFn)(CGEventRef, CGPoint);
+    static SetWindowLocationFn sSetWindowLocation = NULL;
+    static BOOL sResolved = NO;
+    if (!sResolved) {
+        sResolved = YES;
+        sSetWindowLocation = (SetWindowLocationFn) dlsym(RTLD_DEFAULT, "CGEventSetWindowLocation");
+    }
+    if (sSetWindowLocation == NULL) return JNI_FALSE;
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    NSWindow *window = view.window;
+    NSScreen *primary = NSScreen.screens.firstObject;
+    if (window == nil || primary == nil) return JNI_FALSE;
+    // CGPointerType of the proximity fields: 1 pen, 3 eraser.
+    int64_t pointerType = tool == 2 ? 3 : 1;
+    CGEventRef cg = NULL;
+    if (action == 0 || action == 1) {
+        if (tool == 0) return JNI_FALSE;
+        cg = CGEventCreate(NULL);
+        if (cg == NULL) return JNI_FALSE;
+        CGEventSetType(cg, kCGEventTabletProximity);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventPointerType, pointerType);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventEnterProximity, action == 0 ? 1 : 0);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventDeviceID, 1);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventCapabilityMask, 0x3F);
+        CGEventSetIntegerValueField(cg, (CGEventField) 51, window.windowNumber);
+    } else {
+        CGEventType type;
+        switch (action) {
+            case 2: type = kCGEventMouseMoved; break;
+            case 3: type = kCGEventLeftMouseDown; break;
+            case 4: type = kCGEventLeftMouseDragged; break;
+            case 5: type = kCGEventLeftMouseUp; break;
+            default: return JNI_FALSE;
+        }
+        // View-local top-left → window base (bottom-left) → window top-left.
+        NSPoint local = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height - y);
+        NSPoint inWindow = [view convertPoint:local toView:nil];
+        NSPoint onScreen = [window convertPointToScreen:inWindow];
+        CGPoint global = CGPointMake(onScreen.x, primary.frame.size.height - onScreen.y);
+        cg = CGEventCreateMouseEvent(NULL, type, global, kCGMouseButtonLeft);
+        if (cg == NULL) return JNI_FALSE;
+        if (tool != 0) {
+            CGEventSetIntegerValueField(cg, kCGMouseEventSubtype, kCGEventMouseSubtypeTabletPoint);
+            CGEventSetIntegerValueField(cg, kCGTabletEventDeviceID, 1);
+            CGEventSetDoubleValueField(cg, kCGTabletEventPointPressure,
+                                       (action == 3 || action == 4) ? 0.5 : 0.0);
+        }
+        if (action == 3 || action == 5) {
+            CGEventSetIntegerValueField(cg, kCGMouseEventClickState, 1);
+        }
+        CGEventSetIntegerValueField(cg, (CGEventField) 51, window.windowNumber);
+        sSetWindowLocation(cg, CGPointMake(inWindow.x, window.frame.size.height - inWindow.y));
+    }
+    NSEvent *event = [NSEvent eventWithCGEvent:cg];
+    CFRelease(cg);
+    if (event == nil) return JNI_FALSE;
     [NSApp postEvent:event atStart:NO];
     return JNI_TRUE;
 }

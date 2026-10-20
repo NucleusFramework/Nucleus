@@ -2,6 +2,15 @@ name: Build Native Libraries
 
 on:
   workflow_call:
+    inputs:
+      platforms:
+        description: >-
+          Comma-separated subset of linux, macos, windows to build. pre-merge
+          splits the call so its `gradle` job, which needs the Linux libraries
+          only, never waits for a Mac or Windows runner.
+        type: string
+        required: false
+        default: linux,macos,windows
 
 # The native binaries are a pure function of the native sources, so each
 # platform job caches its whole output tree keyed on a hash of every
@@ -9,27 +18,72 @@ on:
 # step invalidates the key). On a cache hit every compile/toolchain step is
 # skipped and the job only verifies the restored tree and re-publishes the
 # per-platform artifact that downstream jobs consume with a single
-# `pattern: natives-*` download. Bump the `natives-v1` prefix to force a
-# full rebuild.
+# `pattern: natives-*` download. macOS and Windows hits are served from a
+# Linux runner instead (macos-cached, windows-cached), so no Mac or Windows
+# runner is booked for them. Bump the `natives-v1` prefix to force a full
+# rebuild.
 
 jobs:
+  # The Windows output, looked up from Linux — same idea as macos-cached, with
+  # two differences. The entry is saved with enableCrossOsArchive, or its
+  # cache version carries a windows-only component Linux never matches. And
+  # the key is computed here and handed to the windows job: hashFiles of the
+  # same commit gives a different hash on Windows (22e92379… on Linux/macOS,
+  # 75189c46… on Windows), so a key Windows computed would never be found.
+  windows-cached:
+    if: contains(inputs.platforms, 'windows')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+      hit: ${{ steps.natives-cache.outputs.cache-hit }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v7
+
+      - name: Compute the cache key
+        id: key
+        run: echo "key=natives-v1-windows-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore native output cache
+        id: natives-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: '*/src/main/resources/nucleus/native/win32-*'
+          key: ${{ steps.key.outputs.key }}
+          enableCrossOsArchive: true
+
+      - name: Upload Windows natives
+        if: steps.natives-cache.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: natives-windows
+          path: '*/src/main/resources/nucleus/native/win32-*/'
+          retention-days: 1
+
+  # Builds the Windows output on a cache miss only (see windows-cached).
   windows:
+    needs: windows-cached
+    if: contains(inputs.platforms, 'windows') && needs.windows-cached.outputs.hit != 'true'
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
+      # Saved under the key windows-cached computed on Linux, as a cross-OS
+      # archive, so windows-cached finds it next time.
       - name: Restore native output cache
         id: natives-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: '*/src/main/resources/nucleus/native/win32-*'
-          key: natives-v1-windows-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
+          key: ${{ needs.windows-cached.outputs.key }}
+          enableCrossOsArchive: true
 
       - name: Setup JDK 21
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -171,29 +225,65 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Upload Windows natives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-windows
           path: '*/src/main/resources/nucleus/native/win32-*/'
           retention-days: 1
 
+  # The macOS output, looked up from Linux: macOS runners are the scarce ones,
+  # and every job of a calling workflow waits for this one, so a cache hit must
+  # not queue for a Mac only to re-upload a tarball. Linux sees the macOS
+  # entries because their cache version has no OS component (paths + zstd,
+  # unlike Windows, whose entries are marked windows-only) and hashFiles agrees
+  # across the two. A hit needs no re-verification: the key covers this file,
+  # so the FILES list below is the one that verified the tree before the macOS
+  # job saved it (actions/cache saves only after a successful job).
+  macos-cached:
+    if: contains(inputs.platforms, 'macos')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      hit: ${{ steps.natives-cache.outputs.cache-hit }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v7
+
+      - name: Restore native output cache
+        id: natives-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: '*/src/main/resources/nucleus/native/darwin-*'
+          key: natives-v1-macos-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
+
+      - name: Upload macOS natives
+        if: steps.natives-cache.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: natives-macos
+          path: '*/src/main/resources/nucleus/native/darwin-*/'
+          retention-days: 1
+
+  # Builds the macOS output on a cache miss only (see macos-cached).
   macos:
+    needs: macos-cached
+    if: contains(inputs.platforms, 'macos') && needs.macos-cached.outputs.hit != 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore native output cache
         id: natives-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: '*/src/main/resources/nucleus/native/darwin-*'
           key: natives-v1-macos-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
 
       - name: Setup JDK 21
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -324,13 +414,14 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Upload macOS natives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-macos
           path: '*/src/main/resources/nucleus/native/darwin-*/'
           retention-days: 1
 
   linux:
+    if: contains(inputs.platforms, 'linux')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -351,25 +442,26 @@ jobs:
             arch: aarch64
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Restore native output cache
         id: natives-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: '*/src/main/resources/nucleus/native/linux-*'
           key: natives-v1-linux-${{ matrix.arch }}-${{ hashFiles('**/src/main/native/**', '.github/workflows/build-natives.yaml') }}
 
       - name: Setup JDK 21
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Install build dependencies
         if: steps.natives-cache.outputs.cache-hit != 'true'
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libx11-dev libglib2.0-dev libgtk-3-dev
+        timeout-minutes: 10
+        run: .github/scripts/apt-install.sh libdbus-1-dev libx11-dev libglib2.0-dev libgtk-3-dev
 
       - name: Build darkmode-detector Linux native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
@@ -479,7 +571,7 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 1; fi
 
       - name: Upload Linux natives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-linux-${{ matrix.arch }}
           path: '*/src/main/resources/nucleus/native/linux-*/'

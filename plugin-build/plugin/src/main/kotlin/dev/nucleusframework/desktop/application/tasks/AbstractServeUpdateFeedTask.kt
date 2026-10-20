@@ -60,6 +60,7 @@ abstract class AbstractServeUpdateFeedTask : AbstractNucleusTask() {
     @get:Optional
     val timeoutSeconds: Property<Long> = objects.nullableProperty()
 
+    /** Serves the merged manifests and the artifacts on the loopback interface until cancelled or timed out. */
     @TaskAction
     fun serve() {
         val dirs = perFormatOutputDirs.files.filter(File::isDirectory)
@@ -70,7 +71,10 @@ abstract class AbstractServeUpdateFeedTask : AbstractNucleusTask() {
                     "(NSIS, MSI, DMG, macOS ZIP, AppImage, DEB, RPM).",
             )
         }
-        val executor = Executors.newCachedThreadPool { runnable -> Thread(runnable, "nucleus-update-feed").apply { isDaemon = true } }
+        val executor =
+            Executors.newCachedThreadPool { runnable ->
+                Thread(runnable, "nucleus-update-feed").apply { isDaemon = true }
+            }
         val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), port.get()), 0)
         server.executor = executor
         server.createContext("/") { exchange -> handle(exchange, dirs, manifests) }
@@ -80,11 +84,19 @@ abstract class AbstractServeUpdateFeedTask : AbstractNucleusTask() {
             buildString {
                 appendLine("Serving the update feed at $url")
                 manifests.forEach { (name, content) ->
-                    val version = String(content).lineSequence().firstOrNull { it.startsWith("version:") }?.substringAfter(':')?.trim()
+                    val version =
+                        String(content)
+                            .lineSequence()
+                            .firstOrNull { it.startsWith("version:") }
+                            ?.substringAfter(':')
+                            ?.trim()
                     appendLine("  $name → $version")
                 }
                 appendLine("Point the app at it with NUCLEUS_UPDATER_FEED_URL=$url")
-                appendLine("  (an installed app must set UpdaterConfig.allowLaunchOverrides; ./gradlew run -Pnucleus.updater.feedUrl=$url always works)")
+                appendLine(
+                    "  (an installed app must set UpdaterConfig.allowLaunchOverrides; " +
+                        "./gradlew run -Pnucleus.updater.feedUrl=$url always works)",
+                )
                 append("Cancel the build (Ctrl+C) to stop.")
             },
         )
@@ -110,7 +122,8 @@ abstract class AbstractServeUpdateFeedTask : AbstractNucleusTask() {
             val name = exchange.requestURI.path.trimStart('/')
             val range = exchange.requestHeaders.getFirst("Range")
             logger.lifecycle("${exchange.requestMethod} /$name${range?.let { " [$it]" }.orEmpty()}")
-            if (exchange.requestMethod !in setOf("GET", "HEAD") || '/' in name || '\\' in name || name.startsWith("..")) {
+            val forbidden = '/' in name || '\\' in name || name.startsWith("..")
+            if (exchange.requestMethod !in setOf("GET", "HEAD") || forbidden) {
                 exchange.sendResponseHeaders(HTTP_NOT_FOUND, -1)
                 return
             }
@@ -168,7 +181,8 @@ abstract class AbstractServeUpdateFeedTask : AbstractNucleusTask() {
         out: OutputStream,
     ) {
         val rate = throttleBytesPerSecond.orNull?.takeIf { it > 0 }
-        val chunk = rate?.let { (it / THROTTLE_TICKS_PER_SECOND).coerceIn(1, BUFFER_SIZE.toLong()).toInt() } ?: BUFFER_SIZE
+        val chunk =
+            rate?.let { (it / THROTTLE_TICKS_PER_SECOND).coerceIn(1, BUFFER_SIZE.toLong()).toInt() } ?: BUFFER_SIZE
         val buffer = ByteArray(chunk)
         val began = System.nanoTime()
         var sent = 0L

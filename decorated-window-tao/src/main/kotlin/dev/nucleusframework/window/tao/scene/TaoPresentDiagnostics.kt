@@ -28,4 +28,17 @@ internal object TaoPresentDiagnostics {
 
     /** Physical size of the last frame presented for [windowHandle], `null` before the first. */
     fun lastPresentedPx(windowHandle: Long): IntSize? = last[windowHandle]
+
+    private val mirrored = ConcurrentHashMap<Long, Boolean>()
+
+    /** Records whether [windowHandle]'s host held a frame mirror after its last present (Windows). */
+    fun recordMirror(
+        windowHandle: Long,
+        allocated: Boolean,
+    ) {
+        mirrored[windowHandle] = allocated
+    }
+
+    /** Whether a frame mirror was allocated after [windowHandle]'s last present (Windows; `false` elsewhere). */
+    fun hasMirror(windowHandle: Long): Boolean = mirrored[windowHandle] == true
 }

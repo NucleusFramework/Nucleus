@@ -226,11 +226,21 @@ typedef const char *(*PFN_eglQueryString)(EGLDisplay, EGLint);
 typedef EGLContext (*PFN_eglGetCurrentContext)(void);
 typedef EGLDisplay (*PFN_eglGetCurrentDisplay)(void);
 typedef EGLBoolean (*PFN_eglQuerySurface)(EGLDisplay, EGLSurface, EGLint, EGLint *);
+typedef EGLBoolean (*PFN_eglSurfaceAttrib)(EGLDisplay, EGLSurface, EGLint, EGLint);
+/* EGL_KHR_swap_buffers_with_damage and EGL_EXT_swap_buffers_with_damage share
+ * this signature: rects are (x, y, w, h) with a bottom-left origin. */
+typedef EGLBoolean (*PFN_eglSwapBuffersWithDamage)(EGLDisplay, EGLSurface, const EGLint *, EGLint);
+
+#define NUCLEUS_EGL_BUFFER_AGE 0x313D
+#define NUCLEUS_EGL_SWAP_BEHAVIOR 0x3093
+#define NUCLEUS_EGL_BUFFER_PRESERVED 0x3094
+#define NUCLEUS_EGL_SWAP_BEHAVIOR_PRESERVED_BIT 0x0400
 
 #define EGL_SURF_HEIGHT 0x3056
 #define EGL_SURF_WIDTH  0x3057
 #define EGL_VENDOR  0x3053
 #define EGL_VERSION 0x3054
+#define NUCLEUS_EGL_EXTENSIONS 0x3055
 
 /* ── Wayland client + EGL helpers ───────────────────────────────────────── */
 
@@ -351,6 +361,7 @@ static PFN_eglQueryString        p_eglQueryString        = NULL;
 static PFN_eglGetCurrentContext  p_eglGetCurrentContext  = NULL;
 static PFN_eglGetCurrentDisplay  p_eglGetCurrentDisplay  = NULL;
 static PFN_eglQuerySurface       p_eglQuerySurface       = NULL;
+static PFN_eglSurfaceAttrib      p_eglSurfaceAttrib      = NULL;
 
 static PFN_XGetWindowAttributes  p_XGetWindowAttributes  = NULL;
 static PFN_XVisualIDFromVisual   p_XVisualIDFromVisual   = NULL;
@@ -461,6 +472,7 @@ static int load_libs(void) {
     LOAD(g_libegl, eglGetCurrentContext);
     LOAD(g_libegl, eglGetCurrentDisplay);
     LOAD(g_libegl, eglQuerySurface);
+    LOAD(g_libegl, eglSurfaceAttrib);
 
     LOAD(g_libx11, XGetWindowAttributes);
     LOAD(g_libx11, XVisualIDFromVisual);
@@ -664,6 +676,67 @@ static void *nucleus_tao_egl_get_proc(void *ctx, const char *name) {
     return p;
 }
 
+/* ── Partial redraw (#755) ──────────────────────────────────────────────── */
+
+/** Whole-word match in an EGL extension string. */
+static int egl_has_extension(const char *exts, const char *name) {
+    if (!exts || !name) return 0;
+    size_t len = strlen(name);
+    const char *p = exts;
+    while ((p = strstr(p, name)) != NULL) {
+        int starts = (p == exts) || p[-1] == ' ';
+        int ends = p[len] == '\0' || p[len] == ' ';
+        if (starts && ends) return 1;
+        p += len;
+    }
+    return 0;
+}
+
+/**
+ * Resolves buffer age and swap-with-damage for [display]. Either may be
+ * missing; the Kotlin side only takes the partial path when both are there.
+ * `NUCLEUS_TAO_PARTIAL_REDRAW=0` disables both — the native kill switch next
+ * to the `nucleus.tao.partialRedraw` system property.
+ */
+static void egl_resolve_damage_support(EGLDisplay display, int *has_buffer_age,
+                                       PFN_eglSwapBuffersWithDamage *swap_with_damage) {
+    *has_buffer_age = 0;
+    *swap_with_damage = NULL;
+    const char *off = getenv("NUCLEUS_TAO_PARTIAL_REDRAW");
+    if (off && strcmp(off, "0") == 0) return;
+    if (!p_eglQueryString || !p_eglGetProcAddress || !p_eglQuerySurface) return;
+    const char *exts = p_eglQueryString(display, NUCLEUS_EGL_EXTENSIONS);
+    *has_buffer_age = egl_has_extension(exts, "EGL_EXT_buffer_age");
+    if (egl_has_extension(exts, "EGL_KHR_swap_buffers_with_damage")) {
+        *swap_with_damage = (PFN_eglSwapBuffersWithDamage)
+            p_eglGetProcAddress("eglSwapBuffersWithDamageKHR");
+    }
+    if (!*swap_with_damage && egl_has_extension(exts, "EGL_EXT_swap_buffers_with_damage")) {
+        *swap_with_damage = (PFN_eglSwapBuffersWithDamage)
+            p_eglGetProcAddress("eglSwapBuffersWithDamageEXT");
+    }
+    DBG("partial redraw: buffer_age=%d swap_with_damage=%p\n",
+        *has_buffer_age, (void *) *swap_with_damage);
+}
+
+/**
+ * Asks for EGL_BUFFER_PRESERVED on [surface] when its config allows it, so a
+ * driver that never reports a buffer age (NVIDIA on X11) still keeps the
+ * previous frame in the back buffer. Returns whether it took.
+ */
+static int egl_try_preserve(EGLDisplay display, EGLConfig config, EGLSurface surface) {
+    const char *off = getenv("NUCLEUS_TAO_PARTIAL_REDRAW");
+    if (off && strcmp(off, "0") == 0) return 0;
+    if (!p_eglSurfaceAttrib || !p_eglGetConfigAttrib || !p_eglQuerySurface) return 0;
+    EGLint types = 0;
+    if (!p_eglGetConfigAttrib(display, config, EGL_SURFACE_TYPE, &types)) return 0;
+    if (!(types & NUCLEUS_EGL_SWAP_BEHAVIOR_PRESERVED_BIT)) return 0;
+    if (!p_eglSurfaceAttrib(display, surface, NUCLEUS_EGL_SWAP_BEHAVIOR, NUCLEUS_EGL_BUFFER_PRESERVED)) return 0;
+    EGLint behavior = 0;
+    return p_eglQuerySurface(display, surface, NUCLEUS_EGL_SWAP_BEHAVIOR, &behavior) &&
+        behavior == NUCLEUS_EGL_BUFFER_PRESERVED;
+}
+
 /* ── Per-window state ───────────────────────────────────────────────────── */
 
 typedef struct {
@@ -707,6 +780,15 @@ typedef struct {
     int             widthPx;
     int             heightPx;
     float      scale;
+    /* Partial redraw (#755), resolved per display at attach: the back
+     * buffer's age (EGL_EXT_buffer_age) tells which earlier frames it still
+     * holds, and swap-with-damage (KHR or EXT) tells the compositor which
+     * part of it changed. Either missing ⇒ every frame is a full repaint. */
+    int        has_buffer_age;
+    PFN_eglSwapBuffersWithDamage swap_with_damage;
+    /* The surface keeps its back buffer across swaps (EGL_BUFFER_PRESERVED):
+     * the fallback for drivers whose buffer age stays 0 (NVIDIA on X11). */
+    int        preserved;
 } EglAttachment;
 
 /* ── Internal surface shared inside libnucleus_tao_egl.so ───────────────── */
@@ -1015,6 +1097,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
     att->config         = chosen;
     att->context        = ctx;
     att->surface        = surf;
+    egl_resolve_damage_support(edpy, &att->has_buffer_age, &att->swap_with_damage);
     att->xdisplay       = xdpy;
     att->parent_xid     = xwin;
     att->child_xid      = child_xid;
@@ -1437,6 +1520,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     att->config           = cfg;
     att->context          = ctx;
     att->surface          = surf;
+    egl_resolve_damage_support(edpy, &att->has_buffer_age, &att->swap_with_damage);
     att->wl_queue         = queue;
     att->wl_registry      = registry;
     att->wl_compositor    = bind_state.compositor;
@@ -1745,6 +1829,80 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativePresent(
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
     if (!att) return;
     p_eglSwapBuffers(att->display, att->surface);
+}
+
+/**
+ * Age of the back buffer the current frame renders into (#755): 0 = its
+ * content is undefined, N = it holds the frame presented N swaps ago; 1 on a
+ * surface with EGL_BUFFER_PRESERVED, whose back buffer always holds the last.
+ * -1 when partial redraw is unavailable on this surface (no buffer age or no
+ * swap-with-damage). The context must be current on the calling thread.
+ */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeBufferAge(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->swap_with_damage || (!att->has_buffer_age && !att->preserved)) return -1;
+    EGLint age = 0;
+    if (att->has_buffer_age && !p_eglQuerySurface(att->display, att->surface, NUCLEUS_EGL_BUFFER_AGE, &age)) {
+        age = 0;
+    }
+    /* A preserved back buffer holds the previous frame whatever the age says. */
+    if (age == 0 && att->preserved) age = 1;
+    return (jint) age;
+}
+
+/**
+ * Presents with damage (#755): [rects] holds [count] (x, y, w, h) quadruples
+ * in buffer pixels with a **bottom-left** origin, the EGL convention. Falls
+ * back to a plain swap when swap-with-damage is unavailable or [count] is 0
+ * (a zero-rect damage call means "everything" to EGL, which is what the
+ * caller wants in that case too).
+ */
+/**
+ * EGL_BUFFER_PRESERVED on demand (#755): asked by the Kotlin side once the
+ * buffer age has stayed 0 (NVIDIA on X11), and only on a surface that can
+ * present with damage — a preserved swap may copy the whole surface on every
+ * frame, which only partial redraw repays.
+ */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeTryPreserve(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->swap_with_damage) return JNI_FALSE;
+    if (!att->preserved) att->preserved = egl_try_preserve(att->display, att->config, att->surface);
+    return att->preserved ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativePresentWithDamage(
+    JNIEnv *env, jclass clazz, jlong handle, jintArray rects, jint count)
+{
+    (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att) return;
+    if (!att->swap_with_damage || count <= 0 || !rects) {
+        p_eglSwapBuffers(att->display, att->surface);
+        return;
+    }
+    jsize len = (*env)->GetArrayLength(env, rects);
+    if (len < count * 4) {
+        p_eglSwapBuffers(att->display, att->surface);
+        return;
+    }
+    EGLint stack_buf[64];
+    EGLint *buf = count * 4 <= 64 ? stack_buf : (EGLint *) malloc(sizeof(EGLint) * count * 4);
+    if (!buf) {
+        p_eglSwapBuffers(att->display, att->surface);
+        return;
+    }
+    (*env)->GetIntArrayRegion(env, rects, 0, count * 4, (jint *) buf);
+    att->swap_with_damage(att->display, att->surface, buf, count);
+    if (buf != stack_buf) free(buf);
 }
 
 JNIEXPORT void JNICALL

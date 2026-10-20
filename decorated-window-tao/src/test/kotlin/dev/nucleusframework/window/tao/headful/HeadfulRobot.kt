@@ -9,6 +9,7 @@ import java.awt.Robot
 import java.awt.event.InputEvent
 import java.awt.image.BufferedImage
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -70,13 +71,21 @@ internal object HeadfulRobot {
     var lastAimPoint: Point? = null
         private set
 
-    /** Whether a press has been injected since the last release — see [releaseEveryButton]. */
-    @Volatile
-    private var buttonMayBeHeld = false
+    /**
+     * The `InputEvent.BUTTON*_DOWN_MASK`s pressed and not yet released — see
+     * [releaseEveryButton]. Per button, not "something was pressed": the
+     * cleanup must never send an up for a button that is not down.
+     */
+    private val heldButtons: MutableSet<Int> = ConcurrentHashMap.newKeySet()
 
-    /** Records that a press is about to be injected. */
-    fun notePress() {
-        buttonMayBeHeld = true
+    /** Records that a press of [mask] is about to be injected. Pair it with [noteRelease]. */
+    fun notePress(mask: Int = InputEvent.BUTTON1_DOWN_MASK) {
+        heldButtons += mask
+    }
+
+    /** Records that [mask] was released by the case itself. */
+    fun noteRelease(mask: Int = InputEvent.BUTTON1_DOWN_MASK) {
+        heldButtons -= mask
     }
 
     /** Records where [x] / [y] was aimed and where the pointer landed. */
@@ -144,16 +153,21 @@ internal object HeadfulRobot {
      * rest of the robot suite red with it, and the log gives no hint that the
      * first one is the only real failure. Run after every case.
      *
-     * Only after a press, though: `CRobot.mouseEvent` segfaults the JVM on
-     * macOS when it is asked to release a button that was never pressed, and
-     * that would take down a suite where most cases never touch the robot at
-     * all.
+     * Only the buttons still held, though, and never one the case already let
+     * go of. `CRobot.mouseEvent` segfaults the JVM on macOS when it is asked to
+     * release a button that was never pressed. And on Windows a stray up is a
+     * real input event: it goes to whatever is under the pointer, and a lone
+     * right-button up there is a context-menu request — on the desktop, once
+     * the case's window has closed, Explorer's menu opened and swallowed the
+     * next case's click (`tab mouse …` timed out with the pointer on target and
+     * no press delivered). Releasing all three after any press did exactly that.
      */
     suspend fun releaseEveryButton() {
-        if (unavailable != null || !buttonMayBeHeld) return
-        buttonMayBeHeld = false
+        if (unavailable != null || heldButtons.isEmpty()) return
+        val held = heldButtons.toList()
+        heldButtons.clear()
         inject { robot ->
-            for (mask in BUTTON_MASKS) robot.mouseRelease(mask)
+            for (mask in held) robot.mouseRelease(mask)
             true
         }
     }
@@ -164,13 +178,6 @@ internal object HeadfulRobot {
                 autoDelay = AUTO_DELAY_MILLIS
                 isAutoWaitForIdle = false
             }.also { cached = it }
-
-    private val BUTTON_MASKS =
-        intArrayOf(
-            InputEvent.BUTTON1_DOWN_MASK,
-            InputEvent.BUTTON2_DOWN_MASK,
-            InputEvent.BUTTON3_DOWN_MASK,
-        )
 
     private const val INJECT_TIMEOUT_MILLIS = 5_000L
     private const val AUTO_DELAY_MILLIS = 30

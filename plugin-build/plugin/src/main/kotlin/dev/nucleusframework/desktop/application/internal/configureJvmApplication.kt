@@ -13,6 +13,7 @@ import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.PkgSettings
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
+import dev.nucleusframework.desktop.application.internal.transforms.configureLayerDamageTransform
 import dev.nucleusframework.desktop.application.internal.transforms.configureLcdTextDefaultTransform
 import dev.nucleusframework.desktop.application.internal.validation.validateMacBundleName
 import dev.nucleusframework.desktop.application.internal.validation.validatePackageVersions
@@ -84,6 +85,7 @@ internal const val NUCLEUS_TASK_GROUP = "nucleus"
 internal fun JvmApplicationContext.configureJvmApplication() {
     applyNucleusOptimization(app)
     applyNucleusOptimizationJdk(project, app)
+    applyJavaToolchainJdk(project, app)
 
     if (app.isDefaultConfigurationEnabled) {
         configureDefaultApp()
@@ -96,6 +98,11 @@ internal fun JvmApplicationContext.configureJvmApplication() {
     // LCD / ClearType text on Windows (#875): patch Compose's hardcoded
     // grayscale PlatformDefault at build time — see LcdTextDefaultTransform.
     configureLcdTextDefaultTransform(project)
+
+    // Partial redraw on the Tao backend (#755), opt-in through
+    // nucleusOptimization: give Compose's render layers the content version
+    // the damage tracker reads — see LayerDamageTransform.
+    if (app.optPartialRedraw) configureLayerDamageTransform(project)
 
     validatePackageVersions()
     validateMacBundleName()
@@ -123,64 +130,7 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
             taskNameObject = "DefaultComposeDesktopJvmApplicationResources",
         ) {}
 
-    // Generate nucleus/nucleus-app.properties into a resource directory
-    val generateAppProperties =
-        tasks.register<AbstractGenerateAppPropertiesTask>(
-            taskNameAction = "generate",
-            taskNameObject = "appProperties",
-        ) {
-            appId.set(resolvedAppIdProvider())
-            val resolvedAppName = app.nativeDistributions.appName
-                ?: app.nativeDistributions.packageName
-                ?: project.name
-            appName.set(resolvedAppName)
-            // AUMID must match the electron-builder appId (used in NSIS/MSI shortcut properties)
-            val resolvedAumid = app.nativeDistributions.packageName?.let { "com.app.$it" }
-            resolvedAumid?.let { appAumid.set(it) }
-            // The app image's version, in full: jpackage.app-version has the SemVer suffix
-            // dropped on Windows and macOS, so this is the only place the app reads it from.
-            appVersion.set(configuredPackageVersionFor(TargetFormat.RawAppImage))
-            app.nativeDistributions.vendor?.let { appVendor.set(it) }
-            app.nativeDistributions.description?.let { appDescription.set(it) }
-            // Store the computed StartupWMClass so graalvm-runtime can use it as
-            // WM_CLASS and GNOME can match the window to the .desktop file icon.
-            val wmClass =
-                app.nativeDistributions.linux.startupWMClass
-                    ?.takeIf { it.isNotBlank() }
-                    ?: app.mainClass?.replace('.', '-')
-            wmClass?.let { startupWmClass.set(it) }
-            // Resolve AppX StartupTask TaskId (MSIX auto-launch injection).
-            // electron-builder hardcodes TaskId="SlackStartup" in the injected manifest
-            // (legacy from its Slack origins) — this is the TaskId the runtime must use
-            // to match the installed MSIX package. Custom overrides are possible but
-            // require the user to patch the generated manifest themselves.
-            val appxSettings = app.nativeDistributions.windows.appx
-            if (appxSettings.addAutoLaunchExtension) {
-                val taskId = appxSettings.startupTaskId ?: "SlackStartup"
-                startupTaskId.set(taskId)
-            }
-            // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
-            idleGc.set(project.provider { app.optIdleGc })
-            outputDir.set(appTmpDir.dir("app-properties"))
-        }
-
-    // Add the generated properties directory to the resource source set
-    val appPropertiesOutputDir = generateAppProperties.flatMap { it.outputDir }
-    if (project.plugins.hasPlugin(KOTLIN_MPP_PLUGIN_ID)) {
-        project.mppExt.targets.all { target ->
-            if (target is org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget) {
-                target.compilations
-                    .getByName("main")
-                    .defaultSourceSet.resources
-                    .srcDir(appPropertiesOutputDir)
-            }
-        }
-    } else if (project.plugins.hasPlugin(KOTLIN_JVM_PLUGIN_ID)) {
-        project.javaSourceSets
-            .getByName("main")
-            .resources
-            .srcDir(appPropertiesOutputDir)
-    }
+    registerGenerateAppProperties()
 
     val checkRuntime =
         tasks.register<AbstractCheckNativeDistributionRuntime>(
@@ -323,6 +273,72 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
     )
 }
 
+/**
+ * Registers the task generating `nucleus/nucleus-app.properties` and adds its output directory
+ * to the main resources of the JVM target.
+ */
+private fun JvmApplicationContext.registerGenerateAppProperties() {
+    val generateAppProperties =
+        tasks.register<AbstractGenerateAppPropertiesTask>(
+            taskNameAction = "generate",
+            taskNameObject = "appProperties",
+        ) {
+            appId.set(resolvedAppIdProvider())
+            val resolvedAppName = app.nativeDistributions.appName
+                ?: app.nativeDistributions.packageName
+                ?: project.name
+            appName.set(resolvedAppName)
+            // AUMID must match the electron-builder appId (used in NSIS/MSI shortcut properties)
+            val resolvedAumid = app.nativeDistributions.packageName?.let { "com.app.$it" }
+            resolvedAumid?.let { appAumid.set(it) }
+            // The app image's version, in full: jpackage.app-version has the SemVer suffix
+            // dropped on Windows and macOS, so this is the only place the app reads it from.
+            appVersion.set(configuredPackageVersionFor(TargetFormat.RawAppImage))
+            app.nativeDistributions.vendor?.let { appVendor.set(it) }
+            app.nativeDistributions.description?.let { appDescription.set(it) }
+            // Store the computed StartupWMClass so graalvm-runtime can use it as
+            // WM_CLASS and GNOME can match the window to the .desktop file icon.
+            val wmClass =
+                app.nativeDistributions.linux.startupWMClass
+                    ?.takeIf { it.isNotBlank() }
+                    ?: app.mainClass?.replace('.', '-')
+            wmClass?.let { startupWmClass.set(it) }
+            // Resolve AppX StartupTask TaskId (MSIX auto-launch injection).
+            // electron-builder hardcodes TaskId="SlackStartup" in the injected manifest
+            // (legacy from its Slack origins) — this is the TaskId the runtime must use
+            // to match the installed MSIX package. Custom overrides are possible but
+            // require the user to patch the generated manifest themselves.
+            val appxSettings = app.nativeDistributions.windows.appx
+            if (appxSettings.addAutoLaunchExtension) {
+                val taskId = appxSettings.startupTaskId ?: "SlackStartup"
+                startupTaskId.set(taskId)
+            }
+            // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
+            idleGc.set(project.provider { app.optIdleGc })
+            partialRedraw.set(project.provider { app.optPartialRedraw })
+            mallocArenas.set(project.provider { app.optMallocArenas })
+            outputDir.set(appTmpDir.dir("app-properties"))
+        }
+
+    // Add the generated properties directory to the resource source set
+    val appPropertiesOutputDir = generateAppProperties.flatMap { it.outputDir }
+    if (project.plugins.hasPlugin(KOTLIN_MPP_PLUGIN_ID)) {
+        project.mppExt.targets.all { target ->
+            if (target is org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget) {
+                target.compilations
+                    .getByName("main")
+                    .defaultSourceSet.resources
+                    .srcDir(appPropertiesOutputDir)
+            }
+        }
+    } else if (project.plugins.hasPlugin(KOTLIN_JVM_PLUGIN_ID)) {
+        project.javaSourceSets
+            .getByName("main")
+            .resources
+            .srcDir(appPropertiesOutputDir)
+    }
+}
+
 @Suppress("LongMethod")
 private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvmDesktopTasks) {
     val runProguard =
@@ -345,31 +361,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     val storeFormats = allEbFormats.filter { app.nativeDistributions.isSandboxed(it) }
 
     // Strip native libs from JARs for the sandboxed pipeline (store formats only).
-    val stripNativeLibsFromJars =
-        if (hasStoreFormats) {
-            tasks.register<AbstractStripNativeLibsFromJarsTask>(
-                taskNameAction = "strip",
-                taskNameObject = "nativeLibsFromJars",
-            ) {
-                outputDir.set(appTmpDir.dir("sandboxing-stripped-jars"))
-                manifestOutputDir.set(appTmpDir.dir("sandboxing-manifest"))
-                keepNativeLibsInJar.set(
-                    provider { app.nativeDistributions.sandboxing.keepNativeLibsInJars },
-                )
-                if (runProguard != null) {
-                    dependsOn(runProguard)
-                    inputJars.from(project.fileTree(runProguard.flatMap { it.destinationDir }))
-                    mainJarName.set(runProguard.flatMap { it.mainJarBaseName })
-                } else {
-                    useAppRuntimeFiles { (runtimeJars, mainJar) ->
-                        inputJars.from(runtimeJars)
-                        mainJarName.set(mainJar.map { it.asFile.name })
-                    }
-                }
-            }
-        } else {
-            null
-        }
+    val stripNativeLibsFromJars = if (hasStoreFormats) registerStripNativeLibsFromJars(runProguard) else null
 
     // Place the sandbox manifest (sha256(marker) -> bundled lib filename) next to the extracted
     // native libs in the app resources, so the runtime shim can resolve it. The shim JAR is already
@@ -422,23 +414,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
 
     val generateAotCache =
         if (app.nativeDistributions.enableAotCache) {
-            tasks.register<AbstractGenerateAotCacheTask>(
-                taskNameAction = "generate",
-                taskNameObject = "AotCache",
-            ) {
-                dependsOn(createDistributable)
-                distributableDir.set(createDistributable.flatMap { it.destinationDir })
-                javaHome.set(app.javaHomeProvider)
-                javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
-                applyAotCacheSettings(app.nativeDistributions.aotCache)
-                if (currentOS == OS.MacOS) {
-                    val mac = app.nativeDistributions.macOS
-                    val defaultResources = commonTasks.unpackDefaultResources
-                    macRuntimeEntitlementsFile.set(
-                        mac.runtimeEntitlementsFile.orElse(defaultResources.get { defaultEntitlements }),
-                    )
-                }
-            }
+            registerGenerateAotCache("AotCache", createDistributable, commonTasks, sandboxed = false)
         } else {
             null
         }
@@ -462,111 +438,27 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 }
 
             if (targetFormat.isCompatibleWith(OS.MacOS)) {
-                val notarizeTask =
-                    tasks.register<AbstractNotarizationTask>(
-                        taskNameAction = "notarize",
-                        taskNameObject = targetFormat.name,
-                        args = listOf(targetFormat),
-                    ) {
-                        dependsOn(packageFormat)
-                        inputDir.set(packageFormat.flatMap { it.destinationDir })
-                        configureCommonNotarizationSettings(this)
-                    }
-                nonStoreNotarizeTasks.add(notarizeTask)
+                nonStoreNotarizeTasks.add(registerNotarization(targetFormat, packageFormat))
             }
 
             packageFormat
         }
 
-    // === Sandboxed pipeline (store formats: App Store PKG, AppX, Flatpak) ===
+    // === Sandboxed pipeline (store formats: App Store PKG, Flatpak) ===
 
     val storeNotarizeTasks = mutableListOf<TaskProvider<AbstractNotarizationTask>>()
 
     val storePackageFormats =
         if (hasStoreFormats) {
-            val createSandboxedDistributable =
-                tasks.register<AbstractJPackageTask>(
-                    taskNameAction = "create",
-                    taskNameObject = "sandboxedDistributable",
-                    args = listOf(TargetFormat.RawAppImage),
-                ) {
-                    configurePackageTask(
-                        this,
-                        createRuntimeImage = commonTasks.createRuntimeImage,
-                        prepareAppResources =
-                            commonTasks.prepareSandboxedAppResources
-                                ?: commonTasks.prepareAppResources,
-                        checkRuntime = commonTasks.checkRuntime,
-                        unpackDefaultResources = commonTasks.unpackDefaultResources,
-                        runProguard = runProguard,
-                        flattenJars = flattenJars,
-                        stripNativeLibs = stripNativeLibsFromJars,
-                        patchCaCertificates = commonTasks.patchCaCertificates,
-                        sandboxed = true,
-                    )
-                }
-
-            val generateSandboxedAotCache =
-                if (app.nativeDistributions.enableAotCache) {
-                    tasks.register<AbstractGenerateAotCacheTask>(
-                        taskNameAction = "generate",
-                        taskNameObject = "sandboxedAotCache",
-                    ) {
-                        dependsOn(createSandboxedDistributable)
-                        distributableDir.set(createSandboxedDistributable.flatMap { it.destinationDir })
-                        javaHome.set(app.javaHomeProvider)
-                        javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
-                        applyAotCacheSettings(app.nativeDistributions.aotCache)
-                        if (currentOS == OS.MacOS) {
-                            val mac = app.nativeDistributions.macOS
-                            val defaultResources = commonTasks.unpackDefaultResources
-                            macRuntimeEntitlementsFile.set(
-                                mac.runtimeEntitlementsFile.orElse(
-                                    defaultResources.get { defaultSandboxRuntimeEntitlements },
-                                ),
-                            )
-                        }
-                    }
-                } else {
-                    null
-                }
-            generateAotCache?.let { nonSandboxedAotCache ->
-                generateSandboxedAotCache?.configure { task ->
-                    task.mustRunAfter(nonSandboxedAotCache)
-                }
-            }
-
-            storeFormats.map { targetFormat ->
-                val packageFormat =
-                    tasks.register<AbstractElectronBuilderPackageTask>(
-                        taskNameAction = "package",
-                        taskNameObject = targetFormat.name,
-                        args = listOf(targetFormat),
-                    ) {
-                        configureElectronBuilderPackageTask(
-                            this,
-                            createDistributable = createSandboxedDistributable,
-                            unpackDefaultResources = commonTasks.unpackDefaultResources,
-                        )
-                        generateSandboxedAotCache?.let { dependsOn(it) }
-                    }
-
-                if (targetFormat.isCompatibleWith(OS.MacOS)) {
-                    val notarizeTask =
-                        tasks.register<AbstractNotarizationTask>(
-                            taskNameAction = "notarize",
-                            taskNameObject = targetFormat.name,
-                            args = listOf(targetFormat),
-                        ) {
-                            dependsOn(packageFormat)
-                            inputDir.set(packageFormat.flatMap { it.destinationDir })
-                            configureCommonNotarizationSettings(this)
-                        }
-                    storeNotarizeTasks.add(notarizeTask)
-                }
-
-                packageFormat
-            }
+            registerStorePackageFormats(
+                commonTasks = commonTasks,
+                storeFormats = storeFormats,
+                runProguard = runProguard,
+                flattenJars = flattenJars,
+                stripNativeLibsFromJars = stripNativeLibsFromJars,
+                generateAotCache = generateAotCache,
+                storeNotarizeTasks = storeNotarizeTasks,
+            )
         } else {
             emptyList()
         }
@@ -619,13 +511,12 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         }
     }
 
-    val packageUberJarForCurrentOS =
-        tasks.register<Jar>(
-            taskNameAction = "package",
-            taskNameObject = "uberJarForCurrentOS",
-        ) {
-            configurePackageUberJarForCurrentOS(this, flattenJars)
-        }
+    tasks.register<Jar>(
+        taskNameAction = "package",
+        taskNameObject = "uberJarForCurrentOS",
+    ) {
+        configurePackageUberJarForCurrentOS(this, flattenJars)
+    }
 
     // runDistributable always uses the non-sandboxed distributable (most relevant for local dev/test)
     val runDistributable =
@@ -641,64 +532,232 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     }
 
     // runAppX: sideload and launch AppX package for local testing (Windows only)
-    if (currentOS == OS.Windows && hasStoreFormats) {
-        val appxPackageTask =
-            storePackageFormats.firstOrNull { task ->
-                task.map { it.targetFormat }.orNull == TargetFormat.AppX
-            }
-        if (appxPackageTask != null) {
-            val appxSettings = app.nativeDistributions.windows.appx
-            tasks.register<AbstractRunAppXTask>(
-                taskNameAction = "run",
-                taskNameObject = "appX",
-            ) {
-                dependsOn(appxPackageTask)
-                appxDir.set(appxPackageTask.flatMap { it.destinationDir })
-                identityName.set(
-                    project.provider {
-                        appxSettings.identityName
-                            ?: error("appx.identityName must be set to use runAppX")
-                    },
-                )
-                applicationId.set(
-                    project.provider {
-                        appxSettings.applicationId ?: "App"
-                    },
-                )
-            }
-        }
+    if (currentOS == OS.Windows) {
+        registerRunAppXIfNeeded(packageFormats)
     }
 
     // Register the patch task eagerly so it's available for the run task's
     // lazy configuration (Gradle forbids task registration from within
     // another task's configuration action).
+    val macOsSdkVersion = app.nativeDistributions.macOS.macOsSdkVersion
     val patchMacJvmTask: TaskProvider<AbstractPatchMacJvmTask>? =
-        if (currentOS == OS.MacOS && app.nativeDistributions.macOS.macOsSdkVersion != null) {
+        if (currentOS == OS.MacOS && macOsSdkVersion != null) {
             registerPatchMacJvmTask(
                 javaHome = app.javaHomeProvider,
                 minVersion = app.nativeDistributions.macOS.minimumSystemVersion ?: "10.13",
-                sdkVersion = app.nativeDistributions.macOS.macOsSdkVersion!!,
+                sdkVersion = macOsSdkVersion,
             )
         } else {
             null
         }
 
-    val run =
-        tasks.register<JavaExec>(taskNameAction = "run") {
-            configureRunTask(this, commonTasks.prepareAppResources, runProguard, patchMacJvmTask)
+    tasks.register<JavaExec>(taskNameAction = "run") {
+        configureRunTask(this, commonTasks.prepareAppResources, runProguard, patchMacJvmTask)
+    }
+}
+
+/** Registers `runAppX` when an AppX package task exists. */
+private fun JvmApplicationContext.registerRunAppXIfNeeded(
+    packageFormats: List<TaskProvider<AbstractElectronBuilderPackageTask>>,
+) {
+    val appxPackageTask =
+        packageFormats.firstOrNull { task ->
+            task.map { it.targetFormat }.orNull == TargetFormat.AppX
         }
+    if (appxPackageTask != null) {
+        val appxSettings = app.nativeDistributions.windows.appx
+        tasks.register<AbstractRunAppXTask>(
+            taskNameAction = "run",
+            taskNameObject = "appX",
+        ) {
+            dependsOn(appxPackageTask)
+            appxDir.set(appxPackageTask.flatMap { it.destinationDir })
+            identityName.set(
+                project.provider {
+                    appxSettings.identityName
+                        ?: error("appx.identityName must be set to use runAppX")
+                },
+            )
+            applicationId.set(
+                project.provider {
+                    appxSettings.applicationId ?: "App"
+                },
+            )
+        }
+    }
 }
 
 /**
- * Registers a task that merges the per-format auto-update manifests of the current OS and uploads
- * the union to S3. electron-builder is always told `publishAutoUpdate: false` for S3 (in the
- * config generator), so the plugin owns the single `<channel><osSuffix>.yml` key that every format
- * (and arch) shares — for one format it publishes that manifest verbatim, for several their union.
- *
- * Returns null when S3 is not enabled, or when no auto-updatable format
- * (see [TargetFormat.producesUpdateManifest]) is compatible with the current OS — in which case
- * there is no manifest to publish.
+ * Registers the sandboxed pipeline (store formats: App Store PKG, Flatpak): its own distributable,
+ * AOT cache and one package task per store format. Notarization tasks go to [storeNotarizeTasks].
  */
+@Suppress("LongParameterList") // Wiring between the two pipelines, all set from one call site
+private fun JvmApplicationContext.registerStorePackageFormats(
+    commonTasks: CommonJvmDesktopTasks,
+    storeFormats: List<TargetFormat>,
+    runProguard: TaskProvider<AbstractProguardTask>?,
+    flattenJars: TaskProvider<AbstractJarsFlattenTask>,
+    stripNativeLibsFromJars: TaskProvider<AbstractStripNativeLibsFromJarsTask>?,
+    generateAotCache: TaskProvider<AbstractGenerateAotCacheTask>?,
+    storeNotarizeTasks: MutableList<TaskProvider<AbstractNotarizationTask>>,
+): List<TaskProvider<AbstractElectronBuilderPackageTask>> {
+    val createSandboxedDistributable =
+        tasks.register<AbstractJPackageTask>(
+            taskNameAction = "create",
+            taskNameObject = "sandboxedDistributable",
+            args = listOf(TargetFormat.RawAppImage),
+        ) {
+            configurePackageTask(
+                this,
+                createRuntimeImage = commonTasks.createRuntimeImage,
+                prepareAppResources =
+                    commonTasks.prepareSandboxedAppResources
+                        ?: commonTasks.prepareAppResources,
+                checkRuntime = commonTasks.checkRuntime,
+                unpackDefaultResources = commonTasks.unpackDefaultResources,
+                runProguard = runProguard,
+                flattenJars = flattenJars,
+                stripNativeLibs = stripNativeLibsFromJars,
+                patchCaCertificates = commonTasks.patchCaCertificates,
+                sandboxed = true,
+            )
+        }
+
+    val generateSandboxedAotCache =
+        if (app.nativeDistributions.enableAotCache) {
+            registerGenerateAotCache("sandboxedAotCache", createSandboxedDistributable, commonTasks, sandboxed = true)
+        } else {
+            null
+        }
+    generateAotCache?.let { nonSandboxedAotCache ->
+        generateSandboxedAotCache?.configure { task ->
+            task.mustRunAfter(nonSandboxedAotCache)
+        }
+    }
+
+    return storeFormats.map { targetFormat ->
+        val packageFormat =
+            tasks.register<AbstractElectronBuilderPackageTask>(
+                taskNameAction = "package",
+                taskNameObject = targetFormat.name,
+                args = listOf(targetFormat),
+            ) {
+                configureElectronBuilderPackageTask(
+                    this,
+                    createDistributable = createSandboxedDistributable,
+                    unpackDefaultResources = commonTasks.unpackDefaultResources,
+                )
+                generateSandboxedAotCache?.let { dependsOn(it) }
+            }
+
+        if (targetFormat.isCompatibleWith(OS.MacOS)) {
+            storeNotarizeTasks.add(registerNotarization(targetFormat, packageFormat))
+        }
+
+        packageFormat
+    }
+}
+
+/**
+ * Registers the AOT cache training task of [distributable]. On macOS the runtime entitlements
+ * default to the sandboxed ones when [sandboxed].
+ */
+private fun JvmApplicationContext.registerGenerateAotCache(
+    taskNameObject: String,
+    distributable: TaskProvider<AbstractJPackageTask>,
+    commonTasks: CommonJvmDesktopTasks,
+    sandboxed: Boolean,
+): TaskProvider<AbstractGenerateAotCacheTask> =
+    tasks.register<AbstractGenerateAotCacheTask>(
+        taskNameAction = "generate",
+        taskNameObject = taskNameObject,
+    ) {
+        dependsOn(distributable)
+        distributableDir.set(distributable.flatMap { it.destinationDir })
+        javaHome.set(app.javaHomeProvider)
+        javaRuntimePropertiesFile.set(commonTasks.checkRuntime.flatMap { it.javaRuntimePropertiesFile })
+        applyAotCacheSettings(app.nativeDistributions.aotCache)
+        applyWindowsSigningSettings(this)
+        if (currentOS == OS.MacOS) {
+            val mac = app.nativeDistributions.macOS
+            val defaultResources = commonTasks.unpackDefaultResources
+            val defaultRuntimeEntitlements =
+                if (sandboxed) {
+                    defaultResources.get { defaultSandboxRuntimeEntitlements }
+                } else {
+                    defaultResources.get { defaultEntitlements }
+                }
+            macRuntimeEntitlementsFile.set(mac.runtimeEntitlementsFile.orElse(defaultRuntimeEntitlements))
+        }
+    }
+
+/** Registers the notarization of [packageFormat]'s output. */
+private fun JvmApplicationContext.registerNotarization(
+    targetFormat: TargetFormat,
+    packageFormat: TaskProvider<AbstractElectronBuilderPackageTask>,
+): TaskProvider<AbstractNotarizationTask> =
+    tasks.register<AbstractNotarizationTask>(
+        taskNameAction = "notarize",
+        taskNameObject = targetFormat.name,
+        args = listOf(targetFormat),
+    ) {
+        dependsOn(packageFormat)
+        inputDir.set(packageFormat.flatMap { it.destinationDir })
+        configureCommonNotarizationSettings(this)
+    }
+
+/** Strips native libs from JARs for the sandboxed pipeline (store formats only). */
+private fun JvmApplicationContext.registerStripNativeLibsFromJars(
+    runProguard: TaskProvider<AbstractProguardTask>?,
+): TaskProvider<AbstractStripNativeLibsFromJarsTask> =
+    tasks.register<AbstractStripNativeLibsFromJarsTask>(
+        taskNameAction = "strip",
+        taskNameObject = "nativeLibsFromJars",
+    ) {
+        outputDir.set(appTmpDir.dir("sandboxing-stripped-jars"))
+        manifestOutputDir.set(appTmpDir.dir("sandboxing-manifest"))
+        keepNativeLibsInJar.set(
+            provider { app.nativeDistributions.sandboxing.keepNativeLibsInJars },
+        )
+        if (runProguard != null) {
+            dependsOn(runProguard)
+            inputJars.from(project.fileTree(runProguard.flatMap { it.destinationDir }))
+            mainJarName.set(runProguard.flatMap { it.mainJarBaseName })
+        } else {
+            useAppRuntimeFiles { (runtimeJars, mainJar) ->
+                inputJars.from(runtimeJars)
+                mainJarName.set(mainJar.map { it.asFile.name })
+            }
+        }
+    }
+
+/**
+ * Hands the Windows signing settings to a training task, which signs the DLLs inside JARs before
+ * training: a JAR rewritten afterwards would invalidate the cache. Both the regular and the
+ * sandboxed task need them.
+ */
+private fun JvmApplicationContext.applyWindowsSigningSettings(task: AbstractGenerateAotCacheTask) {
+    val distributions = app.nativeDistributions
+    task.windowsSigning = distributions.windows.signing
+    // A run* task alone is a dev run, as for the GraalVM quick build: nothing is shipped.
+    val requestedTasks = project.gradle.startParameter.taskNames
+    val devRunOnly =
+        requestedTasks.isNotEmpty() &&
+            requestedTasks.all { it.substringAfterLast(':').startsWith("run", ignoreCase = true) }
+    // Read when the task runs, once the DSL is configured.
+    task.signJarLibraries.set(
+        project.provider {
+            val signing = distributions.windows.signing
+            currentOS == OS.Windows && signing.enabled && signing.signNativeLibraries && !devRunOnly
+        },
+    )
+    task.windowsSigningDescription.set(
+        project
+            .provider { distributions.appName ?: distributions.packageName }
+            .orElse(packageNameProvider),
+    )
+}
+
 /**
  * Maps the `aotCache { }` DSL onto the training task.
  *
@@ -734,12 +793,25 @@ private fun JvmApplicationContext.registerServeUpdateFeedIfNeeded(
         perFormatOutputDirs.from(updatableTasks.map { provider -> provider.flatMap { it.destinationDir } })
         val providers = project.providers
         UpdaterLaunchSettings.serveSetting(providers, "port")?.toIntOrNull()?.let(port::set)
-        UpdaterLaunchSettings.serveSetting(providers, "throttle")?.let(UpdaterLaunchSettings::parseByteRate)?.let(throttleBytesPerSecond::set)
+        UpdaterLaunchSettings
+            .serveSetting(providers, "throttle")
+            ?.let(UpdaterLaunchSettings::parseByteRate)
+            ?.let(throttleBytesPerSecond::set)
         UpdaterLaunchSettings.serveSetting(providers, "latency")?.toLongOrNull()?.let(latencyMillis::set)
         UpdaterLaunchSettings.serveSetting(providers, "timeout")?.toLongOrNull()?.let(timeoutSeconds::set)
     }
 }
 
+/**
+ * Registers a task that merges the per-format auto-update manifests of the current OS and uploads
+ * the union to S3. electron-builder is always told `publishAutoUpdate: false` for S3 (in the
+ * config generator), so the plugin owns the single `<channel><osSuffix>.yml` key that every format
+ * (and arch) shares — for one format it publishes that manifest verbatim, for several their union.
+ *
+ * Returns null when S3 is not enabled, or when no auto-updatable format
+ * (see [TargetFormat.producesUpdateManifest]) is compatible with the current OS — in which case
+ * there is no manifest to publish.
+ */
 private fun JvmApplicationContext.registerUpdateYmlMergeIfNeeded(
     nonStoreFormats: List<TargetFormat>,
     nonStorePackageFormats: List<TaskProvider<AbstractElectronBuilderPackageTask>>,
@@ -803,9 +875,12 @@ private fun JvmApplicationContext.configureProguardTask(
         dontobfuscate.set(settings.obfuscate.map { !it })
         dontoptimize.set(settings.optimize.map { !it })
 
+        // Read outside the lambda: capturing the context would drag the Project and SourceSet into
+        // the configuration cache.
+        val singleJar = app.optSingleJar
         joinOutputJars.set(
             settings.joinOutputJars.map { enabled ->
-                enabled || app.optSingleJar
+                enabled || singleJar
             },
         )
 
@@ -833,10 +908,14 @@ private fun JvmApplicationContext.configureProguardTask(
         destinationDir.set(appTmpDir.dir("proguard"))
         javaHome.set(app.javaHomeProvider)
 
+        consumerRules.set(settings.consumerRules)
+        consumerRulesExclusions.set(settings.consumerRulesExclusions)
+
         useAppRuntimeFiles { files ->
             inputFiles.from(files.allRuntimeJars)
             mainJar.set(files.mainJar)
             mainJarBaseName.set(files.mainJar.map { it.asFile.name })
+            files.artifactCoordinates?.let { artifactCoordinates.set(it) }
         }
     }
 
@@ -855,13 +934,13 @@ private fun JvmApplicationContext.configurePackageTask(
 ) {
     packageTask.enabled = packageTask.targetFormat.isCompatibleWithCurrentOS
 
-    createRuntimeImage?.let { createRuntimeImage ->
-        packageTask.dependsOn(createRuntimeImage)
+    createRuntimeImage?.let { runtimeImageTask ->
+        packageTask.dependsOn(runtimeImageTask)
         if (patchCaCertificates != null) {
             packageTask.dependsOn(patchCaCertificates)
             packageTask.runtimeImage.set(patchCaCertificates.flatMap { it.destinationDir })
         } else {
-            packageTask.runtimeImage.set(createRuntimeImage.flatMap { it.destinationDir })
+            packageTask.runtimeImage.set(runtimeImageTask.flatMap { it.destinationDir })
         }
     }
 
@@ -871,9 +950,9 @@ private fun JvmApplicationContext.configurePackageTask(
         packageTask.appResourcesDir.set(resourcesDir)
     }
 
-    checkRuntime?.let { checkRuntime ->
-        packageTask.dependsOn(checkRuntime)
-        packageTask.javaRuntimePropertiesFile.set(checkRuntime.flatMap { it.javaRuntimePropertiesFile })
+    checkRuntime?.let { checkRuntimeTask ->
+        packageTask.dependsOn(checkRuntimeTask)
+        packageTask.javaRuntimePropertiesFile.set(checkRuntimeTask.flatMap { it.javaRuntimePropertiesFile })
     }
 
     this.configurePlatformSettings(packageTask, unpackDefaultResources, sandboxed)
@@ -903,6 +982,40 @@ private fun JvmApplicationContext.configurePackageTask(
     )
     packageTask.javaHome.set(app.javaHomeProvider)
 
+    wirePackageTaskJars(packageTask, runProguard, flattenJars, stripNativeLibs)
+
+    packageTask.launcherMainClass.set(app.mainClass)
+    packageTask.sandboxingEnabled.set(sandboxed)
+    packageTask.nucleusNativeDir.set(nucleusNativeDir(currentOS, targetArch))
+    packageTask.launcherJvmArgs.set(
+        provider {
+            val executableTypeArg = "-D$APP_EXECUTABLE_TYPE=${packageTask.targetFormat.executableTypeValue}"
+            val appIdArg = "-D$APP_ID=${resolvedAppIdProvider().get()}"
+            // GC flags before app.jvmArgs so an explicit -XX:+Use…GC there still wins.
+            val gcArgs = app.garbageCollector?.jvmArgs.orEmpty()
+            var args = defaultJvmArgs + gcArgs + executableTypeArg + appIdArg + app.jvmArgs
+            val splash = app.nativeDistributions.splashImage
+            if (splash != null) {
+                args = args + "-splash:\$APPDIR/resources/$splash"
+            }
+            if (sandboxed) {
+                val nativeLibPath = if (currentOS == OS.MacOS) "\$APPDIR/../Frameworks" else "\$APPDIR/resources"
+                args = args + sandboxingJvmArgs(nativeLibPath)
+            }
+            args
+        },
+    )
+    packageTask.launcherArgs.set(provider { app.args })
+    packageTask.additionalLaunchers.set(app.additionalLaunchers)
+}
+
+/** Wires the application JARs and the launcher main JAR of [packageTask], from the first available source. */
+private fun JvmApplicationContext.wirePackageTaskJars(
+    packageTask: AbstractJPackageTask,
+    runProguard: Provider<AbstractProguardTask>?,
+    flattenJars: TaskProvider<AbstractJarsFlattenTask>?,
+    stripNativeLibs: TaskProvider<AbstractStripNativeLibsFromJarsTask>?,
+) {
     when {
         stripNativeLibs != null -> {
             packageTask.dependsOn(stripNativeLibs)
@@ -954,30 +1067,6 @@ private fun JvmApplicationContext.configurePackageTask(
             }
         }
     }
-
-    packageTask.launcherMainClass.set(app.mainClass)
-    packageTask.sandboxingEnabled.set(sandboxed)
-    packageTask.nucleusNativeDir.set(nucleusNativeDir(currentOS, targetArch))
-    packageTask.launcherJvmArgs.set(
-        provider {
-            val executableTypeArg = "-D$APP_EXECUTABLE_TYPE=${packageTask.targetFormat.executableTypeValue}"
-            val appIdArg = "-D$APP_ID=${resolvedAppIdProvider().get()}"
-            // GC flags before app.jvmArgs so an explicit -XX:+Use…GC there still wins.
-            val gcArgs = app.garbageCollector?.jvmArgs.orEmpty()
-            var args = defaultJvmArgs + gcArgs + executableTypeArg + appIdArg + app.jvmArgs
-            val splash = app.nativeDistributions.splashImage
-            if (splash != null) {
-                args = args + "-splash:\$APPDIR/resources/$splash"
-            }
-            if (sandboxed) {
-                val nativeLibPath = if (currentOS == OS.MacOS) "\$APPDIR/../Frameworks" else "\$APPDIR/resources"
-                args = args + sandboxingJvmArgs(nativeLibPath)
-            }
-            args
-        },
-    )
-    packageTask.launcherArgs.set(provider { app.args })
-    packageTask.additionalLaunchers.set(app.additionalLaunchers)
 }
 
 private fun JvmApplicationContext.configureElectronBuilderPackageTask(
@@ -1048,7 +1137,7 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         val mac = app.nativeDistributions.macOS
         packageTask.nonValidatedMacSigningSettings = mac.signing
         packageTask.nonValidatedMacBundleID.set(mac.bundleID)
-        // A PKG is sandboxed (App Store) or not (Developer ID) by DSL choice; AppX/Flatpak always are.
+        // A PKG is sandboxed (App Store) or not (Developer ID) by DSL choice; Flatpak always is.
         val sandboxed = app.nativeDistributions.isSandboxed(packageTask.targetFormat)
         packageTask.macAppStore.set(sandboxed)
         // Only the PKG task reads the install scripts. Wiring them everywhere would make a typo in
@@ -1141,6 +1230,9 @@ internal fun JvmApplicationContext.configurePlatformSettings(
         OS.Windows -> {
             app.nativeDistributions.windows.also { win ->
                 packageTask.winConsole.set(win.console)
+                packageTask.winCRuntimeDlls.set(
+                    if (win.bundleCRuntime) MsvcRedistLocator.CPP_RUNTIME_DLLS else emptyList(),
+                )
                 packageTask.iconFile.set(win.iconFile.orElse(defaultResources.get { windowsIcon }))
                 packageTask.fileAssociations.set(win.fileAssociations)
             }
@@ -1192,6 +1284,10 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                 packageTask.macRuntimeProvisioningProfile.set(mac.runtimeProvisioningProfile)
                 packageTask.macOsSdkVersion.set(mac.macOsSdkVersion)
                 packageTask.macExtraPlistKeysRawXml.set(mac.infoPlistSettings.extraKeysRawXml)
+                packageTask.macInfoPlistLocalizationsDir.set(mac.infoPlistSettings.localizationsDir)
+                packageTask.macInfoPlistLocalizedStrings.set(
+                    renderInfoPlistLocalizations(mac.infoPlistSettings.localizedStrings),
+                )
                 packageTask.nonValidatedMacSigningSettings = app.nativeDistributions.macOS.signing
                 packageTask.iconFile.set(mac.iconFile.orElse(defaultResources.get { macIcon }))
                 packageTask.fileAssociations.set(mac.fileAssociations)
@@ -1282,6 +1378,9 @@ private fun JvmApplicationContext.configureRunTask(
             }
 
             addAll(app.jvmArgs)
+            // debug { } and -Pnucleus.debug: the run task only, never a package
+            val debugProperty = project.providers.gradleProperty(NUCLEUS_DEBUG_GRADLE_PROPERTY).orNull
+            addAll(nucleusDebugJvmArgs(app, debugProperty, project.logger))
             val appResourcesDir = prepareAppResources.get().destinationDir
             add("-D$APP_RESOURCES_DIR=${appResourcesDir.absolutePath}")
 

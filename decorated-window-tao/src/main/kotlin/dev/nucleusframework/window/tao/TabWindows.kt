@@ -121,7 +121,8 @@ public fun ApplicationScope.Tab(
  * leaves, so windows follow the tabs without the app opening or closing any.
  * The strip is the top of the window and the selected tab fills the rest;
  * [windowBodyWrapper] is where an app puts chrome of its own between the two —
- * `examples/reader-dock-demo` hangs a whole `DockLayout` of satellites there.
+ * the Lab's `workspace.reader-dock` probe (`examples/lab/probes/workspace`) hangs
+ * a whole `DockLayout` of satellites there.
  * [onLastWindowClosed] fires when the final group goes, which is where an app
  * calls `exitApplication`.
  *

@@ -38,6 +38,7 @@
 #import <objc/runtime.h>
 #include <jni.h>
 #include "../../../../../native-common/nucleus_jni.h"
+#import "nucleus_tao_cursors.h"
 #include <stdatomic.h>
 
 // ── JVM caching for the per-panel event callback ────────────────────────
@@ -51,7 +52,7 @@ static JavaVM *sJVM = NULL;
 static jclass sCallbackClass = NULL;          // global ref to the Java callback interface
 static jmethodID sOnPointerMethod = NULL;     // (IFFII)V — type, x, y, button, modifiers
 static jmethodID sOnScrollMethod = NULL;      // (FFFFZI)V — x, y, dx, dy, precise, gesturePhase
-static jmethodID sOnKeyMethod = NULL;         // (IIII)V  — type, vkCode, codePoint, modifiers
+static jmethodID sOnKeyMethod = NULL;         // (IIIIZ)V — type, vkCode, codePoint, modifiers, isRepeat
 static jclass sOutsideListenerClass = NULL;
 static jmethodID sOutsideOnClickMethod = NULL; // (II)V  — eventType, button
 static atomic_bool sCacheInited = ATOMIC_VAR_INIT(false);
@@ -72,7 +73,7 @@ static void ensureCallbackCache(JNIEnv *env, jobject cbSample, jobject outsideSa
             (*env)->DeleteLocalRef(env, local);
             sOnPointerMethod = (*env)->GetMethodID(env, sCallbackClass, "onPointerEvent", "(IFFII)V");
             sOnScrollMethod  = (*env)->GetMethodID(env, sCallbackClass, "onScroll",       "(FFFFZI)V");
-            sOnKeyMethod     = (*env)->GetMethodID(env, sCallbackClass, "onKeyEvent",     "(IIII)V");
+            sOnKeyMethod     = (*env)->GetMethodID(env, sCallbackClass, "onKeyEvent",     "(IIIIZ)V");
         }
     }
     if (outsideSample != NULL && sOutsideListenerClass == NULL) {
@@ -340,7 +341,9 @@ static jint scrollGesturePhase(NSEvent *event) {
     NSString *chars = event.characters;
     if (chars.length == 0) chars = event.charactersIgnoringModifiers;
     jint cp = (chars.length > 0) ? (jint)[chars characterAtIndex:0] : 0;
-    (*env)->CallVoidMethod(env, cb, sOnKeyMethod, type, vk, cp, [self modifierMaskFor:event]);
+    // `isARepeat` is only meaningful on a key-down; a key-up is never a repeat.
+    jboolean repeat = (type == EVT_KEY_DOWN && [event isARepeat]) ? JNI_TRUE : JNI_FALSE;
+    (*env)->CallVoidMethod(env, cb, sOnKeyMethod, type, vk, cp, [self modifierMaskFor:event], repeat);
     nucleus_jni_clear_exception(env);
 }
 
@@ -764,22 +767,6 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetIgnoresMouse
     [panel setIgnoresMouseEvents:ignore ? YES : NO];
 }
 
-/* Maps the shared TaoCursorIcon wire codes (NativeTaoBridge.kt) to AppKit
- * cursors. Codes without a public NSCursor equivalent (WAIT, HELP, the
- * diagonal resizes) fall back to the arrow. */
-static NSCursor *cursorForCode(jint code) {
-    switch (code) {
-        case 1:  return [NSCursor IBeamCursor];               // TEXT
-        case 2:  return [NSCursor pointingHandCursor];        // HAND
-        case 3:  return [NSCursor crosshairCursor];           // CROSSHAIR
-        case 5:  return [NSCursor openHandCursor];            // MOVE
-        case 6:  return [NSCursor operationNotAllowedCursor]; // NOT_ALLOWED
-        case 9:  return [NSCursor resizeLeftRightCursor];     // EW_RESIZE
-        case 10: return [NSCursor resizeUpDownCursor];        // NS_RESIZE
-        default: return [NSCursor arrowCursor];
-    }
-}
-
 /* Applies a Compose-requested cursor to the panel. Stores the cursor on the
  * content view (re-asserted by `cursorUpdate:` on enter/window changes) and
  * sets it immediately — Compose only calls this while the pointer is over
@@ -793,7 +780,7 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetPanelCursor(
     NucleusTaoPopupPanel *panel = (__bridge NucleusTaoPopupPanel *)(void *)(uintptr_t)panelPtr;
     NucleusTaoPopupContent *content = (NucleusTaoPopupContent *)panel.contentView;
     if (content == nil) return;
-    NSCursor *cursor = cursorForCode(iconCode);
+    NSCursor *cursor = nucleus_tao_cursor_for_code(iconCode);
     objc_setAssociatedObject(content, &kCursorKey, cursor, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     if (panel.isVisible) {
         [cursor set];

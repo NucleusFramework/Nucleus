@@ -47,4 +47,8 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
-strip = "symbols"
+# Not "symbols" (nor "debuginfo"): rustc's own strip pass, run with Xcode 27's toolchain
+# (ld-27037), leaves a mis-aligned LINKEDIT string pool that dyld refuses to load. The
+# macOS and Linux build scripts strip the copied library instead (`strip -x` /
+# `strip --strip-unneeded`); MSVC keeps symbols in the PDB, not the DLL.
+strip = false

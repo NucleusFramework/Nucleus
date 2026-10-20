@@ -9,6 +9,7 @@ import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URI
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -78,7 +79,7 @@ internal object ToolchainDownloads {
                 digest.update(buffer, 0, read)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it) }
     }
 
     /** Fails the build unless [archive] hashes to [expected] under [algorithm]. */

@@ -41,6 +41,7 @@ internal fun ComposeScene.dispatchTrackpadScale(
  * Windows / Linux Ctrl+wheel). UI thread only.
  */
 internal class TaoTrackpadScaleSession(
+    private val cancelPointerInput: () -> Unit = {},
     private val send: (type: PointerEventType, scaleFactor: Float) -> Unit,
 ) {
     var active: Boolean = false
@@ -78,10 +79,12 @@ internal class TaoTrackpadScaleSession(
         end()
     }
 
-    fun end() {
+    fun end(cancelled: Boolean = false) {
         if (!active) return
         active = false
+        // Close the native scale stream before resetting Compose's synthetic gesture state.
         send(PointerEventType.ScaleEnd, 1f)
+        if (cancelled) cancelPointerInput()
     }
 
     internal companion object {

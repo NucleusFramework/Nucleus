@@ -51,6 +51,7 @@ internal class DockPanelSpec(
     val dockSides: Set<DockSide> = DockSide.entries.toSet(),
     val floatable: Boolean = true,
     val reorderable: Boolean = true,
+    val floatingBarMovesWindow: Boolean = false,
 )
 
 /**
@@ -92,6 +93,9 @@ internal class DockLayoutFixture(
     /** What each satellite's chrome was told about its window: `isCompositorPlaced`, per host kind. */
     val compositorPlacedDocked = mutableStateOf<Map<String, Boolean>>(emptyMap())
     val compositorPlacedFloating = mutableStateOf<Map<String, Boolean>>(emptyMap())
+
+    /** What each floating satellite's chrome was told about its title bar: `floatingBarMovesWindow`. */
+    val barMovesWindow = mutableStateOf<Map<String, Boolean>>(emptyMap())
 
     /** Bounds of each satellite's `floatingCaption` slot, in its own window px; absent while not composed. */
     val captionBounds = mutableStateOf<Map<String, Rect>>(emptyMap())
@@ -217,6 +221,7 @@ internal class DockLayoutFixture(
                     dockSides = spec.dockSides,
                     floatable = spec.floatable,
                     reorderable = spec.reorderable,
+                    floatingBarMovesWindow = spec.floatingBarMovesWindow,
                 ) { PanelBody(spec.id) }
             }
         }
@@ -234,11 +239,13 @@ internal class DockLayoutFixture(
         val docked = isDocked
         val here = LocalLayoutDirection.current
         val placed = isCompositorPlaced
+        val barMoves = floatingBarMovesWindow
         SideEffect {
             if (docked) {
                 compositorPlacedDocked.value = compositorPlacedDocked.value + (id to placed)
             } else {
                 compositorPlacedFloating.value = compositorPlacedFloating.value + (id to placed)
+                barMovesWindow.value = barMovesWindow.value + (id to barMoves)
             }
             bodyDirections.value = bodyDirections.value + (id to here)
             if (!docked && window != null) floatingWindows.value = floatingWindows.value + (id to window)

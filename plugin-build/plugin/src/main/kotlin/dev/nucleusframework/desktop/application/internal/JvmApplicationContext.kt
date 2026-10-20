@@ -53,9 +53,10 @@ internal data class JvmApplicationContext(
 
     /**
      * Architecture of the configured JDK (may differ from the Gradle daemon's
-     * arch when cross-building). The auto-downloaded OpenJDK 27 matches the
-     * host, so we must not realize [JvmApplicationData.javaHomeOverride] here
-     * — that would download the JDK at configuration time.
+     * arch when cross-building). The auto-downloaded OpenJDK and the project's
+     * JVM toolchain match the host, so we must not realize
+     * [JvmApplicationData.javaHomeOverride] here — that would download the JDK
+     * at configuration time.
      */
     val targetArch by lazy {
         if (app.javaHomeOverride != null) {
@@ -147,7 +148,8 @@ internal data class JvmApplicationContext(
                         project.logger.error(
                             "w: Default configuration for Compose Desktop Application is disabled: " +
                                 "multiple Kotlin JVM targets definitions are detected. " +
-                                "Specify, which target to use by using `compose.desktop.application.from(kotlinMppTarget)`",
+                                "Specify, which target to use by using " +
+                                "`compose.desktop.application.from(kotlinMppTarget)`",
                         )
                         appInternal.disableDefaultConfiguration()
                     }

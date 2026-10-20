@@ -52,6 +52,20 @@ class NativeLibraryLoaderTest {
     }
 
     @Test
+    fun `load returns false for a library that is present but cannot be linked`() {
+        // The resource exists for every platform but is not a library: System.load throws
+        // UnsatisfiedLinkError, which must read as "unavailable" instead of escaping.
+        assertEquals(
+            false,
+            NativeLibraryLoader.load(
+                "nucleus_test_broken",
+                NativeLibraryLoaderTest::class.java,
+                "/nucleus-test-broken",
+            ),
+        )
+    }
+
+    @Test
     fun `extractIfAbsent extracts when target is missing`() {
         val dir = Files.createTempDirectory("nucleus-extract")
         val source = dir.resolve("source.bin").apply { writeText("library bytes") }

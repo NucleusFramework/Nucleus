@@ -1,3 +1,14 @@
+public final class androidx/compose/ui/node/TaoLayerTreeAccess {
+	public static fun children (Landroidx/compose/ui/layout/LayoutInfo;)Ljava/util/List;
+	public static fun contentVersion (Ljava/lang/Object;)I
+	public static fun graphicsContext (Landroidx/compose/ui/layout/LayoutInfo;)Landroidx/compose/ui/graphics/GraphicsContext;
+	public static fun graphicsLayer (Ljava/lang/Object;)Landroidx/compose/ui/graphics/layer/GraphicsLayer;
+	public static fun innerCoordinator (Landroidx/compose/ui/layout/LayoutInfo;)Landroidx/compose/ui/layout/LayoutCoordinates;
+	public static fun outerCoordinator (Landroidx/compose/ui/layout/LayoutInfo;)Landroidx/compose/ui/layout/LayoutCoordinates;
+	public static fun ownedLayer (Landroidx/compose/ui/layout/LayoutCoordinates;)Ljava/lang/Object;
+	public static fun wrapped (Landroidx/compose/ui/layout/LayoutCoordinates;)Landroidx/compose/ui/layout/LayoutCoordinates;
+}
+
 public final class androidx/compose/ui/scene/TaoComposeSceneContextAccess {
 	public static fun localComposeSceneContext ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }
@@ -5,25 +16,25 @@ public final class androidx/compose/ui/scene/TaoComposeSceneContextAccess {
 public final class dev/nucleusframework/window/ComposableSingletons$DialogTitleBarKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/ComposableSingletons$DialogTitleBarKt;
 	public fun <init> ()V
-	public final fun getLambda$-1656225001$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-1988126652$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
 }
 
 public final class dev/nucleusframework/window/ComposableSingletons$TitleBarKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/ComposableSingletons$TitleBarKt;
 	public fun <init> ()V
 	public final fun getLambda$-1158225253$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$-1196419068$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
 	public final fun getLambda$-1381932086$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
-	public final fun getLambda$1948865750$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$555209157$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$127916435$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
 }
 
 public final class dev/nucleusframework/window/DialogTitleBarKt {
-	public static final fun DialogTitleBar-FU0evQE (Ldev/nucleusframework/window/DecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+	public static final fun DialogTitleBar-TgFrcIs (Ldev/nucleusframework/window/DecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class dev/nucleusframework/window/TitleBarKt {
 	public static final fun BasicTitleBar-IkByU14 (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;ZLkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
-	public static final fun TitleBar-TgFrcIs (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TitleBar-lVb_Clg (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
 }
 
 public abstract interface class dev/nucleusframework/window/TitleBarPlacement {
@@ -206,9 +217,9 @@ public final class dev/nucleusframework/window/tao/ComposableSingletons$NativeVi
 public final class dev/nucleusframework/window/tao/ComposableSingletons$SatelliteKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/ComposableSingletons$SatelliteKt;
 	public fun <init> ()V
-	public final fun getLambda$-47671738$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
-	public final fun getLambda$1303209590$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
-	public final fun getLambda$1955396861$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-1658896351$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-2003468182$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$2082414746$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
 }
 
 public final class dev/nucleusframework/window/tao/ComposableSingletons$TabHoverPreviewKt {
@@ -361,6 +372,10 @@ public final class dev/nucleusframework/window/tao/DragGhost {
 	public final fun getScreenRectPx ()Landroidx/compose/ui/geometry/Rect;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/KeyEventRepeatKt {
+	public static final fun isRepeat-ZmokQxo (Ljava/lang/Object;)Z
 }
 
 public final class dev/nucleusframework/window/tao/MacOSStyle : java/lang/Enum {
@@ -554,7 +569,7 @@ public final class dev/nucleusframework/window/tao/SatelliteEntry {
 
 public final class dev/nucleusframework/window/tao/SatelliteKt {
 	public static final fun DefaultSatelliteHeader (Ldev/nucleusframework/window/tao/SatelliteScope;Landroidx/compose/runtime/Composer;I)V
-	public static final fun Satellite-XiQjojk (Ldev/nucleusframework/window/tao/ApplicationScope;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZFFZLandroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Satellite-TWpEAqU (Ldev/nucleusframework/window/tao/ApplicationScope;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZFFZLandroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;ZLdev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 	public static final fun getSatelliteCaptionStripWidth ()F
 	public static final fun satelliteDragHandle (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/SatelliteScope;)Landroidx/compose/ui/Modifier;
 }
@@ -623,6 +638,7 @@ public abstract interface class dev/nucleusframework/window/tao/SatelliteScope {
 	public fun close ()V
 	public fun dock (Ldev/nucleusframework/window/tao/DockSide;)V
 	public static synthetic fun dock$default (Ldev/nucleusframework/window/tao/SatelliteScope;Ldev/nucleusframework/window/tao/DockSide;ILjava/lang/Object;)V
+	public fun getFloatingBarMovesWindow ()Z
 	public abstract fun getSatellite ()Ldev/nucleusframework/window/tao/SatelliteEntry;
 	public abstract fun getWorkspace ()Ldev/nucleusframework/window/tao/SatelliteWorkspace;
 	public abstract fun isCompositorPlaced ()Z
@@ -634,6 +650,7 @@ public final class dev/nucleusframework/window/tao/SatelliteScope$DefaultImpls {
 	public static fun close (Ldev/nucleusframework/window/tao/SatelliteScope;)V
 	public static fun dock (Ldev/nucleusframework/window/tao/SatelliteScope;Ldev/nucleusframework/window/tao/DockSide;)V
 	public static synthetic fun dock$default (Ldev/nucleusframework/window/tao/SatelliteScope;Ldev/nucleusframework/window/tao/DockSide;ILjava/lang/Object;)V
+	public static fun getFloatingBarMovesWindow (Ldev/nucleusframework/window/tao/SatelliteScope;)Z
 	public static fun undock (Ldev/nucleusframework/window/tao/SatelliteScope;)V
 }
 
@@ -838,11 +855,10 @@ public final class dev/nucleusframework/window/tao/TabHoverPreview {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/TabHoverPreview$Companion;
 	public fun <init> ()V
-	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JJLkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JJLkotlin/jvm/functions/Function3;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getContent ()Lkotlin/jvm/functions/Function3;
 	public final fun getDelay-UwyO8pc ()J
-	public final fun getNativeLayer ()Z
 	public final fun getOffset-RKDOV3M ()J
 }
 
@@ -968,6 +984,7 @@ public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public static synthetic fun dropTargetAt-ubNVwUQ$default (Ldev/nucleusframework/window/tao/TabWorkspace;Landroidx/compose/ui/geometry/Rect;JLdev/nucleusframework/window/tao/TabEntry;Ldev/nucleusframework/window/tao/TabWindowGroup;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/TabDropTarget;
 	public final fun getActiveGroup ()Ldev/nucleusframework/window/tao/TabWindowGroup;
 	public final fun getCaptureThumbnails ()Z
+	public final fun getConstrainIndex ()Lkotlin/jvm/functions/Function3;
 	public final fun getDefaultWindowSize-MYxV2XQ ()J
 	public final fun getDragGhost ()Ldev/nucleusframework/window/tao/TabDragGhost;
 	public final fun getDragKind ()Ldev/nucleusframework/window/tao/WorkspaceDragKind;
@@ -985,6 +1002,7 @@ public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public final fun restore (Ldev/nucleusframework/window/tao/TabLayoutSnapshot;)V
 	public final fun select (Ljava/lang/String;)V
 	public final fun selectedTab (Ldev/nucleusframework/window/tao/TabWindowGroup;)Ldev/nucleusframework/window/tao/TabEntry;
+	public final fun setConstrainIndex (Lkotlin/jvm/functions/Function3;)V
 	public final fun setLinkedWorkspaces (Ljava/util/List;)V
 	public final fun setOnForeignDrop (Lkotlin/jvm/functions/Function3;)V
 	public final fun snapshot ()Ldev/nucleusframework/window/tao/TabLayoutSnapshot;
@@ -1342,6 +1360,12 @@ public final class dev/nucleusframework/window/tao/TaoRenderBackend : java/lang/
 	public static fun values ()[Ldev/nucleusframework/window/tao/TaoRenderBackend;
 }
 
+public final class dev/nucleusframework/window/tao/TaoRootsForTest {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoRootsForTest;
+	public final fun getRoots ()Ljava/util/List;
+}
+
 public final class dev/nucleusframework/window/tao/TaoScreenGeometry {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoScreenGeometry;
@@ -1403,6 +1427,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun getX11PortalParent ()Ljava/lang/String;
 	public final fun getX11WindowId ()Ljava/lang/Long;
 	public final fun hide ()V
+	public final fun isDecorationSuppressed ()Z
 	public final fun isFocused ()Z
 	public final fun isFullscreen ()Z
 	public final fun isMaximizable ()Z
@@ -1462,6 +1487,11 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 
 public abstract interface class dev/nucleusframework/window/tao/TaoWindow$KeyEventListener {
 	public abstract fun onKey (IIIII)V
+	public fun onKey (IIIIIZ)V
+}
+
+public final class dev/nucleusframework/window/tao/TaoWindow$KeyEventListener$DefaultImpls {
+	public static fun onKey (Ldev/nucleusframework/window/tao/TaoWindow$KeyEventListener;IIIIIZ)V
 }
 
 public abstract interface class dev/nucleusframework/window/tao/TaoWindow$TouchInputListener {
@@ -1814,5 +1844,69 @@ public final class dev/nucleusframework/window/tao/v2/WindowStateKt {
 	public static synthetic fun WindowStateWithBounds-IeCDzbA$default (Landroidx/compose/ui/unit/DpOffset;Landroidx/compose/ui/unit/DpSize;ZILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowState;
 	public static final fun rememberWindowState (Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;Landroidx/compose/ui/window/WindowPlacement;Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;ZLandroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/v2/WindowState;
 	public static final fun rememberWindowStateWithBounds-dpC4h7o (Landroidx/compose/ui/unit/DpOffset;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/v2/WindowState;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/workspace/TransferDrag {
+	public abstract fun cancel ()V
+	public abstract fun end ()V
+	public abstract fun getGhostSizePx-NH-jbRc ()J
+	public abstract fun getGhostSource ()Ldev/nucleusframework/window/tao/workspace/TransferGhostSource;
+	public abstract fun getTitle ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/workspace/TransferDragGesture {
+	public fun onDrag-k-4lQ0M (J)Z
+	public fun onEnd (Z)V
+	public fun onStart-k-4lQ0M (J)V
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferDragGesture$DefaultImpls {
+	public static fun onDrag-k-4lQ0M (Ldev/nucleusframework/window/tao/workspace/TransferDragGesture;J)Z
+	public static fun onEnd (Ldev/nucleusframework/window/tao/workspace/TransferDragGesture;Z)V
+	public static fun onStart-k-4lQ0M (Ldev/nucleusframework/window/tao/workspace/TransferDragGesture;J)V
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferDragGesture$Immediate : dev/nucleusframework/window/tao/workspace/TransferDragGesture {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/workspace/TransferDragGesture$Immediate;
+	public fun onDrag-k-4lQ0M (J)Z
+	public fun onEnd (Z)V
+	public fun onStart-k-4lQ0M (J)V
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferDragKt {
+	public static final fun positionInWindowPx (Landroidx/compose/ui/draganddrop/DragAndDropEvent;)J
+	public static final fun transferDragHandle (Landroidx/compose/ui/Modifier;Ljava/lang/Object;Ldev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/workspace/TransferDragGesture;Landroidx/compose/runtime/Composer;II)Landroidx/compose/ui/Modifier;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/workspace/TransferGhostSource {
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferGhostSource$None : dev/nucleusframework/window/tao/workspace/TransferGhostSource {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$None;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferGhostSource$Region : dev/nucleusframework/window/tao/workspace/TransferGhostSource {
+	public static final field $stable I
+	public fun <init> (Landroidx/compose/ui/unit/IntRect;)V
+	public final fun component1 ()Landroidx/compose/ui/unit/IntRect;
+	public final fun copy (Landroidx/compose/ui/unit/IntRect;)Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$Region;
+	public static synthetic fun copy$default (Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$Region;Landroidx/compose/ui/unit/IntRect;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$Region;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRectPx ()Landroidx/compose/ui/unit/IntRect;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/workspace/TransferGhostSource$WholeWindow : dev/nucleusframework/window/tao/workspace/TransferGhostSource {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/workspace/TransferGhostSource$WholeWindow;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 

@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.GarbageCollector
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
+import dev.nucleusframework.desktop.application.dsl.NucleusDebugSettings
 import dev.nucleusframework.desktop.application.dsl.NucleusOptimizationSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationBuildTypes
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
@@ -45,8 +46,9 @@ internal open class JvmApplicationData
 
         /**
          * Lazy JDK home used by packaging / `run`. When [optLastJdk] is on
-         * this is a [NucleusJdkToolchainValueSource]; otherwise it reads
-         * [javaHome].
+         * this is a [NucleusJdkToolchainValueSource]; with a configured JVM
+         * toolchain it is that toolchain's installation (see
+         * [applyJavaToolchainJdk]); otherwise it reads [javaHome].
          */
         internal var javaHomeOverride: Provider<String>? = null
 
@@ -57,6 +59,7 @@ internal open class JvmApplicationData
         var garbageCollector: GarbageCollector? = null
         var nucleusOptimization: Boolean = false
         val nucleusOptimizationSettings: NucleusOptimizationSettings = objects.new()
+        val debug: NucleusDebugSettings = objects.new()
         val nativeDistributions: JvmApplicationDistributions = objects.new()
         val buildTypes: JvmApplicationBuildTypes = objects.new()
         val graalvm: GraalvmSettings = objects.new()

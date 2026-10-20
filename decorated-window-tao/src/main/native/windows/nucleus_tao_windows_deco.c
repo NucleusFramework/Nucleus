@@ -574,6 +574,23 @@ static void notifyFullscreenSizeChanged(HWND hwnd, int w, int h) {
 }
 
 /* WndProc subclass */
+typedef void (*PFN_size_changing)(void *hwnd);
+
+/* nucleus_tao_gl.dll's mirror hook, resolved on first use (the GL DLL is
+ * loaded before any window is decorated; a miss simply means no mirror). */
+static void notifySizeChanging(HWND hwnd) {
+    static PFN_size_changing fn = NULL;
+    static BOOL resolved = FALSE;
+    if (!resolved) {
+        HMODULE gl = GetModuleHandleW(L"nucleus_tao_gl.dll");
+        if (gl) {
+            fn = (PFN_size_changing)GetProcAddress(gl, "nucleus_tao_window_size_changing");
+            resolved = TRUE;
+        }
+    }
+    if (fn) fn((void *)hwnd);
+}
+
 static LRESULT CALLBACK decoWndProc(
     HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -628,6 +645,21 @@ static LRESULT CALLBACK decoWndProc(
      * enough — Tao reapplies its cached window flags on state transitions
      * (maximize, restore, focus), which used to bring the buttons back on the
      * first maximize. Enforcing the invariant here catches every writer. */
+    /* A size change is about to reach DWM: the frame mirror over the render
+     * child (nucleus_tao_gl_mirror.cpp) must step aside first, since only the
+     * blt present under it lands in step with the new geometry. */
+    case WM_WINDOWPOSCHANGING: {
+        const WINDOWPOS *wp = (const WINDOWPOS *)lParam;
+        if (wp && !(wp->flags & SWP_NOSIZE)) {
+            RECT wr;
+            if (GetWindowRect(hwnd, &wr) &&
+                (wp->cx != wr.right - wr.left || wp->cy != wr.bottom - wr.top)) {
+                notifySizeChanging(hwnd);
+            }
+        }
+        break;
+    }
+
     case WM_STYLECHANGING:
         if (wParam == GWL_STYLE && state->backdropActive) {
             STYLESTRUCT *ss = (STYLESTRUCT *)lParam;

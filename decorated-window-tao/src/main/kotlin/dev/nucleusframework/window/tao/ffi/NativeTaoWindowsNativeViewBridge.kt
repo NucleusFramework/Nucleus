@@ -149,4 +149,42 @@ internal object NativeTaoWindowsNativeViewBridge {
     /** A child's rect in its parent's client px, top-left origin, as `[x, y, w, h]`, or null. */
     @JvmStatic
     external fun nativeDiagWindowFrame(hwnd: Long): IntArray?
+
+    /**
+     * The window's client area as DWM holds it (`PrintWindow` with
+     * `PW_RENDERFULLCONTENT`, the copy taskbar thumbnails and Alt+Tab draw
+     * from), as `[w, h, argb...]` with rows top-down, or null.
+     */
+    @JvmStatic
+    external fun nativeDiagPrintClient(hwnd: Long): IntArray?
+
+    /**
+     * The screen in `[x, y, w, h]` physical px as DWM composed it, layered
+     * windows included (`BitBlt` with `CAPTUREBLT`), as `[w, h, argb...]`
+     * with rows top-down, or null.
+     */
+    @JvmStatic
+    external fun nativeDiagCaptureScreen(
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+    ): IntArray?
+
+    /**
+     * Injects one step of a pen stroke at [clientX], [clientY] (client px of
+     * [hwnd]) through a synthetic `PT_PEN` pointer device — real
+     * `WM_POINTER*` messages, hit-tested by the system (#827). [action] is
+     * 0 hover, 1 down, 2 drag, 3 up, 4 leave; [eraser] puts the eraser end
+     * down. False when injection is disabled (`NUCLEUS_TAO_INPUT_INJECTION`
+     * unset), unsupported (before Windows 10 1809) or refused.
+     */
+    @JvmStatic
+    external fun nativeDiagInjectPen(
+        hwnd: Long,
+        action: Int,
+        eraser: Boolean,
+        clientX: Int,
+        clientY: Int,
+    ): Boolean
 }

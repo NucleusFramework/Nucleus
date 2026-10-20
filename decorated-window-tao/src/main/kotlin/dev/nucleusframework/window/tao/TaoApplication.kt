@@ -80,7 +80,8 @@ public object TaoApplication {
         // (notably AndroidX Lifecycle's synchronous `MainDispatcherChecker`)
         // can resolve the Tao thread immediately — a lazy capture at first
         // pump would race the very first `NavHost.setGraph` → `addObserver`
-        // call on real apps.
+        // call on real apps. On macOS the loop may run on another thread;
+        // `bindLoopThread` corrects this on the first callback (#829).
         TaoMainDispatcher.taoMainThread = Thread.currentThread()
         // Record the backend for libraries that branch on it without depending
         // on Compose or Tao. `nucleusApplication` sets it earlier in its own
@@ -716,6 +717,23 @@ public object TaoApplication {
         completeQuitIfLastWindow()
     }
 
+    /**
+     * Re-points [TaoMainDispatcher.taoMainThread] (and Lifecycle's checker) at
+     * the thread that actually runs the loop. On macOS `nativeRunBlocking`
+     * marshals the loop onto AppKit's thread 0 when [run] was entered from
+     * another thread — every launch without `-XstartOnFirstThread` — so the
+     * eager capture in [run] names a thread that is parked for the loop's
+     * lifetime and `Dispatchers.Main.immediate` would dispatch from its own UI
+     * callbacks (#829). `LAUNCHED` is the first callback the loop delivers, so
+     * no UI code observes the stale value. No-op elsewhere.
+     */
+    private fun bindLoopThread() {
+        val loopThread = Thread.currentThread()
+        if (TaoMainDispatcher.taoMainThread === loopThread) return
+        TaoMainDispatcher.taoMainThread = loopThread
+        LifecycleMainDispatcherPriming.primeWithCurrentThread()
+    }
+
     private object EventDispatcher : NativeTaoBridge.EventCallback {
         override fun onEvent(
             handle: Long,
@@ -726,6 +744,7 @@ public object TaoApplication {
             guarded {
                 when (code) {
                     TaoEventCode.LAUNCHED -> {
+                        bindLoopThread()
                         val cb = onLaunched
                         onLaunched = null
                         cb?.invoke(this@TaoApplication)
@@ -765,8 +784,9 @@ public object TaoApplication {
             keyLocation: Int,
             modifiers: Int,
             codePoint: Int,
+            isRepeat: Boolean,
         ) {
-            guarded { lookup(handle)?.dispatchKey(type, vkCode, keyLocation, modifiers, codePoint) }
+            guarded { lookup(handle)?.dispatchKey(type, vkCode, keyLocation, modifiers, codePoint, isRepeat) }
         }
 
         override fun onTrackpadGesture(
@@ -796,8 +816,9 @@ public object TaoApplication {
             xFixed: Int,
             yFixed: Int,
             forceFixed: Int,
+            kind: Int,
         ) {
-            guarded { lookup(handle)?.dispatchTouchInput(phase, id, xFixed, yFixed, forceFixed) }
+            guarded { lookup(handle)?.dispatchTouchInput(phase, id, xFixed, yFixed, forceFixed, kind) }
         }
 
         override fun onImeReplaceCommit(

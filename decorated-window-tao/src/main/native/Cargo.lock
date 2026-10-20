@@ -1240,6 +1240,7 @@ dependencies = [
  "glib",
  "gtk",
  "jni",
+ "libc",
  "once_cell",
  "raw-window-handle",
  "tao",

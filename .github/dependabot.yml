@@ -38,6 +38,12 @@ updates:
         update-types: [minor, patch]
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # The IntelliJ Platform icons are built for one IntelliJ build and pinned to
+      # Jewel's (`icons` is the suffix of `jewel` in the version catalog): they move
+      # with a Jewel bump, never on their own. Their repository also refuses
+      # Dependabot's requests (private_source_authentication_failure).
+      - dependency-name: "com.jetbrains.intellij.platform:*"
 
   # The Gradle plugin is an included build with its own dependency graph.
   - package-ecosystem: gradle

@@ -1,7 +1,7 @@
 public final class dev/nucleusframework/window/material/ComposableSingletons$MaterialDialogTitleBarKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/material/ComposableSingletons$MaterialDialogTitleBarKt;
 	public fun <init> ()V
-	public final fun getLambda$819605976$Nucleus_decorated_window_material3 ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$720342301$Nucleus_decorated_window_material3 ()Lkotlin/jvm/functions/Function4;
 }
 
 public final class dev/nucleusframework/window/material/ComposableSingletons$MaterialTitleBarKt {
@@ -25,7 +25,7 @@ public final class dev/nucleusframework/window/material/MaterialDecoratedWindowK
 }
 
 public final class dev/nucleusframework/window/material/MaterialDialogTitleBarKt {
-	public static final fun MaterialDialogTitleBar-FU0evQE (Ldev/nucleusframework/window/DecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+	public static final fun MaterialDialogTitleBar-TgFrcIs (Ldev/nucleusframework/window/DecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class dev/nucleusframework/window/material/MaterialTitleBarKt {

@@ -133,6 +133,24 @@ dependencies {
     testLcdPatchLibrariesConsumer("org.jetbrains.compose.ui:ui-text-desktop:$lcdConsumerComposeVersion")
 }
 
+// Real ui-desktop jars (with their dependencies, so the patched classes can be
+// linked and verified) for LayerDamageTransformTest — same two Compose
+// versions as the LCD patch above.
+val testLayerDamageLibraries: Configuration = configurations.create("testLayerDamageLibraries") {
+    isCanBeResolved = true
+    isCanBeConsumed = false
+}
+
+val testLayerDamageLibrariesConsumer: Configuration = configurations.create("testLayerDamageLibrariesConsumer") {
+    isCanBeResolved = true
+    isCanBeConsumed = false
+}
+
+dependencies {
+    testLayerDamageLibraries("org.jetbrains.compose.ui:ui-desktop:$lcdPluginComposeVersion")
+    testLayerDamageLibrariesConsumer("org.jetbrains.compose.ui:ui-desktop:$lcdConsumerComposeVersion")
+}
+
 val testOracleRepo: Configuration = configurations.create("testOracleRepo") {
     isCanBeResolved = true
     isCanBeConsumed = false
@@ -153,6 +171,8 @@ tasks.withType<Test> {
             .distinct()
             .joinToString(java.io.File.pathSeparator),
     )
+    systemProperty("test.layerdamage.classpath.plugin", testLayerDamageLibraries.asPath)
+    systemProperty("test.layerdamage.classpath.consumer", testLayerDamageLibrariesConsumer.asPath)
     systemProperty("test.oracle.repo.zip", testOracleRepo.singleFile.absolutePath)
     systemProperty("test.zayit.libraries", testZayitLibraries.asPath)
     val zayitMetadataDir =

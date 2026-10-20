@@ -42,6 +42,43 @@ internal fun nucleusNativeDir(
     return "$osDir-$archDir"
 }
 
+/** Skiko's native library for [os]/[arch], as packed at the root of its runtime JAR. */
+internal fun skikoLibraryFileName(
+    os: OS,
+    arch: Arch,
+): String {
+    val name = "skiko-${os.id}-${arch.id}"
+    return when (os) {
+        OS.Windows -> "$name.dll"
+        OS.MacOS -> "lib$name.dylib"
+        OS.Linux -> "lib$name.so"
+    }
+}
+
+/**
+ * Skiko's native libraries for every architecture of [os]. Only the current one is ever loaded, and
+ * a runtime JAR may pack several: 0.150.1's `skiko-awt-runtime-macos-arm64` packs the x64 dylib too.
+ */
+internal fun skikoLibraryFileNames(os: OS): Set<String> =
+    Arch.entries.mapTo(mutableSetOf()) { skikoLibraryFileName(os, it) }
+
+/**
+ * Whether the GraalVM packaging copies Skiko's library next to the executable — and therefore
+ * compiles the image without it: macOS always, elsewhere unless headless. The Linux and Windows
+ * packaging wire copyGraalvmSkikoLib through this; the macOS bundle tasks depend on it
+ * unconditionally, so gating the macOS copy means changing this function, not those tasks.
+ */
+internal fun shipsSkikoBesideExecutable(
+    os: OS,
+    headless: Boolean,
+): Boolean = os == OS.MacOS || !headless
+
+/** The entries left out of the JAR a GraalVM image of [os] is compiled from (#821). */
+internal fun skikoEntriesDroppedFromImage(
+    os: OS,
+    headless: Boolean,
+): Set<String> = if (shipsSkikoBesideExecutable(os, headless)) skikoLibraryFileNames(os) else emptySet()
+
 /** Reads the central directory only, so scanning every runtime JAR stays cheap. */
 internal fun File.hasZipEntry(predicate: (String) -> Boolean): Boolean =
     ZipFile(this).use { zip -> zip.entries().asSequence().any { predicate(it.name) } }
@@ -63,7 +100,9 @@ internal fun File.nucleusNativeEntries(): Set<String> =
  * Rewrites [sourceJar] to [targetJar], moving the [platformDir] libraries listed in
  * [nucleusEntries] into [libsDir] and dropping the other platforms' listed ones, so the
  * application ships each Nucleus library once, loose, instead of six copies inside the JAR that
- * the runtime would extract to the user's cache on first use. Every other entry is copied as is.
+ * the runtime would extract to the user's cache on first use. [droppedEntries] are left out too:
+ * libraries the packaging ships next to the executable by other means. Every other entry is copied
+ * as is.
  *
  * @return [targetJar] followed by the extracted libraries
  */
@@ -73,6 +112,7 @@ internal fun unpackNucleusNativeLibs(
     libsDir: File,
     platformDir: String,
     nucleusEntries: Set<String>,
+    droppedEntries: Set<String> = emptySet(),
 ): List<File> {
     val platformRoot = "nucleus/native/$platformDir/"
     val outputFiles = mutableListOf(targetJar)
@@ -82,6 +122,7 @@ internal fun unpackNucleusNativeLibs(
     transformJar(sourceJar, targetJar) { entry, zin, zout ->
         val name = entry.name
         when {
+            name in droppedEntries -> Unit
             entry.isDirectory || name !in nucleusEntries -> copyZipEntry(entry, zin, zout)
             name.startsWith(platformRoot) -> {
                 val lib = libsDir.resolve(name.removePrefix(platformRoot))

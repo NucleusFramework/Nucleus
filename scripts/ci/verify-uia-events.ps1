@@ -8,14 +8,14 @@
 #   DOES receive PropertyChanged. This probe gates on the COM client.
 #
 # Prerequisites:
-#   - tao-demo running with window title "Tao Backend Demo" (NUCLEUS_DEMO_TAB=A11y)
+#   - the Lab a11y-surface fixture running (window "Nucleus A11y Surface", A11y tab)
 #   - scripts/uia-listener built (dotnet build -c Release)
 #
 # Exit 0 = at least one ToggleState (30086) or RangeValue (30047) or Name (30005)
 # PropertyChanged event observed while driving A11y-tab controls via RawView.
 
 param(
-    [string]$Title = "Tao Backend Demo",
+    [string]$Title = "Nucleus A11y Surface",
     [int]$TimeoutSec = 90,
     [string]$ListenerPath = ""
 )

@@ -370,17 +370,23 @@ public object TaoHeadfulTestSuiteMain {
             },
         ) +
             UnspecifiedSizeHeadfulCases.all() +
+            AngleModulesHeadfulCases.all() +
             LinuxDiscreteScrollHeadfulCases.all() +
             MacOsTrackpadScrollHeadfulCases.all() +
             TrackpadScaleHeadfulCases.all() +
             LinuxTrackpadPinchHeadfulCases.all() +
+            LinuxPenPointerTypeHeadfulCases.all() +
+            MacOsPenPointerTypeHeadfulCases.all() +
+            WindowsPenPointerTypeHeadfulCases.all() +
             MacOsTrackpadScaleHeadfulCases.all() +
             MacOsControlClickHeadfulCases.all() +
+            MacOsCursorShapeHeadfulCases.all() +
             MacOsTrackpadGestureMonkeyHeadfulCases.all() +
             ChromeReviewHeadfulCases.all() +
             ChromeCoverageHeadfulCases.all() +
             DisplayScaleHeadfulCases.all() +
             FramePacingHeadfulCases.all() +
+            OutOfFrameExecutorHeadfulCases.all() +
             MacWindowChromeStateHeadfulCases.all() +
             PopupScaleHeadfulCases.all() +
             NativePopupPlacementHeadfulCases.all() +
@@ -388,6 +394,7 @@ public object TaoHeadfulTestSuiteMain {
             DialogAppearanceHeadfulCases.all() +
             ClipboardHeadfulCases.all() +
             AnimatedWindowSizeHeadfulCases.all() +
+            MinimumSizeResizeHeadfulCases.all() +
             Issue444HeadfulCases.all() +
             AlwaysOnTopHeadfulCases.all() +
             SatelliteWindowHeadfulCases.all() +
@@ -423,8 +430,13 @@ public object TaoHeadfulTestSuiteMain {
             FrameResumeAfterFreezeHeadfulCases.all() +
             // Last: the monkeys are the longest cases, and the robot ones leave the
             // real pointer wherever their last gesture ended.
+            OffScreenPresentHeadfulCases.all() +
+            UnpaintedFlashHeadfulCases.all() +
+            ResizeSyncHeadfulCases.all() +
+            TearOffFlashHeadfulCases.all() +
             NativeViewMonkeyHeadfulCases.all() +
-            TextureViewMonkeyHeadfulCases.all()
+            TextureViewMonkeyHeadfulCases.all() +
+            GpuCacheReclaimHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { case ->
@@ -757,6 +769,7 @@ private fun ApplicationScope.CaseWindow(
             onCloseRequest = { /* cases drive their own lifecycle */ },
             state = case.windowState ?: fallbackState,
             title = "tao-headful: ${case.name}",
+            minimumSize = case.minimumSize?.value,
             transparent = case.transparent,
             nativePopupLayers = case.nativePopupLayers,
             content = windowContent,

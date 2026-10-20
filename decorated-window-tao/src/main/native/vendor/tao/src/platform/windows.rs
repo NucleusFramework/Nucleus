@@ -400,18 +400,29 @@ impl MonitorHandleExtWindows for MonitorHandle {
   }
 }
 
+pub use crate::platform_impl::PointerSource;
+
 /// Additional methods on `DeviceId` that are specific to Windows.
 pub trait DeviceIdExtWindows {
   /// Returns an identifier that persistently refers to this specific device.
   ///
   /// Will return `None` if the device is no longer available.
   fn persistent_identifier(&self) -> Option<String>;
+
+  /// The tool of the `WindowEvent::Touch` that carried this id: a pen and
+  /// its eraser end are told apart from a finger (PATCH(nucleus)).
+  fn pointer_source(&self) -> PointerSource;
 }
 
 impl DeviceIdExtWindows for DeviceId {
   #[inline]
   fn persistent_identifier(&self) -> Option<String> {
     self.0.persistent_identifier()
+  }
+
+  #[inline]
+  fn pointer_source(&self) -> PointerSource {
+    self.0.pointer_source()
   }
 }
 

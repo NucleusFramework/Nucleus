@@ -331,6 +331,23 @@ internal object NativeMetalBridge {
     )
 
     /**
+     * Partial redraw (#755): the buffer behind an acquired drawable, as
+     * `(IOSurfaceID shl 1) or lost` — `lost` set when its IOSurface was purged
+     * (contents discarded) since it was last drawn — or -1 when the drawable
+     * has no IOSurface. Leaves the IOSurface non-volatile, so a purge is
+     * reported once rather than on every frame after it.
+     */
+    @JvmStatic
+    external fun nativeDrawableBufferState(drawablePtr: Long): Long
+
+    /** `CAMetalLayer.framebufferOnly`; off only for the partial-redraw oracle, which reads drawables back. */
+    @JvmStatic
+    external fun nativeSetFramebufferOnly(
+        handle: Long,
+        flag: Boolean,
+    )
+
+    /**
      * Toggles `CAMetalLayer.presentsWithTransaction`. When `true`, the layer
      * defers its surface swap so it can be committed atomically inside the
      * enclosing `CATransaction` along with sibling AppKit mutations (subview
@@ -474,7 +491,8 @@ internal object NativeMetalBridge {
      * True on the AppKit main thread. [dispatch.TaoMainDispatcher.taoMainThread]
      * cannot answer this on macOS: `nativeRunBlocking` marshals the event loop
      * onto thread 0, so AppKit callbacks run on a different JVM thread than the
-     * one that entered `taoApplication`.
+     * one that entered `taoApplication` — and `taoMainThread` only learns the
+     * real thread on the loop's first callback (#829).
      */
     @JvmStatic
     external fun nativeIsMainThread(): Boolean
@@ -566,6 +584,24 @@ internal object NativeMetalBridge {
         x: Float,
         y: Float,
         value: Double,
+    ): Boolean
+
+    /**
+     * Headful e2e only (#827): queues a synthetic tablet event on `NSApp`
+     * (`postEvent`, delivered after the current callback returns), as a
+     * tablet driver sends it — a proximity event naming the tool, then mouse
+     * events with the `TabletPoint` subtype. [action]: 0 proximity enter,
+     * 1 proximity leave, 2 move, 3 down, 4 drag, 5 up; [tool]: 0 the mouse,
+     * 1 pen tip, 2 eraser; [x] / [y] content-local points, top-left origin.
+     * `false` when injection is disabled or the view or its window is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagInjectTabletEvent(
+        nsViewPtr: Long,
+        action: Int,
+        tool: Int,
+        x: Float,
+        y: Float,
     ): Boolean
 
     /**

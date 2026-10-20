@@ -327,12 +327,14 @@ internal class TaoPopupSceneLayerWindows(
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
+            isRepeat: Boolean,
         ) = host.exceptionHandler.catchExceptions {
             innerScene.dispatchNativeKeyEvent(
                 type = type,
                 vkCode = vkCode,
                 codePoint = codePoint,
                 modifiers = modifiers,
+                isRepeat = isRepeat,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
             )

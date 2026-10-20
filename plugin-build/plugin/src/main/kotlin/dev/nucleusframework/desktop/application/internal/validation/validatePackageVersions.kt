@@ -39,15 +39,12 @@ internal fun JvmApplicationContext.validatePackageVersions() {
             // Every checked format is built by electron-builder, which converts a SemVer
             // pre-release or build suffix to the packaging system's own form (or drops it), so
             // only the release part has to satisfy the format's rules.
-            versionChecker?.apply {
-                if (!isValid(packageVersion.withoutSemVerSuffix())) {
-                    errors.addError(
-                        targetFormat,
-                        "'$packageVersion' is not a valid version",
-                        correctFormat = correctFormat,
-                    )
-                }
-            }
+            errors.checkVersion(
+                targetFormat,
+                versionChecker,
+                packageVersion.withoutSemVerSuffix(),
+                "'$packageVersion' is not a valid version",
+            )
         }
 
         if (targetFormat.targetOS == OS.MacOS) {
@@ -55,21 +52,29 @@ internal fun JvmApplicationContext.validatePackageVersions() {
             if (packageBuildVersion == null) {
                 errors.addError(targetFormat, "no build version was specified")
             } else {
-                versionChecker?.apply {
-                    if (!isValid(packageBuildVersion)) {
-                        errors.addError(
-                            targetFormat,
-                            "'$packageBuildVersion' is not a valid build version",
-                            correctFormat = correctFormat,
-                        )
-                    }
-                }
+                errors.checkVersion(
+                    targetFormat,
+                    versionChecker,
+                    packageBuildVersion,
+                    "'$packageBuildVersion' is not a valid build version",
+                )
             }
         }
     }
 
     if (errors.errors.isNotEmpty()) {
         throw GradleException(errors.errors.joinToString("\n"))
+    }
+}
+
+private fun ErrorsCollector.checkVersion(
+    targetFormat: TargetFormat,
+    checker: VersionChecker?,
+    version: String,
+    invalidMessage: String,
+) {
+    if (checker != null && !checker.isValid(version)) {
+        addError(targetFormat, invalidMessage, correctFormat = checker.correctFormat)
     }
 }
 
@@ -187,12 +192,16 @@ private object WindowsVersionChecker : VersionChecker {
 
     override fun isValid(version: String): Boolean {
         val parts = version.split(".").map { it.toIntOrNull() }
-        if (parts.size != 3) return false
+        if (parts.size != PART_COUNT) return false
 
-        return parts[0].isIntInRange(0, 255) &&
-            parts[1].isIntInRange(0, 255) &&
-            parts[2].isIntInRange(0, 65535)
+        return parts[0].isIntInRange(0, MAX_MAJOR_MINOR) &&
+            parts[1].isIntInRange(0, MAX_MAJOR_MINOR) &&
+            parts[2].isIntInRange(0, MAX_BUILD)
     }
+
+    private const val PART_COUNT = 3
+    private const val MAX_MAJOR_MINOR = 255
+    private const val MAX_BUILD = 65535
 
     private fun Int?.isIntInRange(
         min: Int,
@@ -212,7 +221,9 @@ private object MacVersionChecker : VersionChecker {
         val parts = version.split(".").map { it.toIntOrNull() }
 
         return parts.isNotEmpty() &&
-            parts.size <= 3 &&
+            parts.size <= MAX_PART_COUNT &&
             parts.all { it != null && it >= 0 }
     }
+
+    private const val MAX_PART_COUNT = 3
 }

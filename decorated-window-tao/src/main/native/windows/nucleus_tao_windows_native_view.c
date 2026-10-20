@@ -401,3 +401,188 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     (*env)->SetIntArrayRegion(env, result, 0, 4, out);
     return result;
 }
+
+#ifndef PW_CLIENTONLY
+#define PW_CLIENTONLY 0x00000001
+#endif
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
+
+/* The window's client area as DWM holds it, read with
+ * PrintWindow(PW_RENDERFULLCONTENT) — the copy taskbar thumbnails and
+ * Alt+Tab are drawn from, which also covers the parts of the window that
+ * lie outside every display. Returned as `[w, h, argb...]` (rows top-down),
+ * or null when the window cannot be captured. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagPrintClient(
+    JNIEnv *env, jclass clazz, jlong hwnd) {
+    (void)clazz;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (!IsWindow(h)) return NULL;
+    RECT rc;
+    if (!GetClientRect(h, &rc)) return NULL;
+    int w = (int)(rc.right - rc.left);
+    int ht = (int)(rc.bottom - rc.top);
+    if (w <= 0 || ht <= 0) return NULL;
+
+    BITMAPINFO bmi;
+    memset(&bmi, 0, sizeof(bmi));
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = w;
+    bmi.bmiHeader.biHeight = -ht; /* top-down rows */
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC screen = GetDC(NULL);
+    HDC mem = CreateCompatibleDC(screen);
+    void *bits = NULL;
+    HBITMAP dib = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+    ReleaseDC(NULL, screen);
+    if (!mem || !dib || !bits) {
+        if (dib) DeleteObject(dib);
+        if (mem) DeleteDC(mem);
+        return NULL;
+    }
+    HGDIOBJ old = SelectObject(mem, dib);
+    BOOL ok = PrintWindow(h, mem, PW_CLIENTONLY | PW_RENDERFULLCONTENT);
+    GdiFlush();
+
+    jintArray result = NULL;
+    if (ok) {
+        jsize count = (jsize)w * (jsize)ht;
+        result = (*env)->NewIntArray(env, 2 + count);
+        if (result != NULL) {
+            jint dims[2] = { w, ht };
+            (*env)->SetIntArrayRegion(env, result, 0, 2, dims);
+            /* BGRA in memory is 0xAARRGGBB as a little-endian int; force the
+             * alpha opaque, GDI leaves it undefined. */
+            jint *px = (jint *)bits;
+            for (jsize i = 0; i < count; ++i) px[i] |= (jint)0xFF000000;
+            (*env)->SetIntArrayRegion(env, result, 2, count, px);
+        }
+    }
+    SelectObject(mem, old);
+    DeleteObject(dib);
+    DeleteDC(mem);
+    return result;
+}
+
+/* The screen in [x, y, w, h] physical px as DWM composed it, layered
+ * windows included (CAPTUREBLT), as `[w, h, argb...]` (rows top-down), or
+ * null. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagCaptureScreen(
+    JNIEnv *env, jclass clazz, jint x, jint y, jint w, jint h) {
+    (void)clazz;
+    if (w <= 0 || h <= 0) return NULL;
+    BITMAPINFO bmi;
+    memset(&bmi, 0, sizeof(bmi));
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = w;
+    bmi.bmiHeader.biHeight = -h; /* top-down rows */
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC screen = GetDC(NULL);
+    HDC mem = CreateCompatibleDC(screen);
+    void *bits = NULL;
+    HBITMAP dib = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+    jintArray result = NULL;
+    if (mem && dib && bits) {
+        HGDIOBJ old = SelectObject(mem, dib);
+        if (BitBlt(mem, 0, 0, w, h, screen, x, y, SRCCOPY | CAPTUREBLT)) {
+            GdiFlush();
+            jsize count = (jsize)w * (jsize)h;
+            result = (*env)->NewIntArray(env, 2 + count);
+            if (result != NULL) {
+                jint dims[2] = { w, h };
+                (*env)->SetIntArrayRegion(env, result, 0, 2, dims);
+                jint *px = (jint *)bits;
+                for (jsize i = 0; i < count; ++i) px[i] |= (jint)0xFF000000;
+                (*env)->SetIntArrayRegion(env, result, 2, count, px);
+            }
+        }
+        SelectObject(mem, old);
+    }
+    if (dib) DeleteObject(dib);
+    if (mem) DeleteDC(mem);
+    ReleaseDC(NULL, screen);
+    return result;
+}
+
+/* ── Pen injection for the headful suite (#827) ─────────────────────────
+ *
+ * A real pen stroke, through a synthetic PT_PEN pointer device: the system
+ * hit-tests it and posts WM_POINTER* to the window under it, so Tao's
+ * WM_POINTER handler, the JNI loop and the scene host all run, exactly as
+ * for a Surface pen. Resolved at run time (Windows 10 1809+), so the DLL
+ * still loads on older systems, and inert unless the process was started
+ * with NUCLEUS_TAO_INPUT_INJECTION=1 (the taoHeadfulTest task sets it). */
+
+typedef HSYNTHETICPOINTERDEVICE (WINAPI *CreateSyntheticPointerDeviceFn)(
+    POINTER_INPUT_TYPE, ULONG, POINTER_FEEDBACK_MODE);
+typedef BOOL (WINAPI *InjectSyntheticPointerInputFn)(
+    HSYNTHETICPOINTERDEVICE, const POINTER_TYPE_INFO *, UINT32);
+
+/* Actions of nativeDiagInjectPen, mirrored in WindowsPenPointerTypeHeadfulCases. */
+#define PEN_ACTION_HOVER 0
+#define PEN_ACTION_DOWN 1
+#define PEN_ACTION_DRAG 2
+#define PEN_ACTION_UP 3
+#define PEN_ACTION_LEAVE 4
+
+static HSYNTHETICPOINTERDEVICE g_diag_pen_device;
+static InjectSyntheticPointerInputFn g_diag_inject_pointer;
+
+static BOOL diag_input_injection_enabled(void) {
+    char flag[2];
+    return GetEnvironmentVariableA("NUCLEUS_TAO_INPUT_INJECTION", flag, sizeof(flag)) == 1 && flag[0] == '1';
+}
+
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagInjectPen(
+    JNIEnv *env, jclass clazz, jlong hwnd, jint action, jboolean eraser, jint clientX, jint clientY) {
+    (void)env; (void)clazz;
+    if (!diag_input_injection_enabled()) return JNI_FALSE;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (!IsWindow(h)) return JNI_FALSE;
+    if (g_diag_pen_device == NULL) {
+        HMODULE user32 = GetModuleHandleW(L"user32.dll");
+        CreateSyntheticPointerDeviceFn create = (CreateSyntheticPointerDeviceFn)(void *)
+            GetProcAddress(user32, "CreateSyntheticPointerDevice");
+        g_diag_inject_pointer = (InjectSyntheticPointerInputFn)(void *)
+            GetProcAddress(user32, "InjectSyntheticPointerInput");
+        if (create == NULL || g_diag_inject_pointer == NULL) return JNI_FALSE;
+        g_diag_pen_device = create(PT_PEN, 1, POINTER_FEEDBACK_DEFAULT);
+        if (g_diag_pen_device == NULL) return JNI_FALSE;
+    }
+
+    POINT pt = { clientX, clientY };
+    if (!ClientToScreen(h, &pt)) return JNI_FALSE;
+
+    POINTER_FLAGS flags;
+    switch (action) {
+    case PEN_ACTION_HOVER: flags = POINTER_FLAG_INRANGE | POINTER_FLAG_UPDATE; break;
+    case PEN_ACTION_DOWN: flags = POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | POINTER_FLAG_DOWN; break;
+    case PEN_ACTION_DRAG: flags = POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | POINTER_FLAG_UPDATE; break;
+    case PEN_ACTION_UP: flags = POINTER_FLAG_INRANGE | POINTER_FLAG_UP; break;
+    case PEN_ACTION_LEAVE: flags = POINTER_FLAG_UPDATE; break;
+    default: return JNI_FALSE;
+    }
+    BOOL contact = (flags & POINTER_FLAG_INCONTACT) != 0;
+
+    POINTER_TYPE_INFO info;
+    memset(&info, 0, sizeof(info));
+    info.type = PT_PEN;
+    info.penInfo.pointerInfo.pointerType = PT_PEN;
+    info.penInfo.pointerInfo.ptPixelLocation = pt;
+    info.penInfo.pointerInfo.pointerFlags = flags;
+    /* The eraser end: inverted while it hovers, erasing while it touches. */
+    info.penInfo.penFlags = eraser ? (contact ? PEN_FLAG_ERASER : PEN_FLAG_INVERTED) : PEN_FLAG_NONE;
+    info.penInfo.penMask = PEN_MASK_PRESSURE;
+    info.penInfo.pressure = contact ? 512 : 0;
+    return g_diag_inject_pointer(g_diag_pen_device, &info, 1) ? JNI_TRUE : JNI_FALSE;
+}

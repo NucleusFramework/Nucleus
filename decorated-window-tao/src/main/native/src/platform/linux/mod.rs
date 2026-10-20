@@ -1,10 +1,12 @@
 pub(crate) mod a11y;
+pub(crate) mod activation;
 pub(crate) mod decoration;
 pub(crate) mod dnd;
 pub(crate) mod handles;
 pub(crate) mod ime;
 pub(crate) mod monitor;
 pub(crate) mod scroll;
+pub(crate) mod server_decoration;
 pub(crate) mod touch;
 
 /// Makes Xlib thread-safe before GTK opens its X display. Call it before anything that may

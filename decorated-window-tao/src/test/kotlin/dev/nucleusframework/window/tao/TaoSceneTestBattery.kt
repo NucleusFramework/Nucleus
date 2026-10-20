@@ -4,11 +4,14 @@ import dev.nucleusframework.window.TitleBarHitTestTest
 import dev.nucleusframework.window.tao.TaoWindowResizableTest
 import dev.nucleusframework.window.tao.TaoWindowScrollTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
+import dev.nucleusframework.window.tao.deco.FullscreenOverlayVisibilityTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
 import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
+import dev.nucleusframework.window.tao.event.TaoKeyRepeatTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
+import dev.nucleusframework.window.tao.event.TaoTouchEventTimeTest
 import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSessionTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
@@ -16,6 +19,8 @@ import dev.nucleusframework.window.tao.popup.MacPopupPictureCullTest
 import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
 import dev.nucleusframework.window.tao.scene.LcdTextTest
+import dev.nucleusframework.window.tao.scene.PartialRedrawTest
+import dev.nucleusframework.window.tao.scene.TaoOutOfFrameExecutorTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
@@ -25,6 +30,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerSlopTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
+import dev.nucleusframework.window.tao.scene.TaoScenePopupDisposedInLayoutTest
 import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
@@ -120,6 +126,27 @@ public object TaoSceneTestBattery {
         }
         run("TaoKeyboardModifiersDecodeTest: unknown high bits are ignored") {
             TaoKeyboardModifiersDecodeTest().`unknown high bits are ignored`()
+        }
+        run("TaoKeyRepeatTest: a repeated key-down is a repeat") {
+            TaoKeyRepeatTest().`a repeated key-down is a repeat`()
+        }
+        run("TaoKeyRepeatTest: a fresh key-down is not a repeat") {
+            TaoKeyRepeatTest().`a fresh key-down is not a repeat`()
+        }
+        run("TaoKeyRepeatTest: a key-up is never a repeat") {
+            TaoKeyRepeatTest().`a key-up is never a repeat`()
+        }
+        run("TaoKeyRepeatTest: typed text is never a repeat") {
+            TaoKeyRepeatTest().`typed text is never a repeat`()
+        }
+        run("TaoKeyRepeatTest: an event Nucleus did not produce is not a repeat") {
+            TaoKeyRepeatTest().`an event Nucleus did not produce is not a repeat`()
+        }
+        run("TaoKeyRepeatTest: a repeat keeps the key and type of a plain key-down") {
+            TaoKeyRepeatTest().`a repeat keeps the key and type of a plain key-down`()
+        }
+        run("TaoKeyRepeatTest: a key listener that ignores the flag still hears repeats") {
+            TaoKeyRepeatTest().`a key listener that ignores the flag still hears repeats`()
         }
         run("TaoSyntheticMouseWheelEventTest: syntheticEventCarriesAwtScrollMetadata") {
             TaoSyntheticMouseWheelEventTest().syntheticEventCarriesAwtScrollMetadata()
@@ -302,6 +329,9 @@ public object TaoSceneTestBattery {
         run("TaoSceneKeyboardTest: fallback key handler fires only when the scene does not consume") {
             TaoSceneKeyboardTest().`fallback key handler fires only when the scene does not consume`()
         }
+        run("TaoSceneKeyboardTest: a held key's repeats reach the key handlers as repeats") {
+            TaoSceneKeyboardTest().`a held key's repeats reach the key handlers as repeats`()
+        }
         run("TaoSceneImeTest: IME preedit is shown in the field while composing") {
             TaoSceneImeTest().`IME preedit is shown in the field while composing`()
         }
@@ -466,6 +496,9 @@ public object TaoSceneTestBattery {
         run("TaoSceneTrackpadScaleTest: host-shaped magnify stream zooms transformable without slop") {
             TaoSceneTrackpadScaleTest().`host-shaped magnify stream zooms transformable without slop`()
         }
+        run("TaoTrackpadScaleSessionTest: cancellationRunsAfterScaleEndAndOnlyForAnActiveGesture") {
+            TaoTrackpadScaleSessionTest().cancellationRunsAfterScaleEndAndOnlyForAnActiveGesture()
+        }
         run("TaoTrackpadScaleSessionTest: startChangeEndEmitsScaleSequence") {
             TaoTrackpadScaleSessionTest().startChangeEndEmitsScaleSequence()
         }
@@ -489,6 +522,42 @@ public object TaoSceneTestBattery {
         }
         run("TaoTrackpadScaleSessionTest: aSecondStartIsIgnoredWhileActive") {
             TaoTrackpadScaleSessionTest().aSecondStartIsIgnoredWhileActive()
+        }
+        run("TaoTouchEventTimeTest: delayedDeliveryPreservesSampleIntervals") {
+            TaoTouchEventTimeTest().delayedDeliveryPreservesSampleIntervals()
+        }
+        run("TaoTouchEventTimeTest: samplesWithTheSameTimestampRemainSimultaneous") {
+            TaoTouchEventTimeTest().samplesWithTheSameTimestampRemainSimultaneous()
+        }
+        run("TaoTouchEventTimeTest: unsignedClockWraparoundPreservesSampleIntervals") {
+            TaoTouchEventTimeTest().unsignedClockWraparoundPreservesSampleIntervals()
+        }
+        run("TaoTouchEventTimeTest: signedClockBoundaryPreservesSampleIntervals") {
+            TaoTouchEventTimeTest().signedClockBoundaryPreservesSampleIntervals()
+        }
+        run("TaoTouchEventTimeTest: missingTimestampFallsBackAndReanchorsTheNextSample") {
+            TaoTouchEventTimeTest().missingTimestampFallsBackAndReanchorsTheNextSample()
+        }
+        run("TaoTouchEventTimeTest: idleLongerThanTheUnambiguousClockRangeReanchors") {
+            TaoTouchEventTimeTest().idleLongerThanTheUnambiguousClockRangeReanchors()
+        }
+        run("FullscreenOverlayVisibilityTest: mouseFollowsTheTopEdgeAndCancelsAutoHide") {
+            FullscreenOverlayVisibilityTest().mouseFollowsTheTopEdgeAndCancelsAutoHide()
+        }
+        run("FullscreenOverlayVisibilityTest: aTapAnywhereRevealsTheHiddenBar") {
+            FullscreenOverlayVisibilityTest().aTapAnywhereRevealsTheHiddenBar()
+        }
+        run("FullscreenOverlayVisibilityTest: aTapOutsideTheShownBarHidesIt") {
+            FullscreenOverlayVisibilityTest().aTapOutsideTheShownBarHidesIt()
+        }
+        run("FullscreenOverlayVisibilityTest: aTapOnTheShownBarKeepsItAndRestartsAutoHide") {
+            FullscreenOverlayVisibilityTest().aTapOnTheShownBarKeepsItAndRestartsAutoHide()
+        }
+        run("FullscreenOverlayVisibilityTest: touchMovesAndReleasesLeaveItAsIs") {
+            FullscreenOverlayVisibilityTest().touchMovesAndReleasesLeaveItAsIs()
+        }
+        run("FullscreenOverlayVisibilityTest: unknownPointersHover") {
+            FullscreenOverlayVisibilityTest().unknownPointersHover()
         }
         run("TaoSceneScrollTest: one wheel unit scrolls ten dp on macOS") {
             TaoSceneScrollTest().`one wheel unit scrolls ten dp on macOS`()
@@ -539,6 +608,13 @@ public object TaoSceneTestBattery {
             TaoScenePopupTest().`buffer scale alignment rounds up and never collapses to zero`()
         }
         run(
+            "TaoScenePopupDisposedInLayoutTest: a popup its subcomposition drops during layout " +
+                "does not break the frame",
+        ) {
+            TaoScenePopupDisposedInLayoutTest()
+                .`a popup its subcomposition drops during layout does not break the frame`()
+        }
+        run(
             "TaoSceneOuterLocalsBridgeTest: wrapping window content in outer locals with " +
                 "CompositionLocalProvider breaks Popup",
         ) {
@@ -557,6 +633,21 @@ public object TaoSceneTestBattery {
         ) {
             TaoSceneOuterLocalsBridgeTest()
                 .`bridged outer locals do not carry the outer layout direction into content`()
+        }
+        run("TaoOutOfFrameExecutorTest: work scheduled outside a frame runs without one") {
+            TaoOutOfFrameExecutorTest().`work scheduled outside a frame runs without one`()
+        }
+        run("TaoOutOfFrameExecutorTest: work scheduled during a frame runs before the next one") {
+            TaoOutOfFrameExecutorTest().`work scheduled during a frame runs before the next one`()
+        }
+        run("TaoOutOfFrameExecutorTest: lazy items scrolled away are deactivated after the frame") {
+            TaoOutOfFrameExecutorTest().`lazy items scrolled away are deactivated after the frame`()
+        }
+        run("TaoOutOfFrameExecutorTest: work deferred by a frame runs on the loop without another frame") {
+            TaoOutOfFrameExecutorTest().`work deferred by a frame runs on the loop without another frame`()
+        }
+        run("TaoOutOfFrameExecutorTest: a block throwing out of a posted drain leaves the rest to the next frame") {
+            TaoOutOfFrameExecutorTest().`a block throwing out of a posted drain leaves the rest to the next frame`()
         }
         run("TaoSceneAnimationTest: tween advances exactly with virtual frames") {
             TaoSceneAnimationTest().`tween advances exactly with virtual frames`()
@@ -1124,6 +1215,33 @@ public object TaoSceneTestBattery {
         run("TabHoverPreviewTest: the selected tab has no card") {
             TabHoverPreviewTest().`the selected tab has no card`()
         }
+        run("TabHoverPreviewTest: the recorder answers a request with a picture of the body") {
+            TabHoverPreviewTest().`the recorder answers a request with a picture of the body`()
+        }
+        run("PartialRedrawTest: a buffer of age 1 repaints the frame's own damage") {
+            PartialRedrawTest().`a buffer of age 1 repaints the frame's own damage`()
+        }
+        run("PartialRedrawTest: an older buffer also repaints what the frames since changed") {
+            PartialRedrawTest().`an older buffer also repaints what the frames since changed`()
+        }
+        run("PartialRedrawTest: any doubt repaints everything") {
+            PartialRedrawTest().`any doubt repaints everything`()
+        }
+        run("PartialRedrawTest: a frame that changed nothing repaints only what the frames since changed") {
+            PartialRedrawTest().`a frame that changed nothing repaints only what the frames since changed`()
+        }
+        run("PartialRedrawTest: EGL damage rectangles have a bottom-left origin") {
+            PartialRedrawTest().`EGL damage rectangles have a bottom-left origin`()
+        }
+        run("PartialRedrawTest: a repaint covering 80 percent of the frame is done in full") {
+            PartialRedrawTest().`a repaint covering 80 percent of the frame is done in full`()
+        }
+        run("PartialRedrawTest: a write made during layout is applied before the damage walk") {
+            PartialRedrawTest().`a write made during layout is applied before the damage walk`()
+        }
+        run("PartialRedrawTest: an unpatched Compose reports no damage and keeps rendering") {
+            PartialRedrawTest().`an unpatched Compose reports no damage and keeps rendering`()
+        }
         run("TabHoverPreviewTest: a picture the app assigns stands until the workspace takes one") {
             TabHoverPreviewTest().`a picture the app assigns stands until the workspace takes one`()
         }
@@ -1205,6 +1323,18 @@ public object TaoSceneTestBattery {
         }
         run("TabWorkspaceTest: a strip with no slots published yet resolves to index zero") {
             TabWorkspaceTest().`a strip with no slots published yet resolves to index zero`()
+        }
+        run("TabWorkspaceTest: a constrained reorder or move stops at the boundary") {
+            TabWorkspaceTest().`a constrained reorder or move stops at the boundary`()
+        }
+        run("TabWorkspaceTest: a drop preview never offers a place the tab cannot take") {
+            TabWorkspaceTest().`a drop preview never offers a place the tab cannot take`()
+        }
+        run("TabWorkspaceTest: a tab carried in its own strip is previewed where it may land") {
+            TabWorkspaceTest().`a tab carried in its own strip is previewed where it may land`()
+        }
+        run("TabWorkspaceTest: the neighbours only make room up to the allowed index") {
+            TabWorkspaceTest().`the neighbours only make room up to the allowed index`()
         }
         run("TabWorkspaceTest: dragging one of several tabs shows a ghost and inserts where it is dropped") {
             TabWorkspaceTest().`dragging one of several tabs shows a ghost and inserts where it is dropped`()

@@ -189,98 +189,42 @@ static int read_single_process(pid_t pid, proc_entry_t *pe) {
     return read_process_info(pid, pe);
 }
 
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidName(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.name);
+// Slots of nativeProcessByPid's arrays, mirrored in NativeMacOsSystemInfoBridge.
+enum { PROCESS_LONG_PARENT_PID, PROCESS_LONG_MEMORY, PROCESS_LONG_VIRTUAL_MEMORY,
+       PROCESS_LONG_START_TIME, PROCESS_LONG_RUN_TIME, PROCESS_LONG_COUNT };
+enum { PROCESS_FLOAT_CPU_USAGE, PROCESS_FLOAT_COUNT };
+enum { PROCESS_STRING_NAME, PROCESS_STRING_EXE, PROCESS_STRING_STATUS, PROCESS_STRING_CMD,
+       PROCESS_STRING_CWD, PROCESS_STRING_ROOT, PROCESS_STRING_COUNT };
+
+static void set_string_slot(JNIEnv *env, jobjectArray strings, int slot, const char *value) {
+    jstring js = to_jstring(env, value);
+    (*env)->SetObjectArrayElement(env, strings, slot, js);
+    if (js) (*env)->DeleteLocalRef(env, js);
 }
 
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidExe(
-    JNIEnv *env, jclass clazz, jlong pid) {
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPid(
+    JNIEnv *env, jclass clazz, jlong pid, jlongArray longs, jfloatArray floats, jobjectArray strings) {
     proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.exe);
-}
+    if (read_single_process((pid_t)pid, &pe) != 0) return JNI_FALSE;
 
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidMemory(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0;
-    return (jlong)pe.memory;
-}
+    jlong long_values[PROCESS_LONG_COUNT];
+    long_values[PROCESS_LONG_PARENT_PID] = (jlong)pe.parent_pid;
+    long_values[PROCESS_LONG_MEMORY] = (jlong)pe.memory;
+    long_values[PROCESS_LONG_VIRTUAL_MEMORY] = (jlong)pe.virtual_memory;
+    long_values[PROCESS_LONG_START_TIME] = (jlong)pe.start_time;
+    long_values[PROCESS_LONG_RUN_TIME] = (jlong)pe.run_time;
+    (*env)->SetLongArrayRegion(env, longs, 0, PROCESS_LONG_COUNT, long_values);
 
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidVirtualMemory(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0;
-    return (jlong)pe.virtual_memory;
-}
+    jfloat float_values[PROCESS_FLOAT_COUNT];
+    float_values[PROCESS_FLOAT_CPU_USAGE] = pe.cpu_usage;
+    (*env)->SetFloatArrayRegion(env, floats, 0, PROCESS_FLOAT_COUNT, float_values);
 
-JNIEXPORT jfloat JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCpuUsage(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0.0f;
-    return pe.cpu_usage;
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidStatus(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.status);
-}
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidStartTime(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0;
-    return (jlong)pe.start_time;
-}
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidRunTime(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0;
-    return (jlong)pe.run_time;
-}
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidParentPid(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return -1;
-    return (jlong)pe.parent_pid;
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCmd(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.cmd);
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCwd(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.cwd);
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidRoot(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.root);
+    set_string_slot(env, strings, PROCESS_STRING_NAME, pe.name);
+    set_string_slot(env, strings, PROCESS_STRING_EXE, pe.exe);
+    set_string_slot(env, strings, PROCESS_STRING_STATUS, pe.status);
+    set_string_slot(env, strings, PROCESS_STRING_CMD, pe.cmd);
+    set_string_slot(env, strings, PROCESS_STRING_CWD, pe.cwd);
+    set_string_slot(env, strings, PROCESS_STRING_ROOT, pe.root);
+    return JNI_TRUE;
 }
