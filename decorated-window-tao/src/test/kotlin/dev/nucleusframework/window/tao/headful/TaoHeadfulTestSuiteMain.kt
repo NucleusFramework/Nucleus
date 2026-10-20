@@ -433,6 +433,7 @@ public object TaoHeadfulTestSuiteMain {
             OffScreenPresentHeadfulCases.all() +
             UnpaintedFlashHeadfulCases.all() +
             ResizeSyncHeadfulCases.all() +
+            MacOsGpuCacheReclaimHeadfulCases.all() +
             TearOffFlashHeadfulCases.all() +
             NativeViewMonkeyHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all() +

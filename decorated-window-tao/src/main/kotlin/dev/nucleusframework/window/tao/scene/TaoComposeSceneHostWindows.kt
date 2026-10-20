@@ -235,6 +235,9 @@ internal class TaoComposeSceneHostWindows(
     /** Monotonic ns of the last in-drag GPU cache purge (see [onResized]). */
     private var lastResizePurgeNs: Long = 0L
 
+    /** Reclaims the cache an animation filled once the window is at rest (#638). */
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest() }
+
     /** A size change awaits push into the GL surface + ComposeScene at the next paint. */
     private var pendingResizeApply: Boolean = false
 
@@ -1316,16 +1319,21 @@ internal class TaoComposeSceneHostWindows(
      * (#478), whose renderer must not lose its cache mid-frame.
      */
     fun onMinimizedChanged(minimized: Boolean) {
-        if (!minimized) return
-        val ctx = directContext ?: return
+        if (minimized) purgeGpuResourceCacheAtRest()
+    }
+
+    /** [onMinimizedChanged]'s purge, also [restReclaimer]'s. Always `true`: nothing to retry. */
+    private fun purgeGpuResourceCacheAtRest(): Boolean {
+        val ctx = directContext ?: return true
         if (dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
                 .isActive(ctx)
         ) {
-            return
+            return true
         }
         // Same foreign-context hazard as [purgeGpuResourceCache] (#514).
         if (attachmentHandle != 0L) NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
         ctx.purgeAtRest()
+        return true
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -1817,6 +1825,7 @@ internal class TaoComposeSceneHostWindows(
         // TaoWindow.requestRedraw on the MINIMIZED-off event. The scene's
         // coroutines keep running meanwhile, between frames (#754).
         if (window.isMinimized) return
+        restReclaimer.onFrame()
         val frameStartNanos = System.nanoTime()
 
         if (heldAfterIdleFrame(sameTurnResize)) return
@@ -2901,6 +2910,7 @@ internal class TaoComposeSceneHostWindows(
         pinchEndJob?.cancel()
         pinchEndJob = null
         gestureScope.cancel()
+        restReclaimer.close()
         // Make THIS host's ES context current before tearing down Skia
         // resources. A sibling host (e.g. the main window opened while this
         // one — the onboarding window — closes) may have left its own

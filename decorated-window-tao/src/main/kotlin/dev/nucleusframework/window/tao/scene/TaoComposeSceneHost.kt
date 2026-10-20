@@ -751,6 +751,9 @@ internal class TaoComposeSceneHost(
 
     private var lastResizePurgeNs: Long = 0
 
+    /** Reclaims the cache an animation filled once the window is at rest (#638). */
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest() }
+
     /**
      * Set by [onResized] once its same-turn present is on its way; the next
      * render-loop frame then skips its own replay + present (#576). That frame
@@ -792,7 +795,7 @@ internal class TaoComposeSceneHost(
      * on an animating window as a visible stall — a window with a live
      * `NativeView` embed dropped below 4 frames per 400 ms right after a storm.
      * Cost with no measured benefit. The reclaim that #638 is actually after is
-     * at rest, not at drag end, and belongs on the idle path.
+     * at rest, not at drag end — that is [restReclaimer].
      */
     private fun purgeResizeScratchIfDue() {
         val now = System.nanoTime()
@@ -884,15 +887,20 @@ internal class TaoComposeSceneHost(
      * (#478), whose renderer must not lose its cache mid-frame.
      */
     fun onMinimizedChanged(minimized: Boolean) {
-        if (!minimized) return
-        val ctx = directContext ?: return
+        if (minimized) purgeGpuResourceCacheAtRest()
+    }
+
+    /** [onMinimizedChanged]'s purge, also [restReclaimer]'s. Always `true`: nothing to retry. */
+    private fun purgeGpuResourceCacheAtRest(): Boolean {
+        val ctx = directContext ?: return true
         if (dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
                 .isActive(ctx)
         ) {
-            return
+            return true
         }
         // Rejected once detach() shut the executor down — nothing to reclaim then.
         runCatching { renderExecutor.submit { ctx.purgeAtRest() } }
+        return true
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -1809,6 +1817,7 @@ internal class TaoComposeSceneHost(
         // quiesces instead of rendering into a hidden surface. Restored via
         // TaoWindow's requestRedraw on the MINIMIZED-off event.
         if (window.isMinimized) return
+        restReclaimer.onFrame()
 
         // ── interop transaction snapshot (main) ──
         val tx = retrieveTransaction()
@@ -2141,6 +2150,7 @@ internal class TaoComposeSceneHost(
         frameDispatcher?.cancel()
         frameDispatcher = null
         renderLoopJob.cancel()
+        restReclaimer.close()
         textToolbar.hide()
         window.clearContentMeasurer()
         sceneBundle?.close()
