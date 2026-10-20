@@ -1335,13 +1335,59 @@ internal class TaoComposeSceneHostWindows(
     /** Timestamp the frame clock last advanced to — see [renderFrame]. */
     private var lastFrameClockNanos = 0L
 
-    /** The frame clock's timestamp for this frame: frozen for a same-turn resize frame (see [renderFrame]). */
-    private fun frameClockNanos(sameTurnResize: Boolean): Long =
-        if (sameTurnResize && lastFrameClockNanos != 0L) {
-            lastFrameClockNanos
-        } else {
-            System.nanoTime().also { lastFrameClockNanos = it }
+    /**
+     * The frame clock's timestamp for this frame: frozen for a same-turn
+     * resize frame, and in the OS modal size/move loop until its next advance
+     * is due (see [renderFrame] and [heldInModalLoop]).
+     */
+    private fun frameClockNanos(sameTurnResize: Boolean): Long {
+        val now = System.nanoTime()
+        val frozen =
+            lastFrameClockNanos != 0L &&
+                (sameTurnResize || resizeLoopActive && now < modalLoopClockDueNanos())
+        if (frozen) return lastFrameClockNanos
+        lastFrameClockNanos = now
+        return now
+    }
+
+    /**
+     * When the frame clock may advance again inside the OS modal size/move
+     * loop: three quarters of a display period after its last advance, so a
+     * frame woken at the next composition always advances it, while frames at
+     * the pump's or the mouse's rate are held to about the display's.
+     */
+    private fun modalLoopClockDueNanos(): Long = lastFrameClockNanos + presentPeriodNs * 3 / 4
+
+    /** A wake-up for the end of a modal-loop hold is already pending ([heldInModalLoop]). */
+    private val modalLoopWakePending = AtomicBoolean(false)
+
+    /**
+     * Inside the OS modal size/move loop, holds a frame that carries no size
+     * until the frame clock may advance again, and asks for the next frame at
+     * the next DWM composition (#484). Returns true when held.
+     *
+     * The loop presents at swap interval 0 (see [onResizeLoopChanged]), and an
+     * interval-1 present does not block from inside it either, so nothing else
+     * paces a frame the scene asks for itself: an animation's `withFrameNanos`
+     * resumed, invalidated and asked for the next frame as fast as the modal
+     * pump turned — over 2000 frames a second on a 90 Hz display, through a
+     * move as much as a resize. A WM_SIZE frame is never held (it must paint
+     * inline, #477); it advances the clock only when that is due
+     * ([frameClockNanos]), so an animation moves on at the display's rate
+     * whatever the mouse's.
+     */
+    private fun heldInModalLoop(): Boolean {
+        if (!resizeLoopActive || pendingResizeApply || forcePresentOnce || lastFrameClockNanos == 0L) return false
+        val due = modalLoopClockDueNanos()
+        if (System.nanoTime() >= due) return false
+        if (modalLoopWakePending.compareAndSet(false, true)) {
+            WindowsCompositionWaker.wake(due) {
+                modalLoopWakePending.set(false)
+                window.requestRedraw()
+            }
         }
+        return true
+    }
 
     /** The present decision of [renderFrame] — see the comment block above its call site. */
     private fun mustPresent(
@@ -1760,7 +1806,8 @@ internal class TaoComposeSceneHostWindows(
      * The modal resize/move loop is not a same-turn resize: its WM_SIZE is
      * delivered synchronously, the interval is already 0 (or deliberately 1,
      * #484), and its inline frames are the only frames that run while the
-     * user drags, so they must keep ticking.
+     * user drags, so they must keep ticking — at the display's rate
+     * ([frameClockNanos], [heldInModalLoop]).
      */
     private fun renderFrame(sameTurnResize: Boolean) {
         val ctx = directContext ?: return
@@ -1779,7 +1826,7 @@ internal class TaoComposeSceneHostWindows(
         if (window.isMinimized) return
         val frameStartNanos = System.nanoTime()
 
-        if (heldAfterIdleFrame(sameTurnResize)) return
+        if (heldAfterIdleFrame(sameTurnResize) || heldInModalLoop()) return
 
         // Push a pending size into the ComposeScene + GL surface before the
         // frame-clock drain, so the size-change-driven recomposition (and any

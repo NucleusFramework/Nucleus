@@ -1987,6 +1987,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsMaxi
     return IsZoomed(hwnd) ? JNI_TRUE : JNI_FALSE;
 }
 
+/* DwmFlush: blocks until DWM's next composition — the display-paced wake of a
+ * frame held inside the modal size/move loop (#484). Any thread. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeDwmFlush(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    return SUCCEEDED(DwmFlush()) ? JNI_TRUE : JNI_FALSE;
+}
+
 /* Atomic unmaximize + reposition under the finger when a touch drag starts
  * on a maximized window. The horizontal anchor preserves the finger's
  * fractional X position within the title bar. Y is clamped to the monitor
