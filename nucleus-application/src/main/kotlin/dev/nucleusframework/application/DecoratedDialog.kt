@@ -26,8 +26,9 @@ import dev.nucleusframework.window.tao.v2.DialogState as NucleusDialogState
  *
  * Called inside a [DecoratedWindow], the dialog is modal to that window and
  * owned by it natively: it always stacks above its parent, follows it when
- * minimised and stays out of the taskbar. The parent ignores pointer input
- * while the dialog is open, and activating the parent (a click, its taskbar
+ * minimised and stays out of the taskbar. The parent ignores input while the
+ * dialog is open (on Windows it is disabled natively, #832: a click there
+ * beeps and flashes the dialog), and activating the parent (a click, its taskbar
  * button, Alt-Tab, `toFront()`) brings the dialog forward with the keyboard
  * focus instead (#515). For a secondary window the user can put behind its
  * parent, use a second top-level [DecoratedWindow].

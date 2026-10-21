@@ -438,7 +438,8 @@ public object TaoHeadfulTestSuiteMain {
             TearOffFlashHeadfulCases.all() +
             NativeViewMonkeyHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all() +
-            GpuCacheReclaimHeadfulCases.all()
+            GpuCacheReclaimHeadfulCases.all() +
+            ModalDialogHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { case ->

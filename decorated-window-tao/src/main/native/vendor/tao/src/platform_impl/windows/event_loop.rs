@@ -1948,12 +1948,20 @@ unsafe fn public_window_callback_inner<T: 'static>(
 
     win32wm::WM_NCACTIVATE => {
       let is_active = wparam != WPARAM(0);
-      let active_focus_changed = subclass_input.window_state.lock().set_active(is_active);
-      if active_focus_changed {
-        if is_active {
-          gain_active_focus(window, subclass_input);
-        } else {
-          lose_active_focus(window, subclass_input);
+      // PATCH(nucleus): an inactive caption on the window that is still the
+      // active one is `FlashWindow` blinking it — Windows does so when a click
+      // hits the owner a modal dialog disabled (NucleusFramework/Nucleus#832).
+      // Nothing was deactivated: reporting it would toggle the focus at every
+      // blink. A real deactivation still comes through WM_KILLFOCUS.
+      let flashing = !is_active && GetActiveWindow() == window;
+      if !flashing {
+        let active_focus_changed = subclass_input.window_state.lock().set_active(is_active);
+        if active_focus_changed {
+          if is_active {
+            gain_active_focus(window, subclass_input);
+          } else {
+            lose_active_focus(window, subclass_input);
+          }
         }
       }
       result = ProcResult::DefWindowProc;
