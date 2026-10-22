@@ -102,6 +102,29 @@ internal object NativeMetalBridge {
         fullscreenPrepares[nsViewPtr]?.invoke(widthPx, heightPx)
     }
 
+    // ── Occlusion: a window nobody can see (hidden app, covered, other Space,
+    // locked screen) stops rendering, so its animations park like when minimized.
+
+    private val occlusionListeners = ConcurrentHashMap<Long, (visible: Boolean) -> Unit>()
+
+    fun setOcclusionListener(
+        nsViewPtr: Long,
+        block: ((visible: Boolean) -> Unit)?,
+    ) {
+        if (nsViewPtr == 0L) return
+        if (block == null) occlusionListeners.remove(nsViewPtr) else occlusionListeners[nsViewPtr] = block
+    }
+
+    /** Called from native `windowDidChangeOcclusionState:` on the AppKit main thread. */
+    @JvmStatic
+    @Suppress("unused") // called from JNI
+    fun onOcclusionChanged(
+        nsViewPtr: Long,
+        visible: Boolean,
+    ) {
+        occlusionListeners[nsViewPtr]?.invoke(visible)
+    }
+
     // ── VSync pacing (CVDisplayLink, AWT/skiko MetalVSyncer pattern) ──
     //
     // A CVDisplayLink runs continuously; [nativeVSyncWait] blocks the calling

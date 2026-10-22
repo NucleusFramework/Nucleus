@@ -171,6 +171,7 @@ static JavaVM *sMetalJVM = NULL;
 static jclass sMetalBridgeClass = NULL;       // global ref
 static jmethodID sMetalOnOffsetChanged = NULL;
 static jmethodID sMetalOnFullscreenPrepare = NULL;
+static jmethodID sMetalOnOcclusionChanged = NULL;
 static atomic_bool sMetalCallbacksEnabled = ATOMIC_VAR_INIT(false);
 static atomic_bool sMetalShutdownInProgress = ATOMIC_VAR_INIT(false);
 
@@ -187,6 +188,8 @@ static void ensureMetalJVMCached(JNIEnv *env) {
                 env, sMetalBridgeClass, "onMenuBarOffsetChanged", "(JF)V");
             sMetalOnFullscreenPrepare = (*env)->GetStaticMethodID(
                 env, sMetalBridgeClass, "onFullscreenPrepare", "(JII)V");
+            sMetalOnOcclusionChanged = (*env)->GetStaticMethodID(
+                env, sMetalBridgeClass, "onOcclusionChanged", "(JZ)V");
             atomic_store(&sMetalCallbacksEnabled, true);
         }
     });
@@ -243,6 +246,29 @@ static void notifyFullscreenPrepare(jlong nsViewPtr, jint widthPx, jint heightPx
 
     (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnFullscreenPrepare,
                                  nsViewPtr, widthPx, heightPx);
+    nucleus_jni_clear_exception(env);
+}
+
+// Calls NativeMetalBridge.onOcclusionChanged(nsViewPtr, visible) from
+// `windowDidChangeOcclusionState:` (macOS main thread): a hidden, covered,
+// other-Space or locked-screen window stops rendering until it shows again.
+static void notifyOcclusionChanged(jlong nsViewPtr, jboolean visible) {
+    if (!atomic_load(&sMetalCallbacksEnabled)) return;
+    if (!sMetalJVM || !sMetalBridgeClass || !sMetalOnOcclusionChanged) return;
+
+    JNIEnv *env = NULL;
+    jint status = (*sMetalJVM)->GetEnv(sMetalJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sMetalJVM)->AttachCurrentThreadAsDaemon(sMetalJVM, (void **)&env, NULL) != JNI_OK) {
+            return;
+        }
+    } else if (status != JNI_OK) {
+        return;
+    }
+    if (!env) return;
+
+    (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnOcclusionChanged,
+                                 nsViewPtr, visible);
     nucleus_jni_clear_exception(env);
 }
 
@@ -941,8 +967,17 @@ static void removeMenuBarMonitor(NSWindow *window) {
                    name:NSWindowWillExitFullScreenNotification object:view.window];
         [nc addObserver:self selector:@selector(didExitFS:)
                    name:NSWindowDidExitFullScreenNotification object:view.window];
+        [nc addObserver:self selector:@selector(occlusionChanged:)
+                   name:NSWindowDidChangeOcclusionStateNotification object:view.window];
     }
     return self;
+}
+
+- (void)occlusionChanged:(NSNotification *)n {
+    NSWindow *w = _view.window;
+    if (w == nil) return;
+    BOOL visible = (w.occlusionState & NSWindowOcclusionStateVisible) != 0;
+    notifyOcclusionChanged((jlong)(uintptr_t)(__bridge void *) _view, visible ? JNI_TRUE : JNI_FALSE);
 }
 
 - (void)dealloc {

@@ -23,6 +23,8 @@ dependencies {
     api(project(":darkmode-detector"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
+    // macOS single-instance watcher: FSEvents instead of the JDK's polling WatchService.
+    implementation(project(":fs-watcher"))
     // Native context menu: NSMenu on macOS. Windows and Linux are Compose
     // flyouts (Fluent / Adwaita). The macOS library no-ops when the dylib
     // is missing.

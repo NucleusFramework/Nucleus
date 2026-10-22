@@ -79,8 +79,11 @@ struct ActivationProxy {
 
 impl ActivationHandler for ActivationProxy {
     fn request_initial_tree(&mut self) -> Option<TreeUpdate> {
-        AT_ACTIVE.store(true, Ordering::Relaxed);
+        let was_active = AT_ACTIVE.swap(true, Ordering::Relaxed);
         RESYNC.store(true, Ordering::Relaxed);
+        if !was_active {
+            crate::a11y::jvm::notify_a11y_activated();
+        }
         let st = self.state.lock().ok()?;
         // Clone the cached full tree if we have one. `None` is fine —
         // AccessKit installs a placeholder root and the next full push

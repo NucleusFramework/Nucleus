@@ -17,6 +17,7 @@
             "jniAccessible": true,
             "methods": [
                 { "name": "dispatchDeepLink", "parameterTypes": ["java.lang.String"] },
+                { "name": "onA11yActivated", "parameterTypes": [] },
                 { "name": "dispatchA11yAction", "parameterTypes": ["long","long","int"] },
                 { "name": "dispatchA11yActionByNsView", "parameterTypes": ["long","long","int"] },
                 { "name": "dispatchA11ySetText", "parameterTypes": ["long","long","java.lang.String"] },
@@ -212,6 +213,13 @@
                         "long",
                         "int",
                         "int"
+                    ]
+                },
+                {
+                    "name": "onOcclusionChanged",
+                    "parameterTypes": [
+                        "long",
+                        "boolean"
                     ]
                 }
             ]

@@ -312,6 +312,24 @@ pub extern "C" fn nucleus_tao_a11y_set_selection(
     }
 }
 
+/// Called by `note_a11y_query` (macos/a11y.m) on the first AX query after an
+/// idle period: an AT client started listening.
+#[no_mangle]
+pub extern "C" fn nucleus_tao_a11y_activated() {
+    let Some(jvm) = JAVA_VM.get() else { return };
+    if let Ok(mut env) = jvm.attach_current_thread() {
+        let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+            let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+            let _ = env.call_static_method(class, "onA11yActivated", "()V", &[]);
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        });
+    }
+}
+
 /// Called when VoiceOver triggers an accessibility action. Passes the NSView
 /// pointer through unchanged — the JVM-side registry is indexed by NSView,
 /// so we can avoid acquiring `WINDOWS.lock()` here. That keeps this callback

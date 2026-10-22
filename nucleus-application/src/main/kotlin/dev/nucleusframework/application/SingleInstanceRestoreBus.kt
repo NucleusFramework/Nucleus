@@ -2,14 +2,21 @@ package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import dev.nucleusframework.core.runtime.DeepLinkHandler
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.core.runtime.SingleInstanceManager
+import dev.nucleusframework.fswatcher.FsWatchDeliveryMode
+import dev.nucleusframework.fswatcher.FsWatchEvent
+import dev.nucleusframework.fswatcher.FsWatcherConfig
+import dev.nucleusframework.fswatcher.FsWatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.nio.file.Path
 import kotlin.system.exitProcess
 
 /**
@@ -40,10 +47,10 @@ internal object SingleInstanceRestoreBus {
  */
 @Composable
 public fun SingleInstanceRestoreEffect(onRestore: () -> Unit) {
-    val signal by SingleInstanceRestoreBus.signal.collectAsState()
     val currentOnRestore = rememberUpdatedState(onRestore)
-    LaunchedEffect(signal) {
-        if (signal != 0) currentOnRestore.value()
+    // Collected, not read in composition: an app out of sight renders no frame, so it never recomposes.
+    LaunchedEffect(Unit) {
+        SingleInstanceRestoreBus.signal.collect { if (it != 0) currentOnRestore.value() }
     }
 }
 
@@ -61,6 +68,7 @@ internal fun acquireSingleInstanceLock(args: Array<String>) {
     // instance exits inside this function (before the composition's
     // onDeepLink { } would parse them), so writeUriTo must already see the URI.
     DeepLinkHandler.captureFromArgs(args)
+    if (Platform.Current == Platform.MacOS) SingleInstanceManager.directoryWatcher = ::watchWithFsEvents
     val isFirst =
         SingleInstanceManager.isSingleInstance(
             onRestoreFileCreated = { DeepLinkHandler.writeUriTo(this) },
@@ -81,12 +89,36 @@ internal fun acquireSingleInstanceLock(args: Array<String>) {
  */
 @Composable
 internal fun ObserveSingleInstanceRestore(window: NucleusWindow) {
-    val signal by SingleInstanceRestoreBus.signal.collectAsState()
-    LaunchedEffect(signal) {
-        if (signal == 0) return@LaunchedEffect
-        window.show()
-        window.setMinimized(false)
-        window.toFront()
-        window.requestFocus()
+    // Collected, not read in composition: a hidden, covered or minimized window renders no frame,
+    // so it never recomposes — the very windows a second launch must bring back.
+    LaunchedEffect(window) {
+        SingleInstanceRestoreBus.signal.collect {
+            if (it == 0) return@collect
+            window.show()
+            window.setMinimized(false)
+            window.toFront()
+            window.requestFocus()
+        }
+    }
+}
+
+/**
+ * FSEvents-backed watcher for the single-instance lock dir: the JDK `WatchService` polls on macOS,
+ * waking the app every few seconds for its whole life. Raw delivery: the debounced mode runs a
+ * ticking thread. Lives as long as the process (the lock does too).
+ */
+private fun watchWithFsEvents(
+    dir: Path,
+    onCreated: (String) -> Unit,
+) {
+    val config = FsWatcherConfig(deliveryMode = FsWatchDeliveryMode.Raw)
+    check(FsWatchers.isSupported(config)) { "fs-watcher is not available" }
+    val watcher = FsWatchers.create(config)
+    watcher.watch(dir, recursive = false)
+    CoroutineScope(Dispatchers.IO).launch {
+        watcher.events.collect { event ->
+            val path = (event as? FsWatchEvent.Created)?.path ?: (event as? FsWatchEvent.Modified)?.path
+            path?.fileName?.let { onCreated(it.toString()) }
+        }
     }
 }
