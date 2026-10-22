@@ -301,16 +301,8 @@ typedef struct {
 static const wchar_t *kSurfaceClassName = L"NucleusTaoGlSurface";
 static volatile LONG sSurfaceClassRegistered = 0;
 
-#ifndef DM_POINTERHITTEST
-#define DM_POINTERHITTEST 0x0250
-#endif
-
 static LRESULT CALLBACK surfaceWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
-    case DM_POINTERHITTEST:
-        /* A precision-touchpad contact offered to the window under the
-         * cursor: the parent owns the DirectManipulation viewport (#706). */
-        return SendMessageW(GetParent(hwnd), msg, wParam, lParam);
     case WM_NCHITTEST:
         /* Transparent to every hit test: mouse, touch (WM_POINTER) and
          * WindowFromPoint (OLE drag-and-drop) all resolve to the Tao
@@ -938,6 +930,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeAttach(
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd || !IsWindow(hwnd)) return 0;
     return (jlong)(uintptr_t)attachEgl(hwnd);
+}
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeRenderSurfaceHandle(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    return att ? (jlong)(uintptr_t)att->surfaceHwnd : 0;
 }
 
 /* Address of the GrGLGetProc trampoline for ANGLE (see nucleus_tao_egl_get_proc).
