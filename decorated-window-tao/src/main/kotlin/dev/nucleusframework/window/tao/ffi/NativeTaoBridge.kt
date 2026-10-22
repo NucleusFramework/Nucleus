@@ -217,9 +217,14 @@ internal object NativeTaoBridge {
         /**
          * Windows `WM_ENDSESSION` (#751): [ending] `true` when the session ends
          * (the process may be terminated once this returns), `false` when it
-         * was cancelled. Default no-op.
+         * was cancelled. [nested] `true` when it arrived inside a nested pump
+         * (a native modal), with app code further up this thread's stack.
+         * Default no-op.
          */
-        fun onEndSession(ending: Boolean) {
+        fun onEndSession(
+            ending: Boolean,
+            nested: Boolean,
+        ) {
         }
     }
 
@@ -230,6 +235,14 @@ internal object NativeTaoBridge {
      */
     @JvmStatic
     external fun nativeReleaseShutdownBlock()
+
+    /**
+     * The JVM exit has begun (#751): a Windows session end that reached AWT's
+     * toolkit thread lets AWT take its own shutdown path from now on. Called
+     * from a shutdown hook. No-op elsewhere.
+     */
+    @JvmStatic
+    external fun nativeMarkJvmExiting()
 
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */
     @JvmStatic

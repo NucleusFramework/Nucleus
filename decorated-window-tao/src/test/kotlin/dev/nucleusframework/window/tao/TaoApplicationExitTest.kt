@@ -416,6 +416,23 @@ class TaoApplicationExitTest {
     }
 
     @Test
+    fun `a session ending inside a nested pump exits without tearing down`() {
+        val calls = mutableListOf<String>()
+        TaoApplication.resetQuit()
+        TaoApplication.sessionEndTeardown = { calls += "teardown" }
+        TaoApplication.sessionEndExit = { calls += "exit" }
+        try {
+            TaoApplication.endSession(ending = true, nested = true)
+            assertEquals(listOf("exit"), calls)
+            assertTrue(TaoApplication.isQuitting)
+            TaoApplication.endSession(ending = true)
+            assertEquals(listOf("exit"), calls, "one session end, one exit")
+        } finally {
+            TaoApplication.resetQuit()
+        }
+    }
+
+    @Test
     fun `default finish exits 0 after a normal quit`() {
         val exits = mutableListOf<Int>()
         finishTaoApplication(exitProcessOnExit = true, failure = null, exit = { exits += it })

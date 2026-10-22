@@ -119,6 +119,7 @@
                 {
                     "name": "onEndSession",
                     "parameterTypes": [
+                        "boolean",
                         "boolean"
                     ]
                 }
@@ -214,6 +215,7 @@
                 {
                     "name": "onEndSession",
                     "parameterTypes": [
+                        "boolean",
                         "boolean"
                     ]
                 }

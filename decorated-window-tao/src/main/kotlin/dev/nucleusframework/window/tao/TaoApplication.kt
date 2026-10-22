@@ -107,6 +107,7 @@ public object TaoApplication {
         // inside the pump — on Lifecycle 2.10.x that probe deadlocks the
         // first `NavController.setGraph` call.
         LifecycleMainDispatcherPriming.primeWithCurrentThread()
+        markJvmExitOnce()
         onLaunched = block
         // Watch the loop from the outside (#643): a stall deadlocks this
         // thread, so nothing downstream of `nativeRunBlocking` — including
@@ -263,6 +264,21 @@ public object TaoApplication {
         }
     }
 
+    private val jvmExitHookInstalled = AtomicBoolean(false)
+
+    /**
+     * Tells native when the JVM exit begins (#751): a Windows session end that
+     * reached AWT's toolkit thread waits for it before AWT takes its own path,
+     * whose SIGTERM would otherwise start an exit of its own (code 143) ahead of
+     * the app's teardown. One hook per process, whatever the number of runs.
+     */
+    private fun markJvmExitOnce() {
+        if (!jvmExitHookInstalled.compareAndSet(false, true)) return
+        Runtime.getRuntime().addShutdownHook(
+            Thread({ NativeTaoBridge.nativeMarkJvmExiting() }, "nucleus-tao-jvm-exit"),
+        )
+    }
+
     /** Ends a quit every window agreed to, unless a session query left the exit to [endSession]. */
     private fun finishQuit() {
         when (sessionExit) {
@@ -335,8 +351,11 @@ public object TaoApplication {
                 // forward that timed out: Windows waits for the app to exit by itself.
                 answer = END_SESSION_HOLD
                 sessionEndHeld = true
+                // Only an exit left to Windows is still to do: a quit the Restart
+                // Manager drain completed has exited already.
+                val exitDeferred = sessionExit == SessionExit.Awaiting
                 sessionExit = SessionExit.None
-                if (!quitInFlight) quitExit()
+                if (!quitInFlight && exitDeferred) quitExit()
             }
         } finally {
             answeringSessionQuery = false
@@ -420,10 +439,16 @@ public object TaoApplication {
      * cancelled (native already dropped its hold). `true`: Windows may
      * terminate the process the moment this returns, so the app is torn down
      * synchronously — Electron's `session-end` — whatever the windows answered
-     * (the user may have chosen "Shut down anyway").
+     * (the user may have chosen "Shut down anyway"). [nested]: it arrived
+     * inside a nested pump (a native modal), with app code — possibly the
+     * composition itself — further up the stack, so nothing is disposed from
+     * here; the process still exits in order, shutdown hooks included.
      */
-    internal fun endSession(ending: Boolean) {
-        logger.fine { "Windows session end, ending=$ending" }
+    internal fun endSession(
+        ending: Boolean,
+        nested: Boolean = false,
+    ) {
+        logger.fine { "Windows session end, ending=$ending nested=$nested" }
         sessionEndHeld = false
         sessionAwaitGeneration++
         if (!ending) {
@@ -436,8 +461,13 @@ public object TaoApplication {
         // the AWT toolkit's forwarded one); the first one does it.
         if (sessionTearingDown) return
         sessionTearingDown = true
-        logger.info("Windows session ending: tearing the application down")
         isQuitting = true
+        if (nested) {
+            logger.info("Windows session ending inside a nested pump: exiting without teardown")
+            sessionEndExit()
+            return
+        }
+        logger.info("Windows session ending: tearing the application down")
         sessionEndTeardown()
         // A window's scene is disposed when its native window is destroyed, which
         // the process would not live to see: run that now for every window left.
@@ -770,9 +800,12 @@ public object TaoApplication {
         // Not `guarded`: reportFatal posts a loop exit that would never run —
         // the process is about to end either way.
         @Suppress("TooGenericExceptionCaught")
-        override fun onEndSession(ending: Boolean) {
+        override fun onEndSession(
+            ending: Boolean,
+            nested: Boolean,
+        ) {
             try {
-                endSession(ending)
+                endSession(ending, nested)
             } catch (t: Throwable) {
                 logger.log(Level.SEVERE, "Windows session end teardown failed", t)
                 if (ending) sessionEndExit()

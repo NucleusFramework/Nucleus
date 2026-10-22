@@ -31,10 +31,10 @@
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, AtomicUsize, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use jni::objects::{JObject, JValue};
+use jni::objects::{GlobalRef, JObject, JValue};
 use jni::sys::jint;
 use jni::JNIEnv;
 use windows::core::w;
@@ -81,6 +81,11 @@ const ENDSESSION_CLOSEAPP: isize = 0x1;
 /// session — so a query has nothing left to ask: the app agrees.
 static EXITING: AtomicBool = AtomicBool::new(false);
 
+/// The event callback, for the one call that cannot wait for [EVENT_CALLBACK]:
+/// a session ending inside a nested pump, where the dispatch further up the
+/// stack holds that lock. Set while the loop runs.
+static SESSION_CALLBACK: Mutex<Option<GlobalRef>> = Mutex::new(None);
+
 /// Queries AWT's thread is forwarding to the event-loop thread right now.
 static FORWARDS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 
@@ -99,6 +104,22 @@ pub(crate) fn begin_forward() -> bool {
     true
 }
 
+/// The JVM exit has begun (a shutdown hook of the app's says so).
+static JVM_EXITING: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn mark_jvm_exiting() {
+    JVM_EXITING.store(true, Ordering::SeqCst);
+}
+
+pub(crate) fn jvm_exiting() -> bool {
+    JVM_EXITING.load(Ordering::SeqCst)
+}
+
+/// The app is leaving on its own: no query is to be asked any more.
+pub(crate) fn exiting() -> bool {
+    EXITING.load(Ordering::SeqCst)
+}
+
 pub(crate) fn end_forward() {
     FORWARDS_IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
 }
@@ -110,6 +131,9 @@ pub(crate) fn end_forward() {
 /// Restart Manager, closing an app that was already quitting, got a refusal.
 pub(crate) fn loop_ended() {
     stop_answering();
+    if let Ok(mut callback) = SESSION_CALLBACK.lock() {
+        callback.take();
+    }
 }
 
 /// Makes every later query agree without asking the app, then serves the
@@ -187,6 +211,12 @@ fn forget() {
 
 /// Called on the event-loop thread once the loop exists.
 pub(crate) fn install() {
+    // A loop run again in the same process (`exitProcessOnExit = false`) asks again.
+    EXITING.store(false, Ordering::SeqCst);
+    let callback = EVENT_CALLBACK.lock().ok().and_then(|c| c.clone());
+    if let Ok(mut session) = SESSION_CALLBACK.lock() {
+        *session = callback;
+    }
     unsafe {
         let _ = EnumThreadWindows(GetCurrentThreadId(), Some(find_thread_target), LPARAM(0));
     }
@@ -265,10 +295,35 @@ pub(crate) fn on_end_session(_hwnd: isize, ending: bool, nested: bool) {
     }
     if !nested {
         end_session_kotlin(ending);
-    } else if !ending {
+    } else if ending {
+        // Inside a nested pump (a native modal is up): the app cannot be torn
+        // down from here, but the process is killed once this returns, so it
+        // still exits in order — shutdown hooks included.
+        end_session_nested();
+    } else {
         // A cancel must still reach the app (it resets `isQuitting`): later,
         // from the loop. An ending session cannot wait for that.
         let _ = send_user_event(UserEvent::SessionEndCancelled);
+    }
+}
+
+fn end_session_nested() {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Some(callback) = SESSION_CALLBACK.lock().ok().and_then(|c| c.clone()) else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let _ = env.call_method(
+        callback.as_obj(),
+        "onEndSession",
+        "(ZZ)V",
+        &[JValue::Bool(1), JValue::Bool(1)],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
     }
 }
 
@@ -279,8 +334,13 @@ pub(crate) fn on_deferred_session_end_cancelled() {
 
 fn end_session_kotlin(ending: bool) {
     let _ = call_kotlin(|env, cb| {
-        env.call_method(cb, "onEndSession", "(Z)V", &[JValue::Bool(ending.into())])
-            .map(|_| ())
+        env.call_method(
+            cb,
+            "onEndSession",
+            "(ZZ)V",
+            &[JValue::Bool(ending.into()), JValue::Bool(0)],
+        )
+        .map(|_| ())
     });
 }
 
