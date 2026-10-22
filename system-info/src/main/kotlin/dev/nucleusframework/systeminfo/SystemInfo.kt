@@ -74,8 +74,11 @@ public object SystemInfo {
      * [dev.nucleusframework.systeminfo.model.ConnectivityLevel.UNKNOWN]. macOS watches
      * `NWPathMonitor`, which does not probe the internet: a usable path reports
      * [dev.nucleusframework.systeminfo.model.ConnectivityLevel.FULL], and Low Data Mode counts
-     * as metered. Windows currently emits the current state only. The flow is empty on
-     * unsupported platforms.
+     * as metered. Windows watches the Network List Manager, whose NCSI probe tells a
+     * routed network without internet
+     * ([dev.nucleusframework.systeminfo.model.ConnectivityLevel.LIMITED]) from a captive
+     * portal; metered comes from `INetworkCostManager`. The flow is empty on unsupported
+     * platforms.
      */
     public fun connectivityFlow(): Flow<ConnectivityInfo> = delegate?.connectivityChanges() ?: emptyFlow()
 }

@@ -1,6 +1,7 @@
 package dev.nucleusframework.systeminfo.windows
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import dev.nucleusframework.systeminfo.connectivityInfoOf
 
 private const val LIBRARY_NAME = "nucleus_system_info"
 
@@ -267,8 +268,21 @@ internal object NativeWindowsSystemInfoBridge {
     // Idle time
     @JvmStatic external fun nativeIdleTimeSeconds(): Long
 
-    // Connectivity
-    @JvmStatic external fun nativeIsNetworkConnected(): Boolean
+    // Connectivity: { available (0/1), metered, level }, codes mirrored in
+    // nucleus_system_info_connectivity.c and decoded by connectivityInfoOf().
+    @JvmStatic external fun nativeQueryConnectivity(): IntArray
 
-    @JvmStatic external fun nativeGetMeteredStatus(): Int
+    @JvmStatic external fun nativeStartConnectivityMonitor(): Boolean
+
+    @JvmStatic external fun nativeStopConnectivityMonitor()
+
+    // Called from the monitor's STA thread on every connectivity change.
+    @JvmStatic
+    fun onConnectivityChanged(
+        available: Boolean,
+        metered: Int,
+        level: Int,
+    ) {
+        WindowsSystemInfo.connectivityMonitor.onChanged(connectivityInfoOf(available, metered, level))
+    }
 }
