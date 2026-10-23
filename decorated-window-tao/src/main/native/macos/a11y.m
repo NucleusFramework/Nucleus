@@ -128,6 +128,9 @@ __attribute__((weak)) extern void
 nucleus_tao_a11y_invoke_action(int64_t ns_view_handle, uint64_t node_id, uint16_t action);
 
 __attribute__((weak)) extern void
+nucleus_tao_a11y_activated(void);
+
+__attribute__((weak)) extern void
 nucleus_tao_a11y_set_text(int64_t ns_view_handle, uint64_t node_id,
                           const char *utf8, int32_t len);
 
@@ -2192,9 +2195,14 @@ static int64_t monotonic_ns(void) {
     return (int64_t)(mach_absolute_time());
 }
 
+int nucleus_tao_a11y_is_active(void);
+
 static void note_a11y_query(void) {
+    int wasActive = nucleus_tao_a11y_is_active();
     int64_t now = monotonic_ns();
     atomic_store(&g_last_a11y_query_ns, now);
+    // Wake the walks the JVM parked while no AT client was listening.
+    if (!wasActive && nucleus_tao_a11y_activated) nucleus_tao_a11y_activated();
     int64_t lastPush = atomic_load(&g_last_a11y_push_ns);
     // If the last push is older than 1 raw-counter second, we were idle —
     // request a fresh resync. Threshold is the same as JVM-side staleness.

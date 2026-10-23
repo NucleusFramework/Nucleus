@@ -4,6 +4,7 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.window.tao.TaoAccessibilityRegistry
 import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
+import dev.nucleusframework.window.tao.scene.TaoA11yActivation
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -1119,6 +1120,13 @@ internal object NativeTaoBridge {
         action: Int,
     ) {
         fatalUpcall { TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action) }
+    }
+
+    /** An accessibility client started listening: run the semantics walks parked while none was. */
+    @JvmStatic
+    @Suppress("unused") // called from JNI (a11y/jvm.rs → notify_a11y_activated)
+    fun onA11yActivated() {
+        fatalUpcall { TaoA11yActivation.onActivated() }
     }
 
     @JvmStatic

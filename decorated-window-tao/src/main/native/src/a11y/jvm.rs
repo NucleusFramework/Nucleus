@@ -9,6 +9,22 @@ use crate::a11y::wire::{
 };
 use crate::state::JAVA_VM;
 
+/// Tells the JVM an accessibility client started listening, so the semantics
+/// walks parked while none was run now (instead of polling for it).
+pub fn notify_a11y_activated() {
+    let Some(jvm) = JAVA_VM.get() else { return };
+    let Ok(mut env) = jvm.attach_current_thread() else { return };
+    let _ = env.with_local_frame(4, |env| -> Result<(), jni::errors::Error> {
+        let class = env.find_class("dev/nucleusframework/window/tao/ffi/NativeTaoBridge")?;
+        let _ = env.call_static_method(class, "onA11yActivated", "()V", &[]);
+        if env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
+        Ok(())
+    });
+}
+
 pub fn forward_action_to_jvm(
     handle: i64,
     request: ActionRequest,
