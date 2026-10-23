@@ -16,8 +16,8 @@
 //     scroll-gesture and magnify phases the macOS host already consumes, so
 //     the classification (pan vs pinch, fling) is unit-tested on every OS.
 //
-// Configuration: translation + scaling + translation inertia + rails, the
-// Chromium set. A viewport configured for scaling only would still own a
+// Configuration: translation + scaling + translation inertia.
+// A viewport configured for scaling only would still own a
 // claimed contact's pan and drop it (DirectManipulation does not hand a
 // contact back to the wheel emulation), so pan and pinch are claimed together
 // and both leave through the gesture wire — pan as the macOS-shaped scroll
@@ -43,7 +43,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use jni::objects::{JClass, JFloatArray};
-use jni::sys::{jboolean, jint, jintArray, jlong, JNI_FALSE, JNI_TRUE};
+use jni::sys::{jboolean, jint, jintArray, jlong, jlongArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
 use windows::core::{implement, Ref};
@@ -53,8 +53,7 @@ use windows::Win32::Graphics::DirectManipulation::{
     IDirectManipulationManager, IDirectManipulationPrimaryContent,
     IDirectManipulationUpdateManager, IDirectManipulationViewport,
     IDirectManipulationViewportEventHandler, IDirectManipulationViewportEventHandler_Impl,
-    DIRECTMANIPULATION_CONFIGURATION_INTERACTION, DIRECTMANIPULATION_CONFIGURATION_RAILS_X,
-    DIRECTMANIPULATION_CONFIGURATION_RAILS_Y, DIRECTMANIPULATION_CONFIGURATION_SCALING,
+    DIRECTMANIPULATION_CONFIGURATION_INTERACTION, DIRECTMANIPULATION_CONFIGURATION_SCALING,
     DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_INERTIA,
     DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_X, DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_Y,
     DIRECTMANIPULATION_INERTIA, DIRECTMANIPULATION_MOUSEFOCUS, DIRECTMANIPULATION_READY,
@@ -68,7 +67,7 @@ use windows::Win32::System::Com::{
 use windows::Win32::UI::Input::Pointer::GetPointerType;
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetCursorPos, KillTimer, SetTimer, DM_POINTERHITTEST, MSG, POINTER_INPUT_TYPE,
+    GetClientRect, GetCursorPos, GetParent, KillTimer, SetTimer, DM_POINTERHITTEST, MSG, POINTER_INPUT_TYPE,
     PT_TOUCHPAD, SIZE_MINIMIZED, WM_MOUSEWHEEL, WM_NCDESTROY, WM_SIZE, WM_TIMER,
 };
 
@@ -297,6 +296,7 @@ impl IDirectManipulationViewportEventHandler_Impl for Handler_Impl {
 struct Viewport {
     handle: u64,
     hwnd: HWND,
+    owner_hwnd: HWND,
     manager: IDirectManipulationManager,
     updater: IDirectManipulationUpdateManager,
     viewport: IDirectManipulationViewport,
@@ -348,8 +348,18 @@ fn client_rect(hwnd: HWND) -> RECT {
 /// Binds a viewport to a freshly created window. Silently leaves the window on
 /// the legacy wheel emulation when DirectManipulation is disabled or refused.
 pub(crate) fn attach(handle: u64, hwnd: HWND) {
-    if !ENABLED.load(Ordering::Relaxed) || lookup(handle).is_some() {
+    bind(handle, hwnd, hwnd);
+}
+
+fn bind(handle: u64, hwnd: HWND, owner_hwnd: HWND) {
+    if !ENABLED.load(Ordering::Relaxed) {
         return;
+    }
+    if let Some(viewport) = lookup(handle) {
+        if viewport.hwnd == hwnd {
+            return;
+        }
+        detach(handle);
     }
     // The loop thread is already an STA (tao's OleInitialize for drag-and-drop);
     // this only balances a thread that is not. An MTA thread would get the
@@ -360,7 +370,7 @@ pub(crate) fn attach(handle: u64, hwnd: HWND) {
     }
     // SAFETY: every call below is a COM method on objects created here, on
     // the thread that owns them; `hwnd` is the live window being registered.
-    let Ok(viewport) = (unsafe { create(handle, hwnd) }) else {
+    let Ok(viewport) = (unsafe { create(handle, hwnd, owner_hwnd) }) else {
         return;
     };
     let viewport = Rc::new(viewport);
@@ -372,10 +382,16 @@ pub(crate) fn attach(handle: u64, hwnd: HWND) {
         release(&viewport);
         return;
     }
+    if owner_hwnd != hwnd
+        && !unsafe { SetWindowSubclass(owner_hwnd, Some(subclass_proc), SUBCLASS_ID, handle as usize) }.as_bool()
+    {
+        release(&viewport);
+        return;
+    }
     VIEWPORTS.with(|map| map.borrow_mut().insert(handle, viewport));
 }
 
-unsafe fn create(handle: u64, hwnd: HWND) -> windows::core::Result<Viewport> {
+unsafe fn create(handle: u64, hwnd: HWND, owner_hwnd: HWND) -> windows::core::Result<Viewport> {
     let manager: IDirectManipulationManager =
         CoCreateInstance(&DirectManipulationManager, None, CLSCTX_INPROC_SERVER)?;
     let updater: IDirectManipulationUpdateManager = manager.GetUpdateManager()?;
@@ -386,8 +402,6 @@ unsafe fn create(handle: u64, hwnd: HWND) -> windows::core::Result<Viewport> {
             | DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_X
             | DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_Y
             | DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_INERTIA
-            | DIRECTMANIPULATION_CONFIGURATION_RAILS_X
-            | DIRECTMANIPULATION_CONFIGURATION_RAILS_Y
             | DIRECTMANIPULATION_CONFIGURATION_SCALING,
     )?;
     viewport.SetViewportOptions(DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE)?;
@@ -424,6 +438,7 @@ unsafe fn create(handle: u64, hwnd: HWND) -> windows::core::Result<Viewport> {
     Ok(Viewport {
         handle,
         hwnd,
+        owner_hwnd,
         manager,
         updater,
         viewport,
@@ -459,6 +474,9 @@ fn release(viewport: &Viewport) {
             let _ = KillTimer(Some(viewport.hwnd), TIMER_ID);
         }
         let _ = RemoveWindowSubclass(viewport.hwnd, Some(subclass_proc), SUBCLASS_ID);
+        if viewport.owner_hwnd != viewport.hwnd {
+            let _ = RemoveWindowSubclass(viewport.owner_hwnd, Some(subclass_proc), SUBCLASS_ID);
+        }
         let _ = viewport.viewport.Stop();
         let _ = viewport.viewport.RemoveEventHandler(viewport.cookie);
         let _ = viewport.viewport.Abandon();
@@ -539,12 +557,12 @@ fn claim(viewport: &Viewport, contact: u32) -> bool {
 /// DirectManipulation sample does it — the mouse-focus contact plus
 /// `ProcessInput` — so DirectManipulation animates it itself. The notch still
 /// reaches Tao afterwards.
-fn on_wheel_focus(handle: u64, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) {
+fn on_wheel_focus(handle: u64, msg: u32, wparam: WPARAM, lparam: LPARAM) {
     let Some(viewport) = lookup(handle) else {
         return;
     };
     let message = MSG {
-        hwnd,
+        hwnd: viewport.hwnd,
         message: msg,
         wParam: wparam,
         lParam: lparam,
@@ -568,21 +586,22 @@ extern "system" fn subclass_proc(
     refdata: usize,
 ) -> LRESULT {
     let handle = refdata as u64;
+    let Some(viewport) = lookup(handle) else {
+        return unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
+    };
     match msg {
-        DM_POINTERHITTEST => on_hit_test(handle, wparam),
-        WM_MOUSEWHEEL if WHEEL_FOCUS.load(Ordering::Relaxed) => {
-            on_wheel_focus(handle, hwnd, msg, wparam, lparam)
+        DM_POINTERHITTEST if hwnd == viewport.hwnd => on_hit_test(handle, wparam),
+        WM_MOUSEWHEEL if hwnd == viewport.owner_hwnd && WHEEL_FOCUS.load(Ordering::Relaxed) => {
+            on_wheel_focus(handle, msg, wparam, lparam)
         }
-        WM_TIMER if wparam.0 == TIMER_ID => {
+        WM_TIMER if hwnd == viewport.hwnd && wparam.0 == TIMER_ID => {
             // Posted, not pumped here: see the threading note at the top.
             send_user_event(UserEvent::DirectManipulationTick { handle });
             return LRESULT(0);
         }
-        WM_SIZE if wparam.0 as u32 != SIZE_MINIMIZED => {
-            if let Some(viewport) = lookup(handle) {
-                // SAFETY: COM calls on the owning thread.
-                let _ = unsafe { set_rects(&viewport.viewport, hwnd) };
-            }
+        WM_SIZE if hwnd == viewport.hwnd && wparam.0 as u32 != SIZE_MINIMIZED => {
+            // SAFETY: COM calls on the owning thread.
+            let _ = unsafe { set_rects(&viewport.viewport, viewport.hwnd) };
         }
         WM_NCDESTROY => detach(handle),
         _ => {}
@@ -728,6 +747,40 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindows
     enabled: jboolean,
 ) {
     ENABLED.store(enabled != JNI_FALSE, Ordering::Relaxed);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDirectManipulationBridge_nativeBindInputWindow(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    hwnd: jlong,
+) {
+    let hwnd = HWND(hwnd as *mut std::ffi::c_void);
+    let Ok(owner_hwnd) = (unsafe { GetParent(hwnd) }) else {
+        return;
+    };
+    bind(handle as u64, hwnd, owner_hwnd);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDirectManipulationBridge_nativeDiagDirectManipulationInputWindow(
+    env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jlongArray {
+    let Some(viewport) = lookup(handle as u64) else {
+        return std::ptr::null_mut();
+    };
+    let parent = unsafe { GetParent(viewport.hwnd) }.unwrap_or_default();
+    let handles = [viewport.hwnd.0 as jlong, parent.0 as jlong];
+    let Ok(array) = env.new_long_array(handles.len() as i32) else {
+        return std::ptr::null_mut();
+    };
+    if env.set_long_array_region(&array, 0, &handles).is_err() {
+        return std::ptr::null_mut();
+    }
+    array.into_raw()
 }
 
 /// Event-loop thread only: the registry is that thread's.

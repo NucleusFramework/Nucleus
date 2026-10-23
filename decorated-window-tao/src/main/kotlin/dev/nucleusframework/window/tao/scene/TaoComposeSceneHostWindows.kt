@@ -48,6 +48,7 @@ import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDirectManipulationBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge
 import dev.nucleusframework.window.tao.hasWindowsTextureImports
 import dev.nucleusframework.window.tao.installContentMeasurer
@@ -447,6 +448,10 @@ internal class TaoComposeSceneHostWindows(
             "Failed to create ANGLE render context for HWND " +
                 "(libEGL/libGLESv2 missing or Direct3D 11 unavailable)"
         }
+        NativeTaoWindowsDirectManipulationBridge.nativeBindInputWindow(
+            window.handle,
+            NativeTaoGlBridge.nativeRenderSurfaceHandle(handle),
+        )
         val ctx =
             try {
                 val intf = GLAssembledInterface.createFromNativePointers(0L, NativeTaoGlBridge.nativeEglGetProcFn())

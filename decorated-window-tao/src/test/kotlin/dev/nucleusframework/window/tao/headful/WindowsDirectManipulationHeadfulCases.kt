@@ -24,6 +24,7 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent
 import dev.nucleusframework.window.tao.event.TaoDirectManipulationStatus
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDirectManipulationBridge
 import kotlinx.coroutines.delay
 import java.awt.event.KeyEvent
@@ -72,8 +73,13 @@ internal object WindowsDirectManipulationHeadfulCases {
             skip = ::windowsOnly,
         ) {
             awaitUntil("window mapped") { bounds() != null }
-            check(NativeTaoWindowsDirectManipulationBridge.nativeDirectManipulationAttached(window.handle)) {
-                "the window has no DirectManipulation viewport: ${stats().contentToString()}"
+            val (inputHwnd, inputParentHwnd) =
+                checkNotNull(
+                    NativeTaoWindowsDirectManipulationBridge.nativeDiagDirectManipulationInputWindow(window.handle),
+                ) { "the window has no DirectManipulation viewport: ${stats().contentToString()}" }
+            val ownerHwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+            check(inputHwnd != 0L && inputHwnd != ownerHwnd && inputParentHwnd == ownerHwnd) {
+                "expected render child of $ownerHwnd, got input=$inputHwnd, parent=$inputParentHwnd"
             }
             val status = stats()[STAT_STATUS]
             check(status == TaoDirectManipulationStatus.ENABLED || status == TaoDirectManipulationStatus.READY) {

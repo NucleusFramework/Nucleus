@@ -17,6 +17,20 @@ internal object NativeTaoWindowsDirectManipulationBridge {
     @JvmStatic
     external fun nativeSetDirectManipulationEnabled(enabled: Boolean)
 
+    /**
+     * Binds [handle]'s viewport to the render-surface child [hwnd], replacing
+     * its previous target. Event-loop thread only.
+     */
+    @JvmStatic
+    external fun nativeBindInputWindow(
+        handle: Long,
+        hwnd: Long,
+    )
+
+    /** The viewport's input HWND and its parent HWND, or null when unattached. Event-loop thread only. */
+    @JvmStatic
+    external fun nativeDiagDirectManipulationInputWindow(handle: Long): LongArray?
+
     /** Whether [handle]'s window has a live viewport. Event-loop thread only. */
     @JvmStatic
     external fun nativeDirectManipulationAttached(handle: Long): Boolean
