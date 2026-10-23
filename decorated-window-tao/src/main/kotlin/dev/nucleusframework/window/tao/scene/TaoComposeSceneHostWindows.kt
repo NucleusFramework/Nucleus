@@ -977,6 +977,17 @@ internal class TaoComposeSceneHostWindows(
         dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.Callback {
         private fun node() = window.inboundDragAndDropNode?.invoke()
 
+        private val dnd =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                .InboundState()
+
+        override fun onDragFiles(
+            hwnd: Long,
+            files: Array<String>?,
+        ) {
+            dnd.onDragFiles(files = files)
+        }
+
         override fun onDragEnter(
             hwnd: Long,
             x: Int,
@@ -990,8 +1001,8 @@ internal class TaoComposeSceneHostWindows(
             if (!hasFiles) {
                 return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             }
-            return if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragEnter(node(), x, y)
+            return if (dnd
+                    .onDragEnter(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
@@ -1006,8 +1017,8 @@ internal class TaoComposeSceneHostWindows(
             keyState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragOver(node(), x, y)
+            if (dnd
+                    .onDragOver(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
@@ -1017,7 +1028,7 @@ internal class TaoComposeSceneHostWindows(
         override fun onDragLeave(hwnd: Long) {
             dev.nucleusframework.window.tao.TaoDnDDiagnostics
                 .log("onDragLeave")
-            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            dnd
                 .onDragLeave(node())
         }
 
@@ -1031,7 +1042,7 @@ internal class TaoComposeSceneHostWindows(
             dev.nucleusframework.window.tao.TaoDnDDiagnostics.log(
                 "onDrop x=$x y=$y files=${files?.size ?: 0}",
             )
-            return if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            return if (dnd
                     .onDrop(node(), x, y, files)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
