@@ -22,6 +22,7 @@
 // All external libraries are loaded at runtime via dlopen (no hard deps).
 
 #include "nucleus_system_info_common.h"
+#include "../../../../../native-common/nucleus_jni.h"
 
 #include <dlfcn.h>
 #include <pthread.h>
@@ -369,7 +370,7 @@ static void publish(Monitor *m, const NetState *state) {
     (*m->env)->CallStaticVoidMethod(m->env, m->bridge, m->callback,
                                     (jboolean)(state->available ? JNI_TRUE : JNI_FALSE),
                                     (jint)state->metered, (jint)state->level);
-    if ((*m->env)->ExceptionCheck(m->env)) (*m->env)->ExceptionClear(m->env);
+    nucleus_jni_clear_exception(m->env);
 }
 
 static void requery(Monitor *m) {
@@ -439,7 +440,7 @@ Java_dev_nucleusframework_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeSta
     (*env)->GetJavaVM(env, &m->jvm);
     m->callback = (*env)->GetStaticMethodID(env, clazz, "onConnectivityChanged", "(ZII)V");
     if (!m->callback) {
-        (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         free(m);
         return JNI_FALSE;
     }
