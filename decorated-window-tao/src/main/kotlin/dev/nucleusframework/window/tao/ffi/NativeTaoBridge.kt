@@ -208,6 +208,23 @@ internal object NativeTaoBridge {
         }
     }
 
+    /**
+     * Linux: the app_id GTK sends for every window on a Wayland display (`g_set_prgname`, so
+     * the compositor pairs the windows with the `.desktop` entry of that name). Call before
+     * [nativeRunBlocking]. Ignored on X11, where [nativeSetX11WmClass] applies instead.
+     */
+    @JvmStatic
+    external fun nativeSetWaylandAppId(appId: String)
+
+    /**
+     * Linux: the `WM_CLASS` GTK gives every window on an X11 display, both its instance
+     * (`g_set_prgname`) and its class (`gdk_set_program_class`), so the desktop pairs the
+     * windows with the `.desktop` entry whose `StartupWMClass` it is. Call before
+     * [nativeRunBlocking]. Ignored on Wayland.
+     */
+    @JvmStatic
+    external fun nativeSetX11WmClass(wmClass: String)
+
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */
     @JvmStatic
     external fun nativeRunBlocking(callback: EventCallback)
