@@ -11,6 +11,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <gio/gio.h>
 #include <string.h>
 #include <stdio.h>
@@ -96,6 +97,59 @@ static GDBusConnection *get_connection(void) {
     return g_conn;
 }
 
+/* ---- String conversion ------------------------------------------------ */
+
+/*
+ * GetStringUTFChars / NewStringUTF speak JNI *modified* UTF-8, which encodes
+ * supplementary characters (most emoji) as two 3-byte surrogates. GLib rejects
+ * that for the D-Bus "s" type and substitutes "[Invalid UTF-8]" (#844), so all
+ * strings cross the boundary as UTF-16 and are converted with GLib instead.
+ */
+
+/* Returns a standard UTF-8 copy of a Java string (g_free it), or NULL. */
+static gchar *jstring_to_utf8(JNIEnv *env, jstring str) {
+    if (str == NULL) return NULL;
+
+    jsize len = (*env)->GetStringLength(env, str);
+    const jchar *chars = (*env)->GetStringChars(env, str, NULL);
+    if (chars == NULL) return NULL;
+
+    /* Java strings may hold lone surrogates, which g_utf16_to_utf8 rejects:
+     * replace them with U+FFFD, like String.getBytes(UTF_8) does with '?'. */
+    gunichar2 *units = g_new(gunichar2, len > 0 ? len : 1);
+    for (jsize i = 0; i < len; i++) {
+        gunichar2 c = (gunichar2)chars[i];
+        if (c >= 0xD800 && c <= 0xDBFF && i + 1 < len
+                && chars[i + 1] >= 0xDC00 && chars[i + 1] <= 0xDFFF) {
+            units[i] = c;
+            units[i + 1] = (gunichar2)chars[i + 1];
+            i++;
+        } else if (c >= 0xD800 && c <= 0xDFFF) {
+            units[i] = 0xFFFD;
+        } else {
+            units[i] = c;
+        }
+    }
+    (*env)->ReleaseStringChars(env, str, chars);
+
+    gchar *utf8 = g_utf16_to_utf8(units, (glong)len, NULL, NULL, NULL);
+    g_free(units);
+    return utf8;
+}
+
+/* Returns a Java string built from standard UTF-8, or NULL. */
+static jstring utf8_to_jstring(JNIEnv *env, const gchar *utf8) {
+    if (utf8 == NULL) return NULL;
+
+    glong len = 0;
+    gunichar2 *units = g_utf8_to_utf16(utf8, -1, NULL, &len, NULL);
+    if (units == NULL) return NULL;
+
+    jstring str = (*env)->NewString(env, (const jchar *)units, (jsize)len);
+    g_free(units);
+    return str;
+}
+
 /* ---- JNI callback ID cache ------------------------------------------- */
 
 static int ensure_callback_ids(JNIEnv *env) {
@@ -104,7 +158,7 @@ static int ensure_callback_ids(JNIEnv *env) {
     jclass cls = (*env)->FindClass(env,
         "dev/nucleusframework/notification/linux/NativeLinuxNotificationBridge");
     if (cls == NULL) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return 0;
     }
     g_bridge_class = (jclass)(*env)->NewGlobalRef(env, cls);
@@ -118,7 +172,7 @@ static int ensure_callback_ids(JNIEnv *env) {
         "onActivationToken", "(ILjava/lang/String;)V");
 
     if (!g_on_closed_method || !g_on_action_method || !g_on_token_method) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, g_bridge_class);
         g_bridge_class = NULL;
         return 0;
@@ -127,6 +181,14 @@ static int ensure_callback_ids(JNIEnv *env) {
 }
 
 /* ==== Notify =========================================================== */
+
+static void add_string_hint(JNIEnv *env, GVariantBuilder *builder,
+                            const char *key, jstring value) {
+    gchar *val = jstring_to_utf8(env, value);
+    if (val == NULL) return;
+    g_variant_builder_add(builder, "{sv}", key, g_variant_new_string(val));
+    g_free(val);
+}
 
 JNIEXPORT jint JNICALL
 Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativeNotify(
@@ -166,10 +228,10 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
     if (conn == NULL) return 0;
 
     /* Get mandatory string parameters */
-    const char *app_name = (*env)->GetStringUTFChars(env, j_app_name, NULL);
-    const char *app_icon = (*env)->GetStringUTFChars(env, j_app_icon, NULL);
-    const char *summary  = (*env)->GetStringUTFChars(env, j_summary, NULL);
-    const char *body     = (*env)->GetStringUTFChars(env, j_body, NULL);
+    gchar *app_name = jstring_to_utf8(env, j_app_name);
+    gchar *app_icon = jstring_to_utf8(env, j_app_icon);
+    gchar *summary  = jstring_to_utf8(env, j_summary);
+    gchar *body     = jstring_to_utf8(env, j_body);
     if (!app_name || !app_icon || !summary || !body) goto release_strings;
 
     /* ---- Build actions array (as) ---- */
@@ -181,12 +243,12 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
         for (jsize i = 0; i < num_actions; i++) {
             jstring jk = (jstring)(*env)->GetObjectArrayElement(env, j_action_keys, i);
             jstring jl = (jstring)(*env)->GetObjectArrayElement(env, j_action_labels, i);
-            const char *key   = (*env)->GetStringUTFChars(env, jk, NULL);
-            const char *label = (*env)->GetStringUTFChars(env, jl, NULL);
+            gchar *key   = jstring_to_utf8(env, jk);
+            gchar *label = jstring_to_utf8(env, jl);
             if (key)   g_variant_builder_add(&actions_builder, "s", key);
-            if (label)  g_variant_builder_add(&actions_builder, "s", label);
-            if (key)   (*env)->ReleaseStringUTFChars(env, jk, key);
-            if (label) (*env)->ReleaseStringUTFChars(env, jl, label);
+            if (label) g_variant_builder_add(&actions_builder, "s", label);
+            g_free(key);
+            g_free(label);
             (*env)->DeleteLocalRef(env, jk);
             (*env)->DeleteLocalRef(env, jl);
         }
@@ -202,55 +264,12 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
             g_variant_new_byte((guchar)urgency));
     }
 
-    /* category (STRING) */
-    if (j_category != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_category, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "category",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_category, val);
-        }
-    }
-
-    /* desktop-entry (STRING) */
-    if (j_desktop_entry != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_desktop_entry, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "desktop-entry",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_desktop_entry, val);
-        }
-    }
-
-    /* image-path (STRING) */
-    if (j_image_path != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_image_path, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "image-path",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_image_path, val);
-        }
-    }
-
-    /* sound-file (STRING) */
-    if (j_sound_file != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_sound_file, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "sound-file",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_sound_file, val);
-        }
-    }
-
-    /* sound-name (STRING) */
-    if (j_sound_name != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_sound_name, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "sound-name",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_sound_name, val);
-        }
-    }
+    /* STRING hints */
+    add_string_hint(env, &hints_builder, "category", j_category);
+    add_string_hint(env, &hints_builder, "desktop-entry", j_desktop_entry);
+    add_string_hint(env, &hints_builder, "image-path", j_image_path);
+    add_string_hint(env, &hints_builder, "sound-file", j_sound_file);
+    add_string_hint(env, &hints_builder, "sound-name", j_sound_name);
 
     /* suppress-sound (BOOLEAN) */
     if (suppress_sound >= 0) {
@@ -318,12 +337,11 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
         g_variant_builder_end(&hints_builder),
         (gint32)expire_timeout);
 
-    /* Release mandatory strings before the (potentially slow) D-Bus call */
-    (*env)->ReleaseStringUTFChars(env, j_app_name, app_name);
-    (*env)->ReleaseStringUTFChars(env, j_app_icon, app_icon);
-    (*env)->ReleaseStringUTFChars(env, j_summary, summary);
-    (*env)->ReleaseStringUTFChars(env, j_body, body);
-    app_name = app_icon = summary = body = NULL;
+    /* g_variant_new copied the mandatory strings */
+    g_free(app_name);
+    g_free(app_icon);
+    g_free(summary);
+    g_free(body);
 
     /* Synchronous D-Bus method call */
     GError *error = NULL;
@@ -346,10 +364,10 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
     return (jint)notification_id;
 
 release_strings:
-    if (app_name) (*env)->ReleaseStringUTFChars(env, j_app_name, app_name);
-    if (app_icon) (*env)->ReleaseStringUTFChars(env, j_app_icon, app_icon);
-    if (summary)  (*env)->ReleaseStringUTFChars(env, j_summary, summary);
-    if (body)     (*env)->ReleaseStringUTFChars(env, j_body, body);
+    g_free(app_name);
+    g_free(app_icon);
+    g_free(summary);
+    g_free(body);
     return 0;
 }
 
@@ -414,7 +432,7 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
     const gchar *cap = NULL;
     jsize i = 0;
     while (g_variant_iter_next(iter, "&s", &cap)) {
-        jstring j_cap = (*env)->NewStringUTF(env, cap);
+        jstring j_cap = utf8_to_jstring(env, cap);
         (*env)->SetObjectArrayElement(env, arr, i++, j_cap);
         (*env)->DeleteLocalRef(env, j_cap);
     }
@@ -454,10 +472,10 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
     jclass string_class = (*env)->FindClass(env, "java/lang/String");
     jobjectArray arr = (*env)->NewObjectArray(env, 4, string_class, NULL);
 
-    jstring j0 = (*env)->NewStringUTF(env, name);
-    jstring j1 = (*env)->NewStringUTF(env, vendor);
-    jstring j2 = (*env)->NewStringUTF(env, version);
-    jstring j3 = (*env)->NewStringUTF(env, spec_version);
+    jstring j0 = utf8_to_jstring(env, name);
+    jstring j1 = utf8_to_jstring(env, vendor);
+    jstring j2 = utf8_to_jstring(env, version);
+    jstring j3 = utf8_to_jstring(env, spec_version);
 
     (*env)->SetObjectArrayElement(env, arr, 0, j0);
     (*env)->SetObjectArrayElement(env, arr, 1, j1);
@@ -493,7 +511,7 @@ static void on_notification_closed(
     if (ensure_callback_ids(env)) {
         (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_closed_method,
             (jint)id, (jint)reason);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
     }
 
     release_env(attached);
@@ -516,10 +534,10 @@ static void on_action_invoked(
     if (env == NULL) return;
 
     if (ensure_callback_ids(env)) {
-        jstring j_key = (*env)->NewStringUTF(env, action_key);
+        jstring j_key = utf8_to_jstring(env, action_key);
         (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_action_method,
             (jint)id, j_key);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, j_key);
     }
 
@@ -543,10 +561,10 @@ static void on_activation_token(
     if (env == NULL) return;
 
     if (ensure_callback_ids(env)) {
-        jstring j_token = (*env)->NewStringUTF(env, token);
+        jstring j_token = utf8_to_jstring(env, token);
         (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_token_method,
             (jint)id, j_token);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, j_token);
     }
 

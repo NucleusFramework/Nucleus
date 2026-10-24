@@ -533,13 +533,41 @@ impl Window {
       inner_size_clone.0.store(w as i32, Ordering::Release);
       inner_size_clone.1.store(h as i32, Ordering::Release);
 
+      // PATCH(nucleus): `gdk_window_get_frame_extents` answers with its
+      // (0, 0, 1, 1) placeholder until the window is mapped and — under a
+      // reparenting WM — framed. Storing it pins a 1x1 window at the screen
+      // origin in `outer_position` / `outer_size` until the *next* configure,
+      // which on a software-rendered X server under a lightweight WM (Xvfb +
+      // openbox, the CI Linux leg) is seconds away or never comes at all.
+      // Every consumer of the outer frame reads that instead: a torn-off
+      // window 1 dp wide, a satellite anchored against a 1px-tall child, a
+      // pointer aimed at a negative screen coordinate.
+      //
+      // Take the size from the configure event itself — its own size is the
+      // whole surface, shadow included, which is what the frame is for a
+      // client-side-decorated window, and unlike `configure_client_size` below
+      // it subtracts no decoration insets. Keep the last known *position*:
+      // every substitute for it is wrong in a way that is worse than being
+      // stale. `event.position()` is frame-relative under a reparenting WM
+      // (so it reads (0, 0)), `root_origin` is implemented through
+      // `frame_extents` and answers the placeholder too, and
+      // `gdk_window_get_origin` names the client rather than the frame, so
+      // anchoring one window against another mixes two different rectangles.
       let (x, y, w, h) = window
         .window()
         .map(|w| {
           let rect = w.frame_extents();
           (rect.x(), rect.y(), rect.width(), rect.height())
         })
-        .unwrap_or((x, y, w as i32, h as i32));
+        .filter(|(_, _, w, h)| *w > 1 && *h > 1)
+        .unwrap_or_else(|| {
+          (
+            outer_position_clone.0.load(Ordering::Acquire),
+            outer_position_clone.1.load(Ordering::Acquire),
+            ew as i32,
+            eh as i32,
+          )
+        });
 
       outer_position_clone.0.store(x, Ordering::Release);
       outer_position_clone.1.store(y, Ordering::Release);
@@ -699,6 +727,15 @@ impl Window {
       .to_logical::<i32>(self.scale_factor())
       .into();
 
+    // PATCH(nucleus): same as `set_inner_size`: no configure-event reports a
+    // move of a window that is not mapped, so record where it will map.
+    if !self.window.is_mapped() {
+      self.inner_position.0.store(x, Ordering::Release);
+      self.inner_position.1.store(y, Ordering::Release);
+      self.outer_position.0.store(x, Ordering::Release);
+      self.outer_position.1.store(y, Ordering::Release);
+    }
+
     if let Err(e) = self
       .window_requests_tx
       .send((self.window_id, WindowRequest::Position((x, y))))
@@ -728,6 +765,19 @@ impl Window {
 
   pub fn set_inner_size<S: Into<Size>>(&self, size: S) {
     let (width, height) = size.into().to_logical::<i32>(self.scale_factor()).into();
+
+    // PATCH(nucleus): GTK sends no configure-event to a window that is not
+    // mapped, so the size caches would keep their creation values (the outer
+    // one is not even a size) until the first map. A window sized while
+    // hidden then reads stale geometry, and maps at a size nothing reported.
+    // The frame is unknown before the map: the outer size is the inner one
+    // until the first configure replaces both.
+    if !self.window.is_mapped() {
+      self.inner_size.0.store(width, Ordering::Release);
+      self.inner_size.1.store(height, Ordering::Release);
+      self.outer_size.0.store(width, Ordering::Release);
+      self.outer_size.1.store(height, Ordering::Release);
+    }
 
     if let Err(e) = self
       .window_requests_tx
@@ -993,6 +1043,36 @@ impl Window {
   /// off it, which is why the caret's *size* matters here and not on Windows.
   /// GDK works in logical pixels, so the caller's physical rect is scaled down
   /// on the way in.
+  /// Nucleus patch: anchor a `GTK_WINDOW_POPUP` overlay at a point of its
+  /// transient parent through `gdk_window_move_to_rect`, so GDK maps it as an
+  /// `xdg_popup` the compositor keeps on screen (flipped above the point when
+  /// there is no room below, slid along an edge) instead of a `wl_subsurface`
+  /// it lets hang off the display. `(x, y)` are logical parent-window
+  /// coordinates of the content's top-left; `shadow` = (left, right, top,
+  /// bottom) transparent margins the surface carries around that content,
+  /// declared as the popup's shadow width so the compositor constrains the
+  /// content, not the margin. `width`/`height` are the whole surface in
+  /// logical pixels, applied here rather than left to a separate size request:
+  /// GDK builds the `xdg_positioner` from the window's *current* geometry, so a
+  /// popup still sized 1×1 at this point asks the compositor to constrain a
+  /// 1×1 rectangle and never gets flipped. GDK positions a popup once, at map:
+  /// call before the window is shown.
+  pub fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32)) {
+    if let Err(e) = self.window_requests_tx.send((
+      self.window_id,
+      WindowRequest::PopupAnchor {
+        x,
+        y,
+        width,
+        height,
+        shadow,
+      },
+    ))
+    {
+      log::warn!("Fail to send popup anchor request: {}", e);
+    }
+  }
+
   pub fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
     let scale_factor = self.scale_factor();
     let (x, y): (i32, i32) = position.into().to_logical::<i32>(scale_factor).into();
@@ -1002,6 +1082,22 @@ impl Window {
       .send((self.window_id, WindowRequest::SetImeCursorArea((x, y, w, h))))
     {
       log::warn!("Fail to send ime cursor area request: {}", e);
+    }
+  }
+
+  /// Nucleus patch (nucleusframework#842): focus the window's input context
+  /// only while a text field owns the input.
+  ///
+  /// Focusing a GTK input context is not free on Wayland: it sends
+  /// text-input-v3 `enable`, which is the request a compositor answers by
+  /// showing its on-screen keyboard. Following the window's focus alone
+  /// raised the keyboard on every activation, text field or not.
+  pub fn set_ime_allowed(&self, allowed: bool) {
+    if let Err(e) = self
+      .window_requests_tx
+      .send((self.window_id, WindowRequest::SetImeAllowed(allowed)))
+    {
+      log::warn!("Fail to send ime allowed request: {}", e);
     }
   }
 
@@ -1334,6 +1430,18 @@ pub enum WindowRequest {
   /// Nucleus patch (nucleusframework#558): the rectangle the caret occupies,
   /// in window-local logical pixels, for the input method to steer clear of.
   SetImeCursorArea((i32, i32, i32, i32)),
+  /// Nucleus patch (nucleusframework#842): whether a text field owns the
+  /// input, i.e. whether the window's input context may be focused.
+  SetImeAllowed(bool),
+  /// Nucleus patch: anchor a popup overlay at a point of its transient parent
+  /// through `gdk_window_move_to_rect` — see `Window::popup_anchor`.
+  PopupAnchor {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    shadow: (i32, i32, i32, i32),
+  },
   WireUpEvents {
     transparent: bool,
     fullscreen: bool,

@@ -2,9 +2,9 @@
 // constants and dispatch helpers that bridge native events back to Kotlin.
 
 use jni::objects::JValue;
-use jni::sys::{jint, jlong};
+use jni::sys::{jint, jlong, JNI_FALSE, JNI_TRUE};
 
-use tao::event::MouseButton;
+use tao::event::{DeviceId, MouseButton};
 use tao::keyboard::ModifiersState;
 use tao::window::WindowId;
 
@@ -184,6 +184,24 @@ pub(crate) const EVENT_SHOWN: jint = 24;
 // loop — see `on_tao_size_move`.
 #[cfg(target_os = "windows")]
 pub(crate) const EVENT_SIZE_MOVE: jint = 25;
+pub(crate) const EVENT_QUIT_REQUESTED: jint = 26;
+// Linux/Wayland only. `a = 1` when the compositor answered the window's
+// decoration request with "no decorations" or "mine" (KWin's server-decoration
+// `none` / `server`, #816), `0` when it allows client decorations again. See `server_decoration.rs`.
+#[cfg(target_os = "linux")]
+pub(crate) const EVENT_DECORATIONS_SUPPRESSED: jint = 27;
+// `a` = POINTER_KIND_*: the tool behind the cursor / button events that
+// follow (#827). Sent only when it changes, right before the first event of
+// the new tool, so the JVM keeps it as state like the modifiers. Linux: GDK
+// names a tablet pen or eraser as the source of its events; macOS: mouse
+// events with the `TabletPoint` subtype, the tool named by proximity.
+// Windows reports a pen through WM_POINTER as a touch, so its kind rides
+// with each `dispatch_touch_input` instead (`POINTER_KIND_TOUCH` = a finger).
+pub(crate) const EVENT_POINTER_KIND: jint = 28;
+pub(crate) const POINTER_KIND_MOUSE: jint = 0;
+pub(crate) const POINTER_KIND_STYLUS: jint = 1;
+pub(crate) const POINTER_KIND_ERASER: jint = 2;
+pub(crate) const POINTER_KIND_TOUCH: jint = 3;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;
@@ -244,7 +262,25 @@ pub(crate) const TOUCH_FORCE_UNKNOWN: jint = -1;
 pub(crate) const MOUSE_BUTTON_LEFT: jint = 0;
 pub(crate) const MOUSE_BUTTON_RIGHT: jint = 1;
 pub(crate) const MOUSE_BUTTON_MIDDLE: jint = 2;
-pub(crate) const MOUSE_BUTTON_OTHER: jint = 3;
+pub(crate) const MOUSE_BUTTON_BACK: jint = 3;
+pub(crate) const MOUSE_BUTTON_FORWARD: jint = 4;
+pub(crate) const MOUSE_BUTTON_OTHER: jint = 5;
+
+// Raw `MouseButton::Other(n)` numbers tao reports for the back / forward side
+// buttons: `XBUTTON1` / `XBUTTON2` on Windows, X11/GDK buttons 8 / 9 on Linux,
+// `NSEvent.buttonNumber` 3 / 4 on macOS.
+#[cfg(target_os = "windows")]
+const OTHER_BACK: u16 = 1;
+#[cfg(target_os = "windows")]
+const OTHER_FORWARD: u16 = 2;
+#[cfg(target_os = "macos")]
+const OTHER_BACK: u16 = 3;
+#[cfg(target_os = "macos")]
+const OTHER_FORWARD: u16 = 4;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+const OTHER_BACK: u16 = 8;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+const OTHER_FORWARD: u16 = 9;
 
 // ── User events posted from JNI calls into the event loop ─────────────────
 
@@ -329,6 +365,14 @@ pub(crate) enum UserEvent {
         handle: u64,
         resizable: bool,
     },
+    SetMinimizable {
+        handle: u64,
+        minimizable: bool,
+    },
+    SetMaximizable {
+        handle: u64,
+        maximizable: bool,
+    },
     SetMinimized {
         handle: u64,
         minimized: bool,
@@ -365,10 +409,19 @@ pub(crate) enum UserEvent {
     },
     Focus {
         handle: u64,
+        /// xdg-activation token handed out by the compositor (a portal global
+        /// shortcut, a notification action, …), or `None` (#739).
+        activation_token: Option<String>,
     },
     SetMinInnerSize {
         handle: u64,
         // Negative width/height means "clear the minimum".
+        width: f64,
+        height: f64,
+    },
+    SetMaxInnerSize {
+        handle: u64,
+        // Negative width/height means "clear the maximum".
         width: f64,
         height: f64,
     },
@@ -389,10 +442,26 @@ pub(crate) enum UserEvent {
         x: f64,
         y: f64,
     },
+    /// Linux: anchor a popup overlay at a logical point of its parent so GDK
+    /// maps it as a compositor-positioned `xdg_popup` (see `popup_anchor`).
+    PopupAnchor {
+        handle: u64,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        shadow_left: i32,
+        shadow_top: i32,
+        shadow_right: i32,
+        shadow_bottom: i32,
+    },
     SetFullscreen {
         handle: u64,
         fullscreen: bool,
     },
+    // Posted by the macOS quit paths only (Cmd-Q, `-[TaoApp terminate:]`).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    QuitRequested,
     Exit,
 }
 
@@ -434,6 +503,7 @@ pub(crate) fn dispatch_key(
     location: jint,
     modifiers: jint,
     code_point: jint,
+    repeat: bool,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(guard) = EVENT_CALLBACK.lock() else {
@@ -448,7 +518,7 @@ pub(crate) fn dispatch_key(
     let _ = env.call_method(
         callback.as_obj(),
         "onKeyEvent",
-        "(JIIIII)V",
+        "(JIIIIIZ)V",
         &[
             JValue::Long(handle as jlong),
             JValue::Int(type_code),
@@ -456,6 +526,7 @@ pub(crate) fn dispatch_key(
             JValue::Int(location),
             JValue::Int(modifiers),
             JValue::Int(code_point),
+            JValue::Bool(if repeat { JNI_TRUE } else { JNI_FALSE }),
         ],
     );
     if env.exception_check().unwrap_or(false) {
@@ -608,6 +679,7 @@ pub(crate) fn dispatch_touch_input(
     x_fixed: jint,
     y_fixed: jint,
     force_fixed: jint,
+    kind: jint,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(guard) = EVENT_CALLBACK.lock() else {
@@ -622,7 +694,7 @@ pub(crate) fn dispatch_touch_input(
     let _ = env.call_method(
         callback.as_obj(),
         "onTouchInput",
-        "(JIJIII)V",
+        "(JIJIIII)V",
         &[
             JValue::Long(handle as jlong),
             JValue::Int(phase),
@@ -630,6 +702,7 @@ pub(crate) fn dispatch_touch_input(
             JValue::Int(x_fixed),
             JValue::Int(y_fixed),
             JValue::Int(force_fixed),
+            JValue::Int(kind),
         ],
     );
     if env.exception_check().unwrap_or(false) {
@@ -646,11 +719,58 @@ pub(crate) fn handle_for(window_id: WindowId) -> Option<u64> {
         .map(|(h, _)| *h)
 }
 
+/// The POINTER_KIND_* of the tool that sent a cursor / button event.
+pub(crate) fn pointer_kind_code(device_id: DeviceId) -> jint {
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::unix::{DeviceIdExtUnix, PointerSource};
+        match device_id.pointer_source() {
+            PointerSource::Pen => POINTER_KIND_STYLUS,
+            PointerSource::Eraser => POINTER_KIND_ERASER,
+            _ => POINTER_KIND_MOUSE,
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use tao::platform::macos::{DeviceIdExtMacOS, PointerSource};
+        match device_id.pointer_source() {
+            PointerSource::Pen => POINTER_KIND_STYLUS,
+            PointerSource::Eraser => POINTER_KIND_ERASER,
+            _ => POINTER_KIND_MOUSE,
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use tao::platform::windows::{DeviceIdExtWindows, PointerSource};
+        match device_id.pointer_source() {
+            PointerSource::Pen => POINTER_KIND_STYLUS,
+            PointerSource::Eraser => POINTER_KIND_ERASER,
+            _ => POINTER_KIND_MOUSE,
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        let _ = device_id;
+        POINTER_KIND_MOUSE
+    }
+}
+
+/// The POINTER_KIND_* of the tool behind a Windows `WindowEvent::Touch`: a
+/// pen or its eraser end, else a finger.
+pub(crate) fn touch_kind_code(device_id: DeviceId) -> jint {
+    match pointer_kind_code(device_id) {
+        POINTER_KIND_MOUSE => POINTER_KIND_TOUCH,
+        kind => kind,
+    }
+}
+
 pub(crate) fn mouse_button_code(b: MouseButton) -> jint {
     match b {
         MouseButton::Left => MOUSE_BUTTON_LEFT,
         MouseButton::Right => MOUSE_BUTTON_RIGHT,
         MouseButton::Middle => MOUSE_BUTTON_MIDDLE,
+        MouseButton::Other(OTHER_BACK) => MOUSE_BUTTON_BACK,
+        MouseButton::Other(OTHER_FORWARD) => MOUSE_BUTTON_FORWARD,
         _ => MOUSE_BUTTON_OTHER,
     }
 }

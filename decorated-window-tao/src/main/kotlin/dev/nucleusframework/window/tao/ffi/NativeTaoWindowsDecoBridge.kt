@@ -9,7 +9,7 @@ private const val LIBRARY_NAME = "nucleus_tao_windows_deco"
  * (client-area extension via `WM_NCCALCSIZE`, hit-test routing via
  * `WM_NCHITTEST`, DWM shadow via `DwmExtendFrameIntoClientArea`).
  *
- * Mirrors the API of `decorated-window-jni`'s `JniWindowsDecorationBridge`,
+ * Mirrors the API of the legacy AWT backend's Windows decoration bridge,
  * minus the Skiko-AWT child-window plumbing (Tao renders into the HWND
  * directly via ANGLE).
  */
@@ -243,6 +243,22 @@ internal object NativeTaoWindowsDecoBridge {
     )
 
     /**
+     * `EnableWindow`: disables or re-enables mouse and keyboard input to
+     * [hwnd]. A modal `DecoratedDialog` disables its owner while it is shown
+     * (#832) and re-enables it before it is hidden or destroyed, so Windows
+     * hands the owner the activation.
+     */
+    @JvmStatic
+    external fun nativeSetWindowEnabled(
+        hwnd: Long,
+        enabled: Boolean,
+    )
+
+    /** E2E probe: `IsWindowEnabled` (#832). */
+    @JvmStatic
+    external fun nativeIsWindowEnabled(hwnd: Long): Boolean
+
+    /**
      * Returns the window's outer bounds as `[x, y, width, height]` in physical
      * screen pixels, or `null` if the HWND is invalid.
      */
@@ -265,6 +281,15 @@ internal object NativeTaoWindowsDecoBridge {
      */
     @JvmStatic
     external fun nativeGetPrimaryMonitorWorkArea(): LongArray?
+
+    /**
+     * Returns one descriptor per attached monitor
+     * (`EnumDisplayMonitors` + `GetMonitorInfoW`), encoded as documented in
+     * [dev.nucleusframework.window.tao.TaoMonitor]. `null` when the
+     * enumeration fails.
+     */
+    @JvmStatic
+    external fun nativeGetMonitors(): Array<String>?
 
     /**
      * Returns the primary monitor's scale factor encoded as `(scale * 1000)`.
@@ -317,6 +342,10 @@ internal object NativeTaoWindowsDecoBridge {
     @JvmStatic
     external fun nativeIsMaximized(hwnd: Long): Boolean
 
+    /** `DwmFlush()`: blocks until DWM's next composition. False when it failed. */
+    @JvmStatic
+    external fun nativeDwmFlush(): Boolean
+
     /**
      * Atomic unmaximize + reposition under the finger when a touch drag
      * starts on a maximized window. Returns the restored outer rect as
@@ -330,4 +359,16 @@ internal object NativeTaoWindowsDecoBridge {
         startScreenX: Int,
         startScreenY: Int,
     ): LongArray?
+
+    /**
+     * Windows ClearType pixel geometry for Skia LCD text.
+     *
+     * `0` = font smoothing off or not ClearType, `1` = RGB_H, `2` = BGR_H.
+     */
+    @JvmStatic
+    external fun nativeFontSmoothingPixelGeometry(): Int
+
+    const val FONT_SMOOTHING_UNKNOWN: Int = 0
+    const val FONT_SMOOTHING_RGB: Int = 1
+    const val FONT_SMOOTHING_BGR: Int = 2
 }

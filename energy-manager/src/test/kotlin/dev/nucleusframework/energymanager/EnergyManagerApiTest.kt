@@ -5,6 +5,7 @@ import dev.nucleusframework.energymanager.windows.WindowsEnergyManager
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assume.assumeTrue
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -20,14 +21,34 @@ class EnergyManagerApiTest {
     fun `deprecated screen-awake aliases delegate to keepAwake`() {
         assumeAvailable()
         try {
-            assertTrue(EnergyManager.keepScreenAwake().success)
+            val start = System.nanoTime()
+            val kept = EnergyManager.keepScreenAwake()
+            val elapsedMs = (System.nanoTime() - start) / NANOS_PER_MILLI
+            assertTrue(kept.success, "keepScreenAwake failed: ${awakeDiagnostics(kept, elapsedMs)}")
             assertTrue(EnergyManager.isScreenAwakeActive())
             assertTrue(EnergyManager.isAwakeActive())
         } finally {
-            assertTrue(EnergyManager.releaseScreenAwake().success)
+            val released = EnergyManager.releaseScreenAwake()
+            assertTrue(released.success, "releaseScreenAwake failed: $released")
         }
         assertFalse(EnergyManager.isScreenAwakeActive())
     }
+
+    /**
+     * What a failed keep-awake leaves to go on. The Linux bridge only says that no backend took
+     * the request, so this adds which backends the environment offers (GNOME needs a session bus,
+     * X11 a display, logind the system bus) and how long the attempt took: each D-Bus call gives
+     * up after 2 s, so a multiple of that is a timeout, not a refusal.
+     */
+    private fun awakeDiagnostics(
+        result: EnergyManager.Result,
+        elapsedMs: Long,
+    ): String =
+        "$result after ${elapsedMs}ms; " +
+            "DBUS_SESSION_BUS_ADDRESS=${System.getenv("DBUS_SESSION_BUS_ADDRESS") != null} " +
+            "DISPLAY=${System.getenv("DISPLAY")} WAYLAND_DISPLAY=${System.getenv("WAYLAND_DISPLAY")} " +
+            "system bus socket=${File("/run/dbus/system_bus_socket").exists()} " +
+            "XDG_SESSION_ID=${System.getenv("XDG_SESSION_ID")}"
 
     @Test
     fun `withLightEfficiencyMode returns the block value`() =
@@ -89,4 +110,8 @@ class EnergyManagerApiTest {
     private fun isLinux(): Boolean = System.getProperty("os.name").lowercase().contains("linux")
 
     private fun isWindows(): Boolean = System.getProperty("os.name").lowercase().contains("windows")
+
+    private companion object {
+        const val NANOS_PER_MILLI = 1_000_000L
+    }
 }

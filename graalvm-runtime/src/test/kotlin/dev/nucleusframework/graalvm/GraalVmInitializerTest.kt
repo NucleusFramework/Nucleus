@@ -2,6 +2,7 @@ package dev.nucleusframework.graalvm
 
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.graalvm.locale.NativeLocaleBridge
+import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,9 +38,14 @@ class GraalVmInitializerTest {
 
             assertNull(GraalVmInitializer.resolveMacOsFontConfig(execDir))
 
-            val fontConfig = resourcesDir.resolve("fontconfig.bfc")
-            fontConfig.writeBytes(byteArrayOf(0))
+            // The binary form is never handed to sun.awt.fontconfig: the JDK would parse it as text.
+            resourcesDir.resolve("fontconfig.bfc").writeBytes(byteArrayOf(0))
+            assertNull(GraalVmInitializer.resolveMacOsFontConfig(execDir))
+
+            val fontConfig = resourcesDir.resolve("fontconfig.properties")
+            fontConfig.writeText("version=1\n")
             assertEquals(fontConfig, GraalVmInitializer.resolveMacOsFontConfig(execDir))
+            assertEquals(fontConfig, GraalVmInitializer.resolveMacOsFontConfig(File(execDir, ".")))
         } finally {
             bundle.deleteRecursively()
         }

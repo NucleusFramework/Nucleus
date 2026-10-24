@@ -1,0 +1,11 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.core.runtime.JniExceptionReporter",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "report", "parameterTypes": ["java.lang.Throwable"] }
+            ]
+        }
+    ]
+}

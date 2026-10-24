@@ -25,6 +25,7 @@
 #define VK_SEMICOLON   0x3B
 #define VK_KP0         0x60
 #define VK_PLAY        0xB3
+#define VK_PAUSE       0x13
 
 static int failures = 0;
 
@@ -51,6 +52,7 @@ int main(void) {
     expect(MOD_CONTROL | MOD_SHIFT, VK_BRACKETLEFT, "CTRL+SHIFT+bracketleft");
     expect(MOD_CONTROL, VK_BRACKETRIGHT, "CTRL+bracketright");
     expect(MOD_CONTROL, VK_SEMICOLON, "CTRL+semicolon");
+    expect(MOD_CONTROL | MOD_ALT | MOD_SHIFT, VK_PAUSE, "CTRL+ALT+SHIFT+Pause");
 
     /* Numpad and media keys. */
     expect(MOD_CONTROL, VK_KP0, "CTRL+KP_0");

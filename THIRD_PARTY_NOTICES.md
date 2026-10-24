@@ -12,10 +12,11 @@ Full license texts are in [`licenses/`](licenses/):
 | [`licenses/LICENSE-APACHE-2.0.txt`](licenses/LICENSE-APACHE-2.0.txt) | Gradle plugin (derived), `tao`, AccessKit crates (Apache option) |
 | [`licenses/LICENSE-MIT-accesskit.txt`](licenses/LICENSE-MIT-accesskit.txt) | AccessKit crates (MIT option) |
 | [`licenses/LICENSE-BSD-3-Clause-angle.txt`](licenses/LICENSE-BSD-3-Clause-angle.txt) | ANGLE runtime libraries and EGL/KHR headers |
+| [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt) | `robius-share` (derived source in `share`) |
 
-Both artifacts that redistribute third-party code ship this file and `licenses/` inside their JAR
-under `META-INF/` (`nucleus.decorated-window-tao` and the `dev.nucleusframework` Gradle plugin), as
-required by Apache-2.0 §4(a).
+The artifacts that redistribute third-party code ship this file and `licenses/` inside their JAR
+under `META-INF/` (`nucleus.decorated-window-tao`, the desktop JAR of `nucleus.share` and the
+`dev.nucleusframework` Gradle plugin), as required by Apache-2.0 §4(a) and the MIT notice clause.
 
 ---
 
@@ -72,19 +73,46 @@ Three AccessKit crates are vendored and patched to project the accessibility tre
 
 ## 4. ANGLE (libEGL.dll, libGLESv2.dll) — shipped binary (BSD 3-Clause)
 
-The Tao Windows backend (`decorated-window-tao`) ships the ANGLE runtime libraries `libEGL.dll` and
-`libGLESv2.dll` to provide a Direct3D 11 render path (OpenGL ES translated to D3D11, with a WARP
-software fallback for RDP / VM / driverless environments).
+The Tao Windows backend (`decorated-window-tao`) depends on the ANGLE runtime libraries `libEGL.dll`
+and `libGLESv2.dll` to provide a Direct3D 11 render path (OpenGL ES translated to D3D11, with a WARP
+software fallback for RDP / VM / driverless environments), so they reach every application built on
+it.
 
 - Project: The ANGLE Project — https://chromium.googlesource.com/angle/angle
 - License: BSD 3-Clause — [`licenses/LICENSE-BSD-3-Clause-angle.txt`](licenses/LICENSE-BSD-3-Clause-angle.txt)
 - Copyright 2018 The ANGLE Project Authors. All rights reserved.
 
-The binaries are not committed to this repository; they are fetched at build time from a pinned
-[Electron](https://github.com/electron/electron) release (SHA-256 verified) by
-`decorated-window-tao/src/main/native/windows/fetch-angle.sh`. The same BSD 3-Clause text also
-covers the vendored Khronos/ANGLE EGL headers used at build time
+The binaries are not committed to this repository, nor built by it. `decorated-window-tao` declares
+a dependency on `dev.nucleusframework:nucleus.angle-natives`, published from
+[NucleusFramework/angle](https://github.com/NucleusFramework/angle) — a fork of
+[google/angle](https://github.com/google/angle) that builds the unmodified upstream sources of the
+ANGLE release branch stable Chrome ships, with everything Nucleus cannot reach disabled at build
+configuration level: the Vulkan, desktop-GL/WGL, SwiftShader, WebGPU and OpenCL backends. The
+artifact version is the Chromium branch number, so it tracks ANGLE's own cadence.
+
+That artifact redistributes the upstream BSD 3-Clause `LICENSE` as `META-INF/LICENSE.angle`,
+alongside a per-architecture `META-INF/nucleus/angle-build-win32-*.json` recording the exact ANGLE
+commit and the full build configuration. The same BSD 3-Clause text also covers the vendored
+Khronos/ANGLE EGL headers used at build time
 (`decorated-window-tao/src/main/native/vendor/angle-headers/LICENSE.angle`).
+
+---
+
+## 5. robius-share — derived source, compiled into a shipped binary (MIT)
+
+The `share` module's desktop bridge follows `robius-share`'s payload model and per-platform
+strategies (Windows `DataTransferManager` interop, macOS `NSSharingServicePicker`, the Linux XDG
+portal), and its minimal D-Bus client is ported from it:
+
+| Nucleus file | Derived from |
+|--------------|--------------|
+| `share/src/main/native/src/platform/linux/{mod,dbus}.rs` | `crates/share/src/sys/linux.rs`, `crates/share/src/sys/linux/dbus.rs` |
+| `share/src/main/native/src/platform/{windows,macos}.rs` | `crates/share/src/sys/{windows,macos}.rs` |
+| `share/src/commonMain/kotlin/dev/nucleusframework/share/MimeTypes.kt` | `primaryMimeType` in `crates/share/src/sys/android/ShareSheet.java` |
+
+- Project: Project Robius — https://github.com/project-robius/robius (commit `71966dc2`)
+- License: MIT — [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt)
+- Copyright (c) 2023-2025 Project Robius
 
 ---
 
@@ -93,7 +121,7 @@ covers the vendored Khronos/ANGLE EGL headers used at build time
 These are resolved on the build machine and are **not** shipped inside any Nucleus artifact. They
 are listed for transparency, not as a redistribution notice.
 
-- **electron-builder** 26.15.5 (MIT) — packaging backend for 17 of the 18 target formats. The
+- **electron-builder** 26.17.0 (MIT) — packaging backend for 17 of the 18 target formats. The
   plugin embeds only a pinned `package.json` / `package-lock.json` pair
   (`plugin-build/plugin/src/main/resources/nucleus/electron-builder/`) and installs the tree with
   `npm ci --ignore-scripts` into a build-local directory. See

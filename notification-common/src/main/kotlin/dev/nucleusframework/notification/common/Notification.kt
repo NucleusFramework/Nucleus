@@ -81,7 +81,10 @@ public typealias NotificationButtonBuilder = NotificationBuilder
 
 /**
  * Creates a cross-platform notification.
- * Lifecycle callbacks are not guaranteed to run on a UI thread.
+ * Interaction callbacks ([onActivated], [onDismissed], button clicks) are
+ * dispatched on the host's UI thread (the Tao main thread under Nucleus, the
+ * AWT EDT in a plain Swing / Compose Desktop host). [onFailed] can still run
+ * on the calling thread, since a send can fail before it ever reaches the OS.
  *
  * ```kotlin
  * val n = notification(

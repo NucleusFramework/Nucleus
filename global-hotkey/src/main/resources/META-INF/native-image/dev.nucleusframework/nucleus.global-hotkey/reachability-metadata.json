@@ -25,8 +25,8 @@
             "jniAccessible": true,
             "methods": [
                 {
-                    "name": "onHotKey",
-                    "parameterTypes": ["long", "int", "int"]
+                    "name": "onHotKeyEvent",
+                    "parameterTypes": ["long", "int", "int", "boolean", "long", "java.lang.String"]
                 }
             ]
         }

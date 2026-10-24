@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 class LinuxQuicklistNativeTest {
     @Test
     fun `setMenu registers a dbusmenu object and delivers clicks on the edt`() {
-        if (!NativeLinuxLauncherBridge.isLoaded) return
+        if (!NativeLinuxLauncherBridge.isLoaded || !SessionBus.isReachable) return
 
         val path = "/dev/nucleusframework/kover/Menu"
         val quicklist = LinuxQuicklist(path)

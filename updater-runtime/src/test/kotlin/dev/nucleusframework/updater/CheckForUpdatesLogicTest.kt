@@ -43,11 +43,14 @@ class CheckForUpdatesLogicTest {
     @Test
     fun `unsupported executable type short-circuits to not available`() {
         publish(version = "2.0.0", fileName = "App-2.0.0.zip")
+        // A store container cannot replace its own payload. Note that "pkg" is no longer such a
+        // case: a Developer ID PKG installs an ordinary .app and updates like a DMG, and only the
+        // sandboxed Mac App Store build stays excluded. See PkgUpdateSupportTest.
         val updater =
             NucleusUpdater {
                 currentVersion = "1.0.0"
                 provider = LoopbackProvider(server.baseUrl)
-                executableType = "pkg"
+                executableType = "appx"
             }
         assertFalse(updater.isUpdateSupported())
         assertEquals(UpdateResult.NotAvailable, runBlocking { updater.checkForUpdates() })
@@ -112,6 +115,14 @@ class CheckForUpdatesLogicTest {
     }
 
     @Test
+    fun `a pre-release channel implies allowPrerelease`() {
+        publish(version = "1.1.0-beta.1", fileName = "App-1.1.0-beta.1.zip", channel = "beta")
+        val result = check("1.0.0") { channel = "beta" }
+        assertTrue("$result", result is UpdateResult.Available)
+        assertEquals("1.1.0-beta.1", (result as UpdateResult.Available).info.version)
+    }
+
+    @Test
     fun `no matching file becomes an error`() {
         publish(version = "2.0.0", fileName = "App-2.0.0.deb")
         val result = check("1.0.0")
@@ -170,6 +181,7 @@ class CheckForUpdatesLogicTest {
     private fun publish(
         version: String,
         fileName: String,
+        channel: String = "latest",
     ) {
         val yaml =
             """
@@ -180,7 +192,7 @@ class CheckForUpdatesLogicTest {
                 size: 10
             releaseDate: '2026-01-01T00:00:00.000Z'
             """.trimIndent()
-        server.put("/latest.yml", yaml.toByteArray())
+        server.put("/$channel.yml", yaml.toByteArray())
     }
 
     private class LoopbackProvider(

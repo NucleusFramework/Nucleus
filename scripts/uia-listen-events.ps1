@@ -3,7 +3,7 @@
 # state transitions. Useful regression check for the events implementation.
 #
 # Usage:
-#   pwsh scripts/uia-listen-events.ps1 -Title "Tao Backend Demo" -DurationSec 30
+#   pwsh scripts/uia-listen-events.ps1 -Title "Nucleus A11y Surface" -DurationSec 30
 
 param(
     [Parameter(Mandatory)] [string]$Title,

@@ -112,6 +112,3 @@ internal fun buildLinuxAppImageUpdateScript(
         |$selfDeleteCmd
         """.trimMargin()
 }
-
-/** Wraps a value in single quotes for safe interpolation into the generated shell script. */
-private fun String.quoteForShell(): String = "'" + replace("'", "'\\''") + "'"

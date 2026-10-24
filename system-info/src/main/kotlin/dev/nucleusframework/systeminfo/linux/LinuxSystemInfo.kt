@@ -1,7 +1,9 @@
 package dev.nucleusframework.systeminfo.linux
 
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.systeminfo.ConnectivityMonitor
 import dev.nucleusframework.systeminfo.PlatformSystemInfo
+import dev.nucleusframework.systeminfo.connectivityInfoOf
 import dev.nucleusframework.systeminfo.model.BatteryInfo
 import dev.nucleusframework.systeminfo.model.BatteryState
 import dev.nucleusframework.systeminfo.model.ComponentInfo
@@ -11,13 +13,14 @@ import dev.nucleusframework.systeminfo.model.CpuInfo
 import dev.nucleusframework.systeminfo.model.DiskInfo
 import dev.nucleusframework.systeminfo.model.GpuInfo
 import dev.nucleusframework.systeminfo.model.MemoryInfo
-import dev.nucleusframework.systeminfo.model.MeteredStatus
 import dev.nucleusframework.systeminfo.model.MotherboardInfo
 import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
 import dev.nucleusframework.systeminfo.model.OsInfo
 import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
 import dev.nucleusframework.systeminfo.model.UserInfo
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @Suppress("TooManyFunctions", "ReturnCount")
 internal object LinuxSystemInfo : PlatformSystemInfo {
@@ -239,22 +242,25 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
 
     override fun process(pid: Long): ProcessInfo? {
         if (!ready()) return null
-        val name = bridge.nativeProcessByPidName(pid) ?: return null
-        val ppid = bridge.nativeProcessByPidParentPid(pid)
+        val longs = LongArray(PROCESS_LONG_COUNT)
+        val floats = FloatArray(PROCESS_FLOAT_COUNT)
+        val strings = arrayOfNulls<String>(PROCESS_STRING_COUNT)
+        if (!bridge.nativeProcessByPid(pid, longs, floats, strings)) return null
+        val ppid = longs[PROCESS_LONG_PARENT_PID]
         return ProcessInfo(
             pid = pid,
-            name = name,
-            exe = bridge.nativeProcessByPidExe(pid)?.ifEmpty { null },
-            memory = bridge.nativeProcessByPidMemory(pid),
-            virtualMemory = bridge.nativeProcessByPidVirtualMemory(pid),
-            cpuUsage = bridge.nativeProcessByPidCpuUsage(pid),
-            status = bridge.nativeProcessByPidStatus(pid) ?: "Unknown",
-            startTime = bridge.nativeProcessByPidStartTime(pid),
-            runTime = bridge.nativeProcessByPidRunTime(pid),
+            name = strings[PROCESS_STRING_NAME] ?: "",
+            exe = strings[PROCESS_STRING_EXE]?.ifEmpty { null },
+            memory = longs[PROCESS_LONG_MEMORY],
+            virtualMemory = longs[PROCESS_LONG_VIRTUAL_MEMORY],
+            cpuUsage = floats[PROCESS_FLOAT_CPU_USAGE],
+            status = strings[PROCESS_STRING_STATUS] ?: "Unknown",
+            startTime = longs[PROCESS_LONG_START_TIME],
+            runTime = longs[PROCESS_LONG_RUN_TIME],
             parentPid = if (ppid >= 0) ppid else null,
-            cmd = (bridge.nativeProcessByPidCmd(pid) ?: "").split("\u0000").filter { it.isNotEmpty() },
-            cwd = bridge.nativeProcessByPidCwd(pid)?.ifEmpty { null },
-            root = bridge.nativeProcessByPidRoot(pid)?.ifEmpty { null },
+            cmd = (strings[PROCESS_STRING_CMD] ?: "").split("\u0000").filter { it.isNotEmpty() },
+            cwd = strings[PROCESS_STRING_CWD]?.ifEmpty { null },
+            root = strings[PROCESS_STRING_ROOT]?.ifEmpty { null },
         )
     }
 
@@ -362,19 +368,17 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
 
     override fun connectivityInfo(): ConnectivityInfo? {
         if (!ready()) return null
-        val connected = bridge.nativeIsNetworkConnected()
-        return ConnectivityInfo(
-            isConnected = connected,
-            meteredStatus =
-                if (!connected) {
-                    MeteredStatus.NOT_AVAILABLE
-                } else {
-                    when (bridge.nativeGetMeteredStatus()) {
-                        1 -> MeteredStatus.UNMETERED
-                        2 -> MeteredStatus.METERED
-                        else -> MeteredStatus.UNKNOWN
-                    }
-                },
-        )
+        val (available, metered, level) = bridge.nativeQueryConnectivity()
+        return connectivityInfoOf(available != 0, metered, level)
     }
+
+    override fun connectivityChanges(): Flow<ConnectivityInfo> =
+        if (ready()) connectivityMonitor.changes() else emptyFlow()
+
+    val connectivityMonitor =
+        ConnectivityMonitor(
+            start = bridge::nativeStartConnectivityMonitor,
+            stop = bridge::nativeStopConnectivityMonitor,
+            fallback = ::connectivityInfo,
+        )
 }

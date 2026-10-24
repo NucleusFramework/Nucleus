@@ -14,8 +14,10 @@ import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
@@ -28,12 +30,13 @@ import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.DecoratedDialogState
+import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 
 /**
- * Tao-backed equivalent of `decorated-window-jni`'s `DecoratedDialog`.
+ * Tao-backed equivalent of the legacy AWT backend's `DecoratedDialog`.
  *
  * Same parameter set and rendering pipeline as the AWT-based backends:
  * non-resizable by default, close-only chrome via [DialogTitleBar].
@@ -43,12 +46,17 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
  * on Win32, `[NSWindow addChildWindow:ordered:]` on AppKit, and
  * `gtk_window_set_transient_for` on Linux/GTK. The dialog sits above its
  * owner in z-order, follows it across minimisation / Spaces / workspace
- * switches, stays out of the taskbar, and disappears with it. The parent is **not** disabled
- * — that matches `decorated-window-jni` (its `JDialog` is not
- * `APPLICATION_MODAL`) and avoids losing the parent's keyboard focus across
- * the dialog lifetime. The parent is captured from [LocalTaoWindow] at the
- * call site, so a `DecoratedDialog` declared outside any [DecoratedWindow]
- * degrades cleanly to a regular top-level.
+ * switches, stays out of the taskbar, and disappears with it.
+ *
+ * The dialog is modal over its parent while it is visible (#832), like
+ * Compose Desktop's `DialogWindow`. On Windows the parent is disabled
+ * natively (`EnableWindow`, as `DialogBox` does): it takes no click, key or
+ * title-bar drag, and a click on it beeps and flashes the dialog. Elsewhere
+ * the parent's content is covered by an input blocker. For a secondary window
+ * that leaves its owner usable, use a [SatelliteWindow]. The parent is
+ * captured from [LocalTaoWindow] at the call site, so a `DecoratedDialog`
+ * declared outside any [DecoratedWindow] degrades cleanly to a regular
+ * top-level.
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
@@ -96,25 +104,7 @@ public fun ApplicationScope.DecoratedDialog(
     // avoid the flash, so we don't pre-compute a position here.
     val autoCenterRequested = state.position !is WindowPosition.Absolute
     val sizeSpecified = state.size.width.isSpecified && state.size.height.isSpecified
-    val initialPosition =
-        remember(parent) {
-            val explicit = state.position
-            if (explicit is WindowPosition.Absolute) return@remember explicit
-            // Wrap-content dialogs (#532) don't know their height yet — a
-            // centre computed against Dp.Unspecified is wrong. The size
-            // bridge below recentres once the measured size is specified.
-            if (!sizeSpecified) return@remember explicit
-            val centered =
-                when (Platform.Current) {
-                    Platform.Windows ->
-                        centerOnParentWindows(parent, state.size.width.value, state.size.height.value)
-                    Platform.Linux ->
-                        centerOnParentLinux(parent, state.size.width.value, state.size.height.value)
-                    else -> null
-                } ?: return@remember explicit
-            state.position = centered
-            centered
-        }
+    val initialPosition = remember(parent) { initialDialogPosition(state, parent, sizeSpecified) }
 
     // DialogState only carries size + position; reuse the WindowState plumbing
     // of DecoratedWindow underneath and forward changes both ways.
@@ -123,6 +113,16 @@ public fun ApplicationScope.DecoratedDialog(
             size = state.size,
             position = initialPosition,
         )
+
+    // Set once the native owner relationship is in place. On macOS that step
+    // centres the dialog natively, at whatever size its frame has at that
+    // moment; the wrap-content recentre below waits for it so it always has
+    // the last word — run first, it was undone by a native centring of the
+    // creation-size frame (top edge left at the parent's top, #546).
+    val ownerApplied = remember { mutableStateOf(false) }
+
+    // The dialog's own window, published by its content once it exists.
+    val dialogWindow = remember { mutableStateOf<TaoWindow?>(null) }
 
     DecoratedWindow(
         onCloseRequest = {
@@ -140,6 +140,10 @@ public fun ApplicationScope.DecoratedDialog(
         minimumSize = null,
         visible = visible,
         resizable = resizable,
+        // The dialog chrome is close-only ([DialogTitleBar]); keep the native
+        // macOS traffic-lights in step (#504).
+        minimizable = false,
+        maximizable = false,
         enabled = enabled,
         focusable = focusable,
         alwaysOnTop = false,
@@ -161,15 +165,22 @@ public fun ApplicationScope.DecoratedDialog(
             // Native owner relationship. Runs inside the dialog's composition,
             // so `windowScope.window` is the dialog's TaoWindow and its HWND
             // is already resolvable via [TaoWindow.nativeHandle].
-            // Do not wait for wrap-content size: on Wayland a hidden dialog
-            // without an owner never receives a configure, so setContent
-            // never runs and wrap-content deadlocks (#532).
-            DisposableEffect(windowScope.window, parent) {
-                applyDialogOwnerRelationship(
-                    dialog = windowScope.window,
-                    parent = parent,
-                    autoCenter = autoCenterRequested && sizeSpecified,
-                )
+            // macOS: `addChildWindow:` orders the child front, so a
+            // wrap-content dialog waits until it may be shown at its measured
+            // size (#532) — it centres natively at that size, too. Elsewhere
+            // the owner goes on at once: GTK places a transient at map time.
+            val sizePolicy = windowScope.window.resolvedSizePolicy()
+            val ownerReady = Platform.Current != Platform.MacOS || sizePolicy.showReady.value
+            DisposableEffect(windowScope.window, parent, ownerReady) {
+                if (ownerReady) {
+                    applyWindowOwnerRelationship(
+                        child = windowScope.window,
+                        owner = parent,
+                        autoCenter = autoCenterRequested,
+                    )
+                    ownerApplied.value = true
+                    dialogWindow.value = windowScope.window
+                }
                 onDispose { /* native handle destruction restores focus to owner */ }
             }
 
@@ -177,12 +188,38 @@ public fun ApplicationScope.DecoratedDialog(
         },
     )
 
+    // Modality (#832). The parent's in-scene input blocker counts the modal
+    // dialogs over it; one composed outside any window lands on
+    // GlobalModalDialogCount and blocks every window.
+    val parentModalCount = LocalModalDialogCount.current
+    DisposableEffect(parentModalCount, visible) {
+        if (!visible) return@DisposableEffect onDispose { }
+        parentModalCount.value++
+        onDispose { parentModalCount.value-- }
+    }
+    // Native modality. Declared after DecoratedWindow on purpose: Compose
+    // disposes effects in reverse order, so the owner is enabled again before
+    // the dialog window is hidden or closed, and the platform hands the owner
+    // the activation back.
+    DisposableEffect(parent, dialogWindow.value, visible) {
+        val owner = parent
+        if (owner == null || dialogWindow.value == null || !visible) return@DisposableEffect onDispose { }
+        TaoWindowModality.block(owner)
+        onDispose { TaoWindowModality.unblock(owner) }
+    }
+
     // Bidirectional bridge between DialogState and the WindowState plumbed
-    // into the underlying DecoratedWindow. After wrap-content resolves,
-    // position is still not Absolute — centre on the parent once.
+    // into the underlying DecoratedWindow. A wrap-content dialog centres on
+    // the parent once its measured size lands (#546) — one-shot, since
+    // `windowState.size` also follows every user resize.
+    val recenterPending = remember { mutableStateOf(autoCenterRequested && !sizeSpecified) }
     LaunchedEffect(windowState.size) {
         if (state.size != windowState.size) state.size = windowState.size
-        recenterAfterWrapContent(autoCenterRequested, parent, windowState, state)
+    }
+    LaunchedEffect(windowState.size, ownerApplied.value) {
+        if (recenterPending.value && ownerApplied.value) {
+            recenterPending.value = !recenterOnParent(parent, windowState, state)
+        }
     }
     LaunchedEffect(windowState.position) {
         val p = windowState.position
@@ -200,77 +237,167 @@ public fun ApplicationScope.DecoratedDialog(
 }
 
 /**
- * Wires the native owner relationship between [dialog] and [parent].
+ * The position handed to the underlying window at creation: the explicit
+ * [WindowPosition.Absolute], else the parent's centre (Windows / Linux —
+ * macOS centres natively, see [applyWindowOwnerRelationship]).
  *
- * Mirrors `decorated-window-jni`'s `DecoratedDialog`, which uses Compose
- * Desktop's `DialogWindow` → AWT `JDialog`: the JDialog is created with the
- * parent as owner but **not** `APPLICATION_MODAL`, so the parent stays
- * interactive.
+ * Wrap-content dialogs (#532) don't know their height yet — a centre computed
+ * against `Dp.Unspecified` is wrong. With a parent, [recenterOnParent] centres
+ * once the measured size lands, so the window gets `PlatformDefault` rather
+ * than an alignment it would resolve against the *screen* (#546). Without one
+ * the screen is the reference, as AWT's `setLocationRelativeTo(null)`: the
+ * window's own wrap-content path resolves the alignment at the real size.
+ */
+private fun initialDialogPosition(
+    state: DialogState,
+    parent: TaoWindow?,
+    sizeSpecified: Boolean,
+): WindowPosition {
+    val explicit = state.position
+    if (explicit is WindowPosition.Absolute) return explicit
+    if (!sizeSpecified) {
+        return when {
+            parent != null -> WindowPosition.PlatformDefault
+            explicit is WindowPosition.Aligned -> explicit
+            else -> WindowPosition.Aligned(Alignment.Center)
+        }
+    }
+    val centered =
+        when (Platform.Current) {
+            Platform.Windows -> centerOnParentWindows(parent, state.size.width.value, state.size.height.value)
+            Platform.Linux -> centerOnParentFromBounds(parent, state.size.width.value, state.size.height.value)
+            else -> null
+        } ?: return explicit
+    state.position = centered
+    return centered
+}
+
+/**
+ * Centres a wrap-content dialog on [parent] once [windowState] carries its
+ * measured size (#546). `true` once done — the caller retries until then.
+ */
+private fun recenterOnParent(
+    parent: TaoWindow?,
+    windowState: WindowState,
+    state: DialogState,
+): Boolean {
+    val size = windowState.size
+    if (!size.width.isSpecified || !size.height.isSpecified) return false
+    val centered = centerOnParent(parent, size.width.value, size.height.value)
+    if (centered != null) {
+        windowState.position = centered
+        state.position = centered
+    }
+    return true
+}
+
+/**
+ * [WindowPosition.Absolute] centring a [dialogWidthDp] × [dialogHeightDp]
+ * window on [parent], or `null` without a realised parent.
+ */
+private fun centerOnParent(
+    parent: TaoWindow?,
+    dialogWidthDp: Float,
+    dialogHeightDp: Float,
+): WindowPosition.Absolute? =
+    when (Platform.Current) {
+        Platform.Windows -> centerOnParentWindows(parent, dialogWidthDp, dialogHeightDp)
+        Platform.Linux, Platform.MacOS -> centerOnParentFromBounds(parent, dialogWidthDp, dialogHeightDp)
+        else -> null
+    }
+
+/**
+ * Wires the native owner relationship between [child] and [owner].
  *
- * On Win32 we never call `EnableWindow(parent, false)`: disabling the parent
- * strips its keyboard focus and Win32 won't restore it cleanly when the
- * dialog closes (`SetForegroundWindow` gets rejected once we lose the
- * foreground role), leaving the user having to click the parent to revive it.
- * On macOS `addChildWindow:ordered:` gives us the right behaviour (parent
+ * Shared by [DecoratedDialog] and [SatelliteWindow]: both want the same
+ * secondary-window semantics — the child sits above its owner in z-order,
+ * follows it across minimisation / Spaces / workspace switches, stays out of
+ * the taskbar, and disappears with it — while the owner stays interactive.
+ *
+ * Modality is not part of it: a dialog layers it on top through
+ * [TaoWindowModality] (#832), a satellite leaves its owner usable.
+ *
+ * On macOS `addChildWindow:ordered:` gives us the right behaviour (owner
  * stays usable, child stays above) but it also makes the child visible at
  * its current frame — we therefore pass [autoCenter] through so the native
  * side can pre-position the child on the owner's centre atomically right
  * before `addChildWindow:` makes it appear, avoiding a one-frame flash at
- * Tao's default origin.
+ * Tao's default origin. Satellites resolve their own anchored position
+ * instead and pass `false`.
  *
- * No-op when the relevant bridge or the parent is unavailable.
+ * Re-invoking with a different [owner] reparents the child (AppKit tears the
+ * previous `addChildWindow:` down itself, Win32 and GTK overwrite the owner),
+ * without moving it.
+ *
+ * No-op when the relevant bridge or the owner is unavailable.
  */
-private fun recenterAfterWrapContent(
-    autoCenterRequested: Boolean,
-    parent: TaoWindow?,
-    windowState: WindowState,
-    state: DialogState,
-) {
-    if (!autoCenterRequested || state.position is WindowPosition.Absolute) return
-    if (!windowState.size.width.isSpecified || !windowState.size.height.isSpecified) return
-    val centered =
-        when (Platform.Current) {
-            Platform.Windows ->
-                centerOnParentWindows(parent, windowState.size.width.value, windowState.size.height.value)
-            Platform.Linux ->
-                centerOnParentLinux(parent, windowState.size.width.value, windowState.size.height.value)
-            else -> null
-        } ?: return
-    windowState.position = centered
-    state.position = centered
-}
-
-private fun applyDialogOwnerRelationship(
-    dialog: TaoWindow,
-    parent: TaoWindow?,
+internal fun applyWindowOwnerRelationship(
+    child: TaoWindow,
+    owner: TaoWindow?,
     autoCenter: Boolean,
+    /**
+     * Whether the platform may take [child] down together with [owner] — the
+     * JDialog behaviour a dialog wants. A satellite passes `false`: it outlives
+     * the window it is anchored to, since the workspace hands it to another
+     * one when that window closes.
+     */
+    destroyWithOwner: Boolean = true,
 ) {
-    if (parent == null) return
+    if (owner == null) return
 
     when (Platform.Current) {
         Platform.Windows -> {
             if (!NativeTaoWindowsDecoBridge.isLoaded) return
-            val dialogHwnd = dialog.nativeHandle
-            val parentHwnd = parent.nativeHandle
-            if (dialogHwnd == 0L || parentHwnd == 0L) return
-            NativeTaoWindowsDecoBridge.nativeSetOwner(dialogHwnd, parentHwnd)
+            val childHwnd = child.nativeHandle
+            val ownerHwnd = owner.nativeHandle
+            if (childHwnd == 0L || ownerHwnd == 0L) return
+            NativeTaoWindowsDecoBridge.nativeSetOwner(childHwnd, ownerHwnd)
         }
         Platform.MacOS -> {
             if (!NativeTaoMacOsDecoBridge.isLoaded) return
-            val dialogView = dialog.nativeHandle
-            val parentView = parent.nativeHandle
-            if (dialogView == 0L || parentView == 0L) return
-            NativeTaoMacOsDecoBridge.nativeSetOwner(dialogView, parentView, autoCenter)
+            val childView = child.nativeHandle
+            val ownerView = owner.nativeHandle
+            if (childView == 0L || ownerView == 0L) return
+            NativeTaoMacOsDecoBridge.nativeSetOwner(childView, ownerView, autoCenter)
         }
         Platform.Linux -> {
             // GTK route: `gtk_window_set_transient_for` covers z-order /
             // minimisation / focus return; `skip_taskbar_hint` and
             // `destroy_with_parent` round out the JDialog semantics. The
-            // actual centring is already done synchronously on the JVM side
-            // (see [centerOnParentLinux]) before the dialog window is shown,
+            // actual positioning is already done synchronously on the JVM side
+            // (see [centerOnParentFromBounds]) before the child window is shown,
             // so we don't need a native pre-position step like macOS.
-            NativeTaoBridge.nativeLinuxSetDialogOwner(dialog.handle, parent.handle)
+            NativeTaoBridge.nativeLinuxSetDialogOwner(child.handle, owner.handle, destroyWithOwner)
         }
+        else -> Unit
+    }
+}
+
+/**
+ * Severs the native owner link of [child] — the inverse of
+ * [applyWindowOwnerRelationship] — leaving it a plain top-level window.
+ *
+ * Used by [SatelliteWindow] right before its owner is destroyed: Win32
+ * destroys owned windows together with their owner and GTK does the same for
+ * `destroy_with_parent` transients, which would take down a satellite the app
+ * is reparenting in that very frame. AppKit only orphans child windows, so
+ * there this merely keeps the three platforms on one code path.
+ */
+internal fun clearWindowOwnerRelationship(child: TaoWindow) {
+    when (Platform.Current) {
+        Platform.Windows -> {
+            if (!NativeTaoWindowsDecoBridge.isLoaded) return
+            val childHwnd = child.nativeHandle
+            if (childHwnd == 0L) return
+            NativeTaoWindowsDecoBridge.nativeSetOwner(childHwnd, 0L)
+        }
+        Platform.MacOS -> {
+            if (!NativeTaoMacOsDecoBridge.isLoaded) return
+            val childView = child.nativeHandle
+            if (childView == 0L) return
+            NativeTaoMacOsDecoBridge.nativeSetOwner(childView, 0L, false)
+        }
+        Platform.Linux -> NativeTaoBridge.nativeLinuxSetDialogOwner(child.handle, 0L, false)
         else -> Unit
     }
 }
@@ -284,7 +411,8 @@ private fun applyDialogOwnerRelationship(
  * macOS goes through [applyDialogOwnerRelationship]'s native centring path
  * instead, because `addChildWindow:` makes the child visible synchronously
  * — pre-computing the position on the JVM side leaves a window of time in
- * which AppKit can paint at the wrong origin.
+ * which AppKit can paint at the wrong origin. Its post-measure re-centre
+ * (#546) is [centerOnParentFromBounds].
  */
 private fun centerOnParentWindows(
     parent: TaoWindow?,
@@ -319,8 +447,8 @@ private fun centerOnParentWindows(
 }
 
 /**
- * Linux counterpart of [centerOnParentWindows]. Pulls the parent's outer rect
- * via the GTK-backed `nativeLinuxGetWindowRect` and converts physical → logical
+ * Linux and macOS counterpart of [centerOnParentWindows]. Pulls the parent's
+ * outer rect via [TaoWindow.outerBoundsPx] and converts physical → logical
  * pixels using the parent's own scale factor. Returns `null` when the parent
  * isn't realised yet, in which case Tao keeps its default origin.
  *
@@ -330,13 +458,13 @@ private fun centerOnParentWindows(
  * through the standard `WindowState` pipeline so the LE position effect fires
  * with the centred coords *before* the window is shown.
  */
-private fun centerOnParentLinux(
+private fun centerOnParentFromBounds(
     parent: TaoWindow?,
     dialogWidthDp: Float,
     dialogHeightDp: Float,
 ): WindowPosition.Absolute? {
     if (parent == null) return null
-    val parentRectPhys = NativeTaoBridge.nativeLinuxGetWindowRect(parent.handle) ?: return null
+    val parentRectPhys = parent.outerBoundsPx() ?: return null
 
     val scaleMilli = NativeTaoBridge.nativeScaleFactor(parent.handle).coerceAtLeast(1)
     val scale = scaleMilli / 1000.0

@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -70,9 +69,10 @@ public fun NativeView(
     val view = remember { factory() }
     val latestUpdate by rememberUpdatedState(update)
 
-    DisposableEffect(view) {
-        onDispose { view.dispose() }
-    }
+    // `view.dispose()` is owned by [EmbeddedNativeView], sequenced *after* the
+    // host detach: `dispose()` promises the handle is never touched again, and
+    // a separate effect here ran first on unmount — the detach then walked a
+    // widget the app had already destroyed (SIGSEGV in `nativeDetach`).
     SideEffect { latestUpdate(view) }
 
     when (view) {
@@ -129,14 +129,24 @@ private fun EmbeddedNativeView(
     val host = LocalTaoNativeViewHost.current
     val latestContent by rememberUpdatedState(content)
     if (!enabled || host == null) {
+        DisposableEffect(view) {
+            onDispose { view.dispose() }
+        }
         Box(modifier)
         return
     }
 
     val regionToken = remember { Any() }
+    // One effect for attach, detach and dispose, so the order is fixed by
+    // construction: the host lets go of the handle, then the app frees it.
+    // The keys never change for a live embedding (the host is the window's,
+    // the token is remembered), so this only fires on unmount.
     DisposableEffect(host, regionToken) {
         host.attach(handle, regionToken)
-        onDispose { host.detach(handle, regionToken) }
+        onDispose {
+            host.detach(handle, regionToken)
+            view.dispose()
+        }
     }
 
     val density = LocalDensity.current
@@ -154,7 +164,7 @@ private fun EmbeddedNativeView(
         modifier =
             modifier
                 .punchNativeViewHole()
-                .onGloballyPositioned { coords ->
+                .onPositionChanged { coords ->
                     val pos = coords.positionInRoot()
                     val xPx = pos.x.roundToInt()
                     val yPx = pos.y.roundToInt()

@@ -1,4 +1,5 @@
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 #include <string>
 
@@ -42,9 +43,7 @@ static void fireHotKey(jlong id, int keyCode, int modifiers) {
             static_cast<jint>(keyCode),
             static_cast<jint>(modifiers)
         );
-        if (env->ExceptionCheck()) {
-            env->ExceptionClear();
-        }
+        nucleus_jni_clear_exception(env);
     }
 }
 

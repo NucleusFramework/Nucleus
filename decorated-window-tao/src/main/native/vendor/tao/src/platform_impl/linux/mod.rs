@@ -110,3 +110,40 @@ impl DeviceId {
 
 // FIXME: currently we use a dummy device id, find if we can get device id from gtk
 pub(crate) const DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(0));
+
+// PATCH(nucleus): tablet tools get device ids of their own, so the embedder
+// can tell a pen (or its eraser end) from the mouse. GDK reports a tablet as
+// ordinary motion / button events whose *source* device is the tool.
+const PEN_DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(1));
+const ERASER_DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(2));
+
+/// The device id a pointer event reports for its GDK source device.
+pub(crate) fn pointer_device_id(source: Option<gtk::gdk::Device>) -> RootDeviceId {
+  use gtk::{gdk::InputSource, prelude::DeviceExt};
+  match source.map(|device| device.source()) {
+    Some(InputSource::Pen) => PEN_DEVICE_ID,
+    Some(InputSource::Eraser) => ERASER_DEVICE_ID,
+    _ => DEVICE_ID,
+  }
+}
+
+/// Tool behind a pointer event; see [`pointer_device_id`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum PointerSource {
+  /// A mouse, a touchpad, or any device that is not a tablet tool.
+  Mouse,
+  /// The tip of a tablet pen.
+  Pen,
+  /// The eraser end of a tablet pen.
+  Eraser,
+}
+
+impl DeviceId {
+  pub(crate) fn pointer_source(&self) -> PointerSource {
+    match self.0 {
+      1 => PointerSource::Pen,
+      2 => PointerSource::Eraser,
+      _ => PointerSource::Mouse,
+    }
+  }
+}

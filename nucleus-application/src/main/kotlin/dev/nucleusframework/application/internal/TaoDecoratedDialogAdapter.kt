@@ -1,28 +1,31 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package dev.nucleusframework.application.internal
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.window.DialogState
-import dev.nucleusframework.application.LocalNucleusBackend
 import dev.nucleusframework.application.LocalNucleusWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.NucleusDecoratedDialogScope
 import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
 import dev.nucleusframework.window.DecoratedDialogState
 import dev.nucleusframework.window.DecoratedWindowState
-import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.tao.LocalTaoCompositionLocalContextBridge
+import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
+import dev.nucleusframework.window.tao.TaoWindow
+import kotlinx.coroutines.flow.filter
 import dev.nucleusframework.window.tao.DecoratedDialog as TaoDecoratedDialog
 
 internal object TaoDecoratedDialogAdapter {
@@ -55,15 +58,8 @@ internal object TaoDecoratedDialogAdapter {
         // local, so popups stay anchored to the dialog scene.
         val parentLayoutDirection = LocalLayoutDirection.current
 
-        // Tell the parent window to block its pointer input while this dialog
-        // is alive. The parent provides LocalModalDialogCount with a shared
-        // MutableState; we increment it here and decrement on dispose.
-        // outerLocals includes that state by reference, so the parent reacts.
-        val parentModalCount = LocalModalDialogCount.current
-        DisposableEffect(Unit) {
-            parentModalCount.value++
-            onDispose { parentModalCount.value-- }
-        }
+        val parentWindow = LocalTaoWindow.current
+        val takesActivation = visible && enabled && focusable
 
         with(scope.taoScope) {
             TaoDecoratedDialog(
@@ -82,46 +78,124 @@ internal object TaoDecoratedDialogAdapter {
                 // throwing default, e.g. LocalAppGraph, would crash otherwise).
                 compositionLocalContext = outerLocals,
             ) {
-                val taoScope: TaoDecoratedDialogScope = this
-                // Tao dialogs share TaoWindow with regular windows; rebuild the
-                // active-state mirror as a single-bit DecoratedWindowState so
-                // [TaoNucleusWindow] can read uniform flow values.
-                val windowStateMirror =
-                    remember(taoScope) {
-                        derivedStateOf {
-                            DecoratedWindowState.of(active = taoScope.state.isActive)
-                        }
-                    }
-                val nucleusWindow: NucleusWindow =
-                    remember(taoScope.window) {
-                        TaoNucleusWindow(taoScope.window, windowStateMirror)
-                    }
-                val nucleusScope =
-                    remember(taoScope, nucleusWindow) {
-                        TaoNucleusDecoratedDialogScope(taoScope, nucleusWindow)
-                    }
-                // Bridge the parent composition's locals (theme, density,
-                // user-provided locals, …) into the dialog's own ComposeScene
-                // via `ComposeScene.compositionLocalContext` rather than a
-                // `CompositionLocalProvider(outerLocals)` wrapper. The wrapper
-                // would re-provide Compose's internal `LocalComposeSceneContext`
-                // captured from the PARENT scene, routing every Popup /
-                // DropdownMenu / Tooltip layer back into the parent window — the
-                // popup-mispositioned-relative-to-parent bug. The scene property
-                // is applied above the scene's own `LocalComposeSceneContext`
-                // (see RootNodeOwner.setContent), so theme flows while the dialog
-                // scene keeps authority over popup layer creation.
-                val bridge = LocalTaoCompositionLocalContextBridge.current
-                SideEffect { bridge?.invoke(outerLocals) }
-                CompositionLocalProvider(
-                    LocalLayoutDirection provides parentLayoutDirection,
-                    LocalNucleusBackend provides NucleusBackend.Tao,
-                    LocalNucleusWindow provides nucleusWindow,
-                ) {
-                    nucleusScope.content()
-                }
+                RedirectParentActivation(parentWindow, window, takesActivation)
+                bindNucleusDialogContent(outerLocals, parentLayoutDirection, content)
             }
         }
+    }
+
+    @Suppress("LongParameterList")
+    @Composable
+    fun DialogNucleusV2(
+        scope: TaoNucleusApplicationScope,
+        onCloseRequest: () -> Unit,
+        state: dev.nucleusframework.window.tao.v2.DialogState,
+        visible: Boolean,
+        title: String,
+        icon: Painter?,
+        resizable: Boolean,
+        enabled: Boolean,
+        focusable: Boolean,
+        minSize: androidx.compose.ui.unit.DpSize,
+        maxSize: androidx.compose.ui.unit.DpSize,
+        onPreviewKeyEvent: (KeyEvent) -> Boolean,
+        onKeyEvent: (KeyEvent) -> Boolean,
+        content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+    ) {
+        val outerLocals = currentCompositionLocalContext
+        val parentLayoutDirection = LocalLayoutDirection.current
+        val parentWindow = LocalTaoWindow.current
+        val takesActivation = visible && enabled && focusable
+        with(scope.taoScope) {
+            TaoDecoratedDialog(
+                onCloseRequest = onCloseRequest,
+                state = state,
+                visible = visible,
+                title = title,
+                icon = icon,
+                resizable = resizable,
+                enabled = enabled,
+                focusable = focusable,
+                minSize = minSize,
+                maxSize = maxSize,
+                onPreviewKeyEvent = onPreviewKeyEvent,
+                onKeyEvent = onKeyEvent,
+                compositionLocalContext = outerLocals,
+            ) {
+                RedirectParentActivation(parentWindow, window, takesActivation)
+                bindNucleusDialogContent(outerLocals, parentLayoutDirection, content)
+            }
+        }
+    }
+}
+
+/**
+ * Hands activation back to the dialog whenever its [parent] gets it (#515).
+ *
+ * On macOS and Linux the parent stays enabled while a dialog is open — the modal blocker only
+ * swallows its pointer input — and every OS keeps an owned dialog above its owner. (Windows
+ * disables the parent natively (#832), so it never gets the activation there.) A click on the uncovered part of the
+ * parent, its taskbar button, Alt-Tab or `toFront()` therefore focused the parent under the dialog,
+ * and keystrokes reached the content the dialog is blocking. A modal dialog takes that activation,
+ * as AWT does for a blocked window. Stacked dialogs chain: each one redirects its own parent.
+ */
+@Composable
+private fun RedirectParentActivation(
+    parent: TaoWindow?,
+    dialog: TaoWindow,
+    takesActivation: Boolean,
+) {
+    if (parent == null || !takesActivation) return
+    LaunchedEffect(parent, dialog) {
+        snapshotFlow { parent.isFocused }
+            .filter { it }
+            .collect { dialog.focus() }
+    }
+}
+
+@Composable
+private fun TaoDecoratedDialogScope.bindNucleusDialogContent(
+    outerLocals: androidx.compose.runtime.CompositionLocalContext,
+    parentLayoutDirection: androidx.compose.ui.unit.LayoutDirection,
+    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+) {
+    val taoScope: TaoDecoratedDialogScope = this
+    // Tao dialogs share TaoWindow with regular windows; rebuild the
+    // active-state mirror as a single-bit DecoratedWindowState so
+    // [TaoNucleusWindow] can read uniform flow values.
+    val windowStateMirror =
+        remember(taoScope) {
+            derivedStateOf {
+                DecoratedWindowState.of(active = taoScope.state.isActive)
+            }
+        }
+    val nucleusWindow: NucleusWindow =
+        remember(taoScope.window) {
+            TaoNucleusWindow(taoScope.window, windowStateMirror)
+        }
+    val nucleusScope =
+        remember(taoScope, nucleusWindow) {
+            TaoNucleusDecoratedDialogScope(taoScope, nucleusWindow)
+        }
+    ObserveIdleGc(nucleusWindow)
+    // Bridge the parent composition's locals (theme, density,
+    // user-provided locals, …) into the dialog's own ComposeScene
+    // via `ComposeScene.compositionLocalContext` rather than a
+    // `CompositionLocalProvider(outerLocals)` wrapper. The wrapper
+    // would re-provide Compose's internal `LocalComposeSceneContext`
+    // captured from the PARENT scene, routing every Popup /
+    // DropdownMenu / Tooltip layer back into the parent window — the
+    // popup-mispositioned-relative-to-parent bug. The scene property
+    // is applied above the scene's own `LocalComposeSceneContext`
+    // (see RootNodeOwner.setContent), so theme flows while the dialog
+    // scene keeps authority over popup layer creation.
+    val bridge = LocalTaoCompositionLocalContextBridge.current
+    SideEffect { bridge?.invoke(outerLocals) }
+    CompositionLocalProvider(
+        LocalLayoutDirection provides parentLayoutDirection,
+        LocalNucleusWindow provides nucleusWindow,
+    ) {
+        nucleusScope.content()
     }
 }
 
