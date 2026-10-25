@@ -5,6 +5,7 @@ package dev.nucleusframework.systeminfo.model
  * (Filament, …) on a machine where it would fail or crawl, see `SystemInfo.renderTier()`.
  */
 public enum class RenderTier {
+    // Order matters: the native probes return the ordinal
     /** The platform could not be probed. */
     UNKNOWN,
 

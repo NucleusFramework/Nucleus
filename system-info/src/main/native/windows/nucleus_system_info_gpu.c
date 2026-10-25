@@ -878,7 +878,7 @@ static D3D_FEATURE_LEVEL probe_feature_level(IDXGIAdapter1 *adapter) {
                         levels + 3, count - 3, D3D11_SDK_VERSION, NULL, &got, NULL);
         if (FAILED(hr)) got = 0;
     }
-    FreeLibrary(d3d11);
+    // Not freed: the probe may have pulled in the GPU's user-mode driver, which outlives d3d11
     return got;
 }
 
