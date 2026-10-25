@@ -632,6 +632,17 @@ static void suspendMirrorFor(HWND hwnd) {
     }
 }
 
+/* ANGLE's D3D11 device behind [dpy], or NULL. Not AddRef'd. */
+static ID3D11Device *angleD3D11Device(EGLDisplay dpy) {
+    EGLAttrib devAttr = 0, d3dAttr = 0;
+    if (!pEglQueryDisplayAttribEXT || !pEglQueryDeviceAttribEXT ||
+        !pEglQueryDisplayAttribEXT(dpy, EGL_DEVICE_EXT, &devAttr) ||
+        !pEglQueryDeviceAttribEXT((EGLDeviceEXT)devAttr, EGL_D3D11_DEVICE_ANGLE, &d3dAttr)) {
+        return NULL;
+    }
+    return (ID3D11Device *)d3dAttr;
+}
+
 static BOOL mirrorSupported(EGLDisplay dpy) {
     if (!nucleus_tao_mirror_available() ||
         !pEglCreateImageKHR || !pEglDestroyImageKHR || !pglEGLImageTargetTexture2DOES ||
@@ -640,17 +651,12 @@ static BOOL mirrorSupported(EGLDisplay dpy) {
         !pEglQueryDisplayAttribEXT || !pEglQueryDeviceAttribEXT || !pEglQueryString) {
         return FALSE;
     }
-    const char *ext = pEglQueryString(dpy, EGL_EXTENSIONS);
-    if (!ext) return FALSE;
     /* EGL_ANGLE_image_d3d11_texture: an EGLImage over a D3D11 texture. */
-    const char *needle = "EGL_ANGLE_image_d3d11_texture";
-    const char *p;
-    for (p = ext; *p; ++p) {
-        const char *a = p, *b = needle;
-        while (*a && *b && *a == *b) { ++a; ++b; }
-        if (*b == 0 && (*a == ' ' || *a == 0)) return TRUE;
+    if (!eglHasExtension(pEglQueryString(dpy, EGL_EXTENSIONS), "EGL_ANGLE_image_d3d11_texture")) {
+        return FALSE;
     }
-    return FALSE;
+    ID3D11Device *device = angleD3D11Device(dpy);
+    return device && nucleus_tao_mirror_device_supported(device);
 }
 
 /* Drops the GL objects over the mirror texture. Context must be current. */
@@ -664,14 +670,11 @@ static void releaseMirrorGl(GlAttachment *att) {
 
 static void enableMirror(GlAttachment *att) {
     if (att->mirror || att->mirrorBroken) return;
-    EGLAttrib devAttr = 0, d3dAttr = 0;
-    if (!mirrorSupported(att->eglDisplay) ||
-        !pEglQueryDisplayAttribEXT(att->eglDisplay, EGL_DEVICE_EXT, &devAttr) ||
-        !pEglQueryDeviceAttribEXT((EGLDeviceEXT)devAttr, EGL_D3D11_DEVICE_ANGLE, &d3dAttr)) {
+    if (!mirrorSupported(att->eglDisplay)) {
         att->mirrorBroken = TRUE;
         return;
     }
-    att->mirror = nucleus_tao_mirror_create(att->surfaceHwnd, (ID3D11Device *)d3dAttr);
+    att->mirror = nucleus_tao_mirror_create(att->surfaceHwnd, angleD3D11Device(att->eglDisplay));
     if (att->mirror) {
         trackMirrored(att, TRUE);
     } else {

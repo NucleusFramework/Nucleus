@@ -2883,7 +2883,7 @@ internal class TaoComposeSceneHostWindows(
      * translucent frame over the same frame below it.
      */
     private fun syncMirror() {
-        val wanted = !fullyTransparent && !transparentBackgroundState.value
+        val wanted = frameMirrorEnabled && !fullyTransparent && !transparentBackgroundState.value
         if (wanted == mirrorWanted) return
         mirrorWanted = wanted
         // What the driver allows, not what was asked for.
@@ -2997,6 +2997,15 @@ internal class TaoComposeSceneHostWindows(
     }
 
     internal companion object {
+        /**
+         * `-Dnucleus.tao.windowsFrameMirror=false` never mirrors frames into
+         * DirectComposition, for a driver that shows the mirror black over a
+         * fine window. Moves are then answered with a repaint, as on a GPU
+         * without mirror support. Read once.
+         */
+        private val frameMirrorEnabled: Boolean =
+            System.getProperty("nucleus.tao.windowsFrameMirror", "true").toBoolean()
+
         /**
          * Floor between two frames painted from inside `DoDragDrop`'s modal
          * loop — see [OutboundDragPump]. ~8 ms leaves headroom above 120 Hz
