@@ -12,6 +12,7 @@ import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
 import dev.nucleusframework.systeminfo.model.OsInfo
 import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
+import dev.nucleusframework.systeminfo.model.RenderTier
 import dev.nucleusframework.systeminfo.model.UserInfo
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +45,8 @@ internal interface PlatformSystemInfo {
     fun process(pid: Long): ProcessInfo?
 
     fun gpus(): List<GpuInfo>
+
+    fun renderTier(): RenderTier
 
     fun batteryInfo(): BatteryInfo?
 

@@ -6,6 +6,7 @@
 // DXGI headers
 #include <dxgi.h>
 #include <dxgi1_4.h>
+#include <d3d11.h>
 #include <initguid.h>
 #include <math.h>
 
@@ -840,4 +841,78 @@ Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativ
     for (int i = 0; i < g_gpu_count; i++) vals[i] = g_gpus[i].power_draw_watts;
     (*env)->SetFloatArrayRegion(env, arr, 0, g_gpu_count, vals);
     free(vals); return arr;
+}
+
+// ============================================================================
+// Render tier — how the default adapter handles 3D content (RenderTier ordinal)
+// ============================================================================
+
+#define RENDER_TIER_UNKNOWN  0
+#define RENDER_TIER_SOFTWARE 1
+#define RENDER_TIER_LEGACY   2
+#define RENDER_TIER_CAPABLE  3
+
+typedef HRESULT (WINAPI *pfn_D3D11CreateDevice)(
+    IDXGIAdapter *, D3D_DRIVER_TYPE, HMODULE, UINT, const D3D_FEATURE_LEVEL *, UINT, UINT,
+    ID3D11Device **, D3D_FEATURE_LEVEL *, ID3D11DeviceContext **);
+
+// Highest feature level [adapter]'s driver supports; 0 when it cannot be probed.
+static D3D_FEATURE_LEVEL probe_feature_level(IDXGIAdapter1 *adapter) {
+    HMODULE d3d11 = LoadLibraryW(L"d3d11.dll");
+    if (!d3d11) return 0;
+    pfn_D3D11CreateDevice create = (pfn_D3D11CreateDevice)GetProcAddress(d3d11, "D3D11CreateDevice");
+    D3D_FEATURE_LEVEL got = 0;
+    if (create) {
+        static const D3D_FEATURE_LEVEL levels[] = {
+            D3D_FEATURE_LEVEL_12_1, D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0,
+            D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_9_3, D3D_FEATURE_LEVEL_9_2,
+            D3D_FEATURE_LEVEL_9_1,
+        };
+        UINT count = sizeof(levels) / sizeof(levels[0]);
+        // No device out: D3D11 only reports the level it would create (S_FALSE)
+        HRESULT hr = create((IDXGIAdapter *)adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0,
+                            levels, count, D3D11_SDK_VERSION, NULL, &got, NULL);
+        // A runtime without 11.1+ rejects the levels it does not know: retry from 11_0
+        if (hr == E_INVALIDARG)
+            hr = create((IDXGIAdapter *)adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, 0,
+                        levels + 3, count - 3, D3D11_SDK_VERSION, NULL, &got, NULL);
+        if (FAILED(hr)) got = 0;
+    }
+    FreeLibrary(d3d11);
+    return got;
+}
+
+static int probe_render_tier(void) {
+    IDXGIFactory1 *factory = NULL;
+    if (FAILED(CreateDXGIFactory1(&IID_IDXGIFactory1_local, (void **)&factory)) || !factory)
+        return RENDER_TIER_UNKNOWN;
+    int tier = RENDER_TIER_UNKNOWN;
+    IDXGIAdapter1 *adapter = NULL;
+    // Adapter 0 is the one an app gets by default (ANGLE, Filament, skiko)
+    if (SUCCEEDED(factory->lpVtbl->EnumAdapters1(factory, 0, &adapter)) && adapter) {
+        DXGI_ADAPTER_DESC1 desc;
+        if (SUCCEEDED(adapter->lpVtbl->GetDesc1(adapter, &desc))) {
+            if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) || desc.VendorId == 0x1414) {
+                // WARP / Microsoft Basic Render Driver: no GPU driver installed (VM, RDP, driverless)
+                tier = RENDER_TIER_SOFTWARE;
+            } else {
+                D3D_FEATURE_LEVEL level = probe_feature_level(adapter);
+                // Below 11_0: a Direct3D 10.x-class GPU (WDDM 1.1 driver on Windows 10)
+                if (level >= D3D_FEATURE_LEVEL_11_0) tier = RENDER_TIER_CAPABLE;
+                else if (level != 0) tier = RENDER_TIER_LEGACY;
+            }
+        }
+        adapter->lpVtbl->Release(adapter);
+    }
+    factory->lpVtbl->Release(factory);
+    return tier;
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeRenderTier(
+    JNIEnv *env, jclass clazz) {
+    // The default adapter's driver does not change while the app runs
+    static volatile LONG cached = -1;
+    if (cached < 0) InterlockedExchange(&cached, probe_render_tier());
+    return (jint)cached;
 }

@@ -17,6 +17,7 @@ import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
 import dev.nucleusframework.systeminfo.model.OsInfo
 import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
+import dev.nucleusframework.systeminfo.model.RenderTier
 import dev.nucleusframework.systeminfo.model.UserInfo
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -307,6 +308,11 @@ internal object MacOsSystemInfo : PlatformSystemInfo {
             modelName = bridge.nativeBatteryModelName(),
             serialNumber = bridge.nativeBatterySerialNumber(),
         )
+    }
+
+    override fun renderTier(): RenderTier {
+        if (!bridge.isLoaded) return RenderTier.UNKNOWN
+        return RenderTier.entries.getOrElse(bridge.nativeRenderTier()) { RenderTier.UNKNOWN }
     }
 
     override fun idleTime(): Long {

@@ -619,3 +619,39 @@ Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpu
     free(vals);
     return result;
 }
+
+// ============================================================================
+// Render tier — whether a Metal GPU is there for 3D (RenderTier ordinal)
+// ============================================================================
+// Every Mac a supported macOS runs on has a Metal GPU; no Metal device means
+// no GPU acceleration at all (a VM without a virtual GPU). Metal is dlopen'd:
+// plain C here, and no framework link.
+
+#include <dlfcn.h>
+
+#define RENDER_TIER_UNKNOWN  0
+#define RENDER_TIER_SOFTWARE 1
+#define RENDER_TIER_CAPABLE  3
+
+typedef CFTypeRef (*pfn_MTLCreateSystemDefaultDevice)(void);
+
+static int probe_render_tier(void) {
+    void *metal = dlopen("/System/Library/Frameworks/Metal.framework/Metal", RTLD_NOW | RTLD_LOCAL);
+    if (!metal) return RENDER_TIER_UNKNOWN;
+    pfn_MTLCreateSystemDefaultDevice create =
+        (pfn_MTLCreateSystemDefaultDevice)dlsym(metal, "MTLCreateSystemDefaultDevice");
+    if (!create) return RENDER_TIER_UNKNOWN;
+    CFTypeRef device = create();
+    if (!device) return RENDER_TIER_SOFTWARE;
+    CFRelease(device); // a +1 reference (Create rule)
+    return RENDER_TIER_CAPABLE;
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeRenderTier(
+    JNIEnv *env, jclass clazz) {
+    // The default Metal device does not change while the app runs
+    static volatile int cached = -1;
+    if (cached < 0) cached = probe_render_tier();
+    return (jint)cached;
+}

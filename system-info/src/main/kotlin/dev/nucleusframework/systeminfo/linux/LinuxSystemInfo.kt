@@ -18,6 +18,7 @@ import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
 import dev.nucleusframework.systeminfo.model.OsInfo
 import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
+import dev.nucleusframework.systeminfo.model.RenderTier
 import dev.nucleusframework.systeminfo.model.UserInfo
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -262,6 +263,11 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
             cwd = strings[PROCESS_STRING_CWD]?.ifEmpty { null },
             root = strings[PROCESS_STRING_ROOT]?.ifEmpty { null },
         )
+    }
+
+    override fun renderTier(): RenderTier {
+        if (!ready()) return RenderTier.UNKNOWN
+        return RenderTier.entries.getOrElse(bridge.nativeRenderTier()) { RenderTier.UNKNOWN }
     }
 
     override fun idleTime(): Long {
