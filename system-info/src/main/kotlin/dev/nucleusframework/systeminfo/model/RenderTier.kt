@@ -3,9 +3,10 @@ package dev.nucleusframework.systeminfo.model
 /**
  * How well the GPU an app gets by default handles 3D content, so an app can turn off a 3D engine
  * (Filament, …) on a machine where it would fail or crawl, see `SystemInfo.renderTier()`.
+ *
+ * Declaration order is part of the contract: the native probes return the ordinal.
  */
 public enum class RenderTier {
-    // Order matters: the native probes return the ordinal
     /** The platform could not be probed. */
     UNKNOWN,
 
