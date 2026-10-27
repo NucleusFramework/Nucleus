@@ -1,11 +1,13 @@
 package dev.nucleusframework.speech
 
 /**
- * Turns one SFSpeechRecognizer task's results into transcripts that never drop words already sent.
+ * Turns one recognition task's results into transcripts that never drop words already sent.
  *
- * After a pause, on-device recognition closes a segment with one result carrying metadata, then
- * restarts `bestTranscription` from the new words only, without ever setting `isFinal`. Its final
- * result after `endAudio` can hold only the last segment, or nothing at all.
+ * After a pause, on-device SFSpeechRecognizer closes a segment with one result carrying metadata,
+ * then restarts `bestTranscription` from the new words only, without ever setting `isFinal`. Its
+ * final result after `endAudio` can hold only the last segment, or nothing at all. Android's
+ * on-device service does the same without any metadata: its partials restart from the new words,
+ * and its single final result only holds the last ones.
  *
  * Pure logic, kept in common code so it is unit-tested off-device.
  */

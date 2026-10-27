@@ -40,7 +40,10 @@ internal class AndroidSpeechSession private constructor(
     private var askedForPermission = false
     private var generation = 0
     private var transientFailures = 0
-    private var pending = ""
+
+    // The current utterance. Some services (on-device SODA) start a new hypothesis after a pause
+    // without delivering results for the old one, which this commits instead of dropping.
+    private var segments = TranscriptSegments()
     private val restart = Runnable { listen() }
     private val finalTimeout = Runnable { finish() }
 
@@ -103,7 +106,7 @@ internal class AndroidSpeechSession private constructor(
 
     private fun listen() {
         if (disposed || !listening) return
-        pending = ""
+        segments = TranscriptSegments()
         val intent =
             Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -189,9 +192,8 @@ internal class AndroidSpeechSession private constructor(
     private fun onPartial(results: Bundle?) {
         if (!awaitingResult || results == null) return
         val text = transcript(results)
-        if (text.isNotEmpty() && text != pending) {
-            pending = text
-            send(SpeechEvent.Transcript(text, isFinal = false))
+        if (text.trim() != segments.open) {
+            segments.result(text, isFinal = false, closesSegment = false).forEach(::send)
         }
     }
 
@@ -199,10 +201,8 @@ internal class AndroidSpeechSession private constructor(
         if (!awaitingResult) return
         awaitingResult = false
         transientFailures = 0
-        val text = results?.let(::transcript).orEmpty()
         // A final that only cuts words off the end of the last partial keeps them.
-        if (text.isNotEmpty() && !isShortenedRevision(pending, text)) pending = text
-        commitPending()
+        segments.result(results?.let(::transcript).orEmpty(), isFinal = true, closesSegment = false).forEach(::send)
         nextUtterance()
     }
 
@@ -300,10 +300,7 @@ internal class AndroidSpeechSession private constructor(
     }
 
     private fun commitPending() {
-        if (pending.isNotEmpty()) {
-            send(SpeechEvent.Transcript(pending, isFinal = true))
-            pending = ""
-        }
+        segments.flush().forEach(::send)
     }
 
     private fun nextUtterance() {

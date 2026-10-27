@@ -71,6 +71,24 @@ class TranscriptSegmentsTest {
     }
 
     @Test
+    fun aPartialThatStartsOverCommitsThePreviousHypothesis() {
+        // Android's on-device service after a pause, without any segment metadata: the partials
+        // restart from the new words, and the one final only holds them.
+        val segments = TranscriptSegments()
+        segments.result("The quick brown fox jumps over the", isFinal = false, closesSegment = false)
+        assertEquals(
+            listOf(final("The quick brown fox jumps over the"), partial("Hello")),
+            segments.result("Hello", isFinal = false, closesSegment = false),
+        )
+        segments.result("Hello world this is a dictation", isFinal = false, closesSegment = false)
+        assertEquals(
+            listOf(final("Hello world this is a dictation test")),
+            segments.result("Hello world this is a dictation test", isFinal = true, closesSegment = false),
+        )
+        assertEquals(emptyList(), segments.flush())
+    }
+
+    @Test
     fun looseRemainderMatchesWordsLoosely() {
         assertEquals("and more", looseRemainder("Hello, world and more", "hello world"))
         assertEquals("", looseRemainder("hello world", "hello world"))
