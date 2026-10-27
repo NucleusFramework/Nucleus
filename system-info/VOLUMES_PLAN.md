@@ -161,13 +161,13 @@ SSD, an SD card, LUKS/LVM, btrfs, the statvfs timeout against a dead NFS/CIFS se
 
 ## macOS
 
-- [ ] One `DASession` on a private serial dispatch queue (`DASessionSetDispatchQueue`): no
+- [x] One `DASession` on a private serial dispatch queue (`DASessionSetDispatchQueue`): no
   AppKit, no CFRunLoop, works with Tao. Register Appeared, Disappeared and DescriptionChanged
   (watch `kDADiskDescriptionWatchVolumePath`), with match = NULL so network and FUSE volumes
   come through. Signal `onDisksChanged()` only once `VolumePath` is set (a disk appears before
   it is mounted; Chromium pattern). A cheap AppKit-free extra signal is notify(3)
   `com.apple.system.kernel.mount` / `unmount`.
-- [ ] Classification, in order:
+- [x] Classification, in order:
   - `VolumeNetwork`, or `!(f_flags & MNT_LOCAL)` → `NETWORK`;
   - `DeviceProtocol == "Virtual Interface"`, or no `DeviceInternal` key → `VIRTUAL` (DMG,
     Time Machine images);
@@ -177,15 +177,15 @@ SSD, an SD card, LUKS/LVM, btrfs, the statvfs timeout against a dead NFS/CIFS se
   - otherwise `INTERNAL`.
   APFS synthesized disks already inherit `DeviceInternal` / `DeviceProtocol` from their physical
   store, so no manual walk is needed. Do not trust `MediaRemovable` alone.
-- [ ] Null-check every `DADiskCopyDescription`: it returns NULL during a surprise removal and
+- [x] Null-check every `DADiskCopyDescription`: it returns NULL during a surprise removal and
   crashed drivelist (#329, #353).
-- [ ] `volumeId`: `kDADiskDescriptionVolumeUUIDKey`, else `fstype + f_mntfromname` for network
+- [x] `volumeId`: `kDADiskDescriptionVolumeUUIDKey`, else `fstype + f_mntfromname` for network
   volumes. Never the mount path (sysinfo's bug).
-- [ ] Hide system volumes (`MNT_DONTBROWSE` / `NSURLVolumeIsBrowsableKey`: VM, Preboot, Update,
+- [x] Hide system volumes (`MNT_DONTBROWSE` / `NSURLVolumeIsBrowsableKey`: VM, Preboot, Update,
   snapshots). Check what `/` and `/System/Volumes/Data` look like on a real Mac.
-- [ ] Never block: `getfsstat(MNT_NOWAIT)`, and `statfs` of network volumes on a thread with a
+- [x] Never block: `getfsstat(MNT_NOWAIT)`, and `statfs` of network volumes on a thread with a
   1 s timeout, never on the DA queue.
-- [ ] Eject: `DARegisterDiskUnmountApprovalCallback`.
+- [x] Eject: `DARegisterDiskUnmountApprovalCallback`.
   - On deny, return `DADissenterCreate(kCFAllocatorDefault, kDAReturnBusy, reason)`; returning
     NULL approves.
   - The daemon gives up after **10 s** and then stops sending this session approval requests
@@ -193,6 +193,29 @@ SSD, an SD card, LUKS/LVM, btrfs, the statvfs timeout against a dead NFS/CIFS se
   - Force unmount, surprise removal and a direct `umount(2)` bypass it: document this.
   - Teardown order: unregister, then `DASessionSetDispatchQueue(NULL)`, then drain the queue,
     then release.
-- [ ] Tests on CI:
+- [x] Tests on CI:
   - `hdiutil create` + `attach` → `VIRTUAL`, UUID, `disksFlow` emits;
-  - `hdiutil detach` while a handler denies → detach fails without `-force`.
+  - `diskutil eject` while a handler denies → the eject fails ("Unmount was dissented by PID …").
+
+Notes from the macOS pass (macOS 27.0.1, Apple Silicon):
+- `/` is the sealed system snapshot (`disk3s1s1`, read-only, browsable) and is reported; the
+  Data volume behind it (`/System/Volumes/Data`) is `nobrowse` and hidden with the other system
+  volumes, as are simulator runtime images under `/Library/Developer/CoreSimulator/Volumes`.
+- `hdiutil attach -nobrowse` mounts with `MNT_DONTBROWSE`, so `disks()` hides such an image: the
+  E2E test attaches without it.
+- `hdiutil detach` is deprecated on macOS 27 (it prints a warning and suggests `diskutil eject`);
+  the tests use `diskutil eject`, which also goes through the approval callback.
+- A disk image reports `MediaRemovable = true`; `isRemovable` ignores it for `VIRTUAL` volumes,
+  as Linux does for loop devices.
+- DA scans use an unscheduled `DASession` (`DADiskCreateFromBSDName` + `DADiskCopyDescription`
+  need neither a run loop nor a queue), created once and only touched under `diskScanLock`.
+- `disks()` is called back from inside the unmount approval (to build the `DiskInfo`) while
+  diskarbitrationd waits for our answer: that does not deadlock, the daemon keeps serving
+  description requests.
+- A Thunderbolt NVMe enclosure reports `DeviceInternal = false`, protocol `PCI-Express` →
+  `EXTERNAL`, verified here.
+
+Verified here: internal root (`INTERNAL` + UUID), a Thunderbolt NVMe SSD (`EXTERNAL`), an
+attached DMG (`VIRTUAL` + UUID, `disksFlow` on attach and eject), an eject refused by a handler.
+Not verified on hardware: a built-in SD slot, a USB stick, a network share (SMB/NFS) and the
+statfs timeout against a dead server, an Intel Mac.
