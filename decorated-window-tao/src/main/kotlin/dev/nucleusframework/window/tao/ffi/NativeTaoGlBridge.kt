@@ -60,6 +60,10 @@ internal object NativeTaoGlBridge {
     @JvmStatic
     external fun nativeAttach(hwnd: Long): Long
 
+    /** Render-surface child HWND owned by the live attachment [handle]. */
+    @JvmStatic
+    external fun nativeRenderSurfaceHandle(handle: Long): Long
+
     /**
      * Address of the native GrGLGetProc trampoline routing to ANGLE's
      * `eglGetProcAddress`. Passed to

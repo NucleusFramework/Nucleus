@@ -168,6 +168,35 @@ internal object NativeTaoBridge {
         }
 
         /**
+         * Windows precision-touchpad manipulation (#706): the raw stream of
+         * the window's DirectManipulation viewport, turned into pan and pinch
+         * phases by [dev.nucleusframework.window.tao.event.TaoDirectManipulationGesture].
+         *
+         * [kind] is [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.STATUS]
+         * (the viewport moved from [previousStatus] to [status]) or
+         * [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.CONTENT]
+         * (a new content transform while in [status]). Statuses are
+         * `DIRECTMANIPULATION_STATUS` values. [scale] / [offsetX] / [offsetY]
+         * are the content transform at that moment, [focalX] / [focalY] where
+         * the gesture is — both in client-area physical pixels.
+         *
+         * Default no-op so non-Windows callers can ignore it.
+         */
+        @Suppress("LongParameterList")
+        fun onDirectManipulation(
+            handle: Long,
+            kind: Int,
+            status: Int,
+            previousStatus: Int,
+            scale: Float,
+            offsetX: Float,
+            offsetY: Float,
+            focalX: Float,
+            focalY: Float,
+        ) {
+        }
+
+        /**
          * macOS replacement commit: `insertText:` with a valid
          * `replacementRange` outside a composition — how the press-and-hold
          * accent picker replaces the base letter on a document-backed client
