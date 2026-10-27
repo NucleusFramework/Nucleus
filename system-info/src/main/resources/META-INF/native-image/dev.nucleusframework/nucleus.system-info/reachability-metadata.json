@@ -53,6 +53,16 @@
                         "int",
                         "int"
                     ]
+                },
+                {
+                    "name": "onDisksChanged",
+                    "parameterTypes": []
+                },
+                {
+                    "name": "onEjectRequest",
+                    "parameterTypes": [
+                        "java.lang.String"
+                    ]
                 }
             ]
         }

@@ -118,10 +118,12 @@ public object SystemInfo {
      * The handler runs on a background thread and must answer within 3 seconds; a slower handler, or
      * one that throws, lets the eject proceed. When several handlers are registered, any refusal wins.
      *
-     * Supported on Windows (a "Safely Remove" / eject request) and macOS (an unmount or eject through
-     * Finder, `diskutil` or DiskArbitration). Forced unmounts, a drive pulled out without ejecting it,
-     * and a direct `umount` are never asked. Linux has no such hook: the handler is never called there,
-     * observe [disksFlow] to react after the fact.
+     * Supported on Windows (an Explorer eject or "Safely Remove Hardware" of a removable or external
+     * drive) and macOS (an unmount or eject through Finder, `diskutil` or DiskArbitration). Forced
+     * unmounts, a drive pulled out without ejecting it, and a direct `umount` are never asked; on
+     * Windows that includes detaching a disk image (ISO, VHD), which only ever dismounts by force.
+     * Linux has no such hook: the handler is never called there, observe [disksFlow] to react after
+     * the fact.
      *
      * Close the returned registration to remove the handler.
      */

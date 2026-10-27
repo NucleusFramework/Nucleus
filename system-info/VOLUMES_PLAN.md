@@ -115,38 +115,38 @@ SSD, an SD card, LUKS/LVM, btrfs, the statvfs timeout against a dead NFS/CIFS se
 
 ## Windows
 
-- [ ] `volumeId`:
+- [x] `volumeId`:
   - FS id: the 64-bit NTFS serial (`FSCTL_GET_NTFS_VOLUME_DATA`, or
     `GetFileInformationByHandleEx(FileIdInfo)`), formatted the way `blkid` shows it on Linux
     (16 uppercase hex digits for NTFS, `XXXX-XXXX` for FAT/exFAT);
   - **not** the 32-bit `dwVolumeSerialNumber` (sysinfo's weakness);
   - network drives: the UNC path (`WNetGetUniversalName`);
   - keep the volume GUID path (`\\?\Volume{…}\`) as the internal key only.
-- [ ] `EXTERNAL`:
+- [x] `EXTERNAL`:
   - Walk the devnode ancestors (`CM_Get_Parent`) for `CM_DEVCAP_REMOVABLE` without
     `CM_DEVCAP_DOCKDEVICE`. This is the Windows "Safely Remove" logic, as in Far Manager
     `far/hotplug.cpp` (BSD-3).
   - Map volume → disk with `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS`. A volume spanning several
     disks is `EXTERNAL` only if all its disks are.
   - Do not rely on `USBSTOR`: UASP enumerates under `SCSI`.
-- [ ] Refine with `STORAGE_ADAPTER_DESCRIPTOR.BusType` (balena drivelist, Apache-2.0):
+- [x] Refine with `STORAGE_ADAPTER_DESCRIPTOR.BusType` (balena drivelist, Apache-2.0):
   - `BusTypeSd` / `BusTypeMmc` → card;
   - `BusTypeVirtual` / `BusTypeFileBackedVirtual` and hardware id `Msft Virtual Disk` →
     `VIRTUAL` (VHD, ImDisk);
   - `DRIVE_REMOTE` → `NETWORK`.
-- [ ] Never block:
+- [x] Never block:
   - all metadata calls on the calling (worker) thread with
     `SetThreadErrorMode(SEM_FAILCRITICALERRORS)`;
   - no `GetVolumeInformation` / free space on floppy, empty CD or `NO_ROOT_DIR` (Chromium);
   - free space of `DRIVE_REMOTE` drives on a thread with a 1 s timeout.
-- [ ] Monitor:
+- [x] Monitor:
   - A hidden **top-level** window on its own thread. Not `HWND_MESSAGE`: broadcasts never reach
     message-only windows. Watch `WM_DEVICECHANGE` / `DBT_DEVTYP_VOLUME`, including the
     `DBTF_NET` flag for network drives.
   - Add `CM_Register_Notification(GUID_DEVINTERFACE_VOLUME)`.
   - Answer `WM_QUERYENDSESSION` with TRUE so the window never blocks shutdown.
   - Each event → `onDisksChanged()`.
-- [ ] Eject:
+- [x] Eject:
   - one `CM_Register_Notification(CM_NOTIFY_FILTER_TYPE_DEVICEHANDLE)` per volume, on a handle
     opened with access 0 + `FILE_FLAG_BACKUP_SEMANTICS`;
   - on `QUERYREMOVE`, call `onEjectRequest`. If allowed, close **our** handle (otherwise we are
@@ -154,10 +154,42 @@ SSD, an SD card, LUKS/LVM, btrfs, the statvfs timeout against a dead NFS/CIFS se
   - reopen on `QUERYREMOVEFAILED`;
   - also handle `GUID_IO_VOLUME_LOCK` / `DISMOUNT` (format, chkdsk);
   - never call `CM_Unregister_Notification` from inside the callback.
-- [ ] Tests on CI (the runners are admin):
+- [x] Tests on CI (the runners are admin):
   - `New-VHD` / `Mount-DiskImage` → `VIRTUAL`, `volumeId`, `disksFlow` emits arrival then
     removal;
-  - `Dismount-DiskImage` while a handler denies → the dismount fails.
+  - ~~`Dismount-DiskImage` while a handler denies → the dismount fails~~: impossible, see below.
+
+Notes from the Windows pass (Windows 11 24H2, x64, not elevated):
+- `FILE_ID_INFO.VolumeSerialNumber` (root directory opened with access 0 +
+  `FILE_FLAG_BACKUP_SEMANTICS`) gives the full 64-bit NTFS serial without admin;
+  `FSCTL_GET_NTFS_VOLUME_DATA` would need a readable volume handle. Its low half is what
+  `vol` shows, which the E2E test checks.
+- Network drives are not volumes: `FindFirstVolumeW` never returns them, so they come from the
+  `DRIVE_REMOTE` letters of `GetLogicalDrives`. The UNC path comes from `WNetGetConnectionW`
+  (the redirector's local table, no network round trip) rather than `WNetGetUniversalName`.
+  `GetVolumeInformationW` + free space run on a throwaway thread with a 1 s timeout; a letter
+  whose probe is still stuck is not probed again until it returns.
+- Removable-media drives without media (empty card reader or optical drive,
+  `IOCTL_STORAGE_CHECK_VERIFY2` fails) are left out, like on Linux/macOS where nothing is
+  mounted there. Floppies are reported without touching the medium.
+- **Disk images cannot be refused.** `Dismount-DiskImage` (ISO and VHD) sends `GUID_IO_VOLUME_LOCK`,
+  then force-dismounts when the lock fails: holding our handle only turns the lock into
+  `LOCK_FAILED`, the image detaches anyway, and no `QUERYREMOVE` is ever sent. A PnP eject of the
+  virtual DVD/disk is refused by Windows itself (`CM_Request_Device_Eject` → `CR_REMOVE_VETOED`,
+  `PNP_VetoIllegalDeviceRequest`). Same family as macOS force unmount: documented as a bypass.
+  The approval therefore watches only removable/external volumes, and a lock or dismount
+  (format, chkdsk, image detach) closes our handle so we never make them fail.
+- The lock / dismount notifications are asynchronous: they cannot be turned into a veto.
+- `SetTimer` only works from the window's thread: the CM callbacks post a resync instead.
+- The E2E test uses an ISO built with IMAPI2 (`IMAPI2FS.MsftFileSystemImage`), which a standard
+  user can `Mount-DiskImage`; a VHD needs elevation.
+
+Verified here: NVMe system volume (`INTERNAL` + 64-bit NTFS id), a mounted ISO (`VIRTUAL`, UDF,
+`XXXX-XXXX` id, read-only, `disksFlow` on mount and detach), a forced image detach neither
+asked nor blocked by a refusing handler. Not verified on hardware: a USB stick or disk (the
+`QUERYREMOVE` refusal, `WindowsDisksE2ETest` runs it with `NUCLEUS_E2E_EJECT_DRIVE=E:`), an SD
+card (`BusTypeSd`), a UASP / Thunderbolt enclosure, a mapped network drive and the probe timeout
+against a dead server, ARM64.
 
 ## macOS
 
