@@ -48,9 +48,19 @@ RPM runs the old package's `%postun` after the new one's `%post`). Texts are CDA
 escaped: polkitd keeps only the last chunk expat hands it, so `A &amp; B` would read ` B`. The Lab, run from Gradle and never installed, uses
 `org.freedesktop.policykit.exec`, pkexec's own action, because every polkit system declares it.
 
-The subject is `unix-process` with `pid`, `start-time` (field 22 of `/proc/self/stat`) and `uid`,
-as polkit's own clients send it. A sandbox with its own pid namespace (Flatpak) breaks that
-subject: polkit sees a pid that is not the caller's.
+The subject is `system-bus-name` with the connection's unique name from `Hello`: polkitd asks
+the bus daemon who owns it, and the daemon knows the pid from the socket credentials, translated
+into the host's pid namespace. The first version sent `unix-process` with our own `pid` and
+`start-time`, which a sandbox with its own pid namespace breaks: in Flatpak the JVM is pid 2,
+polkit looked up the host's pid 2 (kthreadd) and failed with "process with PID 2 has been
+replaced" while `availability()` said available.
+
+Flatpak (verified on GNOME 50 / polkit 127, `flatpak build` sandbox, Platform 25.08): without
+system-bus access everything is `Unavailable` ("system bus: No such file or directory"), no hang.
+With `--system-talk-name=org.freedesktop.PolicyKit1` (through `xdg-dbus-proxy`, the subject is
+then the proxy's connection, in the same session) or `--socket=system-bus`, the host's agent
+prompts and the cancel dismisses it. A Flatpak cannot install its `.policy`: the action must
+already be declared on the host.
 
 ## Request lifecycle (desktop)
 

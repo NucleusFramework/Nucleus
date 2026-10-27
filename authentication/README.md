@@ -73,6 +73,10 @@ nucleus.application {
 variants remember the answer for a few minutes. Flatpak, Snap and AppImage cannot install system
 files, so the action must come from elsewhere there.
 
+In a Flatpak, add `--system-talk-name=org.freedesktop.PolicyKit1` to the finish-args
+(`linux { flatpak { finishArgs = … } }`); without it every call is `Unavailable`. The action must
+already be declared on the host.
+
 Packaging without the plugin, install the equivalent file yourself:
 
 ```xml

@@ -91,6 +91,8 @@ impl Sender {
 pub(super) struct Connection {
     reader: UnixStream,
     sender: Sender,
+    /// What `Hello` named this connection (`:1.42`): the polkit subject.
+    unique_name: String,
 }
 
 struct Msg {
@@ -114,8 +116,9 @@ impl Connection {
                 stream: Arc::new(Mutex::new(writer)),
                 serial: Arc::new(AtomicU32::new(0)),
             },
+            unique_name: String::new(),
         };
-        connection
+        let hello = connection
             .call(
                 "org.freedesktop.DBus",
                 "/org/freedesktop/DBus",
@@ -125,6 +128,14 @@ impl Connection {
                 &[],
             )
             .map_err(CallError::into_io)?;
+        connection.unique_name = Reader {
+            b: &hello.body,
+            pos: 0,
+            le: hello.le,
+        }
+        .string()
+        .filter(|name| name.starts_with(':'))
+        .ok_or_else(|| err("malformed Hello reply"))?;
         Ok(connection)
     }
 
@@ -143,7 +154,7 @@ impl Connection {
     /// can order the send against a concurrent [Sender::cancel].
     pub(super) fn start_check(&mut self, action_id: &str, cancellation_id: &str) -> io::Result<u32> {
         let mut body = Vec::new();
-        put_unix_process_subject(&mut body)?;
+        put_system_bus_name_subject(&mut body, &self.unique_name);
         put_string(&mut body, action_id);
         put_empty_dict(&mut body); // details a{ss}: a non-empty one needs privileges
         put_u32(&mut body, ALLOW_USER_INTERACTION);
@@ -289,15 +300,13 @@ fn put_empty_dict(buf: &mut Vec<u8>) {
     align(buf, 8);
 }
 
-/// Appends the `(sa{sv})` subject `('unix-process', {'pid', 'start-time', 'uid'})`. The
-/// start time rules out a recycled pid, as polkit's own clients do.
-fn put_unix_process_subject(buf: &mut Vec<u8>) -> io::Result<()> {
-    let pid = std::process::id();
-    let start_time = process_start_time()?;
-    let uid = unsafe { libc::getuid() } as i32;
-
+/// Appends the `(sa{sv})` subject `('system-bus-name', {'name': <unique_name>})`: polkitd asks
+/// the bus daemon who owns the connection, and the daemon knows its pid from the socket
+/// credentials. A `unix-process` subject built from our own pid breaks in a sandbox with its own
+/// pid namespace: Flatpak's pid 2 is the host's kthreadd, which polkit rejects ("has been replaced").
+fn put_system_bus_name_subject(buf: &mut Vec<u8>, unique_name: &str) {
     align(buf, 8);
-    put_string(buf, "unix-process");
+    put_string(buf, "system-bus-name");
     align(buf, 4);
     let len_pos = buf.len();
     buf.extend_from_slice(&0u32.to_le_bytes());
@@ -305,39 +314,12 @@ fn put_unix_process_subject(buf: &mut Vec<u8>) -> io::Result<()> {
     let start = buf.len();
 
     align(buf, 8);
-    put_string(buf, "pid");
-    put_signature(buf, "u");
-    put_u32(buf, pid);
-
-    align(buf, 8);
-    put_string(buf, "start-time");
-    put_signature(buf, "t");
-    put_u64(buf, start_time);
-
-    align(buf, 8);
-    put_string(buf, "uid");
-    put_signature(buf, "i");
-    put_u32(buf, uid as u32);
+    put_string(buf, "name");
+    put_signature(buf, "s");
+    put_string(buf, unique_name);
 
     let len = (buf.len() - start) as u32;
     buf[len_pos..len_pos + 4].copy_from_slice(&len.to_le_bytes());
-    Ok(())
-}
-
-/// Field 22 of `/proc/self/stat`: the start time in clock ticks since boot.
-fn process_start_time() -> io::Result<u64> {
-    let stat = std::fs::read_to_string("/proc/self/stat")?;
-    // The command name (field 2) may hold spaces and parentheses: split after the last ')'.
-    let after_comm = stat
-        .rsplit_once(')')
-        .map(|(_, rest)| rest)
-        .ok_or_else(|| err("malformed /proc/self/stat"))?;
-    // `after_comm` starts at field 3, so field 22 is its 20th entry.
-    after_comm
-        .split_whitespace()
-        .nth(19)
-        .and_then(|field| field.parse().ok())
-        .ok_or_else(|| err("malformed /proc/self/stat"))
 }
 
 fn put_header_str(buf: &mut Vec<u8>, code: u8, sig: &str, val: &str) {
@@ -670,8 +652,8 @@ mod tests {
     #[test]
     fn subject_dict_length_excludes_leading_padding() {
         let mut body = Vec::new();
-        put_unix_process_subject(&mut body).unwrap();
-        // "unix-process": 4 (len) + 12 + 1 nul = 17 → dict length at offset 20, entries at 24.
+        put_system_bus_name_subject(&mut body, ":1.42");
+        // "system-bus-name": 4 (len) + 15 + 1 nul = 20 → dict length at offset 20, entries at 24.
         let dict_len = u32::from_le_bytes(body[20..24].try_into().unwrap()) as usize;
         assert_eq!(24 + dict_len, body.len());
     }
