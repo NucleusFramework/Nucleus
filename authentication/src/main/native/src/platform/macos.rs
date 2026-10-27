@@ -131,7 +131,13 @@ fn failure(error: &NSError) -> Failure {
         -9 => Error::AppCanceled,        // appCancel
         -13..=-11 => Error::Unavailable, // biometryDisconnected, biometryNotPaired, companionNotAvailable
         -1004 => Error::NotInteractive,  // notInteractive
+        -1003 => Error::SystemCanceled,  // undocumented: unanswered for ~5 minutes
         _ => Error::Platform,
     };
-    Failure::new(kind, error.localizedDescription().to_string())
+    let description = error.localizedDescription().to_string();
+    // An unmapped code is the one detail worth reporting: LocalAuthentication adds undocumented ones.
+    if kind == Error::Platform {
+        return Failure::new(kind, format!("{description} ({} {})", error.domain(), error.code()));
+    }
+    Failure::new(kind, description)
 }

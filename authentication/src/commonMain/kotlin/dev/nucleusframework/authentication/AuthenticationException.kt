@@ -14,7 +14,10 @@ public enum class AuthenticationError {
      */
     AppCanceled,
 
-    /** The system dismissed the prompt: another app came forward, the screen locked, the activity went away. */
+    /**
+     * The system dismissed the prompt: another app came forward, the screen locked, the activity
+     * went away, or nobody answered it for minutes.
+     */
     SystemCanceled,
 
     /** The user could not prove who they are. */

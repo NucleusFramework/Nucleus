@@ -88,8 +88,19 @@ private fun LAContext.biometry(): BiometryType =
         else -> BiometryType.Unknown
     }
 
-private fun NSError.toException(): AuthenticationException =
-    AuthenticationException(errorOf(code), localizedDescription)
+private fun NSError.toException(): AuthenticationException {
+    val error = errorOf(code)
+    // An unmapped code is the one detail worth reporting: LocalAuthentication adds undocumented ones.
+    val message =
+        if (error ==
+            AuthenticationError.Platform
+        ) {
+            "$localizedDescription ($domain $code)"
+        } else {
+            localizedDescription
+        }
+    return AuthenticationException(error, message)
+}
 
 /** Maps an `LAError` by raw code, the same table as the macOS bridge (`macos.rs`). */
 @Suppress("MagicNumber")
@@ -105,5 +116,7 @@ private fun errorOf(code: Long): AuthenticationError =
         -9L -> AuthenticationError.AppCanceled
         in -13L..-11L -> AuthenticationError.Unavailable
         -1004L -> AuthenticationError.NotInteractive
+        // Undocumented: the prompt times out after ~5 minutes without an answer.
+        -1003L -> AuthenticationError.SystemCanceled
         else -> AuthenticationError.Platform
     }

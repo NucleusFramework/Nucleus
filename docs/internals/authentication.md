@@ -79,6 +79,15 @@ cancelled at that point dismisses the prompt at once instead of leaving it up.
 - Lab probe `system.authentication`: availability per policy, "Answer it yourself" (success and
   `UserCanceled` need a person), "Lab cancels after 2 s", blank reason. Scriptable at startup:
   `-Dlab.probe=system.authentication?mode=AppCancel&policy=Biometrics`.
+- iOS: `scripts/ios-authentication-e2e.sh` builds `examples/authentication-ios-demo` (a bare
+  UIKit app, one scenario per launch through `E2E_SCENARIO`) and drives a booted Face ID
+  simulator without a person: `notifyutil -p com.apple.BiometricKit.enrollmentChanged` (after
+  `-s … 0|1`) enrols or removes the face, `com.apple.BiometricKit_Sim.pearl.match` / `.nomatch`
+  answers the panel. The panel needs ~1.5 s to animate in before it takes a face. A non-matching
+  face leaves the prompt up ("Try Face ID Again" + the cancel label); its cancel button, the
+  one case the script leaves out, ends `UserCanceled`. An unanswered prompt times out by itself
+  after ~320 s with the undocumented `LAError` code `-1003`, mapped to `SystemCanceled`; any
+  other unmapped code surfaces as `Platform` with the domain and code in the message.
 - macOS E2E recipe: poll `CGWindowListCopyWindowInfo` for an on-screen window owned by
   `coreautha` (layer 1000) to time the panel's appearance and disappearance. Measured on macOS 27:
   the panel appears ~0.1 s after the request and is gone ~0.1 s after `invalidate()`.
