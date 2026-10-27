@@ -846,6 +846,7 @@ typedef unsigned int (*pfn_eglInitialize)(void *, int *, int *);
 typedef unsigned int (*pfn_eglTerminate)(void *);
 typedef const char *(*pfn_eglQueryString)(void *, int);
 typedef unsigned int (*pfn_eglBindAPI)(unsigned int);
+typedef unsigned int (*pfn_eglQueryAPI)(void);
 typedef unsigned int (*pfn_eglChooseConfig)(void *, const int *, void **, int, int *);
 typedef void *(*pfn_eglCreateContext)(void *, void *, void *, const int *);
 typedef unsigned int (*pfn_eglDestroyContext)(void *, void *);
@@ -880,6 +881,7 @@ static int probe_render_tier(void) {
     pfn_eglTerminate terminate = (pfn_eglTerminate)dlsym(egl, "eglTerminate");
     pfn_eglQueryString queryString = (pfn_eglQueryString)dlsym(egl, "eglQueryString");
     pfn_eglBindAPI bindApi = (pfn_eglBindAPI)dlsym(egl, "eglBindAPI");
+    pfn_eglQueryAPI queryApi = (pfn_eglQueryAPI)dlsym(egl, "eglQueryAPI");
     pfn_eglChooseConfig chooseConfig = (pfn_eglChooseConfig)dlsym(egl, "eglChooseConfig");
     pfn_eglCreateContext createContext = (pfn_eglCreateContext)dlsym(egl, "eglCreateContext");
     pfn_eglDestroyContext destroyContext = (pfn_eglDestroyContext)dlsym(egl, "eglDestroyContext");
@@ -887,8 +889,9 @@ static int probe_render_tier(void) {
     pfn_eglGetCurrentContext currentContext = (pfn_eglGetCurrentContext)dlsym(egl, "eglGetCurrentContext");
     pfn_eglGetCurrentDisplay currentDisplay = (pfn_eglGetCurrentDisplay)dlsym(egl, "eglGetCurrentDisplay");
     pfn_eglGetCurrentSurface currentSurface = (pfn_eglGetCurrentSurface)dlsym(egl, "eglGetCurrentSurface");
-    if (!getProc || !getDisplay || !initialize || !terminate || !queryString || !bindApi || !chooseConfig ||
-        !createContext || !destroyContext || !makeCurrent || !currentContext || !currentDisplay || !currentSurface) {
+    if (!getProc || !getDisplay || !initialize || !terminate || !queryString || !bindApi || !queryApi ||
+        !chooseConfig || !createContext || !destroyContext || !makeCurrent || !currentContext || !currentDisplay ||
+        !currentSurface) {
         dlclose(egl);
         return RENDER_TIER_UNKNOWN;
     }
@@ -912,6 +915,12 @@ static int probe_render_tier(void) {
     }
     if (!dpy) return RENDER_TIER_UNKNOWN;
 
+    // The calling thread may hold the app's context (Tao's event loop, desktop GL): its bound API and its
+    // current context are both put back after. Read before eglBindAPI, the current context is per API.
+    unsigned int prevApi = queryApi();
+    void *prevDpy = currentDisplay(), *prevCtx = currentContext();
+    void *prevDraw = currentSurface(NUC_EGL_DRAW), *prevRead = currentSurface(NUC_EGL_READ);
+
     int tier = RENDER_TIER_UNKNOWN;
     void *config = NULL;
     if (bindApi(NUC_EGL_OPENGL_ES_API)) {
@@ -919,9 +928,6 @@ static int probe_render_tier(void) {
             const int ctxAttribs[] = { NUC_EGL_CONTEXT_MAJOR_VERSION, 3, NUC_EGL_NONE };
             void *ctx = createContext(dpy, config, NULL, ctxAttribs);
             if (ctx) {
-                // The calling thread may hold the app's context (Tao's event loop): put it back after
-                void *prevDpy = currentDisplay(), *prevCtx = currentContext();
-                void *prevDraw = currentSurface(NUC_EGL_DRAW), *prevRead = currentSurface(NUC_EGL_READ);
                 tier = RENDER_TIER_CAPABLE;
                 pfn_glGetString getString = (pfn_glGetString)getProc("glGetString");
                 if (getString && makeCurrent(dpy, NULL, NULL, ctx)) {
@@ -930,8 +936,10 @@ static int probe_render_tier(void) {
                                      strstr(renderer, "swrast") || strstr(renderer, "SWR"))) {
                         tier = RENDER_TIER_SOFTWARE;
                     }
+                    // Released with GL ES still bound, then the caller's context made current under its own API
+                    makeCurrent(dpy, NULL, NULL, NULL);
+                    bindApi(prevApi);
                     if (prevCtx) makeCurrent(prevDpy, prevDraw, prevRead, prevCtx);
-                    else makeCurrent(dpy, NULL, NULL, NULL);
                 }
                 destroyContext(dpy, ctx);
             } else {
@@ -942,6 +950,7 @@ static int probe_render_tier(void) {
             tier = RENDER_TIER_LEGACY;
         }
     }
+    bindApi(prevApi);
     if (ownDisplay) terminate(dpy);
     // Not dlclose'd: EGL drivers do not support being unloaded
     return tier;
