@@ -195,6 +195,9 @@ typedef struct {
 #define CWColormap        (1L << 13)
 
 #define VisualIDMask      0x0001
+#define VisualDepthMask   0x0004
+#define VisualClassMask   0x0008
+#define TrueColor         4
 
 /* XShape extension. Used to make the EGL-rendering child window
  * input-transparent so X routes pointer / keyboard events back to the GTK
@@ -816,17 +819,40 @@ void *nucleus_tao_egl_attachment_context(long long handle) {
     return att ? att->context : NULL;
 }
 
-/* Depth of X visual [vid], or 0 when the server does not know it. */
-static int visual_depth(Display *xdpy, VisualID vid) {
-    if (!p_XGetVisualInfo) return 0;
+/* The TrueColor visuals of [depth] the server offers, in a list to free with
+ * p_XFree (NULL and *count = 0 when there are none). One lookup per attach,
+ * so the configs can be tested against it without a query each. */
+static XVisualInfo *truecolor_visuals(Display *xdpy, int depth, int *count) {
+    *count = 0;
+    if (!p_XGetVisualInfo) return NULL;
     XVisualInfo template;
     memset(&template, 0, sizeof(template));
-    template.visualid = vid;
-    int n = 0;
-    XVisualInfo *vinfos = p_XGetVisualInfo(xdpy, VisualIDMask, &template, &n);
-    int depth = (vinfos && n > 0) ? vinfos[0].depth : 0;
-    if (vinfos && p_XFree) p_XFree(vinfos);
-    return depth;
+    template.depth  = depth;
+    template.class_ = TrueColor;
+    XVisualInfo *vinfos = p_XGetVisualInfo(xdpy, VisualDepthMask | VisualClassMask, &template, count);
+    if (!vinfos) *count = 0;
+    return vinfos;
+}
+
+static int visual_in(const XVisualInfo *vinfos, int count, VisualID vid) {
+    for (int i = 0; i < count; ++i) {
+        if (vinfos[i].visualid == vid) return 1;
+    }
+    return 0;
+}
+
+/* The first of [configs] whose native visual is one of [vinfos], or NULL. */
+static EGLConfig config_with_visual(EGLDisplay edpy, const EGLConfig *configs, EGLint count,
+                                    const XVisualInfo *vinfos, int nvis) {
+    for (EGLint i = 0; i < count && nvis > 0; ++i) {
+        EGLint id = 0;
+        p_eglGetConfigAttrib(edpy, configs[i], EGL_NATIVE_VISUAL_ID, &id);
+        if (id != 0 && visual_in(vinfos, nvis, (VisualID) id)) {
+            DBG("  config %d has visual 0x%lx of the window's depth\n", i, (unsigned long)(unsigned)id);
+            return configs[i];
+        }
+    }
+    return NULL;
 }
 
 /* ── JNI surface ────────────────────────────────────────────────────────── */
@@ -931,32 +957,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
         if ((VisualID) id == want) { chosen = cfgs[i]; break; }
     }
 
-    /* XWayland: GDK's ARGB visual (`screen.rgba_visual()`) is often not one
-     * Mesa registered with EGL, so nothing above matched it and we will fall
-     * back to a child window below. That child must still be 32-bit: the
-     * frame carve clears the rounded corners to alpha 0, and a 24-bit child
-     * has no alpha to keep, so the corners come out opaque. Mesa lists ARGB
-     * configs against its 24-bit visual too, so an alpha channel in the
-     * config is not enough - take one whose own native visual is 32-bit. */
-    if (!chosen && wa.depth == 32) {
-        for (EGLint i = 0; i < ncfg; ++i) {
-            EGLint id = 0;
-            p_eglGetConfigAttrib(edpy, cfgs[i], EGL_NATIVE_VISUAL_ID, &id);
-            if (id != 0 && visual_depth(xdpy, (VisualID) id) == 32) {
-                DBG("  no exact match; cfg[%d] has 32-bit visual 0x%lx for the child\n",
-                    i, (unsigned long)(unsigned)id);
-                chosen = cfgs[i];
-                break;
-            }
-        }
-    }
-
-    /* Phase-1 widening: GTK 3 with `decorations=false` and no `transparent=true`
-     * gets a 24-bit RGB888 visual on most setups, which our default ALPHA_SIZE=8
-     * config request can't match. Re-query without the alpha constraint so we
-     * land on a 24-bit config whose native visual matches the window. The
-     * eventual rounded-corner work will pass `with_transparent(true)` to tao
-     * and round-trip through ARGB; until then this fallback keeps Mesa happy. */
+    /* No ARGB config matches the GTK window's visual. Either the window is
+     * 24-bit (no ARGB visual: no compositor, or GDK gave none), or it is
+     * 32-bit and Mesa did not register GDK's ARGB visual with EGL (typical on
+     * XWayland). Re-query without the alpha constraint, take an exact match
+     * if there is one, and otherwise a config for the child window below
+     * whose native visual has the window's depth. On a 32-bit window that
+     * must be a 32-bit visual: the frame carve clears the rounded corners to
+     * alpha 0, and a 24-bit child has no alpha to keep, so they come out
+     * opaque. An alpha channel in the config is not enough - Mesa lists ARGB
+     * configs against its 24-bit visual too. */
     if (!chosen) {
         DBG("no ARGB EGL config matches X visualid 0x%lx — retrying without alpha\n", want);
         const EGLint cfg_attrs_no_alpha[] = {
@@ -980,17 +990,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
                 DBG("    cfg2[%d] visualid=0x%lx\n", i, (unsigned long)(unsigned)id);
                 if ((VisualID) id == want) { chosen = cfgs2[i]; break; }
             }
-            /* If no exact-visual match, prefer an ARGB config (alpha > 0)
-             * so the eventual alpha-blended rounded-corner work has alpha
-             * available on the EGL surface. Mesa typically lists RGB-only
-             * configs first, so cfgs2[0] is a 24-bit visual on most setups —
-             * walk the list and grab the first one with EGL_ALPHA_SIZE > 0. */
             if (!chosen) {
-                for (EGLint i = 0; i < ncfg2; ++i) {
-                    EGLint a = 0;
-                    p_eglGetConfigAttrib(edpy, cfgs2[i], EGL_ALPHA_SIZE, &a);
-                    if (a > 0) { chosen = cfgs2[i]; break; }
-                }
+                /* The ARGB list first: the retry is capped at 64 and lists
+                 * the 24-bit configs ahead of the rest, so on a 32-bit window
+                 * the configs it needs can be cut off the end of it. */
+                int nvis = 0;
+                XVisualInfo *same_depth = truecolor_visuals(xdpy, wa.depth, &nvis);
+                chosen = config_with_visual(edpy, cfgs, ncfg, same_depth, nvis);
+                if (!chosen) chosen = config_with_visual(edpy, cfgs2, ncfg2, same_depth, nvis);
+                if (same_depth && p_XFree) p_XFree(same_depth);
             }
             /* Last resort: take cfgs2[0]. NVIDIA accepts the cross-match
              * silently; Mesa surfaces EGL_BAD_MATCH from
@@ -1007,6 +1015,21 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
     EGLint chosen_vid = 0;
     p_eglGetConfigAttrib(edpy, chosen, EGL_NATIVE_VISUAL_ID, &chosen_vid);
     int needs_child = ((VisualID) chosen_vid != want);
+    /* Once per process: every window on the display gets the same answer. */
+    static int warned_opaque_corners = 0;
+    if (needs_child && wa.depth == 32 && !warned_opaque_corners) {
+        int nvis = 0;
+        XVisualInfo *argb = truecolor_visuals(xdpy, 32, &nvis);
+        if (!visual_in(argb, nvis, (VisualID) chosen_vid)) {
+            warned_opaque_corners = 1;
+            fprintf(stderr,
+                    "[nucleus_tao_egl] No EGL config has a 32-bit visual for window 0x%lx; "
+                    "rendering into a child of visual 0x%lx, so its rounded corners "
+                    "will be opaque.\n",
+                    (unsigned long) xwin, (unsigned long)(unsigned) chosen_vid);
+        }
+        if (argb && p_XFree) p_XFree(argb);
+    }
     DBG("chosen visualid=0x%lx, needs_child=%d\n", (unsigned long)(unsigned)chosen_vid, needs_child);
 
     /* 4) GL 3.3 context — compat then core (see create_gl_context). Drivers
