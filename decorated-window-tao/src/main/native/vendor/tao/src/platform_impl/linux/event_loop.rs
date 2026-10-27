@@ -357,11 +357,11 @@ impl<T: 'static> EventLoop<T> {
           WindowRequest::Size((w, h)) => {
             // Nucleus patch: `gtk_window_resize` is a no-op on non-resizable
             // windows (GTK follows the content's natural size instead); route
-            // the request through the widget size request in that case.
+            // the request through the content's size request in that case.
             if window.is_resizable() {
               window.resize(w, h);
             } else {
-              window.set_size_request(w, h);
+              util::set_content_size_request(&window, w, h);
             }
           }
           WindowRequest::SizeConstraints(constraints) => {
