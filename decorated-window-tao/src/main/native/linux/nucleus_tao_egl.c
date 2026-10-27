@@ -816,6 +816,19 @@ void *nucleus_tao_egl_attachment_context(long long handle) {
     return att ? att->context : NULL;
 }
 
+/* Depth of X visual [vid], or 0 when the server does not know it. */
+static int visual_depth(Display *xdpy, VisualID vid) {
+    if (!p_XGetVisualInfo) return 0;
+    XVisualInfo template;
+    memset(&template, 0, sizeof(template));
+    template.visualid = vid;
+    int n = 0;
+    XVisualInfo *vinfos = p_XGetVisualInfo(xdpy, VisualIDMask, &template, &n);
+    int depth = (vinfos && n > 0) ? vinfos[0].depth : 0;
+    if (vinfos && p_XFree) p_XFree(vinfos);
+    return depth;
+}
+
 /* ── JNI surface ────────────────────────────────────────────────────────── */
 
 /**
@@ -916,6 +929,26 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
         p_eglGetConfigAttrib(edpy, cfgs[i], EGL_NATIVE_VISUAL_ID, &id);
         DBG("  cfg[%d] visualid=0x%lx\n", i, (unsigned long)(unsigned)id);
         if ((VisualID) id == want) { chosen = cfgs[i]; break; }
+    }
+
+    /* XWayland: GDK's ARGB visual (`screen.rgba_visual()`) is often not one
+     * Mesa registered with EGL, so nothing above matched it and we will fall
+     * back to a child window below. That child must still be 32-bit: the
+     * frame carve clears the rounded corners to alpha 0, and a 24-bit child
+     * has no alpha to keep, so the corners come out opaque. Mesa lists ARGB
+     * configs against its 24-bit visual too, so an alpha channel in the
+     * config is not enough - take one whose own native visual is 32-bit. */
+    if (!chosen && wa.depth == 32) {
+        for (EGLint i = 0; i < ncfg; ++i) {
+            EGLint id = 0;
+            p_eglGetConfigAttrib(edpy, cfgs[i], EGL_NATIVE_VISUAL_ID, &id);
+            if (id != 0 && visual_depth(xdpy, (VisualID) id) == 32) {
+                DBG("  no exact match; cfg[%d] has 32-bit visual 0x%lx for the child\n",
+                    i, (unsigned long)(unsigned)id);
+                chosen = cfgs[i];
+                break;
+            }
+        }
     }
 
     /* Phase-1 widening: GTK 3 with `decorations=false` and no `transparent=true`
