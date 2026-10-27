@@ -7,15 +7,16 @@ import java.net.InetAddress
  *
  * The variants mirror Chromium's `SchemeHostPortMatcherRule` implementations.
  */
-sealed interface BypassRule {
-    fun matches(
+public sealed interface BypassRule {
+    /** Whether a URL with this lowercase [scheme], normalized [host] and [port] matches the rule. */
+    public fun matches(
         scheme: String,
         host: String,
         port: Int,
     ): Boolean
 
     /** `*` — every URL bypasses the proxy. */
-    data object MatchAll : BypassRule {
+    public data object MatchAll : BypassRule {
         override fun matches(
             scheme: String,
             host: String,
@@ -29,7 +30,7 @@ sealed interface BypassRule {
      * `*` matches any run of characters and `?` a single one, so `*.corp.com`
      * matches `a.corp.com` but not `corp.com` — exactly as `base::MatchPattern`.
      */
-    data class HostnamePattern(
+    public data class HostnamePattern(
         val pattern: String,
         val scheme: String? = null,
         val port: Int? = null,
@@ -48,7 +49,7 @@ sealed interface BypassRule {
     }
 
     /** An IP block in CIDR notation (`10.0.0.0/8`, `fe80::/10`). */
-    data class IpBlock(
+    public data class IpBlock(
         val prefix: InetAddress,
         val prefixBits: Int,
         val scheme: String? = null,

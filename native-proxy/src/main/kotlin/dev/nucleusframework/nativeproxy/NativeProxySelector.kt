@@ -17,7 +17,7 @@ private const val TAG = "NativeProxySelector"
  * selector that was the JDK default before installation), so installing this
  * selector never loses the `http.proxyHost` system properties.
  */
-class NativeProxySelector internal constructor(
+public class NativeProxySelector internal constructor(
     private val fallback: ProxySelector?,
 ) : ProxySelector() {
     override fun select(uri: URI?): List<Proxy> {

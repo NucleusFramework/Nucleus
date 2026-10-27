@@ -14,25 +14,27 @@ private const val SCHEME_SEPARATOR = "://"
  * unresolved address so the proxy hostname is resolved by the connection
  * itself (and, for SOCKS, possibly by the proxy).
  */
-data class ProxyServer(
+public data class ProxyServer(
     val protocol: ProxyProtocol,
     val host: String,
     val port: Int,
 ) {
-    fun toJavaProxy(): Proxy = Proxy(protocol.javaProxyType, InetSocketAddress.createUnresolved(host, port))
+    /** Converts this server to a JDK [Proxy] with an unresolved address. */
+    public fun toJavaProxy(): Proxy = Proxy(protocol.javaProxyType, InetSocketAddress.createUnresolved(host, port))
 
     override fun toString(): String = "${protocol.uriScheme}://${formatHost()}:$port"
 
     private fun formatHost(): String = if (host.contains(':')) "[$host]" else host
 
-    companion object {
+    /** Parser for [ProxyServer]. */
+    public companion object {
         /**
          * Parses a proxy URI as written in a WinInet/PAC proxy list.
          *
          * Accepted forms: `host`, `host:port`, `[::1]:port`, `scheme://host:port`.
          * Returns `null` for `direct://`, unsupported schemes and malformed input.
          */
-        fun parse(
+        public fun parse(
             spec: String,
             defaultProtocol: ProxyProtocol = ProxyProtocol.HTTP,
         ): ProxyServer? {

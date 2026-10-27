@@ -17,14 +17,15 @@ private const val DEFAULT_FTP_PORT = 21
  * patterns, CIDR blocks, the `<local>` token for dot-less hostnames, and the
  * implicit localhost / link-local bypass that `<-loopback>` turns off.
  */
-data class ProxyBypassRules(
+public data class ProxyBypassRules(
     val rules: List<BypassRule> = emptyList(),
     /** `<local>` — bypass hostnames without a dot (`intranet`, `build-server`). */
     val bypassesSimpleHostnames: Boolean = false,
     /** Localhost and link-local addresses always bypass the proxy unless `<-loopback>` is listed. */
     val bypassesImplicitLoopback: Boolean = true,
 ) {
-    fun matches(uri: URI): Boolean {
+    /** Whether [uri] must be reached directly, without going through a proxy. */
+    public fun matches(uri: URI): Boolean {
         val host = uri.host ?: uri.schemeSpecificPart?.substringAfter("//")?.substringBefore('/') ?: return false
         val scheme = uri.scheme.orEmpty().lowercase(Locale.ROOT)
         val port = if (uri.port != -1) uri.port else defaultPortForScheme(scheme)
@@ -42,13 +43,15 @@ data class ProxyBypassRules(
         return rules.any { it.matches(scheme, host, port) }
     }
 
-    companion object {
-        val EMPTY = ProxyBypassRules()
+    /** Factory and parser for [ProxyBypassRules]. */
+    public companion object {
+        /** No explicit rule; only the implicit loopback bypass applies. */
+        public val EMPTY: ProxyBypassRules = ProxyBypassRules()
 
         /**
          * Parses a WinInet bypass list — entries separated by `;` or whitespace.
          */
-        fun parse(value: String): ProxyBypassRules {
+        public fun parse(value: String): ProxyBypassRules {
             val rules = mutableListOf<BypassRule>()
             var simpleHostnames = false
             var implicitLoopback = true

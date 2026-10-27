@@ -25,7 +25,7 @@ private const val MAX_PAC_CACHE_ENTRIES = 256
  * Linux (GSettings / KDE kioslaverc / env vars) are implemented. Linux does not
  * evaluate PAC scripts yet — only static rules and bypass lists.
  */
-object NativeProxy {
+public object NativeProxy {
     private val provider = SystemProxyProvider.forCurrentPlatform()
     private val cachedSettings = AtomicReference<SystemProxySettings?>()
     private val pacResults = ConcurrentHashMap<String, List<ProxyServer>>()
@@ -36,16 +36,16 @@ object NativeProxy {
     private val watcher by lazy { ProxyChangeWatcher(provider, ::onConfigurationChanged) }
 
     /** Whether the current platform has a native proxy backend available. */
-    val isSupported: Boolean get() = provider.isSupported
+    public val isSupported: Boolean get() = provider.isSupported
 
     /** A selector answering purely from the OS configuration, without any fallback. */
-    val selector: ProxySelector by lazy { NativeProxySelector(fallback = null) }
+    public val selector: ProxySelector by lazy { NativeProxySelector(fallback = null) }
 
     /** The cached OS proxy configuration, read on first access. */
-    fun settings(): SystemProxySettings = cachedSettings.get() ?: refresh()
+    public fun settings(): SystemProxySettings = cachedSettings.get() ?: refresh()
 
     /** Re-reads the OS proxy configuration, dropping the PAC result cache. */
-    fun refresh(): SystemProxySettings {
+    public fun refresh(): SystemProxySettings {
         pacResults.clear()
         val settings = provider.readSettings()
         cachedSettings.set(settings)
@@ -61,7 +61,7 @@ object NativeProxy {
      * (explicit URL or WPAD), then the static proxy rules — the latter also
      * acting as the fallback when the PAC script cannot be evaluated.
      */
-    fun proxiesFor(uri: URI): List<ProxyServer> {
+    public fun proxiesFor(uri: URI): List<ProxyServer> {
         val settings = settings()
         if (settings.isDirect) return emptyList()
         if (settings.bypassRules.matches(uri)) return emptyList()
@@ -75,7 +75,7 @@ object NativeProxy {
     }
 
     /** [proxiesFor] as JDK proxies, never empty: a direct connection is [Proxy.NO_PROXY]. */
-    fun javaProxiesFor(uri: URI): List<Proxy> =
+    public fun javaProxiesFor(uri: URI): List<Proxy> =
         proxiesFor(uri)
             .map { it.toJavaProxy() }
             .ifEmpty { listOf(Proxy.NO_PROXY) }
@@ -89,7 +89,7 @@ object NativeProxy {
      *
      * @return false when the platform has no native backend, leaving the JVM default untouched.
      */
-    fun install(): Boolean {
+    public fun install(): Boolean {
         if (!provider.isSupported) {
             debugln(TAG) { "No native proxy backend on this platform, keeping the JVM default selector" }
             return false
@@ -107,7 +107,7 @@ object NativeProxy {
     }
 
     /** Restores the [ProxySelector] that was default before [install]. */
-    fun uninstall() {
+    public fun uninstall() {
         if (!installed.compareAndSet(true, false)) return
         // Only restore when nothing else replaced the default in the meantime.
         if (ProxySelector.getDefault() === installedSelector.getAndSet(null)) {
@@ -121,13 +121,13 @@ object NativeProxy {
      * Registers [listener], invoked on a background thread whenever the OS proxy
      * configuration changes. Starts the configuration watcher on first listener.
      */
-    fun addChangeListener(listener: (SystemProxySettings) -> Unit) {
+    public fun addChangeListener(listener: (SystemProxySettings) -> Unit) {
         listeners += listener
         watcher.start()
     }
 
     /** Unregisters [listener], stopping the watcher when no listener is left. */
-    fun removeChangeListener(listener: (SystemProxySettings) -> Unit) {
+    public fun removeChangeListener(listener: (SystemProxySettings) -> Unit) {
         listeners -= listener
         if (listeners.isEmpty() && !installed.get()) watcher.stop()
     }

@@ -7,7 +7,7 @@ package dev.nucleusframework.nativeproxy
  * PAC script URL and static proxy servers are independent settings, and are
  * consulted in that order when resolving a URL.
  */
-data class SystemProxySettings(
+public data class SystemProxySettings(
     /** WPAD is enabled ("Automatically detect settings"): a PAC script is discovered via DHCP/DNS. */
     val autoDetect: Boolean = false,
     /** An explicit PAC script URL ("Use automatic configuration script"). */
@@ -25,7 +25,9 @@ data class SystemProxySettings(
     val usesPacScript: Boolean
         get() = autoDetect || pacUrl != null
 
-    companion object {
-        val DIRECT = SystemProxySettings()
+    /** Well-known [SystemProxySettings] values. */
+    public companion object {
+        /** No proxy: every connection goes direct. */
+        public val DIRECT: SystemProxySettings = SystemProxySettings()
     }
 }

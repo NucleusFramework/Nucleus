@@ -8,7 +8,7 @@ import java.util.Locale
  *
  * Layout and lookup semantics mirror Chromium's `net::ProxyConfig::ProxyRules`.
  */
-data class ProxyRules(
+public data class ProxyRules(
     val singleProxies: List<ProxyServer> = emptyList(),
     val proxiesForHttp: List<ProxyServer> = emptyList(),
     val proxiesForHttps: List<ProxyServer> = emptyList(),
@@ -30,7 +30,7 @@ data class ProxyRules(
      * A scheme without a dedicated list falls back to [fallbackProxies], which is
      * how WinInet treats its `socks=` entry.
      */
-    fun proxiesForUrlScheme(urlScheme: String): List<ProxyServer> {
+    public fun proxiesForUrlScheme(urlScheme: String): List<ProxyServer> {
         if (singleProxies.isNotEmpty()) return singleProxies
         return when (urlScheme.lowercase(Locale.ROOT)) {
             "http" -> proxiesForHttp
@@ -40,8 +40,10 @@ data class ProxyRules(
         }.ifEmpty { fallbackProxies }
     }
 
-    companion object {
-        val EMPTY = ProxyRules()
+    /** Factory and parser for [ProxyRules]. */
+    public companion object {
+        /** No proxy server configured. */
+        public val EMPTY: ProxyRules = ProxyRules()
 
         /**
          * Parses a WinInet proxy string.
@@ -51,7 +53,7 @@ data class ProxyRules(
          * (`http=host:port;https=host:port;socks=host:1080`). Entries without a
          * scheme prefix default to HTTP, except `socks=` which defaults to SOCKS4.
          */
-        fun parse(value: String): ProxyRules {
+        public fun parse(value: String): ProxyRules {
             val entries =
                 value
                     .split(';')
