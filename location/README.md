@@ -42,6 +42,18 @@ when (Geolocation.requestAuthorization(LocationAccess.Foreground, LocationAccura
 }
 ```
 
+To react when the user changes access outside the app (system settings, a revoked permission),
+collect `authorizationUpdates()`; to send them there, call `openSettings()`:
+
+```kotlin
+Geolocation.authorizationUpdates().collect { authorization -> showAccess(authorization) }
+
+if (Geolocation.authorization() == LocationAuthorization.Denied) Geolocation.openSettings()
+```
+
+In a `nucleusApplication` window, `NucleusWindow.requestLocationAuthorization()` asks the same
+way with the Linux consent dialog attached to that window.
+
 `Geolocation` implements `LocationProvider`; depend on the interface to use a fake in tests.
 
 ### Semantics
@@ -53,6 +65,10 @@ when (Geolocation.requestAuthorization(LocationAccess.Foreground, LocationAccura
   collection ends. Transient outages (`TemporarilyUnavailable`, `Network`) are ridden out; the
   flow fails when access is denied or location becomes unavailable.
 - `minInterval` and `minDistanceMeters` are hints the platform may not honour exactly.
+- `authorizationUpdates(pollInterval = 1.seconds)` is cold: it emits the current value, then reads
+  the platform again every `pollInterval` and emits each change once.
+- `openSettings()` returns `false` when the platform has no page to open (the web, a Linux
+  desktop other than GNOME, a Flatpak sandbox).
 - Optional fields of `Location` are `null` when the platform did not measure them.
 
 ## Platform setup
@@ -146,7 +162,14 @@ consent dialog and needs nothing from the app. Without a portal (or one without 
 interface), an unsandboxed app talks to GeoClue 2 directly, which attributes the request to the
 app's `.desktop` id — the installed desktop entry, else `NucleusApp.appId`. A portal refusal is
 final: GeoClue is never tried behind the user's back. As on Windows, `authorization()` reports
-`NotDetermined` until a request in this process succeeded.
+`NotDetermined` until a request in this process succeeded, and neither the portal nor GeoClue
+report a revocation, so `authorizationUpdates()` only changes on a request.
+
+The consent dialog is attached to a window only when the request names one:
+`NucleusWindow.requestLocationAuthorization()` from `nucleus-application`, or
+`Geolocation.requestAuthorization(LocationPortalParent(...))` with a Tao window's
+`xdgPortalParent()` (on Wayland, pass the export as `keepAlive`: it is closed once the request is
+answered). A request made implicitly by `currentLocation` / `locationUpdates` is unparented.
 
 ### Web
 

@@ -6,6 +6,18 @@
 Desktop first. Rules: JNI only (no FFM), JDK 17, no reflection, no heavy dependencies,
 GraalVM native-image must work.
 
+How to verify (any OS):
+
+- Demo, JVM: `./gradlew :examples:location-demo:run`
+- Demo, native image: `./gradlew :examples:location-demo:createGraalvmNativeDistributable`, then run
+  `examples/location-demo/build/compose/binaries/main/graalvm-app/LocationDemo/location-demo`
+- Lab, JVM: `LAB_PROBE="system.location?request=foreground&fix&cached&track" ./gradlew :examples:lab:app:run`
+  (other params: `accuracy=approximate`, `settings`)
+- Lab, native image: `./gradlew :examples:lab:app:createGraalvmNativeDistributable`, then run
+  `examples/lab/app/build/compose/binaries/main/graalvm-app/NucleusLab/nucleus-lab` with the same
+  `LAB_PROBE`
+- Natives: `./gradlew :location:buildNative<Os>` (Rust crate in `location/src/main/native`)
+
 ## 1. Prove what the PR claims
 
 - [x] Windows x64: `location-demo` built as a GraalVM native image and run — prints a fix
@@ -15,36 +27,58 @@ GraalVM native-image must work.
 - [ ] Linux: XDG portal path on KDE
 - [ ] Linux: GeoClue fallback without a portal
 - [ ] Linux: Flatpak stays on the portal
-- [ ] Windows ARM64: DLL loads and returns a fix (JVM — no native-image toolchain there)
-- [ ] Fix `reachability-metadata.json` if any of the above breaks
+- [ ] Windows ARM64: DLL loads and returns a fix (JVM — no native-image toolchain there).
+      No ARM64 machine available; the DLL is built and shipped
+- [x] `reachability-metadata.json` holds on Windows (demo + Lab native images); re-check on macOS / Linux
 
 ## 2. Lab probe
 
-- [ ] `location` probe in the Lab (authorization, request, one-shot fix, live updates)
-- [ ] Windows: probe works on the JVM
-- [ ] Windows: probe works in the Lab native image (`-Dlab.probe=location`)
-- [ ] macOS: probe works (JVM + native image, packaged Lab with the entitlement)
+- [x] `system.location` probe in the Lab (authorization, request, one-shot fix, cached fix, live
+      updates, open settings), drivable with `LAB_PROBE` params
+- [x] Windows: probe works on the JVM
+- [x] Windows: probe works in the Lab native image
+- [ ] macOS: probe works (JVM + native image). The Lab's macOS packaging needs the location usage
+      keys and the `com.apple.security.personal-information.location` entitlement first
+      (see section 3), otherwise Core Location never prompts
 - [ ] Linux: probe works (JVM + native image)
 
 ## 3. Visible gaps
 
-- [ ] Linux: parent the portal consent dialog to the app window (`x11:` / `wayland:` via
-      xdg-foreign, the way `share` resolves it from the Tao window); today `Start` gets `""`
-- [ ] Linux: verified on X11 and Wayland that the dialog sits above the app
-- [ ] macOS: plugin DSL generating the Info.plist usage keys + the location entitlement,
-      instead of raw XML and a hand-written `entitlements.plist`
+- [x] Linux: parent the portal consent dialog to the app window — `request_authorization` passes
+      the parent to `Start`; JVM `Geolocation.requestAuthorization(LocationPortalParent(...))`;
+      `NucleusWindow.requestLocationAuthorization()` in `nucleus-application` resolves it from the
+      Tao window (`xdgPortalParent()`, Wayland export closed once answered). Compiles for the Linux
+      target (`cargo check`), **not run on Linux yet**
+- [ ] Linux: verified on X11 and Wayland that the dialog sits above the app (Lab: "Request
+      foreground" goes through the Lab window)
+- [ ] macOS (plugin, needs a Mac to verify): DSL generating the Info.plist usage keys
+      (`NSLocationUsageDescription`, `NSLocationWhenInUseUsageDescription`, optionally
+      `NSLocationAlwaysAndWhenInUseUsageDescription`) and adding
+      `com.apple.security.personal-information.location` to the entitlements, in both the JVM and
+      GraalVM pipelines. Starting points: `MacOSPlatformSettings.infoPlist` in
+      `plugin-build/plugin/.../dsl/PlatformSettings.kt`, `default-entitlements.plist` (+ the two
+      sandbox variants) unpacked by `AbstractUnpackDefaultApplicationResourcesTask`, used through
+      `mac.entitlementsFile.orElse(defaultAppEntitlements)` in `configureJvmApplication.kt` and
+      `configureGraalvmApplication.kt`. A user `entitlementsFile` must keep working
 - [ ] macOS: `location-demo` drops its `packaging/macos/entitlements.plist` and still prompts
 
 ## 4. Authorization API
 
-- [ ] Observable authorization (`StateFlow<LocationAuthorization>`) fed by native signals
-- [ ] Windows: turning location off in Settings updates the state while the app runs
-- [ ] macOS: `locationManagerDidChangeAuthorization` updates the state while the app runs
-- [ ] Linux: documented as best effort (no portal signal)
-- [ ] `openLocationSettings()` — Windows `ms-settings:privacy-location`, macOS Privacy →
-      Location Services, Linux best effort
-- [ ] Windows / macOS / Linux: settings page opens
-- [ ] `apiDump` committed, README / `docs/internals/location.md` updated
+- [x] Observable authorization: `authorizationUpdates(pollInterval = 1.seconds): Flow` in common
+      code (polls the platform status, emits changes once) — a cold `Flow`, not a `StateFlow`,
+      so it needs no scope; `stateIn` it where a `StateFlow` is wanted
+- [ ] Windows: turning location off in Settings updates the state while the app runs. Not done
+      by the agent (it must not change system privacy settings): open the Lab probe, toggle
+      *Settings → Privacy & security → Location*, watch "authorization" flip to `Denied`
+- [ ] macOS: revoking access in System Settings updates the state while the app runs
+- [x] Linux: documented as best effort (no portal signal)
+- [x] `openSettings()` — Windows `ms-settings:privacy-location`, macOS Privacy → Location
+      Services, GNOME `gnome-control-center location`, Android app details, iOS app settings,
+      web `false`
+- [x] Windows: settings page opens (Lab probe)
+- [ ] macOS / Linux (GNOME): settings page opens
+- [x] `apiDump` committed (`location`, `nucleus-application`), README / `docs/internals/location.md`
+      updated
 
 ## 5. Android / iOS / web — borrow from maplibre-compose and compass
 
@@ -68,7 +102,8 @@ and [jordond/compass](https://github.com/jordond/compass) (`compass-geolocation-
 - [ ] Web: compare with maplibre's `WebLocationProvider` and compass's `BrowserLocator`
       (Permissions API `change`, `maximumAge` / `timeout` mapping, error codes)
 - [ ] Web: tests in real browsers (maplibre runs Chromium / Firefox / WebKit), not only Node
-- [ ] Every platform: open the system / app settings page (maplibre `SystemSettingsLauncher`)
+- [x] Every platform: open the system / app settings page (`openSettings()`; Android / iOS
+      compiled only, not run on a device)
 
 ## Final
 
