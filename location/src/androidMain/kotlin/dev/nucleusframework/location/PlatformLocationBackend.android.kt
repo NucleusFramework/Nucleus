@@ -1,6 +1,7 @@
 package dev.nucleusframework.location
 
 import android.Manifest
+import android.annotation.TargetApi
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -8,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationListener
 import android.location.LocationManager
+import android.location.LocationRequest
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -71,7 +73,9 @@ internal object AndroidLocationBackend : LocationBackend {
         accuracy: LocationAccuracy,
     ): LocationAuthorization {
         if (AndroidLocationContext.applicationOrNull == null) return LocationAuthorization.Restricted
-        if (!hasForeground()) {
+        // A precise request with only approximate access granted asks for the upgrade (Android 12+
+        // shows a dedicated dialog; a refused upgrade leaves the approximate grant in place).
+        if (!hasForeground() || (accuracy == LocationAccuracy.Precise && !hasFine())) {
             // Android 12+ shows one dialog with a precise / approximate choice when both are asked.
             val permissions =
                 if (accuracy == LocationAccuracy.Precise) {
@@ -137,7 +141,19 @@ internal object AndroidLocationBackend : LocationBackend {
      */
     private suspend fun prompt(permissions: Array<String>) {
         val activity = AndroidLocationContext.resumedActivity ?: return
-        preferences().edit().putBoolean(KEY_ASKED, true).apply()
+        // Recorded once answered: while the dialog is up, `authorization()` must not read
+        // "asked and not granted" as Denied.
+        try {
+            showPrompt(activity, permissions)
+        } finally {
+            preferences().edit().putBoolean(KEY_ASKED, true).apply()
+        }
+    }
+
+    private suspend fun showPrompt(
+        activity: Activity,
+        permissions: Array<String>,
+    ) {
         val paused = AtomicBoolean(false)
         withTimeoutOrNull(PROMPT_GRACE) {
             suspendCancellableCoroutine { continuation ->
@@ -239,14 +255,40 @@ internal object AndroidLocationBackend : LocationBackend {
         private fun startUpdates(provider: String) {
             val listener = SessionLocationListener()
             updates = listener
-            manager.requestLocationUpdates(
-                provider,
-                request.minInterval.inWholeMilliseconds,
-                request.minDistanceMeters.toFloat(),
-                listener,
-                Looper.getMainLooper(),
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                manager.requestLocationUpdates(
+                    provider,
+                    locationRequest(request.minInterval.inWholeMilliseconds),
+                    context.mainExecutor,
+                    listener,
+                )
+            } else {
+                manager.requestLocationUpdates(
+                    provider,
+                    request.minInterval.inWholeMilliseconds,
+                    request.minDistanceMeters.toFloat(),
+                    listener,
+                    Looper.getMainLooper(),
+                )
+            }
         }
+
+        /**
+         * The fused provider defaults to a balanced (Wi-Fi / cell) quality that never turns GNSS on:
+         * a precise request must ask for high accuracy explicitly.
+         */
+        @TargetApi(Build.VERSION_CODES.S)
+        private fun locationRequest(intervalMillis: Long): LocationRequest =
+            LocationRequest
+                .Builder(intervalMillis)
+                .setQuality(
+                    if (request.accuracy == LocationAccuracy.Precise && hasFine()) {
+                        LocationRequest.QUALITY_HIGH_ACCURACY
+                    } else {
+                        LocationRequest.QUALITY_BALANCED_POWER_ACCURACY
+                    },
+                ).setMinUpdateDistanceMeters(request.minDistanceMeters.toFloat())
+                .build()
 
         @Suppress("DEPRECATION")
         private fun startOneShot(provider: String) {
@@ -259,7 +301,19 @@ internal object AndroidLocationBackend : LocationBackend {
                 if (cached != null) deliver(cached, cached = true)
                 if (stopped.get()) return
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val signal = CancellationSignal()
+                cancellation = signal
+                // No platform deadline (30 s by default): the caller's timeout bounds the request.
+                val oneShot =
+                    LocationRequest
+                        .Builder(locationRequest(0))
+                        .setDurationMillis(Long.MAX_VALUE)
+                        .build()
+                manager.getCurrentLocation(provider, oneShot, signal, context.mainExecutor) {
+                    deliver(it, cached = false)
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 val signal = CancellationSignal()
                 cancellation = signal
                 manager.getCurrentLocation(provider, signal, context.mainExecutor) { deliver(it, cached = false) }
