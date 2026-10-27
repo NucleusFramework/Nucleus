@@ -11,6 +11,14 @@ import java.net.URI
 private const val TAG = "WindowsSystemProxyProvider"
 
 /**
+ * Chromium's `ProxyConfigServiceWin` re-reads the configuration every 10 s on top of
+ * its registry watch: settings written through `InternetSetOption` (WinINet, the
+ * Settings app) update `Connections\DefaultConnectionSettings` without raising any
+ * `RegNotifyChangeKeyValue` notification, so the watch alone misses them.
+ */
+private const val POLL_INTERVAL_MILLIS = 10_000
+
+/**
  * Windows backend built on `WinHttpGetIEProxyConfigForCurrentUser`,
  * `WinHttpGetProxyForUrl` and `RegNotifyChangeKeyValue`.
  *
@@ -55,8 +63,16 @@ internal object WindowsSystemProxyProvider : SystemProxyProvider {
         return ProxyServer.parseList(resolved)
     }
 
-    override fun awaitConfigurationChange(timeoutMillis: Int): Boolean =
-        WindowsProxyBridge.waitForConfigChange(timeoutMillis)
+    @Volatile
+    private var lastPolled: SystemProxySettings? = null
+
+    override fun awaitConfigurationChange(timeoutMillis: Int): Boolean {
+        val baseline = lastPolled ?: readSettings().also { lastPolled = it }
+        if (WindowsProxyBridge.waitForConfigChange(minOf(timeoutMillis, POLL_INTERVAL_MILLIS))) return true
+        val current = readSettings()
+        lastPolled = current
+        return current != baseline
+    }
 
     override fun wakeConfigurationWatcher() = WindowsProxyBridge.wakeWatcher()
 }
