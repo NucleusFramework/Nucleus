@@ -23,6 +23,7 @@ import dev.nucleusframework.desktop.application.internal.validation.stripAppleCe
 import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
+import org.gradle.api.file.RegularFileProperty
 import java.io.File
 
 /**
@@ -49,9 +50,25 @@ internal fun resolveCompressionLevel(
  * Maps Nucleus DSL properties to the electron-builder configuration schema,
  * producing a `electron-builder.yml` file consumed by `electron-builder --prepackaged`.
  *
+ * Every file the config points at is recorded in [referencedFiles], so the package task can make
+ * their content an input. With [redactSecrets], credentials are replaced by a placeholder: the
+ * package task fingerprints the config, and a rotated token or password does not change the
+ * installer it builds.
  */
 @Suppress("TooManyFunctions", "LargeClass")
-internal class ElectronBuilderConfigGenerator {
+internal class ElectronBuilderConfigGenerator(
+    private val redactSecrets: Boolean = false,
+) {
+    private val recordedFiles = linkedSetOf<File>()
+
+    /** The files referenced by the configs generated so far. */
+    val referencedFiles: Set<File> get() = recordedFiles
+
+    private fun File?.ref(): String? = this?.also { recordedFiles += it }?.absolutePath
+
+    private fun RegularFileProperty.ref(): String? = orNull?.asFile.ref()
+
+    private fun secret(value: String?): String? = if (redactSecrets && value != null) REDACTED else value
     /**
      * Generates the electron-builder config YAML content.
      *
@@ -125,12 +142,7 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("artifactName: ${withTargetSuffix(distributions.artifactName, targetFormat)}")
         generateFileAssociations(yaml, distributions, targetFormat)
 
-        // Use per-platform winCodeSign archives on Windows to avoid extraction failures
-        // caused by macOS symlinks in the legacy combo archive (electron-builder#8149).
-        if (currentOS == OS.Windows) {
-            yaml.appendLine("toolsets:")
-            yaml.appendLine("  winCodeSign: \"1.0.0\"")
-        }
+        appendToolsets(yaml, targetFormat)
 
         // --- Platform-specific config ---
         when (currentOS) {
@@ -201,9 +213,7 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "  icon",
-            distributions.macOS.iconFile.orNull
-                ?.asFile
-                ?.absolutePath,
+            distributions.macOS.iconFile.ref(),
         )
         appendIfNotNull(yaml, "  minimumSystemVersion", distributions.macOS.minimumSystemVersion)
 
@@ -249,27 +259,22 @@ internal class ElectronBuilderConfigGenerator {
         windowOverride: DmgWindowOverride? = null,
     ) {
         yaml.appendLine("dmg:")
-        yaml.appendLine("  sign: ${dmg.sign}")
+        // Nucleus signs the DMG itself after packaging (dmg.sign, #828)
+        yaml.appendLine("  sign: false")
         val backgroundPath =
             dmgBackgroundOverride?.absolutePath
-                ?: dmg.background.orNull
-                    ?.asFile
-                    ?.absolutePath
+                ?: dmg.background.ref()
         appendIfNotNull(yaml, "  background", backgroundPath)
         appendIfNotNull(yaml, "  backgroundColor", dmg.backgroundColor)
         appendIfNotNull(
             yaml,
             "  badgeIcon",
-            dmg.badgeIcon.orNull
-                ?.asFile
-                ?.absolutePath,
+            dmg.badgeIcon.ref(),
         )
         appendIfNotNull(
             yaml,
             "  icon",
-            dmg.icon.orNull
-                ?.asFile
-                ?.absolutePath,
+            dmg.icon.ref(),
         )
         dmg.iconSize?.let { yaml.appendLine("  iconSize: $it") }
         dmg.iconTextSize?.let { yaml.appendLine("  iconTextSize: $it") }
@@ -342,7 +347,7 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "  icon",
-            windowsIcon?.absolutePath,
+            windowsIcon.ref(),
         )
 
         generateWindowsSigningConfig(yaml, distributions)
@@ -406,11 +411,9 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "    certificateFile",
-            signing.certificateFile.orNull
-                ?.asFile
-                ?.absolutePath,
+            signing.certificateFile.ref(),
         )
-        appendIfNotNull(yaml, "    certificatePassword", signing.certificatePassword)
+        appendIfNotNull(yaml, "    certificatePassword", secret(signing.certificatePassword))
         appendIfNotNull(yaml, "    certificateSha1", signing.certificateSha1)
         appendIfNotNull(yaml, "    certificateSubjectName", signing.certificateSubjectName)
         appendIfNotNull(yaml, "    rfc3161TimeStampServer", signing.timestampServer)
@@ -461,7 +464,7 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("  - ext: \"$normalizedExtension\"")
         appendIfNotNull(yaml, "    name", association.description)
         appendIfNotNull(yaml, "    description", association.description)
-        appendIfNotNull(yaml, "    icon", association.iconFile?.absolutePath)
+        appendIfNotNull(yaml, "    icon", association.iconFile.ref())
     }
 
     private fun withTargetSuffix(
@@ -525,53 +528,39 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "${indent}installerIcon",
-            nsis.installerIcon.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.installerIcon.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}uninstallerIcon",
-            nsis.uninstallerIcon.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.uninstallerIcon.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}license",
-            nsis.license.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.license.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}include",
             // The generated include chains the user's own script, so it wins when present.
             nsisInclude?.absolutePath
-                ?: nsis.includeScript.orNull
-                    ?.asFile
-                    ?.absolutePath,
+                ?: nsis.includeScript.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}script",
-            nsis.script.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.script.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}installerHeader",
-            nsis.installerHeader.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.installerHeader.ref(),
         )
         appendIfNotNull(
             yaml,
             "${indent}installerSidebar",
-            nsis.installerSidebar.orNull
-                ?.asFile
-                ?.absolutePath,
+            nsis.installerSidebar.ref(),
         )
     }
 
@@ -635,12 +624,22 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "  icon",
-            linuxIcon?.absolutePath,
+            linuxIcon.ref(),
         )
-        appendIfNotNull(yaml, "  category", distributions.linux.appCategory)
+        // electron-builder writes the desktop entry's Categories and Comment after merging
+        // desktop.entry, from linux.category and linux.description: route explicit entries
+        // there so they are not silently overwritten.
+        val desktopEntries = distributions.linux.appImage.desktopEntries
+        appendIfNotNull(
+            yaml,
+            "  category",
+            desktopEntries.entryValue("Categories")
+                ?: distributions.linux.appCategory
+                ?: distributions.linux.menuGroup,
+        )
         appendIfNotNull(yaml, "  maintainer", distributions.linux.debMaintainer)
         appendIfNotNull(yaml, "  vendor", distributions.vendor)
-        appendIfNotNull(yaml, "  description", distributions.description)
+        appendIfNotNull(yaml, "  description", desktopEntries.entryValue("Comment") ?: distributions.description)
         appendLinuxDesktopEntryConfig(yaml, distributions, startupWMClass)
 
         when (targetFormat) {
@@ -700,7 +699,10 @@ internal class ElectronBuilderConfigGenerator {
         startupWMClass: String?,
     ) {
         val entryOverrides = linkedMapOf<String, String>()
-        entryOverrides.putAll(distributions.linux.appImage.desktopEntries)
+        // Categories and Comment are emitted as linux.category / linux.description instead.
+        distributions.linux.appImage.desktopEntries
+            .filterKeys { key -> ELECTRON_BUILDER_OWNED_DESKTOP_KEYS.none { it.equals(key, ignoreCase = true) } }
+            .let(entryOverrides::putAll)
         // On Linux productName is the filesystem-safe executable name (see generate), and
         // electron-builder derives the desktop entry's Name from it: put the display name back.
         val hasNameOverride = entryOverrides.keys.any { it.equals("Name", ignoreCase = true) }
@@ -781,9 +783,7 @@ internal class ElectronBuilderConfigGenerator {
         appendIfNotNull(
             yaml,
             "  license",
-            flatpak.license.orNull
-                ?.asFile
-                ?.absolutePath,
+            flatpak.license.ref(),
         )
         if (flatpak.finishArgs.isNotEmpty()) {
             yaml.appendLine("  finishArgs:")
@@ -814,7 +814,7 @@ internal class ElectronBuilderConfigGenerator {
             yaml.appendLine("  - provider: github")
             appendIfNotNull(yaml, "    owner", github.owner)
             appendIfNotNull(yaml, "    repo", github.repo)
-            appendIfNotNull(yaml, "    token", github.token)
+            appendIfNotNull(yaml, "    token", secret(github.token))
             yaml.appendLine("    channel: ${github.channel.id}")
             yaml.appendLine("    releaseType: ${github.releaseType.id}")
         }
@@ -866,30 +866,34 @@ internal class ElectronBuilderConfigGenerator {
         distributions.linux.beforeInstall.orNull
             ?.asFile
             ?.takeIf { it.isFile }
+            ?.ref()
             ?.let {
                 args += "--before-install"
-                args += it.absolutePath
+                args += it
             }
         distributions.linux.beforeRemove.orNull
             ?.asFile
             ?.takeIf { it.isFile }
+            ?.ref()
             ?.let {
                 args += "--before-remove"
-                args += it.absolutePath
+                args += it
             }
         distributions.linux.afterUpgrade.orNull
             ?.asFile
             ?.takeIf { it.isFile }
+            ?.ref()
             ?.let {
                 args += "--after-upgrade"
-                args += it.absolutePath
+                args += it
             }
         distributions.linux.beforeUpgrade.orNull
             ?.asFile
             ?.takeIf { it.isFile }
+            ?.ref()
             ?.let {
                 args += "--before-upgrade"
-                args += it.absolutePath
+                args += it
             }
         return args
     }
@@ -904,6 +908,29 @@ internal class ElectronBuilderConfigGenerator {
             yaml.appendLine("    - \"${arg.escapeForYamlDoubleQuotes()}\"")
         }
     }
+
+    private fun appendToolsets(
+        yaml: StringBuilder,
+        targetFormat: TargetFormat,
+    ) {
+        val toolsets =
+            buildList {
+                // Use per-platform winCodeSign archives on Windows to avoid extraction failures
+                // caused by macOS symlinks in the legacy combo archive (electron-builder#8149).
+                if (currentOS == OS.Windows) add("winCodeSign" to "1.0.0")
+                // The legacy (default "0.0.0") AppImage toolset embeds the old runtime, which
+                // links the system's libfuse2: absent by default on current distros (Ubuntu
+                // 22.04+, Fedora 36+), so the image fails to start there. This one embeds the
+                // static type2-runtime, which needs only a `fusermount`/`fusermount3` binary.
+                if (targetFormat == TargetFormat.AppImage) add("appimage" to APPIMAGE_TOOLSET_VERSION)
+            }
+        if (toolsets.isEmpty()) return
+        yaml.appendLine("toolsets:")
+        toolsets.forEach { (name, version) -> yaml.appendLine("  $name: \"$version\"") }
+    }
+
+    private fun Map<String, String>.entryValue(key: String): String? =
+        entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value?.takeIf { it.isNotBlank() }
 
     private fun appendIfNotNull(
         yaml: StringBuilder,
@@ -921,4 +948,17 @@ internal class ElectronBuilderConfigGenerator {
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("\t", "\\t")
+
+    private companion object {
+        const val REDACTED = "<redacted>"
+
+        // Desktop entry keys electron-builder recomputes after merging linux.desktop.entry.
+        val ELECTRON_BUILDER_OWNED_DESKTOP_KEYS = listOf("Categories", "Comment")
+    }
 }
+
+/**
+ * electron-builder `toolsets.appimage` version: "1.0.3" is the static type2-runtime (build
+ * 20251108) patched for electron-builder#9598. Must be one the pinned electron-builder knows.
+ */
+internal const val APPIMAGE_TOOLSET_VERSION = "1.0.3"

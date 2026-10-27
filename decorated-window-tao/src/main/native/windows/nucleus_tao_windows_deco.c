@@ -1673,6 +1673,33 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetOwn
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
 
+/* Enables or disables mouse and keyboard input to an HWND (issue #832). A
+ * modal DecoratedDialog disables its owner the way DialogBox does: the
+ * system then refuses input to the owner, beeps and flashes the dialog on a
+ * click there, and routes the owner's activation (taskbar, Alt+Tab) to it.
+ * The owner must be enabled again *before* the dialog is hidden or
+ * destroyed, so Windows hands it the activation. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetWindowEnabled(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean enabled)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return;
+    EnableWindow(hwnd, enabled ? TRUE : FALSE);
+}
+
+/* E2E probe (issue #832): whether the HWND currently accepts input. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsWindowEnabled(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
+    return IsWindowEnabled(hwnd) ? JNI_TRUE : JNI_FALSE;
+}
+
 /* Returns the primary monitor's scale factor as `(scale * 1000)`. Falls back
  * to GetDeviceCaps(LOGPIXELSX) when GetDpiForSystem isn't available
  * (pre-Windows 10 1607). Used by DecoratedWindow when the window's own
@@ -1985,6 +2012,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsMaxi
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
     return IsZoomed(hwnd) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* DwmFlush: blocks until DWM's next composition — the display-paced wake of a
+ * frame held inside the modal size/move loop (#484). Any thread. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeDwmFlush(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    return SUCCEEDED(DwmFlush()) ? JNI_TRUE : JNI_FALSE;
 }
 
 /* Atomic unmaximize + reposition under the finger when a touch drag starts

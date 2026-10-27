@@ -1,5 +1,14 @@
 package dev.nucleusframework.window.tao.scene
 
+import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.jetbrains.skia.DirectContext
+
 /*
  * Shared policy for the Skia GPU resource cache of the scene hosts'
  * `DirectContext`s.
@@ -48,9 +57,96 @@ internal const val GPU_RESOURCE_CACHE_LIMIT_BYTES: Long = 256L * 1024 * 1024
  */
 internal const val GPU_RESIZE_PURGE_INTERVAL_NS: Long = 250_000_000L
 
+/**
+ * The limit-toggle for a context that will not draw again soon: the window was
+ * minimized (#638). Toggling queues the backend deletes, and inside a frame the
+ * frame's own flush submits them; at rest no frame follows, so the deletes
+ * would sit in the command stream and the driver would keep every byte — the
+ * toggle alone was measured to return nothing on NVIDIA/GL. Flushing and
+ * submitting synchronously is what actually hands the memory back.
+ *
+ * Same calling contract as every toggle: on the owning render thread on Metal,
+ * with this context current on the ANGLE/EGL hosts.
+ */
+internal fun DirectContext.purgeAtRest() {
+    resourceCacheLimit = 0
+    resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+    flush()
+    submit(true)
+}
+
 /*
  * There is deliberately no "settle" constant here. A drag-end purge needs a
  * drag-end signal, and only Windows has one (`WM_EXITSIZEMOVE`); standing a
  * timer in for it on the other hosts was measured to be a bad trade — see
- * `TaoComposeSceneHost.purgeResizeScratchIfDue`.
+ * `TaoComposeSceneHost.purgeResizeScratchIfDue`. The rest purge below is a
+ * different trigger: it waits for frames to stop, not for sizes to.
  */
+
+/**
+ * How long a host draws nothing before [GpuCacheRestReclaimer] purges its cache.
+ * Long enough that a pause between two interactions keeps the cache warm, short
+ * enough that the high-water mark of an animation that has stopped does not stay
+ * resident for the rest of the session (#638). The cost of being wrong is one
+ * frame re-minting its offscreen scratch, not a re-raster of the scene.
+ */
+internal const val GPU_REST_PURGE_DELAY_MS: Long = 3_000L
+
+/**
+ * Reclaims a scene host's GPU resource cache once its window is at rest but
+ * still on screen (#638): [GPU_REST_PURGE_DELAY_MS] after the last frame. Skia
+ * evicts only to fit a new allocation, so without this the cache an animation
+ * filled stays resident for as long as the window is still. Minimize, the
+ * other at-rest moment, purges at once through the hosts' `onMinimizedChanged`;
+ * both go through [purgeAtRest].
+ *
+ * The [purge] runs on the Tao main thread, where every host renders or records
+ * its frames; it returns `false` when the context cannot be purged right now
+ * (Linux: a swap still holds it), and the reclaimer tries again one delay later.
+ * A context with a live [dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers]
+ * consumer is left alone by every host's [purge] — an external renderer may be
+ * holding resources across frames of its own.
+ *
+ * One timer per rest period, not one per frame: [onFrame] only stamps the time
+ * while a timer is pending, and the timer re-arms itself until the stamp is old
+ * enough.
+ */
+internal class GpuCacheRestReclaimer(
+    private val purge: () -> Boolean,
+) {
+    private val scope = CoroutineScope(TaoMainDispatcher + SupervisorJob())
+
+    @Volatile
+    private var lastFrameNs: Long = 0L
+
+    /** Main thread only. */
+    private var pending: Job? = null
+
+    /** A frame was drawn: restart the rest period. Main thread. */
+    fun onFrame() {
+        lastFrameNs = System.nanoTime()
+        if (pending?.isActive == true) return
+        pending =
+            scope.launch {
+                while (true) {
+                    val leftNs = lastFrameNs + GPU_REST_PURGE_DELAY_MS * NANOS_PER_MILLI - System.nanoTime()
+                    if (leftNs > 0L) {
+                        delay(leftNs / NANOS_PER_MILLI + 1)
+                    } else if (purge()) {
+                        break
+                    } else {
+                        lastFrameNs = System.nanoTime()
+                    }
+                }
+            }
+    }
+
+    /** The host is going away. */
+    fun close() {
+        scope.cancel()
+    }
+
+    private companion object {
+        const val NANOS_PER_MILLI = 1_000_000L
+    }
+}

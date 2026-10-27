@@ -17,16 +17,28 @@ abstract class AppImageSettings {
     /** Synopsis (short description for .desktop) */
     var synopsis: String? = null
 
-    /** Additional desktop file entries (key=value) */
+    /**
+     * Additional desktop file entries (key=value), applied to the `.desktop` file of every
+     * Linux target (deb, rpm, pacman, AppImage, …), not only the AppImage.
+     *
+     * Entries win over the values Nucleus derives: `Name` over `appName`, `Comment` over
+     * `description`, `Categories` over [LinuxPlatformSettings.appCategory]. Localized keys
+     * (`Name[he]`, `Comment[ru]`, …) are written as-is, so a launcher found by typing in one
+     * script can carry translations, e.g. `"Name" to "Zayit", "Name[he]" to "זית"`.
+     *
+     * A `Comment` entry also replaces `description` as the Linux package description, since
+     * electron-builder reads both from the same option.
+     */
     var desktopEntries: Map<String, String> = emptyMap()
 
     /**
      * Archive compression for this AppImage only.
      *
      * Overrides the root [JvmApplicationDistributions.compressionLevel] when set.
-     * Prefer [CompressionLevel.Normal] or [CompressionLevel.Store]:
-     * [CompressionLevel.Maximum] / [CompressionLevel.Ultra] map to electron-builder
-     * `maximum` and can make cold starts very slow (squashfs/FUSE decompression).
+     * [CompressionLevel.Store] builds a gzip image, every other level a zstd image.
+     * [CompressionLevel.Normal], [CompressionLevel.Maximum] and [CompressionLevel.Ultra] produce
+     * the same image: electron-builder passes no zstd level to `mksquashfs`, so all three use
+     * its default.
      */
     var compressionLevel: CompressionLevel? = null
 }

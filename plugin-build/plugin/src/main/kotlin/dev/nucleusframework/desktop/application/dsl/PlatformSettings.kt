@@ -99,6 +99,24 @@ abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
     fun dmg(fn: Action<DmgSettings>) {
         fn.execute(dmg)
     }
+
+    /**
+     * Associates files with [extension] / [mimeType] with the application, declaring the macOS
+     * `CFBundleTypeRole` ([role]) and `LSHandlerRank` ([rank]) of the document type.
+     *
+     * The shorter overload uses [MacOSDocumentRole.Editor] and [MacOSHandlerRank.Default], so every
+     * document type carries the `LSHandlerRank` App Store Connect requires (ITMS-90788).
+     */
+    fun fileAssociation(
+        mimeType: String,
+        extension: String,
+        description: String,
+        iconFile: File? = null,
+        role: MacOSDocumentRole = MacOSDocumentRole.Editor,
+        rank: MacOSHandlerRank = MacOSHandlerRank.Default,
+    ) {
+        fileAssociations.add(FileAssociation(mimeType, extension, description, iconFile, role, rank))
+    }
 }
 
 /** macOS packaging settings of a Kotlin/Native application. */
@@ -217,9 +235,50 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
     }
 }
 
-/** Extra `Info.plist` content: [extraKeysRawXml] is inserted verbatim into the generated plist dictionary. */
+/**
+ * Extra `Info.plist` content: [extraKeysRawXml] is inserted verbatim into the generated plist dictionary,
+ * and [localizationsDir] / [localization] provide the localized values macOS reads from
+ * `Contents/Resources/<lang>.lproj/InfoPlist.strings` (e.g. permission prompts).
+ *
+ * ```kotlin
+ * macOS {
+ *     infoPlist {
+ *         extraKeysRawXml = "<key>NSCameraUsageDescription</key><string>Scan documents</string>"
+ *         localization("de", mapOf("NSCameraUsageDescription" to "Dokumente scannen"))
+ *         localizationsDir = file("macos/localizations") // fr.lproj/InfoPlist.strings, …
+ *     }
+ * }
+ * ```
+ */
 open class InfoPlistSettings {
     var extraKeysRawXml: String? = null
+
+    /**
+     * Directory whose `<lang>.lproj/` subdirectories are copied as-is into the bundle's
+     * `Contents/Resources`, before signing, in both the JVM and GraalVM pipelines.
+     */
+    var localizationsDir: File? = null
+
+    internal val localizedStrings: MutableMap<String, Map<String, String>> = linkedMapOf()
+
+    /**
+     * Writes [strings] (`Info.plist` key → localized value) to `<language>.lproj/InfoPlist.strings`.
+     * Calling it again for the same [language] merges the entries. A language must not also have an
+     * `InfoPlist.strings` in [localizationsDir].
+     */
+    fun localization(
+        language: String,
+        strings: Map<String, String>,
+    ) {
+        require(LPROJ_LANGUAGE.matches(language)) {
+            "macOS infoPlist localization: invalid language '$language' (expected e.g. \"de\", \"pt-BR\", \"zh-Hans\")"
+        }
+        localizedStrings[language] = localizedStrings[language].orEmpty() + strings
+    }
+
+    private companion object {
+        val LPROJ_LANGUAGE = Regex("[A-Za-z0-9_-]+")
+    }
 }
 
 /**
@@ -237,8 +296,16 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
     var startupWMClass: String? = null
     var packageName: String? = null
     var appRelease: String? = null
+
+    /**
+     * `Categories` of the desktop entry, e.g. `"Education"` or `"Education;X-Kodesh"`
+     * (non-registered categories need the `X-` prefix). Defaults to electron-builder's
+     * `Utility` when neither this nor [menuGroup] is set.
+     */
     var appCategory: String? = null
     var debMaintainer: String? = null
+
+    /** jpackage-era name for [appCategory], used when [appCategory] is not set. */
     var menuGroup: String? = null
     var rpmLicenseType: String? = null
     var debPackageVersion: String? = null

@@ -7,6 +7,7 @@ import dev.nucleusframework.window.tao.dnd.TaoSyntheticDndTest
 import dev.nucleusframework.window.tao.dnd.TaoTransferableAccessGuardTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
 import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationGestureTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyRepeatTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
@@ -38,6 +39,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadScaleTest
+import dev.nucleusframework.window.tao.scene.TaoSceneWindowsTouchpadTest
 import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import dev.nucleusframework.window.tao.workspace.DragControllerTest
 import dev.nucleusframework.window.tao.workspace.HostGeometryTest
@@ -93,6 +95,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoTrackpadPanRouterTest::class.java,
             TaoSceneTrackpadScaleTest::class.java,
             TaoTrackpadScaleSessionTest::class.java,
+            TaoDirectManipulationGestureTest::class.java,
+            TaoSceneWindowsTouchpadTest::class.java,
             TaoScenePopupTest::class.java,
             TaoScenePopupDisposedInLayoutTest::class.java,
             TaoSceneOuterLocalsBridgeTest::class.java,
@@ -154,6 +158,10 @@ class TaoSceneTestBatteryDriftTest {
                 "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
             TaoMouseButtonWireDriftTest::class.java to
                 "reads events.rs from the repo; wire guard, not a scene behaviour",
+            TaoPointerKindWireDriftTest::class.java to
+                "reads events.rs from the repo; wire guard, not a scene behaviour",
+            TaoDirectManipulationWireDriftTest::class.java to
+                "reads direct_manipulation.rs / events.rs / the GraalVM metadata from the repo; wire guard",
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
@@ -163,6 +171,8 @@ class TaoSceneTestBatteryDriftTest {
                 "threads a real watchdog against a fake probe (#643); no ComposeScene",
             TaoEventLoopWatchdogSmokeTest::class.java to
                 "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); freezes the real event loop",
+            TaoMainThreadBindingSmokeTest::class.java to
+                "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); runs the real event loop (#829)",
             dev.nucleusframework.window.tao.scene.WaylandBufferScaleTest::class.java to
                 "pure-function buffer alignment; already covered via TaoScenePopupTest in the battery",
             XdgPortalParentTest::class.java to
@@ -187,6 +197,8 @@ class TaoSceneTestBatteryDriftTest {
                 "writes an AWT comparison PNG; diagnostic, not a scene behaviour",
             TaoApplicationExitTest::class.java to
                 "pure finishTaoApplication / exitProcessOnExit mapping (#667); no ComposeScene",
+            TaoSessionEndMonkeyTest::class.java to
+                "seeded model of the Windows session-end state machine (#751); no ComposeScene",
         )
 
     // An @Ignore'd test is disabled everywhere, so it must not be in the battery either.

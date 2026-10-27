@@ -13,6 +13,7 @@ import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -38,10 +39,8 @@ import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.clearContentMeasurer
 import dev.nucleusframework.window.tao.dispatch.DelayScheduler
 import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
-import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSession
-import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
-import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
@@ -50,6 +49,7 @@ import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDirectManipulationBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge
 import dev.nucleusframework.window.tao.hasWindowsTextureImports
 import dev.nucleusframework.window.tao.installContentMeasurer
@@ -59,12 +59,10 @@ import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import dev.nucleusframework.window.tao.releaseWindowsTextureImports
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.Canvas
@@ -79,7 +77,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Windows variant of [TaoComposeSceneHost]. Drives a Compose scene onto the
@@ -233,6 +230,9 @@ internal class TaoComposeSceneHostWindows(
 
     /** Monotonic ns of the last in-drag GPU cache purge (see [onResized]). */
     private var lastResizePurgeNs: Long = 0L
+
+    /** Reclaims the cache an animation filled once the window is at rest (#638). */
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest() }
 
     /** A size change awaits push into the GL surface + ComposeScene at the next paint. */
     private var pendingResizeApply: Boolean = false
@@ -452,6 +452,10 @@ internal class TaoComposeSceneHostWindows(
             "Failed to create ANGLE render context for HWND " +
                 "(libEGL/libGLESv2 missing or Direct3D 11 unavailable)"
         }
+        NativeTaoWindowsDirectManipulationBridge.nativeBindInputWindow(
+            window.handle,
+            NativeTaoGlBridge.nativeRenderSurfaceHandle(handle),
+        )
         val ctx =
             try {
                 val intf = GLAssembledInterface.createFromNativePointers(0L, NativeTaoGlBridge.nativeEglGetProcFn())
@@ -616,6 +620,12 @@ internal class TaoComposeSceneHostWindows(
     // the active set here and issue a single `sendPointerEvent` with the
     // full pointer list every time, since Compose treats absence as a
     // release.
+    //
+    // A pen comes through the same WM_POINTER path (#827), tagged Stylus or
+    // Eraser. Unlike a finger it hovers: a Move without a contact is an
+    // unpressed pointer, a lift keeps it as one, and only leaving (CANCEL
+    // while unpressed) takes it out, as an Exit. Compose Desktop tracks hover
+    // for the mouse only, so no Enter / Exit reaches a modifier for now.
 
     private data class ActiveTouch(
         val id: Long,
@@ -623,6 +633,7 @@ internal class TaoComposeSceneHostWindows(
         var yPx: Float,
         var pressed: Boolean,
         var pressure: Float,
+        var type: PointerType,
     )
 
     /** Insertion order matters for stable pointer ordering across events. */
@@ -649,6 +660,8 @@ internal class TaoComposeSceneHostWindows(
         val sc = scene ?: return
         val xPx = xFixed / TOUCH_POSITION_SCALE
         val yPx = yFixed / TOUCH_POSITION_SCALE
+        val type = window.touchPointerType
+        val pen = type != PointerType.Touch
         window.updateWindowsTitleBarTouchDrag(phase, id, xPx, yPx)
         val pressure =
             if (forceFixed == TaoTouchEvent.FORCE_UNKNOWN) {
@@ -659,42 +672,7 @@ internal class TaoComposeSceneHostWindows(
                 forceFixed / TOUCH_FORCE_SCALE
             }
 
-        val composeType =
-            when (phase) {
-                TaoTouchEvent.PRESS -> {
-                    markOwnerFocusedFromPointerInput()
-                    activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure = pressure)
-                    PointerEventType.Press
-                }
-                TaoTouchEvent.MOVE -> {
-                    val existing = activeTouches[id]
-                    if (existing != null) {
-                        existing.xPx = xPx
-                        existing.yPx = yPx
-                        existing.pressure = pressure
-                        PointerEventType.Move
-                    } else {
-                        // Synthetic Press for an unknown id - defensive in case Tao
-                        // ever forwards a Move without a prior Started (palm-reject
-                        // race observed on some Surface drivers).
-                        markOwnerFocusedFromPointerInput()
-                        activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure = pressure)
-                        PointerEventType.Press
-                    }
-                }
-                TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> {
-                    val existing = activeTouches[id]
-                    if (existing != null) {
-                        existing.xPx = xPx
-                        existing.yPx = yPx
-                        existing.pressed = false
-                    } else {
-                        return
-                    }
-                    PointerEventType.Release
-                }
-                else -> return
-            }
+        val composeType = updateActiveTouch(phase, id, xPx, yPx, pressure, type) ?: return
 
         val pointers =
             activeTouches.values.map { t ->
@@ -702,7 +680,7 @@ internal class TaoComposeSceneHostWindows(
                     id = PointerId(t.id),
                     position = Offset(t.xPx, t.yPx),
                     pressed = t.pressed,
-                    type = PointerType.Touch,
+                    type = t.type,
                     pressure = t.pressure,
                 )
             }
@@ -711,49 +689,125 @@ internal class TaoComposeSceneHostWindows(
         // event-level button and an empty button mask. Skiko's primary
         // matcher treats Touch itself as primary; synthesising BUTTON1 here
         // prevents touch long-press/onClick matchers from recognizing it.
+        // A pen does press the primary button, as on Linux and macOS where it
+        // comes through the mouse path.
+        val penButtonChanged =
+            pen && (composeType == PointerEventType.Press || composeType == PointerEventType.Release)
+        val penPressed = activeTouches.values.any { it.pressed && it.type != PointerType.Touch }
         sc.sendPointerEvent(
             eventType = composeType,
             pointers = pointers,
+            buttons = PointerButtons(isPrimaryPressed = penPressed),
             keyboardModifiers = currentKeyboardModifiers,
+            button = if (penButtonChanged) PointerButton.Primary else null,
         )
 
         // Purge after the dispatch so the JVM saw the released finger one
-        // last time with `pressed=false` — same convention as Linux.
-        if (phase == TaoTouchEvent.RELEASE || phase == TaoTouchEvent.CANCEL) {
+        // last time with `pressed=false` — same convention as Linux. A lifted
+        // pen stays, hovering, until it leaves range.
+        if (phase == TaoTouchEvent.CANCEL || (phase == TaoTouchEvent.RELEASE && !pen)) {
             activeTouches.remove(id)
-            if (phase == TaoTouchEvent.CANCEL) {
+            if (phase == TaoTouchEvent.CANCEL && composeType == PointerEventType.Release) {
                 sc.cancelPointerInput()
             }
         }
     }
 
-    // ── Trackpad pinch-to-zoom (Ctrl-flagged WM_MOUSEWHEEL) ───────────────
-    //
-    // Windows delivers a precision-touchpad pinch (and a real Ctrl+wheel) as a
-    // WM_MOUSEWHEEL carrying the Ctrl flag; the vendored Tao patch routes those
-    // to the magnify hook (instead of a scroll, which would drive the
-    // scrollable). Each notch/tick is a discrete delta with no Began/Ended
-    // phase, so we keep ONE continuous Compose scale gesture: the first tick
-    // opens `ScaleStart`, every tick is `ScaleChange`, and an idle debounce
-    // sends `ScaleEnd` (#660).
-
-    private var pinchCenterX = 0f
-    private var pinchCenterY = 0f
-    private val scaleSession =
-        TaoTrackpadScaleSession { type, factor ->
-            scene?.dispatchTrackpadScale(
-                x = pinchCenterX,
-                y = pinchCenterY,
-                type = type,
-                scaleFactor = factor,
-                keyboardModifiers = currentKeyboardModifiers,
-            )
+    /**
+     * Applies one touch or pen update to [activeTouches] and returns the
+     * Compose event it makes, or null when it makes none.
+     */
+    private fun updateActiveTouch(
+        phase: Int,
+        id: Long,
+        xPx: Float,
+        yPx: Float,
+        pressure: Float,
+        type: PointerType,
+    ): PointerEventType? =
+        when (phase) {
+            TaoTouchEvent.PRESS -> {
+                markOwnerFocusedFromPointerInput()
+                activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure, type)
+                PointerEventType.Press
+            }
+            TaoTouchEvent.MOVE -> {
+                val existing = activeTouches[id]
+                if (existing != null) {
+                    existing.xPx = xPx
+                    existing.yPx = yPx
+                    existing.pressure = pressure
+                    existing.type = type
+                    PointerEventType.Move
+                } else if (type != PointerType.Touch) {
+                    // A pen coming into hover range.
+                    activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = false, pressure, type)
+                    PointerEventType.Move
+                } else {
+                    // Synthetic Press for an unknown id - defensive in case Tao
+                    // ever forwards a Move without a prior Started (palm-reject
+                    // race observed on some Surface drivers).
+                    markOwnerFocusedFromPointerInput()
+                    activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure, type)
+                    PointerEventType.Press
+                }
+            }
+            TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> {
+                activeTouches[id]?.let { existing ->
+                    val wasPressed = existing.pressed
+                    existing.xPx = xPx
+                    existing.yPx = yPx
+                    existing.pressed = false
+                    existing.type = type
+                    when {
+                        wasPressed -> PointerEventType.Release
+                        // A hovering pen leaving; a lifted one sends no second release.
+                        phase == TaoTouchEvent.CANCEL -> PointerEventType.Exit
+                        else -> null
+                    }
+                }
+            }
+            else -> null
         }
-    private var pinchEndJob: Job? = null
+
+    // ── Precision touchpad: pan and pinch ─────────────────────────────────
+    //
+    // DirectManipulation (#706) and the legacy Ctrl+wheel emulation — see
+    // [TaoWindowsTouchpadInput].
+
+    private val touchpad =
+        TaoWindowsTouchpadInput(
+            object : TaoWindowsTouchpadInput.Target {
+                override val scene: ComposeScene? get() = this@TaoComposeSceneHostWindows.scene
+                override val scale: Float get() = this@TaoComposeSceneHostWindows.scale
+                override val keyboardModifiers: PointerKeyboardModifiers get() = currentKeyboardModifiers
+
+                // The raw position, not the deadband's: the zoom centre.
+                override val pointerPosition: Offset get() = Offset(lastPointerX, lastPointerY)
+
+                override fun guard(block: () -> Unit) = exceptionHandler.catchExceptions(block)
+            },
+            gestureScope,
+        )
 
     /**
-     * Forwards one Ctrl+wheel / precision-touchpad pinch tick as a Compose
-     * scale step. [valueFixed] is the normalized wheel delta ×
+     * One step of the window's DirectManipulation viewport (#706). Delivered
+     * while the window takes no input too ([inputEnabled] false), so a gesture
+     * a modal child interrupts still closes.
+     */
+    fun onDirectManipulation(
+        event: TaoDirectManipulationEvent,
+        inputEnabled: Boolean,
+    ) {
+        if (scene == null) return
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
+        touchpad.onDirectManipulation(event, inputEnabled)
+    }
+
+    /**
+     * Forwards one Ctrl+wheel pinch tick (the legacy emulation, or a mouse)
+     * as a Compose scale step. [valueFixed] is the normalized wheel delta ×
      * [TRACKPAD_VALUE_SCALE] (positive = zoom in). Only magnify gestures are
      * produced on Windows, so kind/phase/x/y from the shared
      * `onTrackpadGesture` wire are ignored.
@@ -768,32 +822,7 @@ internal class TaoComposeSceneHostWindows(
         if (scene == null) return
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
-
-        val value = valueFixed / TRACKPAD_VALUE_SCALE
-        // Precision touchpads can deliver many fractional deltas; map the
-        // WHEEL_DELTA-normalized value through a multiplicative curve so small
-        // ticks accumulate smoothly without each message behaving like a large
-        // zoom step.
-        val step = TaoWheelPinchZoom.stepFromWheelDelta(value)
-        pinchCenterX = lastPointerX
-        pinchCenterY = lastPointerY
-        scaleSession.change(step)
-        schedulePinchEnd()
-    }
-
-    /** Re-arms the idle timer that closes the scale gesture once ticks stop. */
-    private fun schedulePinchEnd() {
-        pinchEndJob?.cancel()
-        pinchEndJob =
-            gestureScope.launch {
-                delay(PINCH_IDLE_END_MS.milliseconds)
-                endPinchGesture()
-            }
-    }
-
-    private fun endPinchGesture() {
-        pinchEndJob = null
-        scaleSession.end()
+        touchpad.onCtrlWheel(valueFixed / TRACKPAD_VALUE_SCALE)
     }
 
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
@@ -934,6 +963,17 @@ internal class TaoComposeSceneHostWindows(
         dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.Callback {
         private fun node() = window.inboundDragAndDropNode?.invoke()
 
+        private val dnd =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                .InboundState()
+
+        override fun onDragFiles(
+            hwnd: Long,
+            files: Array<String>?,
+        ) {
+            dnd.onDragFiles(files = files)
+        }
+
         override fun onDragEnter(
             hwnd: Long,
             x: Int,
@@ -947,8 +987,8 @@ internal class TaoComposeSceneHostWindows(
             if (!hasFiles) {
                 return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             }
-            return if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragEnter(node(), x, y)
+            return if (dnd
+                    .onDragEnter(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
@@ -963,8 +1003,8 @@ internal class TaoComposeSceneHostWindows(
             keyState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragOver(node(), x, y)
+            if (dnd
+                    .onDragOver(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
@@ -974,7 +1014,7 @@ internal class TaoComposeSceneHostWindows(
         override fun onDragLeave(hwnd: Long) {
             dev.nucleusframework.window.tao.TaoDnDDiagnostics
                 .log("onDragLeave")
-            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            dnd
                 .onDragLeave(node())
         }
 
@@ -988,7 +1028,7 @@ internal class TaoComposeSceneHostWindows(
             dev.nucleusframework.window.tao.TaoDnDDiagnostics.log(
                 "onDrop x=$x y=$y files=${files?.size ?: 0}",
             )
-            return if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            return if (dnd
                     .onDrop(node(), x, y, files)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
@@ -1263,6 +1303,36 @@ internal class TaoComposeSceneHostWindows(
         window.requestRedraw()
     }
 
+    /**
+     * Reclaims the GPU resource cache when the window is minimized (#638) —
+     * the at-rest moment: nothing is visible, and the re-mint is paid by the
+     * restore frame, which redraws everything anyway. The resize purges above
+     * only ever run on the drag path, so a cache an animation filled would
+     * otherwise stay at its high-water mark for the life of the process.
+     *
+     * Rendering is inline on this thread, so making this host's context
+     * current is all the context discipline needed. Skipped under a live
+     * [dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers] consumer
+     * (#478), whose renderer must not lose its cache mid-frame.
+     */
+    fun onMinimizedChanged(minimized: Boolean) {
+        if (minimized) purgeGpuResourceCacheAtRest()
+    }
+
+    /** [onMinimizedChanged]'s purge, also [restReclaimer]'s. Always `true`: nothing to retry. */
+    private fun purgeGpuResourceCacheAtRest(): Boolean {
+        val ctx = directContext ?: return true
+        if (dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
+                .isActive(ctx)
+        ) {
+            return true
+        }
+        // Same foreign-context hazard as [purgeGpuResourceCache] (#514).
+        if (attachmentHandle != 0L) NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+        ctx.purgeAtRest()
+        return true
+    }
+
     fun onFocusChanged(focused: Boolean) {
         // Win32 focus moving to an embedded child (a `NativeView`, WebView2)
         // reaches Tao as the main HWND losing it, but the window is still the
@@ -1310,13 +1380,59 @@ internal class TaoComposeSceneHostWindows(
     /** Timestamp the frame clock last advanced to — see [renderFrame]. */
     private var lastFrameClockNanos = 0L
 
-    /** The frame clock's timestamp for this frame: frozen for a same-turn resize frame (see [renderFrame]). */
-    private fun frameClockNanos(sameTurnResize: Boolean): Long =
-        if (sameTurnResize && lastFrameClockNanos != 0L) {
-            lastFrameClockNanos
-        } else {
-            System.nanoTime().also { lastFrameClockNanos = it }
+    /**
+     * The frame clock's timestamp for this frame: frozen for a same-turn
+     * resize frame, and in the OS modal size/move loop until its next advance
+     * is due (see [renderFrame] and [heldInModalLoop]).
+     */
+    private fun frameClockNanos(sameTurnResize: Boolean): Long {
+        val now = System.nanoTime()
+        val frozen =
+            lastFrameClockNanos != 0L &&
+                (sameTurnResize || resizeLoopActive && now < modalLoopClockDueNanos())
+        if (frozen) return lastFrameClockNanos
+        lastFrameClockNanos = now
+        return now
+    }
+
+    /**
+     * When the frame clock may advance again inside the OS modal size/move
+     * loop: three quarters of a display period after its last advance, so a
+     * frame woken at the next composition always advances it, while frames at
+     * the pump's or the mouse's rate are held to about the display's.
+     */
+    private fun modalLoopClockDueNanos(): Long = lastFrameClockNanos + presentPeriodNs * 3 / 4
+
+    /** A wake-up for the end of a modal-loop hold is already pending ([heldInModalLoop]). */
+    private val modalLoopWakePending = AtomicBoolean(false)
+
+    /**
+     * Inside the OS modal size/move loop, holds a frame that carries no size
+     * until the frame clock may advance again, and asks for the next frame at
+     * the next DWM composition (#484). Returns true when held.
+     *
+     * The loop presents at swap interval 0 (see [onResizeLoopChanged]), and an
+     * interval-1 present does not block from inside it either, so nothing else
+     * paces a frame the scene asks for itself: an animation's `withFrameNanos`
+     * resumed, invalidated and asked for the next frame as fast as the modal
+     * pump turned — over 2000 frames a second on a 90 Hz display, through a
+     * move as much as a resize. A WM_SIZE frame is never held (it must paint
+     * inline, #477); it advances the clock only when that is due
+     * ([frameClockNanos]), so an animation moves on at the display's rate
+     * whatever the mouse's.
+     */
+    private fun heldInModalLoop(): Boolean {
+        if (!resizeLoopActive || pendingResizeApply || forcePresentOnce || lastFrameClockNanos == 0L) return false
+        val due = modalLoopClockDueNanos()
+        if (System.nanoTime() >= due) return false
+        if (modalLoopWakePending.compareAndSet(false, true)) {
+            WindowsCompositionWaker.wake(due) {
+                modalLoopWakePending.set(false)
+                window.requestRedraw()
+            }
         }
+        return true
+    }
 
     /** The present decision of [renderFrame] — see the comment block above its call site. */
     private fun mustPresent(
@@ -1735,7 +1851,8 @@ internal class TaoComposeSceneHostWindows(
      * The modal resize/move loop is not a same-turn resize: its WM_SIZE is
      * delivered synchronously, the interval is already 0 (or deliberately 1,
      * #484), and its inline frames are the only frames that run while the
-     * user drags, so they must keep ticking.
+     * user drags, so they must keep ticking — at the display's rate
+     * ([frameClockNanos], [heldInModalLoop]).
      */
     private fun renderFrame(sameTurnResize: Boolean) {
         val ctx = directContext ?: return
@@ -1752,9 +1869,10 @@ internal class TaoComposeSceneHostWindows(
         // TaoWindow.requestRedraw on the MINIMIZED-off event. The scene's
         // coroutines keep running meanwhile, between frames (#754).
         if (window.isMinimized) return
+        restReclaimer.onFrame()
         val frameStartNanos = System.nanoTime()
 
-        if (heldAfterIdleFrame(sameTurnResize)) return
+        if (heldAfterIdleFrame(sameTurnResize) || heldInModalLoop()) return
 
         // Push a pending size into the ComposeScene + GL surface before the
         // frame-clock drain, so the size-change-driven recomposition (and any
@@ -1977,6 +2095,8 @@ internal class TaoComposeSceneHostWindows(
         if (consumeOverlayEcho(mapButton(buttonCode), pressed)) return
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        // A click ends the pan gesture for Compose too (macOS host: same).
+        if (pressed) touchpad.finishPan()
         sendButtonToScene(mapButton(buttonCode), pressed)
     }
 
@@ -2174,6 +2294,9 @@ internal class TaoComposeSceneHostWindows(
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
         if (nativePointerRedispatchInFlight) return
+        // A wheel notch is another device taking over: close a trackpad pan
+        // where it was, so its PanEnd reaches the node that got its moves.
+        touchpad.finishPan()
         // Stock Compose Desktop wheel path: the event goes straight into the
         // scene and MouseWheelScrollingLogic animates it (smooth-scroll
         // tween) — the same pipeline as upstream Compose on Windows and
@@ -2762,7 +2885,7 @@ internal class TaoComposeSceneHostWindows(
      * translucent frame over the same frame below it.
      */
     private fun syncMirror() {
-        val wanted = !fullyTransparent && !transparentBackgroundState.value
+        val wanted = frameMirrorEnabled && !fullyTransparent && !transparentBackgroundState.value
         if (wanted == mirrorWanted) return
         mirrorWanted = wanted
         // What the driver allows, not what was asked for.
@@ -2832,10 +2955,11 @@ internal class TaoComposeSceneHostWindows(
         nativeViewBlending.destroyOverlay()
         shutdownA11yScheduler()
         textToolbar.hide()
-        // Stop the pinch idle timer; the scene is going away so no ScaleEnd needed.
-        pinchEndJob?.cancel()
-        pinchEndJob = null
+        // Stop the pinch idle timer and the pan's end timer; the scene is going
+        // away so no ScaleEnd / PanEnd is needed.
+        touchpad.cancel()
         gestureScope.cancel()
+        restReclaimer.close()
         // Make THIS host's ES context current before tearing down Skia
         // resources. A sibling host (e.g. the main window opened while this
         // one — the onboarding window — closes) may have left its own
@@ -2876,6 +3000,15 @@ internal class TaoComposeSceneHostWindows(
 
     internal companion object {
         /**
+         * `-Dnucleus.tao.windowsFrameMirror=false` never mirrors frames into
+         * DirectComposition, for a driver that shows the mirror black over a
+         * fine window. Moves are then answered with a repaint, as on a GPU
+         * without mirror support. Read once.
+         */
+        private val frameMirrorEnabled: Boolean =
+            System.getProperty("nucleus.tao.windowsFrameMirror", "true").toBoolean()
+
+        /**
          * Floor between two frames painted from inside `DoDragDrop`'s modal
          * loop — see [OutboundDragPump]. ~8 ms leaves headroom above 120 Hz
          * while still collapsing the burst of mouse-move callbacks Windows
@@ -2906,9 +3039,6 @@ internal class TaoComposeSceneHostWindows(
          * `TRACKPAD_VALUE_FIXED_SCALE` in `events.rs`.
          */
         private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
-
-        /** Idle gap after the last tick before the scale gesture closes. */
-        private const val PINCH_IDLE_END_MS: Long = 120L
 
         /**
          * Live attached-host count across the JVM. When > 1, every host

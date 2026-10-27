@@ -8,7 +8,7 @@ use objc2::runtime::{AnyClass as Class, ClassBuilder as ClassDecl, Sel};
 use objc2_app_kit::{self as appkit, NSApplication, NSEvent, NSEventType};
 use once_cell::sync::Lazy;
 
-use super::{app_state::AppState, event::EventWrapper, util, DEVICE_ID};
+use super::{app_state::AppState, event::EventWrapper, note_tablet_proximity, util, DEVICE_ID};
 use crate::event::{DeviceEvent, ElementState, Event};
 
 pub struct AppClass(pub *const Class);
@@ -67,6 +67,8 @@ extern "C" fn send_event(this: &NSApplication, _sel: Sel, event: &NSEvent) {
         log::debug!("skip sending CMD keyEvent - app has no keyWindow");
       }
     } else {
+      // PATCH(nucleus): AppKit sends tablet proximity to no particular view.
+      note_tablet_proximity(event);
       maybe_dispatch_device_event(event);
       let superclass = util::superclass(this);
       let _: () = msg_send![super(this, superclass), sendEvent: event];

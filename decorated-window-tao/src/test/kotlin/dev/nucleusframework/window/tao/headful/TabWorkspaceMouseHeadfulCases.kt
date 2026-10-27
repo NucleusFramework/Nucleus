@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao.headful
 
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
@@ -20,7 +21,9 @@ import kotlin.math.roundToInt
  *     target, not a patchwork of a grip and a selector;
  *  4. **a hover across two strips and back**, where the preview follows the
  *     pointer from window to window and the drop acts on where it ended;
- *  5. **a flick**, delivering as few samples as the OS will give;
+ *  5. **a flick**, delivering as few samples as the OS will give, and the same
+ *     drop over a busy event loop, which makes two steps of a moving window
+ *     look like one;
  *  6. **a pointer resting on a tab**, which offers that tab's hover card —
  *     and every case where the card has to stay away.
  *
@@ -35,6 +38,7 @@ internal object TabWorkspaceMouseHeadfulCases {
             robotClicksAnywhereInATabSelectIt(),
             robotHoverCrossesTwoStripsAndComesBack(),
             robotFlickBetweenStripsMerges(),
+            robotDragOfALoneTabWindowOverABusyLoopMerges(),
             robotRestingOnATabOffersItsCard(),
         )
 
@@ -268,10 +272,49 @@ internal object TabWorkspaceMouseHeadfulCases {
     }
 
     /** The same merge, flicked: as few samples as the OS will deliver. */
-    private fun robotFlickBetweenStripsMerges(): TaoWindowTestCase {
+    private fun robotFlickBetweenStripsMerges(): TaoWindowTestCase =
+        robotLoneTabWindowOntoStripMerges(
+            name = "tab mouse flick from one strip to another merges the tab",
+            steps = FLICK_STEPS,
+            stepDelayMillis = 0,
+        )
+
+    /**
+     * The same merge in three equal steps, with the event loop busy at the
+     * wrong moment (#837). The first step starts the drag where the window
+     * already is. The loop is then held on the second sample, before the drag
+     * moves the window for it, and the third step arrives meanwhile: when the
+     * window finally moves, the cursor is already a step further on, and the
+     * one move Windows generates for the window lands on the *same*
+     * window-local position as the second sample. Every layer that tells a
+     * move from a repeat by client coordinates drops it, and without the OS
+     * release point the drop resolves one step short. The flick above hits
+     * the same window only when the OS happens to schedule its samples so.
+     */
+    private fun robotDragOfALoneTabWindowOverABusyLoopMerges(): TaoWindowTestCase =
+        robotLoneTabWindowOntoStripMerges(
+            name = "tab mouse drag of a lone tab window merges where it is released while the loop is busy",
+            steps = PACED_STEPS,
+            stepDelayMillis = PACED_STEP_MILLIS,
+            holdLoopAfterSample = PACED_HELD_SAMPLE,
+        )
+
+    /**
+     * Tears `Beta` into a window of its own, then drags that window by its only
+     * tab onto the first window's strip in [steps] moves [stepDelayMillis]
+     * apart, and expects the release to merge it there. With
+     * [holdLoopAfterSample], the event loop is held for [HELD_LOOP_MILLIS] on
+     * that sample of the held button, before the drag acts on it.
+     */
+    private fun robotLoneTabWindowOntoStripMerges(
+        name: String,
+        steps: Int,
+        stepDelayMillis: Long,
+        holdLoopAfterSample: Int? = null,
+    ): TaoWindowTestCase {
         val fixture = TabWorkspaceFixture(initialTitles = listOf("Alpha", "Beta"))
         return TaoWindowTestCase(
-            name = "tab mouse flick from one strip to another merges the tab",
+            name = name,
             skip = { workspaceSkipReason() ?: robotSkipReason() },
             windowState = idleCaseWindowState(),
             size = idleCaseWindowSize(),
@@ -288,6 +331,8 @@ internal object TabWorkspaceMouseHeadfulCases {
 
                 val grab = requireNotNull(fixture.tabCenterPx("Beta"))
                 val target = requireNotNull(fixture.stripPointPx(home, STRIP_HEAD_FRACTION))
+                secondWindow.focus()
+                awaitUntil("the torn-off window is focused") { secondWindow.isFocused }
 
                 // Every pointer sample the drag took and what it previewed: a
                 // flick that never previewed the home strip was released short
@@ -301,6 +346,20 @@ internal object TabWorkspaceMouseHeadfulCases {
                                 (workspace.dropPreview?.let { "${it.group.id}@${it.index}" } ?: "none")
                         }.collect { sample -> if (sample != null) samples += sample }
                     }
+                if (holdLoopAfterSample != null) {
+                    var pressedMoves = 0
+                    fixture.onStripPointerEvent = { event ->
+                        val change = event.changes.firstOrNull()
+                        // A sample above the window reads as an Exit: count every
+                        // sample of the held button, whatever Compose calls it.
+                        if (event.type != PointerEventType.Press && change != null && change.pressed) {
+                            pressedMoves++
+                            // On the event loop, before the drag handle sees this
+                            // sample: nothing reads input until this returns.
+                            if (pressedMoves == holdLoopAfterSample) Thread.sleep(HELD_LOOP_MILLIS)
+                        }
+                    }
+                }
                 val state = {
                     "target=(${target.x.roundToInt()}, ${target.y.roundToInt()}) home=${home.id} " +
                         "homeStrip=${fixture.stripRectPx(home)} Beta in ${fixture.groupOf("Beta")?.id} " +
@@ -312,22 +371,22 @@ internal object TabWorkspaceMouseHeadfulCases {
                         "samples=$samples ${robotAim()}"
                 }
                 try {
-                    val flicked =
+                    val dragged =
                         robotPressAndDrag(
                             grab,
                             target,
                             secondWindow.scaleFactor,
-                            steps = FLICK_STEPS,
-                            stepDelayMillis = 0,
+                            steps = steps,
+                            stepDelayMillis = stepDelayMillis,
                         )
-                    if (flicked == null) {
+                    if (dragged == null) {
                         System.err.println("[tab-mouse] robot became unavailable, nothing to assert")
                         return@TaoWindowTestCase
                     }
-                    awaitUntil("the flick started the window drag", detail = state) { workspace.draggedTab?.id == beta }
+                    awaitUntil("the window drag started", detail = state) { workspace.draggedTab?.id == beta }
                     checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
 
-                    awaitUntil("the flicked tab merged into the first window", detail = state) {
+                    awaitUntil("the dragged tab merged into the first window", detail = state) {
                         workspace.groups.size == 1 && fixture.groupOf("Beta") === home
                     }
                 } finally {
@@ -353,6 +412,7 @@ internal object TabWorkspaceMouseHeadfulCases {
      * first pixel of the tab that is the tab's to claim.
      */
     private const val SLOT_NEAR_X = 0.25f
+
     private const val SLOT_MID_X = 0.5f
     private const val SLOT_EDGE_X = 0.06f
     private const val SLOT_NEAR_Y = 0.2f
@@ -440,6 +500,18 @@ internal object TabWorkspaceMouseHeadfulCases {
             },
         )
     }
+
+    /** Three equal steps: the third is the one that lands on the second's client position. */
+    private const val PACED_STEPS = 3
+
+    /** Long enough for each step to be delivered alone, short of [HELD_LOOP_MILLIS]. */
+    private const val PACED_STEP_MILLIS = 150L
+
+    /** The sample the loop is held on: the first one that moves the window. */
+    private const val PACED_HELD_SAMPLE = 2
+
+    /** How long the loop is held: the next step arrives well inside it. */
+    private const val HELD_LOOP_MILLIS = 400L
 }
 
 /** How far below a strip a case reaches to leave it: well inside the body. */

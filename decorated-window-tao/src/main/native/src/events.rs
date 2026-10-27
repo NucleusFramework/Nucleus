@@ -4,7 +4,7 @@
 use jni::objects::JValue;
 use jni::sys::{jint, jlong, JNI_FALSE, JNI_TRUE};
 
-use tao::event::MouseButton;
+use tao::event::{DeviceId, MouseButton};
 use tao::keyboard::ModifiersState;
 use tao::window::WindowId;
 
@@ -190,6 +190,18 @@ pub(crate) const EVENT_QUIT_REQUESTED: jint = 26;
 // `none` / `server`, #816), `0` when it allows client decorations again. See `server_decoration.rs`.
 #[cfg(target_os = "linux")]
 pub(crate) const EVENT_DECORATIONS_SUPPRESSED: jint = 27;
+// `a` = POINTER_KIND_*: the tool behind the cursor / button events that
+// follow (#827). Sent only when it changes, right before the first event of
+// the new tool, so the JVM keeps it as state like the modifiers. Linux: GDK
+// names a tablet pen or eraser as the source of its events; macOS: mouse
+// events with the `TabletPoint` subtype, the tool named by proximity.
+// Windows reports a pen through WM_POINTER as a touch, so its kind rides
+// with each `dispatch_touch_input` instead (`POINTER_KIND_TOUCH` = a finger).
+pub(crate) const EVENT_POINTER_KIND: jint = 28;
+pub(crate) const POINTER_KIND_MOUSE: jint = 0;
+pub(crate) const POINTER_KIND_STYLUS: jint = 1;
+pub(crate) const POINTER_KIND_ERASER: jint = 2;
+pub(crate) const POINTER_KIND_TOUCH: jint = 3;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;
@@ -397,6 +409,9 @@ pub(crate) enum UserEvent {
     },
     Focus {
         handle: u64,
+        /// xdg-activation token handed out by the compositor (a portal global
+        /// shortcut, a notification action, …), or `None` (#739).
+        activation_token: Option<String>,
     },
     SetMinInnerSize {
         handle: u64,
@@ -445,8 +460,24 @@ pub(crate) enum UserEvent {
         fullscreen: bool,
     },
     // Posted by the macOS quit paths only (Cmd-Q, `-[TaoApp terminate:]`).
+    /// Ticks a window's DirectManipulation viewport and delivers what it
+    /// reported (#706). Posted by the window procedure (hit test, pump timer)
+    /// and the viewport's own callbacks, so the delivery to the JVM happens in
+    /// the loop closure, never nested in a window procedure.
+    #[cfg(target_os = "windows")]
+    DirectManipulationTick {
+        handle: u64,
+    },
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     QuitRequested,
+    // A Windows session-end query that could not call into Kotlin from inside
+    // the window procedure (#751), asked again from the loop.
+    #[cfg(target_os = "windows")]
+    QueryEndSession,
+    // A Windows session-end cancel that arrived inside a nested pump, delivered
+    // from the loop (#751).
+    #[cfg(target_os = "windows")]
+    SessionEndCancelled,
     Exit,
 }
 
@@ -614,6 +645,54 @@ pub(crate) fn dispatch_scroll_gesture(handle: u64, phase: jint, dx_fixed: jint, 
     }
 }
 
+/// Raw DirectManipulation viewport stream (#706) — see
+/// `EventCallback.onDirectManipulation`. Transform and focal point are
+/// client-area physical pixels.
+#[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn dispatch_direct_manipulation(
+    handle: u64,
+    kind: jint,
+    current: jint,
+    previous: jint,
+    scale: f32,
+    offset_x: f32,
+    offset_y: f32,
+    focal_x: f32,
+    focal_y: f32,
+) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let _ = env.call_method(
+        callback.as_obj(),
+        "onDirectManipulation",
+        "(JIIIFFFFF)V",
+        &[
+            JValue::Long(handle as jlong),
+            JValue::Int(kind),
+            JValue::Int(current),
+            JValue::Int(previous),
+            JValue::Float(scale),
+            JValue::Float(offset_x),
+            JValue::Float(offset_y),
+            JValue::Float(focal_x),
+            JValue::Float(focal_y),
+        ],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
 #[allow(clippy::too_many_arguments, dead_code)]
 pub(crate) fn dispatch_trackpad_gesture(
     handle: u64,
@@ -664,6 +743,7 @@ pub(crate) fn dispatch_touch_input(
     x_fixed: jint,
     y_fixed: jint,
     force_fixed: jint,
+    kind: jint,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(guard) = EVENT_CALLBACK.lock() else {
@@ -678,7 +758,7 @@ pub(crate) fn dispatch_touch_input(
     let _ = env.call_method(
         callback.as_obj(),
         "onTouchInput",
-        "(JIJIII)V",
+        "(JIJIIII)V",
         &[
             JValue::Long(handle as jlong),
             JValue::Int(phase),
@@ -686,6 +766,7 @@ pub(crate) fn dispatch_touch_input(
             JValue::Int(x_fixed),
             JValue::Int(y_fixed),
             JValue::Int(force_fixed),
+            JValue::Int(kind),
         ],
     );
     if env.exception_check().unwrap_or(false) {
@@ -700,6 +781,51 @@ pub(crate) fn handle_for(window_id: WindowId) -> Option<u64> {
     map.iter()
         .find(|(_, w)| w.id() == window_id)
         .map(|(h, _)| *h)
+}
+
+/// The POINTER_KIND_* of the tool that sent a cursor / button event.
+pub(crate) fn pointer_kind_code(device_id: DeviceId) -> jint {
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::unix::{DeviceIdExtUnix, PointerSource};
+        match device_id.pointer_source() {
+            PointerSource::Pen => POINTER_KIND_STYLUS,
+            PointerSource::Eraser => POINTER_KIND_ERASER,
+            _ => POINTER_KIND_MOUSE,
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use tao::platform::macos::{DeviceIdExtMacOS, PointerSource};
+        match device_id.pointer_source() {
+            PointerSource::Pen => POINTER_KIND_STYLUS,
+            PointerSource::Eraser => POINTER_KIND_ERASER,
+            _ => POINTER_KIND_MOUSE,
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use tao::platform::windows::{DeviceIdExtWindows, PointerSource};
+        match device_id.pointer_source() {
+            PointerSource::Pen => POINTER_KIND_STYLUS,
+            PointerSource::Eraser => POINTER_KIND_ERASER,
+            _ => POINTER_KIND_MOUSE,
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        let _ = device_id;
+        POINTER_KIND_MOUSE
+    }
+}
+
+/// The POINTER_KIND_* of the tool behind a Windows `WindowEvent::Touch`: a
+/// pen or its eraser end, else a finger.
+pub(crate) fn touch_kind_code(device_id: DeviceId) -> jint {
+    match pointer_kind_code(device_id) {
+        POINTER_KIND_MOUSE => POINTER_KIND_TOUCH,
+        kind => kind,
+    }
 }
 
 pub(crate) fn mouse_button_code(b: MouseButton) -> jint {

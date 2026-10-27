@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import androidx.compose.ui.input.pointer.PointerType
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 
 /** Cursor icon codes mirrored 1:1 with the Rust `cursor_from_code` table. */
@@ -95,7 +96,33 @@ public object TaoEventCode {
      * when it allows them again.
      */
     internal const val DECORATIONS_SUPPRESSED: Int = 27
+
+    /**
+     * `a` = the [TaoPointerKind] of the cursor / button events that follow,
+     * sent only when it changes. Linux and macOS (#827); a Windows pen comes
+     * as a touch, whose kind rides with each touch event instead.
+     */
+    internal const val POINTER_KIND: Int = 28
 }
+
+/** Tool codes of [TaoEventCode.POINTER_KIND], mirroring `events.rs` `POINTER_KIND_*`. */
+internal object TaoPointerKind {
+    const val MOUSE: Int = 0
+    const val STYLUS: Int = 1
+    const val ERASER: Int = 2
+
+    /** A finger; Windows touch events only. */
+    const val TOUCH: Int = 3
+}
+
+/** The Compose pointer type of a [TaoPointerKind] code; unknown codes are the mouse. */
+internal fun taoPointerType(kind: Int): PointerType =
+    when (kind) {
+        TaoPointerKind.STYLUS -> PointerType.Stylus
+        TaoPointerKind.ERASER -> PointerType.Eraser
+        TaoPointerKind.TOUCH -> PointerType.Touch
+        else -> PointerType.Mouse
+    }
 
 /** Trackpad gesture kind reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */
 @Suppress("MagicNumber")

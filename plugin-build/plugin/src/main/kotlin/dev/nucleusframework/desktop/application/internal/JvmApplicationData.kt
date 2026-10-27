@@ -46,8 +46,9 @@ internal open class JvmApplicationData
 
         /**
          * Lazy JDK home used by packaging / `run`. When [optLastJdk] is on
-         * this is a [NucleusJdkToolchainValueSource]; otherwise it reads
-         * [javaHome].
+         * this is a [NucleusJdkToolchainValueSource]; with a configured JVM
+         * toolchain it is that toolchain's installation (see
+         * [applyJavaToolchainJdk]); otherwise it reads [javaHome].
          */
         internal var javaHomeOverride: Provider<String>? = null
 

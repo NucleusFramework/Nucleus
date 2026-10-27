@@ -13,17 +13,18 @@ use tao::window::WindowBuilder;
 use crate::events::{
     current_modifier_bits, dispatch, dispatch_ime_commit, dispatch_ime_preedit,
     dispatch_ime_replace_commit, dispatch_key, dispatch_scroll_gesture, dispatch_touch_input,
-    handle_for, mouse_button_code, pack_modifiers, UserEvent, AWT_LINE_TO_POINTS,
-    CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED,
-    EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED,
-    EVENT_MAIN_EVENTS_CLEARED, EVENT_MODIFIERS_CHANGED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP,
-    EVENT_MOVED, EVENT_QUIT_REQUESTED, EVENT_REDRAW_REQUESTED, EVENT_RESIZED,
-    EVENT_SCALE_FACTOR_CHANGED, EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED,
-    EVENT_WINDOW_READY, SCROLL_FIXED_SCALE, SCROLL_GESTURE_BEGAN, SCROLL_GESTURE_CANCELLED,
-    SCROLL_GESTURE_CHANGED, SCROLL_GESTURE_ENDED, SCROLL_GESTURE_MAY_BEGIN,
-    SCROLL_GESTURE_MOMENTUM_BEGAN, SCROLL_GESTURE_MOMENTUM_CHANGED, SCROLL_GESTURE_MOMENTUM_ENDED,
-    TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE,
-    TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
+    handle_for, mouse_button_code, pack_modifiers, pointer_kind_code, touch_kind_code, UserEvent,
+    AWT_LINE_TO_POINTS, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT,
+    EVENT_CURSOR_MOVED, EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED,
+    EVENT_KEY_UP, EVENT_LAUNCHED, EVENT_MAIN_EVENTS_CLEARED, EVENT_MODIFIERS_CHANGED,
+    EVENT_MOUSE_DOWN, EVENT_MOUSE_UP, EVENT_MOVED, EVENT_POINTER_KIND, EVENT_QUIT_REQUESTED,
+    EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED, EVENT_SCROLL_LINE,
+    EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY, POINTER_KIND_MOUSE,
+    SCROLL_FIXED_SCALE, SCROLL_GESTURE_BEGAN, SCROLL_GESTURE_CANCELLED, SCROLL_GESTURE_CHANGED,
+    SCROLL_GESTURE_ENDED, SCROLL_GESTURE_MAY_BEGIN, SCROLL_GESTURE_MOMENTUM_BEGAN,
+    SCROLL_GESTURE_MOMENTUM_CHANGED, SCROLL_GESTURE_MOMENTUM_ENDED, TOUCH_EVENT_CANCEL,
+    TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE, TOUCH_FORCE_FIXED_SCALE,
+    TOUCH_FORCE_UNKNOWN,
 };
 #[cfg(target_os = "windows")]
 use crate::events::{
@@ -165,6 +166,20 @@ fn input_pending() -> bool {
     (status >> 16) & QS_INPUT.0 != 0
 }
 
+/// Tells the JVM which tool the next cursor / button event comes from, when it
+/// is not the one of the previous event on that window.
+fn report_pointer_kind(
+    last: &mut HashMap<u64, jint>,
+    handle: u64,
+    device_id: tao::event::DeviceId,
+) {
+    let kind = pointer_kind_code(device_id);
+    if last.get(&handle).copied().unwrap_or(POINTER_KIND_MOUSE) != kind {
+        last.insert(handle, kind);
+        dispatch(handle, EVENT_POINTER_KIND, kind, 0);
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn serve_pending_redraws(pending: &mut Vec<u64>) {
     if pending.is_empty() {
@@ -177,6 +192,7 @@ fn serve_pending_redraws(pending: &mut Vec<u64>) {
             guard.as_ref().is_some_and(|map| map.contains_key(&handle))
         };
         if alive {
+            crate::platform::windows::direct_manipulation::pump(handle);
             dispatch(handle, EVENT_REDRAW_REQUESTED, 0, 0);
         }
     }
@@ -235,6 +251,14 @@ pub(crate) fn run_event_loop_blocking() {
     // Modal resize/move loop → VSync toggle (see on_tao_size_move).
     #[cfg(target_os = "windows")]
     tao::platform::windows::set_size_move_hook(on_tao_size_move);
+    // Logoff / restart / shutdown / Restart Manager → close requests (#751).
+    #[cfg(target_os = "windows")]
+    tao::platform::windows::set_end_session_hooks(
+        crate::platform::windows::end_session::on_query_end_session,
+        crate::platform::windows::end_session::on_end_session,
+    );
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::install();
     #[cfg(target_os = "macos")]
     tao::platform::macos::set_minimized_hook(on_tao_minimized);
     // Tao's cursor rects draw from Nucleus' cursor table (see tao_cursor_hook).
@@ -272,6 +296,9 @@ pub(crate) fn run_event_loop_blocking() {
     // guards against duplicate callbacks.
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     let mut last_minimized: HashMap<u64, bool> = HashMap::new();
+    // Tool of the last cursor / button event per window: EVENT_POINTER_KIND is
+    // sent only when it changes (absent = the mouse).
+    let mut last_pointer_kind: HashMap<u64, jint> = HashMap::new();
     // Windows: handles that asked for a redraw during the batch being
     // processed, served at `MainEventsCleared`. See UserEvent::RequestRedraw.
     #[cfg(target_os = "windows")]
@@ -451,6 +478,17 @@ pub(crate) fn run_event_loop_blocking() {
                                     window.gtk_window(),
                                 );
                             }
+                        }
+
+                        // Precision-touchpad pan / pinch (#706). Bound before
+                        // WINDOW_READY so the first gesture already has it.
+                        #[cfg(target_os = "windows")]
+                        {
+                            use tao::platform::windows::WindowExtWindows;
+                            crate::platform::windows::direct_manipulation::attach(
+                                handle,
+                                windows::Win32::Foundation::HWND(window.hwnd() as _),
+                            );
                         }
 
                         {
@@ -657,6 +695,10 @@ pub(crate) fn run_event_loop_blocking() {
                         dispatch(handle, crate::events::EVENT_MINIMIZED, minimized as jint, 0);
                     }
                 }
+                #[cfg(target_os = "windows")]
+                UserEvent::DirectManipulationTick { handle } => {
+                    crate::platform::windows::direct_manipulation::pump(handle);
+                }
                 // Posted from the platform minimize hook (safe point — no native
                 // lock held and not nested in the WndProc / AppKit delegate / GTK
                 // signal). Resolve, dedup, dispatch.
@@ -758,14 +800,29 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
-                UserEvent::Focus { handle } => {
+                UserEvent::Focus {
+                    handle,
+                    activation_token,
+                } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
                             // Undo a prior `set_minimized(true)` first so the
                             // window is eligible for foreground activation.
                             w.set_minimized(false);
-                            w.set_focus();
+                            #[cfg(target_os = "linux")]
+                            let focused = activation_token.as_deref().is_some_and(|token| {
+                                crate::platform::linux::activation::focus_with_token(w, token)
+                            });
+                            #[cfg(not(target_os = "linux"))]
+                            let focused = {
+                                // Only Wayland needs the token to take focus.
+                                drop(activation_token);
+                                false
+                            };
+                            if !focused {
+                                w.set_focus();
+                            }
                         }
                     }
                 }
@@ -842,13 +899,16 @@ pub(crate) fn run_event_loop_blocking() {
                     width,
                     height,
                 } => {
-                    let inner = {
+                    let (inner, mapped) = {
                         let guard = WINDOWS.lock().unwrap();
-                        guard.as_ref().and_then(|map| {
-                            let w = map.get(&handle)?;
-                            w.set_inner_size(LogicalSize::new(width, height));
-                            Some(w.inner_size())
-                        })
+                        guard
+                            .as_ref()
+                            .and_then(|map| {
+                                let w = map.get(&handle)?;
+                                w.set_inner_size(LogicalSize::new(width, height));
+                                Some((Some(w.inner_size()), w.is_visible()))
+                            })
+                            .unwrap_or((None, true))
                     };
                     // Win32 `SetWindowPos(SWP_ASYNCWINDOWPOS)` and a GCD-async
                     // `setContentSize:` both update the live window rect before
@@ -868,8 +928,22 @@ pub(crate) fn run_event_loop_blocking() {
                             size.height as jint,
                         );
                     }
+                    // GTK sends no configure for a window that is not mapped
+                    // yet, so the real `Resized` would only come with the map:
+                    // a window sized while hidden (wrap content, #532) waits
+                    // for this echo before it is shown. tao records the size
+                    // of an unmapped window as it is requested (patch 0015).
                     #[cfg(target_os = "linux")]
-                    let _ = inner;
+                    if let (Some(size), false) = (inner, mapped) {
+                        dispatch(
+                            handle,
+                            EVENT_RESIZED,
+                            size.width as jint,
+                            size.height as jint,
+                        );
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    let _ = mapped;
                 }
                 UserEvent::SetOuterPosition { handle, x, y } => {
                     let guard = WINDOWS.lock().unwrap();
@@ -932,6 +1006,14 @@ pub(crate) fn run_event_loop_blocking() {
                 UserEvent::QuitRequested => {
                     dispatch(0, EVENT_QUIT_REQUESTED, 0, 0);
                 }
+                #[cfg(target_os = "windows")]
+                UserEvent::QueryEndSession => {
+                    crate::platform::windows::end_session::on_deferred_query_end_session();
+                }
+                #[cfg(target_os = "windows")]
+                UserEvent::SessionEndCancelled => {
+                    crate::platform::windows::end_session::on_deferred_session_end_cancelled();
+                }
                 UserEvent::Exit => {
                     *control_flow = ControlFlow::Exit;
                 }
@@ -958,6 +1040,7 @@ pub(crate) fn run_event_loop_blocking() {
                             target_os = "linux"
                         ))]
                         last_minimized.remove(&handle);
+                        last_pointer_kind.remove(&handle);
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
                     }
                     WindowEvent::Resized(size) => {
@@ -1030,7 +1113,12 @@ pub(crate) fn run_event_loop_blocking() {
                         };
                         dispatch(handle, code, 0, 0);
                     }
-                    WindowEvent::CursorMoved { position, .. } => {
+                    WindowEvent::CursorMoved {
+                        position,
+                        device_id,
+                        ..
+                    } => {
+                        report_pointer_kind(&mut last_pointer_kind, handle, device_id);
                         dispatch(
                             handle,
                             EVENT_CURSOR_MOVED,
@@ -1041,12 +1129,18 @@ pub(crate) fn run_event_loop_blocking() {
                     WindowEvent::CursorLeft { .. } => {
                         dispatch(handle, EVENT_CURSOR_LEFT, 0, 0);
                     }
-                    WindowEvent::MouseInput { state, button, .. } => {
+                    WindowEvent::MouseInput {
+                        state,
+                        button,
+                        device_id,
+                        ..
+                    } => {
                         let code = match state {
                             ElementState::Pressed => EVENT_MOUSE_DOWN,
                             ElementState::Released => EVENT_MOUSE_UP,
                             _ => return,
                         };
+                        report_pointer_kind(&mut last_pointer_kind, handle, device_id);
                         dispatch(handle, code, mouse_button_code(button), 0);
                     }
                     WindowEvent::MouseWheel {
@@ -1227,6 +1321,8 @@ pub(crate) fn run_event_loop_blocking() {
                             (touch.location.x * CURSOR_FIXED_SCALE) as jint,
                             (touch.location.y * CURSOR_FIXED_SCALE) as jint,
                             force_fixed,
+                            // A pen comes through WM_POINTER as a touch too (#827).
+                            touch_kind_code(touch.device_id),
                         );
                     }
                     _ => {}
@@ -1234,6 +1330,9 @@ pub(crate) fn run_event_loop_blocking() {
             }
             Event::RedrawRequested(window_id) => {
                 if let Some(handle) = handle_for(window_id) {
+                    // The frame renders the manipulation as of this frame.
+                    #[cfg(target_os = "windows")]
+                    crate::platform::windows::direct_manipulation::pump(handle);
                     dispatch(handle, EVENT_REDRAW_REQUESTED, 0, 0);
                 }
             }
@@ -1262,6 +1361,10 @@ pub(crate) fn run_event_loop_blocking() {
             _ => {}
         }
     });
+    // Nobody answers a session-end query from here on (#751): AWT's forwards are
+    // answered without the loop, and one already waiting on this thread is served.
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::loop_ended();
     #[cfg(target_os = "linux")]
     flush_displays_after_loop();
 }

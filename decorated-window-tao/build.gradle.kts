@@ -105,7 +105,7 @@ fun Test.forwardSystemProperty(key: String) {
     }
 }
 
-// The watchdog concurrency monkey's knobs, forwarded into the test JVM — a
+// The watchdog and session-end monkeys' knobs, forwarded into the test JVM — a
 // Gradle `-D` does not reach it otherwise, so a seed sweep would silently run
 // the defaults. Registered as task inputs too: a new seed must re-run the
 // task instead of being served the previous verdict as UP-TO-DATE.
@@ -113,6 +113,8 @@ tasks.withType<Test>().configureEach {
     forwardSystemProperty("nucleus.tao.watchdogMonkeySeed")
     forwardSystemProperty("nucleus.tao.watchdogMonkeySeeds")
     forwardSystemProperty("nucleus.tao.watchdogMonkeyProfile")
+    forwardSystemProperty("nucleus.tao.sessionEndMonkeySeed")
+    forwardSystemProperty("nucleus.tao.sessionEndMonkeySeeds")
 }
 
 // ── macOS standalone-popup smoke check ──────────────────────────────────────
@@ -195,6 +197,11 @@ val taoHeadfulTest =
         // Arms the macOS scrollWheel: injector (nativeDiagInjectScrollWheel) the
         // trackpad cases drive; it is inert in any process without this variable.
         environment("NUCLEUS_TAO_INPUT_INJECTION", "1")
+        // A fixed glibc mmap threshold: every large block — Mesa llvmpipe's
+        // texture storage among them — is then its own mapping, unmapped on
+        // free. With the default dynamic threshold freed textures stay in the
+        // malloc heap and RSS cannot show the #638 GPU-cache reclaim.
+        environment("MALLOC_MMAP_THRESHOLD_", "131072")
         // Same Kover JVM agent the `test` task uses, so headful window coverage
         // is counted. JavaExec is otherwise invisible to Kover.
         dependsOn(tasks.named("koverFindJar"))
@@ -254,6 +261,10 @@ val taoHeadfulTest =
         // Length of the overnight gesture monkey (MacOsTrackpadGestureMonkeyHeadfulCases), minutes.
         System.getProperty("nucleus.tao.headful.monkeyNightMinutes")?.let {
             systemProperty("nucleus.tao.headful.monkeyNightMinutes", it)
+        }
+        // Length of the #706 touchpad monkey (WindowsDirectManipulationMonkeyHeadfulCases), steps per seed.
+        System.getProperty("nucleus.tao.headful.dmMonkeySteps")?.let {
+            systemProperty("nucleus.tao.headful.dmMonkeySteps", it)
         }
         // Replays a journal instead of a random walk (comma-separated action names).
         System.getProperty("nucleus.tao.headful.monkeyScript")?.let {

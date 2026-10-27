@@ -56,7 +56,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetWaylandAppId(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxIdentityBridge_nativeSetWaylandAppId(
     mut env: JNIEnv,
     _class: JClass,
     app_id: JString,
@@ -73,7 +73,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetX11WmClass(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxIdentityBridge_nativeSetX11WmClass(
     mut env: JNIEnv,
     _class: JClass,
     wm_class: JString,
@@ -248,6 +248,31 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 ) {
     send_user_event(UserEvent::Focus {
         handle: handle as u64,
+        activation_token: None,
+    });
+}
+
+/// [`nativeFocus`] with an xdg-activation token received from the compositor
+/// (portal global shortcut, notification action). A Wayland compositor only
+/// lets a window take focus with such a token; elsewhere it is ignored (#739).
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeFocusWithActivationToken(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    token: JString,
+) {
+    let activation_token = if token.is_null() {
+        None
+    } else {
+        env.get_string(&token)
+            .ok()
+            .map(String::from)
+            .filter(|t| !t.is_empty())
+    };
+    send_user_event(UserEvent::Focus {
+        handle: handle as u64,
+        activation_token,
     });
 }
 
@@ -655,4 +680,43 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         return 1000;
     };
     (window.scale_factor() * 1000.0) as jint
+}
+
+/// Drops the Windows shutdown block reason a session-end query set (#751), once
+/// the quit it was waiting for has been cancelled by a window staying open.
+/// No-op elsewhere. Event-loop thread only.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeReleaseShutdownBlock(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::release_block();
+}
+
+/// The JVM exit has begun (#751): a session end reaching AWT's toolkit thread may
+/// now let AWT take its own shutdown path. Called from a shutdown hook. No-op
+/// elsewhere.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMarkJvmExiting(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::mark_jvm_exiting();
+}
+
+/// Takes the screen position, in physical pixels, of the last mouse button
+/// release, packed as `(x << 32) | (y & 0xffffffff)`; `i64::MIN` when there
+/// was none since the last take and on platforms that do not track it (#837).
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeTakeMouseReleaseScreenPosition(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jlong {
+    #[cfg(target_os = "windows")]
+    if let Some((x, y)) = tao::platform::windows::take_mouse_release_screen_position() {
+        return (i64::from(x) << 32) | i64::from(y as u32);
+    }
+    jlong::MIN
 }

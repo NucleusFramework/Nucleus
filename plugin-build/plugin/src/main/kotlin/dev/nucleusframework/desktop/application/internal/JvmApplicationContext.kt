@@ -53,9 +53,10 @@ internal data class JvmApplicationContext(
 
     /**
      * Architecture of the configured JDK (may differ from the Gradle daemon's
-     * arch when cross-building). The auto-downloaded OpenJDK 27 matches the
-     * host, so we must not realize [JvmApplicationData.javaHomeOverride] here
-     * — that would download the JDK at configuration time.
+     * arch when cross-building). The auto-downloaded OpenJDK and the project's
+     * JVM toolchain match the host, so we must not realize
+     * [JvmApplicationData.javaHomeOverride] here — that would download the JDK
+     * at configuration time.
      */
     val targetArch by lazy {
         if (app.javaHomeOverride != null) {

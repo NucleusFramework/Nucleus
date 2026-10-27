@@ -19,6 +19,9 @@ typedef struct NucleusTaoMirror NucleusTaoMirror;
 /* Whether DirectComposition can be loaded at all. */
 BOOL nucleus_tao_mirror_available(void);
 
+/* Whether ANGLE's [device] can drive the mirror (Direct3D 11 hardware tier). */
+BOOL nucleus_tao_mirror_device_supported(ID3D11Device *device);
+
 /* Mirror targeting [surfaceHwnd] (the render child), on ANGLE's [device]. NULL when DirectComposition is unavailable. */
 NucleusTaoMirror *nucleus_tao_mirror_create(HWND surfaceHwnd, ID3D11Device *device);
 void nucleus_tao_mirror_destroy(NucleusTaoMirror *mirror);

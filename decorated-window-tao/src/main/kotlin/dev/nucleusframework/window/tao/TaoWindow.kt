@@ -6,10 +6,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.unit.IntRect
+import dev.nucleusframework.core.runtime.ActivationToken
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.core.runtime.UpdateHandoff
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
@@ -37,6 +40,13 @@ private const val STALE_REDRAW_NANOS: Long = 1_000_000_000L
  * does place at the origin is reported.
  */
 private const val PLACEHOLDER_MOVE_WINDOW_NANOS: Long = 2_000_000_000L
+
+/**
+ * Called on every [TaoWindow.show], before the native visibility flip, for
+ * every window. A test probe: the headful suite reads what a window looks
+ * like at the instant it maps (#532).
+ */
+internal val showObservers: MutableList<(TaoWindow) -> Unit> = CopyOnWriteArrayList()
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
@@ -295,11 +305,33 @@ public class TaoWindow internal constructor(
     @Volatile
     private var touchInputListener: TouchInputListener? = null
 
+    /**
+     * Windows precision-touchpad manipulation stream (#706) — see
+     * [NativeTaoBridge.EventCallback.onDirectManipulation].
+     */
+    @Volatile
+    internal var directManipulationListener: ((TaoDirectManipulationEvent) -> Unit)? = null
+
+    /**
+     * Tool behind the touch event being dispatched to [touchInputListener]:
+     * a finger, or a Windows pen and its eraser end (#827).
+     */
+    internal var touchPointerType: PointerType = PointerType.Touch
+        private set
+
     @Volatile
     private var keyListener: KeyEventListener? = null
 
     @Volatile
     internal var modifierState: Int = 0
+        private set
+
+    /**
+     * Tool behind the cursor and button events: the mouse, or a tablet pen
+     * and its eraser end where the platform names them (#827, Linux and macOS).
+     */
+    @Volatile
+    internal var pointerType: PointerType = PointerType.Mouse
         private set
 
     /**
@@ -1285,6 +1317,7 @@ public class TaoWindow internal constructor(
         startupEraseActive = true
         setStartupBackgroundEraseEnabled(true)
         showHook?.invoke()
+        showObservers.forEach { it(this) }
         NativeTaoBridge.nativeSetVisible(handle, true)
         // Queued behind the show above (both ride the same event loop), so the
         // click-through state lands on the mapped window — see
@@ -1305,9 +1338,21 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetVisible(handle, false)
     }
 
-    /** Raises the window, restores it if minimized, and gives it keyboard focus. */
+    /**
+     * Raises the window, restores it if minimized, and gives it keyboard focus.
+     *
+     * On Wayland a window may only take focus with an `xdg-activation` token the compositor
+     * handed out for a user action; this uses the one a global hotkey or a notification click
+     * just delivered ([ActivationToken]), so focusing a window in response to either works
+     * (#739). Without one, the compositor may refuse and flag the window instead.
+     */
     public fun focus() {
-        NativeTaoBridge.nativeFocus(handle)
+        val token = if (Platform.Current == Platform.Linux) ActivationToken.take() else null
+        if (token != null) {
+            NativeTaoBridge.nativeFocusWithActivationToken(handle, token)
+        } else {
+            NativeTaoBridge.nativeFocus(handle)
+        }
     }
 
     /**
@@ -1389,6 +1434,21 @@ public class TaoWindow internal constructor(
     internal fun onClosing(block: () -> Unit) {
         closingListeners += block
     }
+
+    /**
+     * The native window is gone (or, on a Windows session end, about to be with
+     * the process): releases what it held and unregisters it, so a `DESTROYED`
+     * arriving later finds nothing.
+     */
+    internal fun destroyed() {
+        if (isDestroyed) return
+        isDestroyed = true
+        TaoEventLoopWatchdog.unregisterWindow(handle)
+        destroyedListeners.forEach { it.invoke() }
+        TaoApplication.remove(handle)
+    }
+
+    private var isDestroyed = false
 
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */
     public fun onDestroyed(block: () -> Unit) {
@@ -1498,8 +1558,11 @@ public class TaoWindow internal constructor(
 
     /**
      * Trackpad gesture stream — see [TrackpadGestureListener]. macOS/Linux emit
-     * magnify/rotate/smart-magnify; Windows emits magnify only (Ctrl+wheel /
-     * precision-touchpad pinch). No native source on other configurations.
+     * magnify/rotate/smart-magnify; Windows emits magnify only, as Ctrl+wheel
+     * ticks (a mouse, or a precision touchpad on the OS's legacy emulation) —
+     * a touchpad the window's DirectManipulation viewport owns reaches the
+     * Compose host through its own stream (#706). No native source on other
+     * configurations.
      */
     public fun onTrackpadGesture(listener: TrackpadGestureListener) {
         trackpadGestureListener = listener
@@ -1516,8 +1579,26 @@ public class TaoWindow internal constructor(
         xFixed: Int,
         yFixed: Int,
         forceFixed: Int,
+        kind: Int,
     ) {
+        touchPointerType = taoPointerType(kind)
         touchInputListener?.onTouch(phase, id, xFixed, yFixed, forceFixed)
+    }
+
+    @Suppress("LongParameterList")
+    internal fun dispatchDirectManipulation(
+        kind: Int,
+        status: Int,
+        previousStatus: Int,
+        scale: Float,
+        offsetX: Float,
+        offsetY: Float,
+        focalX: Float,
+        focalY: Float,
+    ) {
+        directManipulationListener?.invoke(
+            TaoDirectManipulationEvent(kind, status, previousStatus, scale, offsetX, offsetY, focalX, focalY),
+        )
     }
 
     internal fun dispatchTrackpadGesture(
@@ -1673,11 +1754,7 @@ public class TaoWindow internal constructor(
             }
             TaoEventCode.SCALE_FACTOR_CHANGED -> scaleFactorListener?.invoke(a / 1000f)
             TaoEventCode.CLOSE_REQUESTED -> closeRequestedListener?.invoke()
-            TaoEventCode.DESTROYED -> {
-                TaoEventLoopWatchdog.unregisterWindow(handle)
-                destroyedListeners.forEach { it.invoke() }
-                TaoApplication.remove(handle)
-            }
+            TaoEventCode.DESTROYED -> destroyed()
             TaoEventCode.REDRAW_REQUESTED -> {
                 // Clear *before* invoking — if the listener (which renders) posts
                 // another invalidate via `requestRedraw`, the next frame must go
@@ -1727,6 +1804,7 @@ public class TaoWindow internal constructor(
             TaoEventCode.MOUSE_DOWN -> pointerButtonListener?.invoke(a, true)
             TaoEventCode.MOUSE_UP -> pointerButtonListener?.invoke(a, false)
             TaoEventCode.MODIFIERS_CHANGED -> modifierState = a
+            TaoEventCode.POINTER_KIND -> pointerType = taoPointerType(a)
             TaoEventCode.WILL_HIDE -> willHideListener?.invoke()
             TaoEventCode.SHOWN -> shownListener?.invoke()
             TaoEventCode.SIZE_MOVE -> sizeMoveListener?.invoke(a != 0)

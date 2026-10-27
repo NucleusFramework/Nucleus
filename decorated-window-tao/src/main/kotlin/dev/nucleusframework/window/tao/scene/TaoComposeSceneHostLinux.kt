@@ -537,6 +537,14 @@ internal class TaoComposeSceneHostLinux(
     private var lastResizePurgeNs: Long = 0L
     private var resizePurgeDue: Boolean = false
 
+    /**
+     * Reclaims the cache an animation filled once the window is at rest but
+     * still visible (#638); [onMinimizedChanged] covers minimize. Never waits
+     * on the swap thread: the event loop is idle, not parked, and a busy swap
+     * just moves the purge to the next rest period.
+     */
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest(swapWaitNs = 0L) }
+
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
@@ -1166,6 +1174,17 @@ internal class TaoComposeSceneHostLinux(
     private inner class InboundDnDCallback : dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.Callback {
         private fun node() = window.inboundDragAndDropNode?.invoke()
 
+        private val dnd =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                .InboundState()
+
+        override fun onDragFiles(
+            handle: Long,
+            files: Array<String>?,
+        ) {
+            dnd.onDragFiles(files = files)
+        }
+
         // Linux keeps neither the macOS/Windows diagnostic logging nor their
         // `if (!hasFiles) return NONE` guard, so its overrides delegate straight
         // to the shared helper. Folding those in via TaoSceneDnD would change
@@ -1177,8 +1196,8 @@ internal class TaoComposeSceneHostLinux(
             modState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragEnter(node(), x, y)
+            if (dnd
+                    .onDragEnter(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
@@ -1192,17 +1211,18 @@ internal class TaoComposeSceneHostLinux(
             modState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragOver(node(), x, y)
+            if (dnd
+                    .onDragOver(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
 
-        override fun onDragLeave(handle: Long) =
-            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+        override fun onDragLeave(handle: Long) {
+            dnd
                 .onDragLeave(node())
+        }
 
         override fun onDrop(
             handle: Long,
@@ -1211,7 +1231,7 @@ internal class TaoComposeSceneHostLinux(
             modState: Int,
             files: Array<String>?,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            if (dnd
                     .onDrop(node(), x, y, files)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
@@ -1589,6 +1609,14 @@ internal class TaoComposeSceneHostLinux(
         }
 
     /**
+     * Recomposes and lays the scene out without drawing — for a window that is
+     * not mapped yet, so no frame will do it (wrap-content sizing, #532).
+     */
+    fun layoutNow() {
+        sceneBundle?.composeAndLayoutNow()
+    }
+
+    /**
      * Forwards a parent composition's locals into this scene via
      * `ComposeScene.compositionLocalContext` — applied above the scene's own
      * `LocalComposeSceneContext`, so popups keep routing into THIS scene. See
@@ -1920,6 +1948,53 @@ internal class TaoComposeSceneHostLinux(
         ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
     }
 
+    /**
+     * Minimize is the at-rest moment #638 is after: nothing of the window is
+     * visible, so the cache a busy stretch filled can go back to the system and
+     * the re-mint is paid at restore, where a first frame redraws everything
+     * anyway. Without it the cache stays at its high-water mark for the life
+     * of the process — Skia only evicts when a new allocation would exceed the
+     * budget, and a minimized window allocates nothing.
+     */
+    fun onMinimizedChanged(minimized: Boolean) {
+        if (minimized) purgeGpuResourceCacheAtRest(REST_PURGE_SWAP_WAIT_NS)
+    }
+
+    /**
+     * [purgeAtRest] outside a frame. It issues `glDelete*`, so this host's EGL
+     * context has to be current — which it can only be once the swap thread
+     * has handed it back. Only the render thread
+     * (this one) queues swaps, so a swap thread found idle stays idle until we
+     * release the context again. A present that does not drain within
+     * [swapWaitNs] (a Wayland compositor withholding the frame callback of a
+     * hidden surface) skips the purge: binding now would steal the context
+     * mid-swap. So does a size not yet pushed to the native window —
+     * `eglMakeCurrent` would acquire a back buffer at the old one (#444).
+     * Returns `false` when skipped, `true` when done or nothing to do (no
+     * context: a Wayland hide closed it in [suspendGpu]).
+     *
+     * Not under a live [TaoGpuRenderContextConsumers] consumer: an in-process
+     * renderer drawing on this context must not lose its cache mid-frame (#478).
+     */
+    private fun purgeGpuResourceCacheAtRest(swapWaitNs: Long): Boolean {
+        val ctx = directContext ?: return true
+        if (attachmentHandle == 0L || TaoGpuRenderContextConsumers.isActive(ctx)) return true
+        if (swapThread?.awaitIdle(swapWaitNs) == false) {
+            linuxHostLogger.fine("swap still in flight; GPU resource cache purge skipped")
+            return false
+        }
+        if (widthPx != lastAppliedWidthPx || heightPx != lastAppliedHeightPx || scale != lastAppliedScale) {
+            return false
+        }
+        NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
+        // Same reason as the frame path: an embed may have run GL on this
+        // thread since, leaving Skia's cached GL state stale.
+        if (foreignGlInterop) ctx.resetGLAll()
+        ctx.purgeAtRest()
+        NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+        return true
+    }
+
     fun onFocusChanged(focused: Boolean) {
         // NB: do NOT clear compositorDragActive on focus-in here. GNOME toggles
         // keyboard focus *during* a compositor resize/move grab, and clearing on
@@ -2193,6 +2268,7 @@ internal class TaoComposeSceneHostLinux(
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
         if (widthPx <= 0 || heightPx <= 0) return
+        restReclaimer.onFrame()
         if (isWayland && attachedKind == 2 && !window.isPopup) ensureToplevelDrawHook()
 
         val now = System.nanoTime()
@@ -2879,7 +2955,7 @@ internal class TaoComposeSceneHostLinux(
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
+            type = window.pointerType,
             keyboardModifiers = currentKeyboardModifiers,
         )
     }
@@ -2977,7 +3053,7 @@ internal class TaoComposeSceneHostLinux(
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
+            type = window.pointerType,
             keyboardModifiers = currentKeyboardModifiers,
             button = mapButton(buttonCode),
         )
@@ -3654,6 +3730,7 @@ internal class TaoComposeSceneHostLinux(
         if (NativeTaoLinuxTouchBridge.isLoaded && window.handle != 0L) {
             NativeTaoLinuxTouchBridge.nativeRevoke(window.handle)
         }
+        restReclaimer.close()
         // Stop the swap thread first. It may be parked inside
         // `eglSwapBuffers` waiting on a frame callback — joining without a
         // wakeup would hang. `shutdownAndJoin` requests shutdown before
@@ -3757,6 +3834,10 @@ internal class TaoComposeSceneHostLinux(
          * on virgl); past it the frame simply lands one GTK commit late.
          */
         private const val IN_FRAME_SWAP_WAIT_NS = 50_000_000L // 50 ms
+
+        // Longest the minimize purge waits for an in-flight present to hand the
+        // context back — a few vsyncs; past that the purge is skipped.
+        private const val REST_PURGE_SWAP_WAIT_NS = 50_000_000L // 50 ms
 
         /**
          * Longest a `queue_draw` may go unanswered before in-frame rendering
@@ -4029,19 +4110,21 @@ private class LinuxTaoPlatformContext(
         }
 
     /**
-     * Keeps the GTK input context anchored to the caret for as long as a field
-     * owns the input (#558).
+     * Keeps the GTK input context focused and anchored to the caret for as
+     * long as a field owns the input (#558).
      *
-     * The macOS twin also has to activate the view's `NSTextInputContext`
-     * first; GTK needs no such step, because the context is created with — and
-     * follows the focus of — the window itself. So this only mirrors the caret
-     * rect, through the same `nativeSetImeRect` contract Windows uses.
+     * Like the macOS twin activating the view's `NSTextInputContext`, the
+     * context is only focused for the session (#842): it follows the window's
+     * focus natively, but a window with no field must not focus it, or Wayland
+     * compositors raise the on-screen keyboard on every activation. The caret
+     * rect goes through the same `nativeSetImeRect` contract Windows uses.
      */
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     override suspend fun startInputMethod(
         request: androidx.compose.ui.platform.PlatformTextInputMethodRequest,
     ): Nothing {
         onInputSession(request)
+        NativeTaoBridge.nativeSetImeAllowed(windowHandle, true)
         try {
             coroutineScope {
                 launch {
@@ -4063,6 +4146,7 @@ private class LinuxTaoPlatformContext(
                 awaitCancellation()
             }
         } finally {
+            NativeTaoBridge.nativeSetImeAllowed(windowHandle, false)
             onInputSession(null)
         }
     }

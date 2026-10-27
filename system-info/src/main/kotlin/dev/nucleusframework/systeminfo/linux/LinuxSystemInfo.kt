@@ -1,7 +1,9 @@
 package dev.nucleusframework.systeminfo.linux
 
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.systeminfo.ConnectivityMonitor
 import dev.nucleusframework.systeminfo.PlatformSystemInfo
+import dev.nucleusframework.systeminfo.connectivityInfoOf
 import dev.nucleusframework.systeminfo.model.BatteryInfo
 import dev.nucleusframework.systeminfo.model.BatteryState
 import dev.nucleusframework.systeminfo.model.ComponentInfo
@@ -11,13 +13,15 @@ import dev.nucleusframework.systeminfo.model.CpuInfo
 import dev.nucleusframework.systeminfo.model.DiskInfo
 import dev.nucleusframework.systeminfo.model.GpuInfo
 import dev.nucleusframework.systeminfo.model.MemoryInfo
-import dev.nucleusframework.systeminfo.model.MeteredStatus
 import dev.nucleusframework.systeminfo.model.MotherboardInfo
 import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
 import dev.nucleusframework.systeminfo.model.OsInfo
 import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
+import dev.nucleusframework.systeminfo.model.RenderTier
 import dev.nucleusframework.systeminfo.model.UserInfo
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @Suppress("TooManyFunctions", "ReturnCount")
 internal object LinuxSystemInfo : PlatformSystemInfo {
@@ -261,6 +265,11 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
         )
     }
 
+    override fun renderTier(): RenderTier {
+        if (!ready()) return RenderTier.UNKNOWN
+        return RenderTier.entries.getOrElse(bridge.nativeRenderTier()) { RenderTier.UNKNOWN }
+    }
+
     override fun idleTime(): Long {
         if (!ready()) return -1L
         return bridge.nativeIdleTimeSeconds()
@@ -365,19 +374,17 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
 
     override fun connectivityInfo(): ConnectivityInfo? {
         if (!ready()) return null
-        val connected = bridge.nativeIsNetworkConnected()
-        return ConnectivityInfo(
-            isConnected = connected,
-            meteredStatus =
-                if (!connected) {
-                    MeteredStatus.NOT_AVAILABLE
-                } else {
-                    when (bridge.nativeGetMeteredStatus()) {
-                        1 -> MeteredStatus.UNMETERED
-                        2 -> MeteredStatus.METERED
-                        else -> MeteredStatus.UNKNOWN
-                    }
-                },
-        )
+        val (available, metered, level) = bridge.nativeQueryConnectivity()
+        return connectivityInfoOf(available != 0, metered, level)
     }
+
+    override fun connectivityChanges(): Flow<ConnectivityInfo> =
+        if (ready()) connectivityMonitor.changes() else emptyFlow()
+
+    val connectivityMonitor =
+        ConnectivityMonitor(
+            start = bridge::nativeStartConnectivityMonitor,
+            stop = bridge::nativeStopConnectivityMonitor,
+            fallback = ::connectivityInfo,
+        )
 }

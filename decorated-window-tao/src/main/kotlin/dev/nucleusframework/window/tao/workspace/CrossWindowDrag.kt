@@ -14,6 +14,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isFinite
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -22,6 +23,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoPointerIcons
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlin.math.roundToInt
 
 /**
@@ -155,6 +157,9 @@ internal fun Modifier.screenDragHandle(
                             ?: return@awaitEachGesture
                     var pointer = screenPx(start.position) ?: return@awaitEachGesture
                     val session = currentBegin(window, pointer) ?: return@awaitEachGesture
+                    // A release recorded before this drag belongs to another
+                    // gesture: drop it so only the one that ends this drag counts.
+                    releaseScreenPx(down.type)
                     try {
                         session.update(pointer)
                         val released =
@@ -165,7 +170,11 @@ internal fun Modifier.screenDragHandle(
                                     session.update(it)
                                 }
                             }
-                        if (released) session.end(pointer) else session.cancel()
+                        if (released) {
+                            session.end(releaseScreenPx(down.type) ?: pointer)
+                        } else {
+                            session.cancel()
+                        }
                     } finally {
                         // The pointer-input coroutine is cancelled whenever this
                         // modifier is re-keyed or detached — a window resize
@@ -177,6 +186,27 @@ internal fun Modifier.screenDragHandle(
                 }
             }
     }
+
+/**
+ * Where a mouse button was last released, in physical screen pixels, read from
+ * the OS rather than from the last move Compose delivered — taken, so a second
+ * call returns `null` until the next release; `null` as well for any other
+ * pointer and where the native side does not track it (outside Windows).
+ *
+ * The last move can be one sample short when the dragged thing is the window
+ * itself (#837). The window follows the pointer one sample late, so a step
+ * equal to the one the window just made arrives at the client position of
+ * the move before, and Compose drops a move whose position did not change —
+ * as does every layer under it keyed on window-local coordinates. The screen
+ * point the OS recorded for the release does not depend on where the window is.
+ */
+@Suppress("MagicNumber") // packed as (x shl 32) or y
+private fun releaseScreenPx(type: PointerType): Offset? {
+    if (type != PointerType.Mouse) return null
+    val packed = NativeTaoBridge.nativeTakeMouseReleaseScreenPosition()
+    if (packed == Long.MIN_VALUE) return null
+    return Offset((packed shr 32).toInt().toFloat(), packed.toInt().toFloat())
+}
 
 /** The grip's pointer icon; `null` leaves whatever the pointer shows around it. */
 internal fun Modifier.gripIcon(icon: PointerIcon?): Modifier = if (icon == null) this else pointerHoverIcon(icon)

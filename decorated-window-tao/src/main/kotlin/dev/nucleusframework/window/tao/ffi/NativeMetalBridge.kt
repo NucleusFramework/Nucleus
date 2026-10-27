@@ -102,6 +102,29 @@ internal object NativeMetalBridge {
         fullscreenPrepares[nsViewPtr]?.invoke(widthPx, heightPx)
     }
 
+    // ── Occlusion: a window nobody can see (hidden app, covered, other Space,
+    // locked screen) stops rendering, so its animations park like when minimized.
+
+    private val occlusionListeners = ConcurrentHashMap<Long, (visible: Boolean) -> Unit>()
+
+    fun setOcclusionListener(
+        nsViewPtr: Long,
+        block: ((visible: Boolean) -> Unit)?,
+    ) {
+        if (nsViewPtr == 0L) return
+        if (block == null) occlusionListeners.remove(nsViewPtr) else occlusionListeners[nsViewPtr] = block
+    }
+
+    /** Called from native `windowDidChangeOcclusionState:` on the AppKit main thread. */
+    @JvmStatic
+    @Suppress("unused") // called from JNI
+    fun onOcclusionChanged(
+        nsViewPtr: Long,
+        visible: Boolean,
+    ) {
+        occlusionListeners[nsViewPtr]?.invoke(visible)
+    }
+
     // ── VSync pacing (CVDisplayLink, AWT/skiko MetalVSyncer pattern) ──
     //
     // A CVDisplayLink runs continuously; [nativeVSyncWait] blocks the calling
@@ -491,7 +514,8 @@ internal object NativeMetalBridge {
      * True on the AppKit main thread. [dispatch.TaoMainDispatcher.taoMainThread]
      * cannot answer this on macOS: `nativeRunBlocking` marshals the event loop
      * onto thread 0, so AppKit callbacks run on a different JVM thread than the
-     * one that entered `taoApplication`.
+     * one that entered `taoApplication` — and `taoMainThread` only learns the
+     * real thread on the loop's first callback (#829).
      */
     @JvmStatic
     external fun nativeIsMainThread(): Boolean
@@ -583,6 +607,24 @@ internal object NativeMetalBridge {
         x: Float,
         y: Float,
         value: Double,
+    ): Boolean
+
+    /**
+     * Headful e2e only (#827): queues a synthetic tablet event on `NSApp`
+     * (`postEvent`, delivered after the current callback returns), as a
+     * tablet driver sends it — a proximity event naming the tool, then mouse
+     * events with the `TabletPoint` subtype. [action]: 0 proximity enter,
+     * 1 proximity leave, 2 move, 3 down, 4 drag, 5 up; [tool]: 0 the mouse,
+     * 1 pen tip, 2 eraser; [x] / [y] content-local points, top-left origin.
+     * `false` when injection is disabled or the view or its window is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagInjectTabletEvent(
+        nsViewPtr: Long,
+        action: Int,
+        tool: Int,
+        x: Float,
+        y: Float,
     ): Boolean
 
     /**

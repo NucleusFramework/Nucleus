@@ -4,6 +4,7 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.window.tao.TaoAccessibilityRegistry
 import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
+import dev.nucleusframework.window.tao.scene.TaoA11yActivation
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -149,6 +150,8 @@ internal object NativeTaoBridge {
          * [TaoEventCode.CURSOR_MOVED]).
          * [forceFixed] is the touch pressure × 10 000 in `[0, 10000]`, or
          * `-1` when the digitizer doesn't report pressure.
+         * [kind] is the [TaoPointerKind] of the contact: a finger, or a pen
+         * (and its eraser end), which WM_POINTER reports the same way (#827).
          *
          * Default no-op so non-Windows callers can ignore it.
          */
@@ -160,6 +163,36 @@ internal object NativeTaoBridge {
             xFixed: Int,
             yFixed: Int,
             forceFixed: Int,
+            kind: Int,
+        ) {
+        }
+
+        /**
+         * Windows precision-touchpad manipulation (#706): the raw stream of
+         * the window's DirectManipulation viewport, turned into pan and pinch
+         * phases by [dev.nucleusframework.window.tao.event.TaoDirectManipulationGesture].
+         *
+         * [kind] is [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.STATUS]
+         * (the viewport moved from [previousStatus] to [status]) or
+         * [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.CONTENT]
+         * (a new content transform while in [status]). Statuses are
+         * `DIRECTMANIPULATION_STATUS` values. [scale] / [offsetX] / [offsetY]
+         * are the content transform at that moment, [focalX] / [focalY] where
+         * the gesture is — both in client-area physical pixels.
+         *
+         * Default no-op so non-Windows callers can ignore it.
+         */
+        @Suppress("LongParameterList")
+        fun onDirectManipulation(
+            handle: Long,
+            kind: Int,
+            status: Int,
+            previousStatus: Int,
+            scale: Float,
+            offsetX: Float,
+            offsetY: Float,
+            focalX: Float,
+            focalY: Float,
         ) {
         }
 
@@ -202,24 +235,44 @@ internal object NativeTaoBridge {
             text: String,
         ) {
         }
+
+        /**
+         * Windows `WM_QUERYENDSESSION` — logoff, restart, shutdown or a Restart
+         * Manager close (#751). Runs the windows' close requests synchronously
+         * and answers `TaoApplication.END_SESSION_*`; [flags] are
+         * `TaoApplication.END_SESSION_FLAG_*`. Default: agree.
+         */
+        fun onQueryEndSession(flags: Int): Int = 0
+
+        /**
+         * Windows `WM_ENDSESSION` (#751): [ending] `true` when the session ends
+         * (the process may be terminated once this returns), `false` when it
+         * was cancelled. [nested] `true` when it arrived inside a nested pump
+         * (a native modal), with app code further up this thread's stack.
+         * Default no-op.
+         */
+        fun onEndSession(
+            ending: Boolean,
+            nested: Boolean,
+        ) {
+        }
     }
 
     /**
-     * Linux: the app_id GTK sends for every window on a Wayland display (`g_set_prgname`, so
-     * the compositor pairs the windows with the `.desktop` entry of that name). Call before
-     * [nativeRunBlocking]. Ignored on X11, where [nativeSetX11WmClass] applies instead.
+     * Drops the Windows shutdown block reason a session-end query set, once a
+     * window stayed open and cancelled the quit (#751). No-op elsewhere.
+     * Event-loop thread only.
      */
     @JvmStatic
-    external fun nativeSetWaylandAppId(appId: String)
+    external fun nativeReleaseShutdownBlock()
 
     /**
-     * Linux: the `WM_CLASS` GTK gives every window on an X11 display, both its instance
-     * (`g_set_prgname`) and its class (`gdk_set_program_class`), so the desktop pairs the
-     * windows with the `.desktop` entry whose `StartupWMClass` it is. Call before
-     * [nativeRunBlocking]. Ignored on Wayland.
+     * The JVM exit has begun (#751): a Windows session end that reached AWT's
+     * toolkit thread lets AWT take its own shutdown path from now on. Called
+     * from a shutdown hook. No-op elsewhere.
      */
     @JvmStatic
-    external fun nativeSetX11WmClass(wmClass: String)
+    external fun nativeMarkJvmExiting()
 
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */
     @JvmStatic
@@ -611,6 +664,15 @@ internal object NativeTaoBridge {
     external fun nativeScaleFactor(handle: Long): Int
 
     /**
+     * Takes the screen position, in physical px, of the last mouse button
+     * release, packed as `(x shl 32) or (y and 0xffffffff)`, and clears it;
+     * [Long.MIN_VALUE] when there was none since the last take and outside
+     * Windows, which is the only platform that tracks it (#837).
+     */
+    @JvmStatic
+    external fun nativeTakeMouseReleaseScreenPosition(): Long
+
+    /**
      * Linux only: returns `[x, y, width, height]` of the primary monitor's
      * work area (full screen minus panels / docks) in physical pixels with a
      * top-left origin. Falls back to the full monitor geometry when GDK can't
@@ -767,6 +829,16 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeFocus(handle: Long)
 
+    /**
+     * [nativeFocus] with an xdg-activation token from the compositor. Wayland only: hands the
+     * token to `xdg_activation_v1.activate` through GDK; ignored elsewhere.
+     */
+    @JvmStatic
+    external fun nativeFocusWithActivationToken(
+        handle: Long,
+        activationToken: String,
+    )
+
     /** [width]/[height] in logical pixels; pass negative values to clear. */
     @JvmStatic
     external fun nativeSetMinInnerSize(
@@ -889,6 +961,18 @@ internal object NativeTaoBridge {
         y: Int,
         width: Int,
         height: Int,
+    )
+
+    /**
+     * Linux only (#842): whether a text field owns the input of [handle]. The
+     * GTK input context is focused only while it does — on Wayland, focusing
+     * it sends text-input `enable`, which compositors answer by raising the
+     * on-screen keyboard. Off until the first `true`.
+     */
+    @JvmStatic
+    external fun nativeSetImeAllowed(
+        handle: Long,
+        allowed: Boolean,
     )
 
     /**
@@ -1102,6 +1186,13 @@ internal object NativeTaoBridge {
         action: Int,
     ) {
         fatalUpcall { TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action) }
+    }
+
+    /** An accessibility client started listening: run the semantics walks parked while none was. */
+    @JvmStatic
+    @Suppress("unused") // called from JNI (a11y/jvm.rs → notify_a11y_activated)
+    fun onA11yActivated() {
+        fatalUpcall { TaoA11yActivation.onActivated() }
     }
 
     @JvmStatic

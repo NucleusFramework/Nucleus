@@ -727,6 +727,15 @@ impl Window {
       .to_logical::<i32>(self.scale_factor())
       .into();
 
+    // PATCH(nucleus): same as `set_inner_size`: no configure-event reports a
+    // move of a window that is not mapped, so record where it will map.
+    if !self.window.is_mapped() {
+      self.inner_position.0.store(x, Ordering::Release);
+      self.inner_position.1.store(y, Ordering::Release);
+      self.outer_position.0.store(x, Ordering::Release);
+      self.outer_position.1.store(y, Ordering::Release);
+    }
+
     if let Err(e) = self
       .window_requests_tx
       .send((self.window_id, WindowRequest::Position((x, y))))
@@ -756,6 +765,19 @@ impl Window {
 
   pub fn set_inner_size<S: Into<Size>>(&self, size: S) {
     let (width, height) = size.into().to_logical::<i32>(self.scale_factor()).into();
+
+    // PATCH(nucleus): GTK sends no configure-event to a window that is not
+    // mapped, so the size caches would keep their creation values (the outer
+    // one is not even a size) until the first map. A window sized while
+    // hidden then reads stale geometry, and maps at a size nothing reported.
+    // The frame is unknown before the map: the outer size is the inner one
+    // until the first configure replaces both.
+    if !self.window.is_mapped() {
+      self.inner_size.0.store(width, Ordering::Release);
+      self.inner_size.1.store(height, Ordering::Release);
+      self.outer_size.0.store(width, Ordering::Release);
+      self.outer_size.1.store(height, Ordering::Release);
+    }
 
     if let Err(e) = self
       .window_requests_tx
@@ -1060,6 +1082,22 @@ impl Window {
       .send((self.window_id, WindowRequest::SetImeCursorArea((x, y, w, h))))
     {
       log::warn!("Fail to send ime cursor area request: {}", e);
+    }
+  }
+
+  /// Nucleus patch (nucleusframework#842): focus the window's input context
+  /// only while a text field owns the input.
+  ///
+  /// Focusing a GTK input context is not free on Wayland: it sends
+  /// text-input-v3 `enable`, which is the request a compositor answers by
+  /// showing its on-screen keyboard. Following the window's focus alone
+  /// raised the keyboard on every activation, text field or not.
+  pub fn set_ime_allowed(&self, allowed: bool) {
+    if let Err(e) = self
+      .window_requests_tx
+      .send((self.window_id, WindowRequest::SetImeAllowed(allowed)))
+    {
+      log::warn!("Fail to send ime allowed request: {}", e);
     }
   }
 
@@ -1392,6 +1430,9 @@ pub enum WindowRequest {
   /// Nucleus patch (nucleusframework#558): the rectangle the caret occupies,
   /// in window-local logical pixels, for the input method to steer clear of.
   SetImeCursorArea((i32, i32, i32, i32)),
+  /// Nucleus patch (nucleusframework#842): whether a text field owns the
+  /// input, i.e. whether the window's input context may be focused.
+  SetImeAllowed(bool),
   /// Nucleus patch: anchor a popup overlay at a point of its transient parent
   /// through `gdk_window_move_to_rect` — see `Window::popup_anchor`.
   PopupAnchor {
