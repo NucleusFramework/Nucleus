@@ -205,6 +205,12 @@ static BOOL isPermissionError(NSError *error) {
 // Fetches the shareable content; returns a status and fills [out] on success.
 API_AVAILABLE(macos(14.0))
 static jint shareableContent(BOOL onScreenOnly, SCShareableContent **out, NSString **why) {
+    // Without the permission ScreenCaptureKit may never call back (seen on macOS 27), which
+    // would surface as a Timeout after CAPTURE_TIMEOUT_SECONDS instead of PermissionDenied.
+    if (!CGPreflightScreenCaptureAccess()) {
+        *why = @"Screen recording permission is not granted";
+        return STATUS_PERMISSION_DENIED;
+    }
     NucleusCaptureBox *box = [NucleusCaptureBox new];
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
     [SCShareableContent getShareableContentExcludingDesktopWindows:NO
