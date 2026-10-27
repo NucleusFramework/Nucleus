@@ -414,6 +414,17 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
     fun signing(fn: Action<LinuxSigningSettings>) {
         fn.execute(signing)
     }
+
+    /**
+     * polkit actions the Deb, RPM and Pacman packages install, e.g. the one
+     * `nucleus.authentication` checks on Linux. See [PolkitActionSettings].
+     */
+    val polkitActions: PolkitActionSettings = PolkitActionSettings()
+
+    /** Configures [polkitActions]. */
+    fun polkitActions(fn: Action<PolkitActionSettings>) {
+        fn.execute(polkitActions)
+    }
 }
 
 /**

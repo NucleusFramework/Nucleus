@@ -49,7 +49,29 @@ The library manifest declares `USE_BIOMETRIC` and a provider that tracks the res
 ## Linux
 
 polkit only prompts for an action an installed `.policy` file declares, and shows that file's
-message. Install one under `/usr/share/polkit-1/actions/` with your package:
+message. Declare it in the Nucleus plugin: the Deb, RPM and Pacman packages install it under
+`/usr/share/polkit-1/actions/` and remove it on uninstall.
+
+```kotlin
+nucleus.application {
+    nativeDistributions {
+        linux {
+            polkitActions {
+                action("com.example.app.unlock") {
+                    message = "Authentication is required to unlock Example"
+                    // allowActive = PolkitAuthorization.AuthSelf (default): the user's own password
+                }
+            }
+        }
+    }
+}
+```
+
+`AuthSelf` asks for the user's own password, `AuthAdmin` for an administrator's; the `*Keep`
+variants remember the answer for a few minutes. Flatpak, Snap and AppImage cannot install system
+files, so the action must come from elsewhere there.
+
+Packaging without the plugin, install the equivalent file yourself:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -67,5 +89,3 @@ message. Install one under `/usr/share/polkit-1/actions/` with your package:
   </action>
 </policyconfig>
 ```
-
-`auth_self` asks for the user's own password; `auth_admin` for an administrator's.
