@@ -138,29 +138,31 @@ impl Connection {
             .map(|_| ())
     }
 
-    /// `CheckAuthorization` for this process, letting polkit's agent prompt the user. Blocks
-    /// without deadline: the agent's dialog stays up as long as the user wants.
-    pub(super) fn check_authorization(
-        &mut self,
-        action_id: &str,
-        cancellation_id: &str,
-    ) -> Result<AuthorizationResult, CallError> {
+    /// Sends `CheckAuthorization` for this process, letting polkit's agent prompt the user,
+    /// and returns the serial to [Self::finish_check] on. Split from the wait so the caller
+    /// can order the send against a concurrent [Sender::cancel].
+    pub(super) fn start_check(&mut self, action_id: &str, cancellation_id: &str) -> io::Result<u32> {
         let mut body = Vec::new();
         put_unix_process_subject(&mut body)?;
         put_string(&mut body, action_id);
         put_empty_dict(&mut body); // details a{ss}: a non-empty one needs privileges
         put_u32(&mut body, ALLOW_USER_INTERACTION);
         put_string(&mut body, cancellation_id);
-
-        self.reader.set_read_timeout(None)?;
-        let reply = self.call(
+        self.send(
             POLKIT,
             AUTHORITY_PATH,
             AUTHORITY,
             "CheckAuthorization",
             "(sa{sv})sa{ss}us",
             &body,
-        )?;
+        )
+    }
+
+    /// Waits for the reply to [Self::start_check]. Blocks without deadline: the agent's
+    /// dialog stays up as long as the user wants.
+    pub(super) fn finish_check(&mut self, serial: u32) -> Result<AuthorizationResult, CallError> {
+        self.reader.set_read_timeout(None)?;
+        let reply = self.reply(serial)?;
         parse_authorization_result(reply.le, &reply.body)
             .ok_or_else(|| err("malformed CheckAuthorization reply").into())
     }
@@ -175,9 +177,19 @@ impl Connection {
         sig: &str,
         body: &[u8],
     ) -> Result<Msg, CallError> {
+        let serial = self.send(dest, path, iface, member, sig, body)?;
+        self.reply(serial)
+    }
+
+    fn send(&self, dest: &str, path: &str, iface: &str, member: &str, sig: &str, body: &[u8]) -> io::Result<u32> {
         let serial = self.sender.next_serial();
         let msg = method_call(serial, 0, dest, path, iface, member, sig, body);
         self.sender.write(&msg)?;
+        Ok(serial)
+    }
+
+    /// Reads until the reply (or error) to `serial` arrives.
+    fn reply(&mut self, serial: u32) -> Result<Msg, CallError> {
         loop {
             let m = self.read_message()?;
             if m.reply_serial != Some(serial) {

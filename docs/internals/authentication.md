@@ -41,6 +41,7 @@ polkit only prompts for an action declared by a `.policy` file in `/usr/share/po
 and the dialog shows that file's `<message>`, never `AuthenticationPrompt.reason`. The app passes
 the action id as `AuthenticationPrompt.linuxActionId`; a missing id is `InvalidPrompt` before any
 D-Bus traffic, an undeclared one is `InvalidPrompt` from polkit's `Error.Failed … not registered`.
+An action the user may never perform (`allow_active` `no`) is `DisabledByPolicy`, with no prompt.
 Installing the file is the app's job for now (a packaging DSL is a separate change). The Lab uses
 `org.freedesktop.policykit.exec`, pkexec's own action, because every polkit system declares it.
 
@@ -73,10 +74,14 @@ cancelled at that point dismisses the prompt at once instead of leaving it up.
 
 - `NUCLEUS_AUTHENTICATION_SMOKE=1 ./gradlew :authentication:jvmTest` opens real prompts and
   dismisses them itself (cancel while shown, cancel before start, blank reason, cancellation
-  surfacing as `CancellationException`). Nothing needs the user.
+  surfacing as `CancellationException`). Nothing needs the user. On Linux the prompts check
+  `NUCLEUS_AUTHENTICATION_LINUX_ACTION`, `org.freedesktop.policykit.exec` by default.
 - Lab probe `system.authentication`: availability per policy, "Answer it yourself" (success and
   `UserCanceled` need a person), "Lab cancels after 2 s", blank reason. Scriptable at startup:
   `-Dlab.probe=system.authentication?mode=AppCancel&policy=Biometrics`.
 - macOS E2E recipe: poll `CGWindowListCopyWindowInfo` for an on-screen window owned by
   `coreautha` (layer 1000) to time the panel's appearance and disappearance. Measured on macOS 27:
   the panel appears ~0.1 s after the request and is gone ~0.1 s after `invalidate()`.
+- Linux E2E recipe (GNOME): gnome-shell runs `polkit-agent-helper-1` (`pgrep -x polkit-agent-he`)
+  exactly while its dialog is up, so polling it times the dialog without screenshots. Measured on
+  GNOME 50: the dialog appears ~0.1 s after the request and is gone ~0.25 s after the cancel.

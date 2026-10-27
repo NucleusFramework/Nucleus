@@ -32,7 +32,7 @@ public enum class AuthenticationError {
     /** No usable sensor, no polkit agent, or an API level without the prompt. */
     Unavailable,
 
-    /** An administrator disabled it (Windows group policy). */
+    /** An administrator disabled it: Windows group policy, or a polkit action denied to the user outright. */
     DisabledByPolicy,
 
     /** The sensor is in use by another request. */

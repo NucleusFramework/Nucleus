@@ -65,38 +65,35 @@ pub(crate) fn authenticate(id: i64, policy: Policy, prompt: Prompt, _parent: i64
 }
 
 pub(crate) fn cancel(id: i64) {
-    let sender = PENDING.lock().ok().and_then(|mut pending| {
-        pending.get_mut(&id).and_then(|pending| {
+    // Under the lock `check` sends under: the cancel reaches the bus after the check it
+    // names, or the flag stops the check from being sent at all.
+    if let Ok(mut pending) = PENDING.lock() {
+        if let Some(pending) = pending.get_mut(&id) {
             pending.canceled = true;
-            pending.sender.clone()
-        })
-    });
-    // Without a sender the check has not been sent yet: `check` sees the flag instead.
-    if let Some(sender) = sender {
-        let _ = sender.cancel(&cancellation_id(id));
+            if let Some(sender) = &pending.sender {
+                let _ = sender.cancel(&cancellation_id(id));
+            }
+        }
     }
 }
 
 fn check(id: i64, action_id: &str) -> Result<()> {
     let mut connection =
         Connection::system().map_err(|error| Failure::new(Error::Unavailable, format!("system bus: {error}")))?;
-    let canceled = PENDING
-        .lock()
-        .ok()
-        .and_then(|mut pending| {
-            pending.get_mut(&id).map(|pending| {
+    let serial = {
+        let mut pending = PENDING.lock().map_err(|_| Failure::new(Error::Platform, "poisoned request table"))?;
+        match pending.get_mut(&id) {
+            Some(pending) if !pending.canceled => {
                 pending.sender = Some(connection.sender());
-                pending.canceled
-            })
-        })
-        .unwrap_or(true);
-    if canceled {
-        return Err(Error::AppCanceled.into());
-    }
+                connection
+                    .start_check(action_id, &cancellation_id(id))
+                    .map_err(|error| Failure::new(Error::Unavailable, format!("polkit: {error}")))?
+            }
+            _ => return Err(Error::AppCanceled.into()),
+        }
+    };
 
-    let result = connection
-        .check_authorization(action_id, &cancellation_id(id))
-        .map_err(|error| failure(error, true))?;
+    let result = connection.finish_check(serial).map_err(|error| failure(error, true))?;
     if result.is_authorized {
         Ok(())
     } else if result.dismissed {
@@ -105,8 +102,8 @@ fn check(id: i64, action_id: &str) -> Result<()> {
         // polkit wanted to ask but nobody answered: no agent is running.
         Err(Failure::new(Error::Unavailable, "no polkit authentication agent"))
     } else {
-        // The action is denied to this subject outright.
-        Err(Failure::new(Error::Failed, format!("{action_id} is not authorized")))
+        // The action is denied to this subject outright: no prompt was shown.
+        Err(Failure::new(Error::DisabledByPolicy, format!("polkit denies {action_id} to this user")))
     }
 }
 

@@ -15,7 +15,8 @@ import kotlin.test.assertTrue
 /**
  * Real prompts, so opt-in: `NUCLEUS_AUTHENTICATION_SMOKE=1 ./gradlew :authentication:jvmTest`
  * on a desktop session. Nothing here needs the user to answer: every prompt it opens, it
- * dismisses itself.
+ * dismisses itself. On Linux the prompts check `NUCLEUS_AUTHENTICATION_LINUX_ACTION`, pkexec's
+ * `org.freedesktop.policykit.exec` by default, which every polkit system declares.
  */
 class AuthenticatorSmokeTest {
     @BeforeTest
@@ -41,7 +42,7 @@ class AuthenticatorSmokeTest {
         runBlocking {
             assumeTrue(Authenticator.availability().isAvailable)
             repeat(2) {
-                val prompt = AuthenticationPrompt(reason = "run the smoke test #$it")
+                val prompt = prompt("run the smoke test #$it")
                 val job = launch { Authenticator.authenticate(prompt) }
                 delay(PROMPT_UP_MILLIS)
                 assertTrue(job.isActive, "the prompt returned before anyone answered")
@@ -53,7 +54,7 @@ class AuthenticatorSmokeTest {
     @Test
     fun cancelledBeforeStartShowsNothing() =
         runBlocking {
-            val job = launch { Authenticator.authenticate(AuthenticationPrompt(reason = "never shown")) }
+            val job = launch { Authenticator.authenticate(prompt("never shown")) }
             job.cancel()
             withTimeout(DISMISS_MILLIS) { job.join() }
         }
@@ -73,7 +74,7 @@ class AuthenticatorSmokeTest {
             val job =
                 launch {
                     try {
-                        Authenticator.authenticate(AuthenticationPrompt(reason = "check cancellation"))
+                        Authenticator.authenticate(prompt("check cancellation"))
                     } catch (e: Throwable) {
                         thrown = e
                         throw e
@@ -84,6 +85,12 @@ class AuthenticatorSmokeTest {
             job.join()
             assertTrue(thrown is CancellationException, "expected CancellationException, got $thrown")
         }
+
+    private fun prompt(reason: String) =
+        AuthenticationPrompt(
+            reason = reason,
+            linuxActionId = System.getenv("NUCLEUS_AUTHENTICATION_LINUX_ACTION") ?: "org.freedesktop.policykit.exec",
+        )
 
     private companion object {
         const val PROMPT_UP_MILLIS = 1_500L
