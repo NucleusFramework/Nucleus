@@ -39,7 +39,14 @@ public object SystemInfo {
 
     public fun cpuInfo(): CpuGlobalInfo? = delegate?.cpuInfo()
 
-    public fun disks(): List<DiskInfo> = delegate?.disks() ?: emptyList()
+    /**
+     * The mounted volumes: local disks and partitions, removable media, disk images and network
+     * shares. Pseudo file systems (proc, tmpfs, overlay, snap squashfs, …) are left out.
+     *
+     * The free space of a volume that does not answer within about a second (a network share whose
+     * server is gone) is reported as `0` instead of blocking. Call it off the UI thread.
+     */
+    public fun disks(): List<DiskInfo> = synchronized(diskScanLock) { delegate?.disks() } ?: emptyList()
 
     public fun components(): List<ComponentInfo> = delegate?.components() ?: emptyList()
 
@@ -90,4 +97,34 @@ public object SystemInfo {
      * platforms.
      */
     public fun connectivityFlow(): Flow<ConnectivityInfo> = delegate?.connectivityChanges() ?: emptyFlow()
+
+    /**
+     * Observes the mounted volumes: emits the current [disks] when collected, then the new list
+     * every time a volume is mounted, unmounted or remounted, until the collection is cancelled.
+     *
+     * The OS notifies the change, nothing is polled: Linux watches `/proc/self/mountinfo`, Windows
+     * `WM_DEVICECHANGE` and the volume device interface, macOS DiskArbitration. All collectors share
+     * a single native monitor, started with the first one and stopped with the last. Bursts of
+     * changes are coalesced, and a change of free space alone is not emitted. Find a volume again
+     * across emissions through [DiskInfo.volumeId]. The flow is empty on unsupported platforms.
+     */
+    public fun disksFlow(): Flow<List<DiskInfo>> = delegate?.diskChanges() ?: emptyFlow()
+
+    /**
+     * Asks [handler] before a volume is ejected or unmounted, so the app can close the files it keeps
+     * open there. Return `true` to let the eject proceed, `false` to refuse it: the OS then tells the
+     * user the volume is in use.
+     *
+     * The handler runs on a background thread and must answer within 3 seconds; a slower handler, or
+     * one that throws, lets the eject proceed. When several handlers are registered, any refusal wins.
+     *
+     * Supported on Windows (a "Safely Remove" / eject request) and macOS (an unmount or eject through
+     * Finder, `diskutil` or DiskArbitration). Forced unmounts, a drive pulled out without ejecting it,
+     * and a direct `umount` are never asked. Linux has no such hook: the handler is never called there,
+     * observe [disksFlow] to react after the fact.
+     *
+     * Close the returned registration to remove the handler.
+     */
+    public fun onEjectRequest(handler: (DiskInfo) -> Boolean): AutoCloseable =
+        delegate?.ejectRequests(handler) ?: AutoCloseable { }
 }

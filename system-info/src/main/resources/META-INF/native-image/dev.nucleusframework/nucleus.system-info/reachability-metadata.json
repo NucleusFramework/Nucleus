@@ -11,6 +11,10 @@
                         "int",
                         "int"
                     ]
+                },
+                {
+                    "name": "onDisksChanged",
+                    "parameterTypes": []
                 }
             ]
         },
