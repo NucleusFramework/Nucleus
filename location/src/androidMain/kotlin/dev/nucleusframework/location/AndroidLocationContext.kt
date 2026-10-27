@@ -8,7 +8,6 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
 import java.lang.ref.WeakReference
-import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * The application context and the resumed activity, captured by [LocationContextProvider] at
@@ -20,8 +19,6 @@ internal object AndroidLocationContext {
 
     @Volatile
     private var resumed: WeakReference<Activity>? = null
-
-    private val observers = CopyOnWriteArrayList<ActivityObserver>()
 
     val applicationOrNull: Application?
         get() = application
@@ -43,12 +40,10 @@ internal object AndroidLocationContext {
             object : Application.ActivityLifecycleCallbacks {
                 override fun onActivityResumed(activity: Activity) {
                     resumed = WeakReference(activity)
-                    observers.forEach { it.onResumed(activity) }
                 }
 
                 override fun onActivityPaused(activity: Activity) {
                     if (resumed?.get() === activity) resumed = null
-                    observers.forEach { it.onPaused(activity) }
                 }
 
                 override fun onActivityCreated(
@@ -68,20 +63,6 @@ internal object AndroidLocationContext {
                 override fun onActivityDestroyed(activity: Activity) = Unit
             },
         )
-    }
-
-    fun addObserver(observer: ActivityObserver) {
-        observers += observer
-    }
-
-    fun removeObserver(observer: ActivityObserver) {
-        observers -= observer
-    }
-
-    interface ActivityObserver {
-        fun onResumed(activity: Activity)
-
-        fun onPaused(activity: Activity)
     }
 }
 

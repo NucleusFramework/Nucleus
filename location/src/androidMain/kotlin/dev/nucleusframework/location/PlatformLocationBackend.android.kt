@@ -2,7 +2,6 @@ package dev.nucleusframework.location
 
 import android.Manifest
 import android.annotation.TargetApi
-import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -17,11 +16,7 @@ import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.resume
-import kotlin.time.Duration.Companion.milliseconds
 import android.location.Location as AndroidLocation
 
 internal actual fun platformLocationBackend(): LocationBackend = AndroidLocationBackend
@@ -34,11 +29,6 @@ internal actual fun platformLocationBackend(): LocationBackend = AndroidLocation
 internal object AndroidLocationBackend : LocationBackend {
     private const val PREFERENCES = "dev.nucleusframework.location"
     private const val KEY_ASKED = "asked"
-    private const val PERMISSION_REQUEST_CODE = 0x4E4C // "NL"
-
-    /** Past this, a prompt that has not paused the activity is one the system never showed. */
-    private val PROMPT_GRACE = 1_500.milliseconds
-
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val context: Context
@@ -54,7 +44,11 @@ internal object AndroidLocationBackend : LocationBackend {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 manager.isLocationEnabled
             } else {
-                manager.getProviders(true).any { it != LocationManager.PASSIVE_PROVIDER }
+                // Not getProviders(true): it only lists the providers the app already holds a
+                // permission for, so it reads "off" until the user grants access.
+                manager.allProviders
+                    .filter { it != LocationManager.PASSIVE_PROVIDER }
+                    .any { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
             }
         }
 
@@ -119,7 +113,8 @@ internal object AndroidLocationBackend : LocationBackend {
     }
 
     private fun granted(permission: String): Boolean =
-        context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+        context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED ||
+            PermissionRequests.wasGranted(permission)
 
     private fun hasFine(): Boolean = granted(Manifest.permission.ACCESS_FINE_LOCATION)
 
@@ -131,76 +126,13 @@ internal object AndroidLocationBackend : LocationBackend {
 
     private fun preferences() = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    /**
-     * Shows the permission dialog over the resumed activity and suspends until it is dismissed.
-     *
-     * The answer is read back from `checkSelfPermission` rather than from
-     * `onRequestPermissionsResult`, which only the activity receives: the dialog is an activity
-     * of its own, so its dismissal is the host activity's pause-then-resume. A request the system
-     * answers without a dialog ("don't ask again") never pauses the activity — [PROMPT_GRACE].
-     */
+    /** Shows the permission dialog over the resumed activity and suspends until it is answered. */
     private suspend fun prompt(permissions: Array<String>) {
         val activity = AndroidLocationContext.resumedActivity ?: return
-        // Recorded once answered: while the dialog is up, `authorization()` must not read
-        // "asked and not granted" as Denied.
-        try {
-            showPrompt(activity, permissions)
-        } finally {
-            preferences().edit().putBoolean(KEY_ASKED, true).apply()
-        }
-    }
-
-    private suspend fun showPrompt(
-        activity: Activity,
-        permissions: Array<String>,
-    ) {
-        val paused = AtomicBoolean(false)
-        withTimeoutOrNull(PROMPT_GRACE) {
-            suspendCancellableCoroutine { continuation ->
-                val observer =
-                    PromptObserver(activity, onPause = true) {
-                        paused.set(true)
-                        continuation.resume(Unit)
-                    }
-                AndroidLocationContext.addObserver(observer)
-                continuation.invokeOnCancellation { AndroidLocationContext.removeObserver(observer) }
-                mainHandler.post { activity.requestPermissions(permissions, PERMISSION_REQUEST_CODE) }
-            }
-        }
-        if (!paused.get()) return
-        suspendCancellableCoroutine { continuation ->
-            val observer = PromptObserver(activity, onPause = false) { continuation.resume(Unit) }
-            AndroidLocationContext.addObserver(observer)
-            continuation.invokeOnCancellation { AndroidLocationContext.removeObserver(observer) }
-            // Already back (the dialog was answered before this observer was registered).
-            mainHandler.post {
-                if (AndroidLocationContext.resumedActivity === activity) observer.fire()
-            }
-        }
-    }
-
-    /** Runs [action] once, on the next pause (or, without [onPause], resume) of [activity]. */
-    private class PromptObserver(
-        private val activity: Activity,
-        private val onPause: Boolean,
-        private val action: () -> Unit,
-    ) : AndroidLocationContext.ActivityObserver {
-        private val fired = AtomicBoolean(false)
-
-        override fun onResumed(activity: Activity) {
-            if (!onPause && activity === this.activity) fire()
-        }
-
-        override fun onPaused(activity: Activity) {
-            if (onPause && activity === this.activity) fire()
-        }
-
-        fun fire() {
-            if (fired.compareAndSet(false, true)) {
-                AndroidLocationContext.removeObserver(this)
-                action()
-            }
-        }
+        PermissionRequests.request(activity, permissions)
+        // Recorded once answered, and only then: while the dialog is up, or when the request is
+        // cancelled before the user answers, `authorization()` must not read "asked" as Denied.
+        preferences().edit().putBoolean(KEY_ASKED, true).apply()
     }
 
     /** One session. Every platform call happens on the main looper. */
