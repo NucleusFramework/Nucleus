@@ -370,6 +370,7 @@ public object TaoHeadfulTestSuiteMain {
             },
         ) +
             UnspecifiedSizeHeadfulCases.all() +
+            NonResizableDialogSizeHeadfulCases.all() +
             AngleModulesHeadfulCases.all() +
             LinuxDiscreteScrollHeadfulCases.all() +
             MacOsTrackpadScrollHeadfulCases.all() +

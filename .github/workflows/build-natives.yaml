@@ -189,6 +189,10 @@ jobs:
         shell: cmd
         run: call share\src\main\native\windows\build.bat
 
+      - name: Build speech-recognition Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call speech-recognition\src\main\native\windows\build.bat
       - name: Build location Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -221,6 +225,7 @@ jobs:
             "spellcheck/nucleus_spellcheck.dll"
             "fs-watcher/nucleus_fs_watcher.dll"
             "share/nucleus_share.dll"
+            "speech-recognition/nucleus_speech.dll"
             "location/nucleus_location.dll"
             "decorated-window-tao/nucleus_tao.dll"
             "decorated-window-tao/nucleus_tao_windows_deco.dll"
@@ -389,6 +394,9 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash share/src/main/native/macos/build.sh
 
+      - name: Build speech-recognition macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash speech-recognition/src/main/native/macos/build.sh
       - name: Build location macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash location/src/main/native/macos/build.sh
@@ -423,6 +431,7 @@ jobs:
             "spellcheck/libnucleus_spellcheck.dylib"
             "fs-watcher/libnucleus_fs_watcher.dylib"
             "share/libnucleus_share.dylib"
+            "speech-recognition/libnucleus_speech.dylib"
             "location/libnucleus_location.dylib"
             "decorated-window-tao/libnucleus_tao.dylib"
             "decorated-window-tao/libnucleus_tao_metal.dylib"

@@ -48,7 +48,7 @@ use super::{
   taskbar, util,
   window::{
     content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, is_on_system_decorations,
-    is_system_decorated, reports_content_space, WindowId, WindowRequest,
+    reports_content_space, WindowId, WindowRequest,
   },
 };
 
@@ -358,18 +358,11 @@ impl<T: 'static> EventLoop<T> {
           WindowRequest::Size((w, h)) => {
             // Nucleus patch: `gtk_window_resize` is a no-op on non-resizable
             // windows (GTK follows the content's natural size instead); route
-            // the request through the widget size request in that case.
+            // the request through the content's size request in that case.
             if window.is_resizable() {
               window.resize(w, h);
-            } else if let Some(child) = window.child().filter(|_| is_system_decorated(&window)) {
-              // Nucleus patch: the request is a content size. A toplevel size
-              // request counts GTK's own title bar and shadow (client-side
-              // decorations, GNOME); requesting it on the content child lets
-              // GTK add them around it. `gtk_window_resize` above already
-              // sizes the content.
-              child.set_size_request(w, h);
             } else {
-              window.set_size_request(w, h);
+              util::set_content_size_request(&window, w, h);
             }
           }
           WindowRequest::SizeConstraints(constraints) => {

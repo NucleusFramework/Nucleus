@@ -322,20 +322,6 @@ impl Window {
       .unwrap_or((800, 600));
     window.set_default_size(1, 1);
     window.resize(width, height);
-    // Nucleus patch: `gtk_window_resize` has no effect on a non-resizable
-    // window — GTK sizes it to the content's natural size instead, so a
-    // 200×40 overlay came up 200×200. Pin the requested size through the
-    // widget size request (the only sizing channel GTK honours when
-    // `resizable == false`). Applies to both X11 and Wayland.
-    // Nucleus patch: a system-decorated window (GTK's own title bar and shadow
-    // on GNOME) takes the request on its content box instead, once that exists
-    // below: a toplevel size request counts the decorations, so the content
-    // would come up a title bar too short.
-    let content_size_request =
-      !attributes.resizable && !attributes.maximized && pl_attribs.system_decorations;
-    if !attributes.resizable && !attributes.maximized && !content_size_request {
-      window.set_size_request(width, height);
-    }
 
     if attributes.maximized {
       // Nucleus patch: apply `maximize()` synchronously, before the GTK window
@@ -401,16 +387,20 @@ impl Window {
     let default_vbox = if pl_attribs.default_vbox {
       let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
       window.add(&box_);
-      if content_size_request {
-        box_.set_size_request(width, height);
-      }
       Some(box_)
     } else {
-      if content_size_request {
-        window.set_size_request(width, height);
-      }
       None
     };
+
+    // Nucleus patch: `gtk_window_resize` has no effect on a non-resizable
+    // window — GTK sizes it to the content's natural size instead, so a
+    // 200×40 overlay came up 200×200. Pin the requested size through the
+    // content's size request (the only sizing channel GTK honours when
+    // `resizable == false`), once the content box exists so the client-side
+    // decorations stay outside it. Applies to both X11 and Wayland.
+    if !attributes.resizable && !attributes.maximized {
+      util::set_content_size_request(&window, width, height);
+    }
 
     // Rest attributes
     window.set_title(&attributes.title);
