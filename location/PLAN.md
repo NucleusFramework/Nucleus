@@ -101,6 +101,11 @@ and [jordond/compass](https://github.com/jordond/compass) (`compass-geolocation-
       page, "don't ask again" (third request → `Denied` in < 100 ms, no dialog), location off →
       `isAvailable` false + `PermanentlyUnavailable`. Fixed: precise requests ran the fused provider
       at BALANCED (no GNSS); `authorization()` read `Denied` while the dialog was up
+- [x] Android API 24 / 29 / 30 emulators (and API 36 again): same scenarios plus a rotation while
+      the dialog is up. Fixed: the pause → resume prompt detection hung (API 30, the dialog
+      recreated the activity) or returned before the answer — replaced by
+      `PermissionRequestActivity`; `checkSelfPermission` lagging the answer returned `Denied` (API
+      29); `isAvailable` was `false` before the first grant below API 28
 - [ ] Android: report "denied, do not ask again" (`shouldShowRequestPermissionRationale`,
       compass `DeniedForever`, maplibre `NotGranted(canRequest, shouldShowRationale)`)
 - [ ] Android: report the granted accuracy (fine vs coarse)

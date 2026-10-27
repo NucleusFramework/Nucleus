@@ -88,13 +88,16 @@ an app holds is its own decision:
 
 The prompt needs a resumed activity; the library tracks it through a `ContentProvider` merged into
 the app manifest (no `androidx.startup` dependency). Removing that provider from the merged
-manifest disables the library.
+manifest disables the library. The dialog itself is requested from a translucent library activity
+(`PermissionRequestActivity`, also merged), which receives the answer directly and is not
+recreated by a rotation or the configuration change the dialog can cause — no androidx needed.
 
 On Android 12+ a precise request shows the system's precise / approximate choice in one dialog;
 when only approximate access is granted, `requestAuthorization(accuracy = Precise)` shows the
 "change to precise location" dialog. Background access is asked separately after a foreground
 grant, and Android 11+ answers it with the app's location settings page rather than a dialog.
 After a second refusal the system stops showing the dialog: the request returns `Denied` at once.
+Verified on API 24, 29, 30 and 36 emulators.
 `examples/location-android-demo` exercises all of this on a device.
 
 ### iOS and macOS
