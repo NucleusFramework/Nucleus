@@ -410,17 +410,12 @@ internal class TaoComposeSceneHostWindows(
         }, delay, TimeUnit.NANOSECONDS)
     }
 
-    fun attach() {
-        check(NativeTaoBridge.isLoaded && NativeTaoGlBridge.isLoaded && NativeTaoWindowsDecoBridge.isLoaded) {
-            "Tao Windows native libraries not loaded"
-        }
-        hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
-        require(hwnd != 0L) { "HWND unavailable; window not yet realised" }
-
-        // The swap after a show() must always happen, clean scene or not —
-        // see [forcePresentOnce].
-        window.showHook = { forcePresentOnce = true }
-
+    /**
+     * Installs the window's frame: the Nucleus custom decoration (WndProc subclass +
+     * DwmExtendFrameIntoClientArea), or the Win32 caption and frame for system
+     * decorations (#841).
+     */
+    private fun installChrome() {
         // Install custom decoration (WndProc subclass + DwmExtendFrameIntoClientArea).
         // Title-bar height is set later — the value the TitleBar composable publishes
         // via SideEffect arrives after first composition.
@@ -451,6 +446,20 @@ internal class TaoComposeSceneHostWindows(
             // trace the rectangular HWND, betraying the content-defined shape.
             NativeTaoWindowsDecoBridge.nativeSetBorderlessChrome(hwnd, true)
         }
+    }
+
+    fun attach() {
+        check(NativeTaoBridge.isLoaded && NativeTaoGlBridge.isLoaded && NativeTaoWindowsDecoBridge.isLoaded) {
+            "Tao Windows native libraries not loaded"
+        }
+        hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+        require(hwnd != 0L) { "HWND unavailable; window not yet realised" }
+
+        // The swap after a show() must always happen, clean scene or not —
+        // see [forcePresentOnce].
+        window.showHook = { forcePresentOnce = true }
+
+        installChrome()
 
         // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
         // Skia needs an EGL-assembled GL interface — the default makeGL()
