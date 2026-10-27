@@ -2,6 +2,7 @@ package dev.nucleusframework.systeminfo.linux
 
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.systeminfo.ConnectivityMonitor
+import dev.nucleusframework.systeminfo.DiskMonitor
 import dev.nucleusframework.systeminfo.PlatformSystemInfo
 import dev.nucleusframework.systeminfo.connectivityInfoOf
 import dev.nucleusframework.systeminfo.model.BatteryInfo
@@ -10,6 +11,7 @@ import dev.nucleusframework.systeminfo.model.ComponentInfo
 import dev.nucleusframework.systeminfo.model.ConnectivityInfo
 import dev.nucleusframework.systeminfo.model.CpuGlobalInfo
 import dev.nucleusframework.systeminfo.model.CpuInfo
+import dev.nucleusframework.systeminfo.model.DiskConnection
 import dev.nucleusframework.systeminfo.model.DiskInfo
 import dev.nucleusframework.systeminfo.model.GpuInfo
 import dev.nucleusframework.systeminfo.model.MemoryInfo
@@ -99,6 +101,8 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
         val kinds = bridge.nativeDiskKinds() ?: return emptyList()
         val removable = bridge.nativeDiskRemovable() ?: return emptyList()
         val readOnly = bridge.nativeDiskReadOnly() ?: return emptyList()
+        val volumeIds = bridge.nativeDiskVolumeIds() ?: return emptyList()
+        val connections = bridge.nativeDiskConnections() ?: return emptyList()
         return (0 until count).map { i ->
             DiskInfo(
                 name = names.getOrElse(i) { "" },
@@ -109,6 +113,11 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
                 kind = kinds.getOrElse(i) { "Unknown" },
                 isRemovable = removable.getOrElse(i) { false },
                 isReadOnly = readOnly.getOrElse(i) { false },
+                volumeId = volumeIds.getOrElse(i) { "" }.ifEmpty { null },
+                connection =
+                    DiskConnection.entries.getOrElse(
+                        connections.getOrElse(i) { 0 },
+                    ) { DiskConnection.UNKNOWN },
             )
         }
     }
@@ -380,6 +389,15 @@ internal object LinuxSystemInfo : PlatformSystemInfo {
 
     override fun connectivityChanges(): Flow<ConnectivityInfo> =
         if (ready()) connectivityMonitor.changes() else emptyFlow()
+
+    override fun diskChanges(): Flow<List<DiskInfo>> = if (ready()) diskMonitor.changes() else emptyFlow()
+
+    val diskMonitor =
+        DiskMonitor(
+            start = bridge::nativeStartDiskMonitor,
+            stop = bridge::nativeStopDiskMonitor,
+            scan = ::disks,
+        )
 
     val connectivityMonitor =
         ConnectivityMonitor(
