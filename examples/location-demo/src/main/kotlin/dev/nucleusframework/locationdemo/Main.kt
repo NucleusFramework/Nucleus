@@ -33,7 +33,7 @@ fun main() =
             val here = Geolocation.currentLocation(accuracy, maxAge = 10.minutes, timeout = 30.seconds)
             println("current:       $here")
         } catch (e: LocationException) {
-            println("current:       failed — $e")
+            println("current:       failed — ${e.error}: ${e.message}")
         }
 
         // A device that does not move may report a single fix: Core Location only reports changes.
@@ -47,6 +47,6 @@ fun main() =
             }
             println("updates:       $received within 30 s")
         } catch (e: LocationException) {
-            println("updates:       failed — $e")
+            println("updates:       failed — ${e.error}: ${e.message}")
         }
     }
