@@ -32,6 +32,13 @@ public static class ScE2e {
     [DllImport("user32.dll")] public static extern uint GetGuiResources(IntPtr process, uint flags);
     [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
     [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+    [StructLayout(LayoutKind.Sequential)] struct CursorInfo { public int cbSize; public int flags; public IntPtr cursor; public int x; public int y; }
+    [DllImport("user32.dll")] static extern bool GetCursorInfo(ref CursorInfo info);
+    public static bool CursorShowing() {
+        CursorInfo info = new CursorInfo();
+        info.cbSize = Marshal.SizeOf(info);
+        return GetCursorInfo(ref info) && (info.flags & 1 /* CURSOR_SHOWING */) != 0;
+    }
     public static uint[] Gui(int pid) {
         IntPtr h = OpenProcess(0x1000 /* QUERY_LIMITED_INFORMATION */, false, pid);
         if (h == IntPtr.Zero) return new uint[] { 0, 0 };
@@ -82,8 +89,14 @@ $env:SCREEN_CAPTURE_DEMO_LOG = $log
 $env:SCREEN_CAPTURE_DEMO_OUT = $OutDir
 $env:SCREEN_CAPTURE_DEMO_TORTURE = "$Torture"
 $env:SCREEN_CAPTURE_DEMO_HUNG_HWND = "$hwnd"
-# The parked cursor shows (it may be moved since: the check finds it wherever it is).
-$env:SCREEN_CAPTURE_DEMO_CURSOR_EXPECTED = "1"
+# The parked cursor shows (it may be moved since: the check finds it wherever it is). Windows
+# hides it system-wide when no mouse is in use (a touch-only or remote session): nothing to draw.
+if ([ScE2e]::CursorShowing()) {
+    $env:SCREEN_CAPTURE_DEMO_CURSOR_EXPECTED = "1"
+} else {
+    $env:SCREEN_CAPTURE_DEMO_CURSOR_EXPECTED = "0"
+    Write-Host "cursor hidden by Windows: the cursor check only runs if one is drawn"
+}
 
 $gradle = Start-Process -FilePath (Join-Path $root "gradlew.bat") `
     -ArgumentList ":examples:screen-capture-demo:run", "--console=plain", "-q" `
