@@ -61,7 +61,7 @@ use crate::{
     raw_input, util,
     window::set_skip_taskbar,
     window_state::{CursorFlags, WindowFlags, WindowState},
-    wrap_device_id, WindowId, DEVICE_ID,
+    wrap_device_id, WindowId, DEVICE_ID, ERASER_DEVICE_ID, PEN_DEVICE_ID,
   },
   window::{Fullscreen, Theme, WindowId as RootWindowId},
 };
@@ -734,6 +734,20 @@ unsafe fn release_mouse(mut window_state: parking_lot::MutexGuard<'_, WindowStat
   }
 }
 
+/// PATCH(nucleus): records the screen point a button release carries (#837).
+/// See `platform::windows::MOUSE_RELEASE_SCREEN_POSITION`. Called before the
+/// message is turned into events, so the window is still where the message
+/// was hit-tested and the conversion is exact.
+unsafe fn record_mouse_release_screen_position(window: HWND, lparam: LPARAM) {
+  let mut point = POINT {
+    x: i32::from(util::GET_X_LPARAM(lparam)),
+    y: i32::from(util::GET_Y_LPARAM(lparam)),
+  };
+  if ClientToScreen(window, &mut point).as_bool() {
+    crate::platform::windows::record_mouse_release_screen_position(point.x, point.y);
+  }
+}
+
 const WINDOW_SUBCLASS_ID: usize = 0;
 const THREAD_EVENT_TARGET_SUBCLASS_ID: usize = 1;
 pub(crate) fn subclass_window<T>(window: HWND, subclass_input: SubclassInput<T>) {
@@ -1081,11 +1095,40 @@ unsafe fn public_window_callback_inner<T: 'static>(
       result = ProcResult::Value(LRESULT(0));
     }
 
+    // PATCH(nucleus): session messages (#751), handed over like the thread
+    // target's — an app window answering TRUE on its own lets the Restart Manager
+    // treat the app as agreeing and end it while the real answer is pending.
+    win32wm::WM_QUERYENDSESSION => {
+      if let Some(hook) = crate::platform::windows::QUERY_END_SESSION_HOOK.get() {
+        let runner = &subclass_input.event_loop_runner;
+        let may_end = hook(runner.thread_msg_target().0 as isize, lparam.0, runner.should_buffer());
+        result = ProcResult::Value(LRESULT(may_end as isize));
+      }
+    }
+    win32wm::WM_ENDSESSION => {
+      if let Some(hook) = crate::platform::windows::END_SESSION_HOOK.get() {
+        let runner = &subclass_input.event_loop_runner;
+        hook(runner.thread_msg_target().0 as isize, wparam.0 != 0, runner.should_buffer());
+        result = ProcResult::Value(LRESULT(0));
+      }
+    }
+
     win32wm::WM_EXITSIZEMOVE => {
       let mut state = subclass_input.window_state.lock();
       if state.dragging {
         state.dragging = false;
-        let _ = unsafe { PostMessageW(Some(window), WM_LBUTTONUP, WPARAM::default(), lparam) };
+        // PATCH(nucleus): the release the modal loop swallowed happened
+        // where the cursor is now; WM_EXITSIZEMOVE's own lparam is unused
+        // (0), which would put it at the client origin (#837).
+        let mut cursor = POINT::default();
+        let release_lparam = unsafe {
+          if GetCursorPos(&mut cursor).is_ok() && ScreenToClient(window, &mut cursor).as_bool() {
+            util::MAKELPARAM(cursor.x as i16, cursor.y as i16)
+          } else {
+            lparam
+          }
+        };
+        let _ = unsafe { PostMessageW(Some(window), WM_LBUTTONUP, WPARAM::default(), release_lparam) };
       }
       state.set_window_flags_in_place(|f| f.remove(WindowFlags::MARKER_IN_SIZE_MOVE));
       drop(state);
@@ -1535,6 +1578,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_LBUTTONUP => {
       use crate::event::{ElementState::Released, MouseButton::Left, WindowEvent::MouseInput};
 
+      record_mouse_release_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1573,6 +1617,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_RBUTTONUP => {
       use crate::event::{ElementState::Released, MouseButton::Right, WindowEvent::MouseInput};
 
+      record_mouse_release_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1611,6 +1656,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_MBUTTONUP => {
       use crate::event::{ElementState::Released, MouseButton::Middle, WindowEvent::MouseInput};
 
+      record_mouse_release_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1651,6 +1697,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
       use crate::event::{ElementState::Released, MouseButton::Other, WindowEvent::MouseInput};
       let xbutton = util::GET_XBUTTON_WPARAM(wparam);
 
+      record_mouse_release_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1741,7 +1788,12 @@ unsafe fn public_window_callback_inner<T: 'static>(
       result = ProcResult::Value(LRESULT(win32wm::PA_ACTIVATE as isize));
     }
 
-    win32wm::WM_POINTERDOWN | win32wm::WM_POINTERUPDATE | win32wm::WM_POINTERUP => {
+    // PATCH(nucleus): WM_POINTERLEAVE too, reported for pens only (#827): a
+    // hovering pen that leaves the window or the digitizer's range.
+    win32wm::WM_POINTERDOWN
+    | win32wm::WM_POINTERUPDATE
+    | win32wm::WM_POINTERUP
+    | win32wm::WM_POINTERLEAVE => {
       if msg == win32wm::WM_POINTERDOWN {
         focus_pointer_input_window(window);
       }
@@ -1790,6 +1842,12 @@ unsafe fn public_window_callback_inner<T: 'static>(
         // The information retrieved appears in reverse chronological order, with the most recent entry in the first
         // row of the returned array
         for pointer_info in pointer_infos.iter().rev() {
+          let leave = msg == win32wm::WM_POINTERLEAVE;
+          if leave
+            && (pointer_info.pointerType != win32wm::PT_PEN || pointer_info.pointerId != pointer_id)
+          {
+            continue;
+          }
           let mut device_rect = mem::MaybeUninit::uninit();
           let mut display_rect = mem::MaybeUninit::uninit();
 
@@ -1830,28 +1888,38 @@ unsafe fn public_window_callback_inner<T: 'static>(
             continue;
           }
 
-          let force = match pointer_info.pointerType {
+          // PATCH(nucleus): a pen reports itself through the device id (#827):
+          // the eraser end while it is inverted or erasing, the tip otherwise.
+          let (force, device_id) = match pointer_info.pointerType {
             win32wm::PT_TOUCH => {
               let mut touch_info = mem::MaybeUninit::uninit();
-              GET_POINTER_TOUCH_INFO.and_then(|GetPointerTouchInfo| {
+              let force = GET_POINTER_TOUCH_INFO.and_then(|GetPointerTouchInfo| {
                 if GetPointerTouchInfo(pointer_info.pointerId, touch_info.as_mut_ptr()).as_bool() {
                   normalize_pointer_pressure(touch_info.assume_init().pressure)
                 } else {
                   None
                 }
-              })
+              });
+              (force, DEVICE_ID)
             }
             win32wm::PT_PEN => {
               let mut pen_info = mem::MaybeUninit::uninit();
-              GET_POINTER_PEN_INFO.and_then(|GetPointerPenInfo| {
+              let pen_info = GET_POINTER_PEN_INFO.and_then(|GetPointerPenInfo| {
                 if GetPointerPenInfo(pointer_info.pointerId, pen_info.as_mut_ptr()).as_bool() {
-                  normalize_pointer_pressure(pen_info.assume_init().pressure)
+                  Some(pen_info.assume_init())
                 } else {
                   None
                 }
-              })
+              });
+              let eraser = pen_info.is_some_and(|info| {
+                info.penFlags & (win32wm::PEN_FLAG_INVERTED | win32wm::PEN_FLAG_ERASER) != 0
+              });
+              (
+                pen_info.and_then(|info| normalize_pointer_pressure(info.pressure)),
+                if eraser { ERASER_DEVICE_ID } else { PEN_DEVICE_ID },
+              )
             }
-            _ => None,
+            _ => (None, DEVICE_ID),
           };
 
           let x = location.x as f64 + x.fract();
@@ -1860,7 +1928,9 @@ unsafe fn public_window_callback_inner<T: 'static>(
           subclass_input.send_event(Event::WindowEvent {
             window_id: RootWindowId(WindowId(window.0 as _)),
             event: WindowEvent::Touch(Touch {
-              phase: if (pointer_info.pointerFlags & POINTER_FLAG_DOWN) != Default::default() {
+              phase: if leave {
+                TouchPhase::Cancelled
+              } else if (pointer_info.pointerFlags & POINTER_FLAG_DOWN) != Default::default() {
                 TouchPhase::Started
               } else if (pointer_info.pointerFlags & POINTER_FLAG_UP) != Default::default() {
                 TouchPhase::Ended
@@ -1872,12 +1942,18 @@ unsafe fn public_window_callback_inner<T: 'static>(
               location,
               force,
               id: pointer_info.pointerId as u64,
-              device_id: DEVICE_ID,
+              device_id,
             }),
           });
+          if leave {
+            // One exit, not one per history entry.
+            break;
+          }
         }
 
-        let _ = SkipPointerFrameMessages(pointer_id);
+        if msg != win32wm::WM_POINTERLEAVE {
+          let _ = SkipPointerFrameMessages(pointer_id);
+        }
       }
 
       result = ProcResult::Value(LRESULT(0));
@@ -1885,12 +1961,20 @@ unsafe fn public_window_callback_inner<T: 'static>(
 
     win32wm::WM_NCACTIVATE => {
       let is_active = wparam != WPARAM(0);
-      let active_focus_changed = subclass_input.window_state.lock().set_active(is_active);
-      if active_focus_changed {
-        if is_active {
-          gain_active_focus(window, subclass_input);
-        } else {
-          lose_active_focus(window, subclass_input);
+      // PATCH(nucleus): an inactive caption on the window that is still the
+      // active one is `FlashWindow` blinking it — Windows does so when a click
+      // hits the owner a modal dialog disabled (NucleusFramework/Nucleus#832).
+      // Nothing was deactivated: reporting it would toggle the focus at every
+      // blink. A real deactivation still comes through WM_KILLFOCUS.
+      let flashing = !is_active && GetActiveWindow() == window;
+      if !flashing {
+        let active_focus_changed = subclass_input.window_state.lock().set_active(is_active);
+        if active_focus_changed {
+          if is_active {
+            gain_active_focus(window, subclass_input);
+          } else {
+            lose_active_focus(window, subclass_input);
+          }
         }
       }
       result = ProcResult::DefWindowProc;
@@ -2495,9 +2579,28 @@ unsafe extern "system" fn thread_event_target_callback<T: 'static>(
       DefSubclassProc(window, msg, wparam, lparam)
     }
 
-    // We don't process `WM_QUERYENDSESSION` yet until we introduce the same mechanism as Tauri's `ExitRequested` event
-    // win32wm::WM_QUERYENDSESSION => {}
+    // PATCH(nucleus): logoff / restart / shutdown / Restart Manager (#751). Every
+    // tao window — app windows too, see `public_window_callback_inner` — hands the
+    // session messages to the embedder with the thread target as the window that
+    // carries a shutdown block reason (it lives as long as the loop). `nested`
+    // tells the hooks the event handler is already on this thread's stack (a sent
+    // message delivered inside a nested pump), where the embedder must not be
+    // re-entered. Without hooks: upstream's behaviour.
+    win32wm::WM_QUERYENDSESSION => match crate::platform::windows::QUERY_END_SESSION_HOOK.get() {
+      Some(hook) => {
+        let nested = subclass_input.event_loop_runner.should_buffer();
+        LRESULT(hook(window.0 as isize, lparam.0, nested) as isize)
+      }
+      None => DefSubclassProc(window, msg, wparam, lparam),
+    },
     win32wm::WM_ENDSESSION => {
+      if let Some(hook) = crate::platform::windows::END_SESSION_HOOK.get() {
+        let nested = subclass_input.event_loop_runner.should_buffer();
+        hook(window.0 as isize, wparam.0 != 0, nested);
+        // The embedder owns the session end: a loop destroyed here would stop
+        // delivering events to an app that is still finishing its exit.
+        return LRESULT(0);
+      }
       // `wParam` is `FALSE` is for if the shutdown gets canceled,
       // and we don't need to handle that case since we didn't do anything prior in response to `WM_QUERYENDSESSION`
       if wparam.0 == TRUE.0 as usize {

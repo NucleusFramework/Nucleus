@@ -14,6 +14,10 @@ import org.gradle.api.model.ObjectFactory
 import org.gradle.api.plugins.ExtensionAware
 import javax.inject.Inject
 
+/**
+ * The `nucleus { }` project extension: entry point for configuring a JVM ([application]) or
+ * Kotlin/Native ([nativeApplication]) desktop application and its packaging.
+ */
 abstract class NucleusExtension
     @Inject
     constructor(
@@ -29,6 +33,7 @@ abstract class NucleusExtension
             objectFactory.newInstance(JvmApplicationInternal::class.java, "main")
         }
 
+        /** Configures the JVM desktop application; using it enables the JVM application tasks. */
         fun application(fn: Action<JvmApplication>) {
             fn.execute(application)
         }
@@ -40,6 +45,7 @@ abstract class NucleusExtension
             objectFactory.newInstance(NativeApplication::class.java, "main")
         }
 
+        /** Configures the Kotlin/Native desktop application; using it enables the native application tasks. */
         fun nativeApplication(fn: Action<NativeApplication>) {
             fn.execute(nativeApplication)
         }

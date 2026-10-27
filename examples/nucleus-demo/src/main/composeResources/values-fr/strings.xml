@@ -1,9 +1,0 @@
-<resources>
-    <string name="system_info_title">Informations système</string>
-    <string name="system_info_app_id">ID de l\'app : %1$s</string>
-    <string name="system_info_app_version">Version de l\'app : %1$s</string>
-    <string name="system_info_vendor">Éditeur : %1$s</string>
-    <string name="system_info_os">Système : %1$s</string>
-    <string name="system_info_java">Java : %1$s</string>
-    <string name="system_info_runtime">Exécution : %1$s</string>
-</resources>

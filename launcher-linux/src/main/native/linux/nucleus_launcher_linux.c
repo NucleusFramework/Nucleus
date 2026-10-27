@@ -15,6 +15,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <gio/gio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -192,11 +193,38 @@ static void release_env(int attached) {
     if (attached) (*g_jvm)->DetachCurrentThread(g_jvm);
 }
 
+/* ---- GMainLoop shutdown ----------------------------------------------- */
+
+/* g_main_loop_run() sets the loop running on entry, so a g_main_loop_quit() issued before the
+ * worker thread reaches it is lost and the pthread_join() that follows never returns. The
+ * workers signal "ready" just before entering the loop, so a register/unregister pair in quick
+ * succession can hit that window. Quitting from a source on the loop's own context works
+ * whether or not the loop has started: the source is dispatched on its first iteration. */
+static gboolean quit_loop_cb(gpointer loop) {
+    g_main_loop_quit((GMainLoop *)loop);
+    return G_SOURCE_REMOVE;
+}
+
+static void quit_loop(GMainLoop *loop) {
+    GSource *src = g_idle_source_new();
+    g_source_set_callback(src, quit_loop_cb, g_main_loop_ref(loop), (GDestroyNotify)g_main_loop_unref);
+    g_source_attach(src, g_main_loop_get_context(loop));
+    g_source_unref(src);
+}
+
 /* ---- D-Bus connection ------------------------------------------------- */
 
 static GDBusConnection *get_connection(void) {
     if (g_conn != NULL && !g_dbus_connection_is_closed(g_conn)) return g_conn;
     if (g_conn != NULL) { g_object_unref(g_conn); g_conn = NULL; }
+    /* Without an address GLib falls back to autolaunch: it spawns
+     * `dbus-launch --autolaunch`, which waits on an X display that a headless
+     * process (CI runner, service, unit test) never provides — g_bus_get_sync
+     * then blocks with no timeout, and every JNI entry point that reaches it
+     * hangs the calling thread forever. A session bus that exists is always
+     * advertised through this variable, so "unset" simply means "no bus". */
+    const gchar *address = g_getenv("DBUS_SESSION_BUS_ADDRESS");
+    if (address == NULL || *address == '\0') return NULL;
     GError *error = NULL;
     g_conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
     if (error) { g_error_free(error); g_conn = NULL; }
@@ -209,13 +237,13 @@ static int ensure_callback_ids(JNIEnv *env) {
     if (g_bridge_class != NULL) return 1;
     jclass cls = (*env)->FindClass(env,
         "dev/nucleusframework/launcher/linux/NativeLinuxLauncherBridge");
-    if (!cls) { if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); return 0; }
+    if (!cls) { nucleus_jni_clear_exception(env); return 0; }
     g_bridge_class = (jclass)(*env)->NewGlobalRef(env, cls);
     (*env)->DeleteLocalRef(env, cls);
     g_on_event_method = (*env)->GetStaticMethodID(env, g_bridge_class,
         "onMenuItemEvent", "(Ljava/lang/String;I)V");
     if (!g_on_event_method) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, g_bridge_class);
         g_bridge_class = NULL;
         return 0;
@@ -422,7 +450,7 @@ Java_dev_nucleusframework_launcher_linux_NativeLinuxLauncherBridge_nativeUnregis
     (void)env; (void)clazz;
     pthread_mutex_lock(&g_state_mutex);
     if (g_query_running && g_query_loop) {
-        g_main_loop_quit(g_query_loop);
+        quit_loop(g_query_loop);
         pthread_mutex_unlock(&g_state_mutex);
         pthread_join(g_query_thread, NULL);
         pthread_mutex_lock(&g_state_mutex);
@@ -622,7 +650,7 @@ static void dbusmenu_handle_method(
             jstring j_path = (*env)->NewStringUTF(env, srv->object_path);
             (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method,
                 j_path, (jint)id);
-            if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+            nucleus_jni_clear_exception(env);
             (*env)->DeleteLocalRef(env, j_path);
         }
         release_env(attached);
@@ -648,7 +676,7 @@ static void dbusmenu_handle_method(
                 jstring j_path = (*env)->NewStringUTF(env, srv->object_path);
                 (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method,
                     j_path, (jint)id);
-                if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+                nucleus_jni_clear_exception(env);
                 (*env)->DeleteLocalRef(env, j_path);
             }
         }
@@ -881,7 +909,7 @@ Java_dev_nucleusframework_launcher_linux_NativeLinuxLauncherBridge_nativeSetMenu
         if (srv->ready < 0) {
             /* Registration failed in thread */
             srv->running = 0;
-            if (srv->loop) g_main_loop_quit(srv->loop);
+            if (srv->loop) quit_loop(srv->loop);
             pthread_mutex_unlock(&g_state_mutex);
             pthread_join(srv->thread, NULL);
             pthread_mutex_lock(&g_state_mutex);
@@ -944,7 +972,7 @@ Java_dev_nucleusframework_launcher_linux_NativeLinuxLauncherBridge_nativeDestroy
 
         /* Stop thread */
         if (srv->running && srv->loop) {
-            g_main_loop_quit(srv->loop);
+            quit_loop(srv->loop);
             pthread_mutex_unlock(&g_state_mutex);
             pthread_join(srv->thread, NULL);
             pthread_mutex_lock(&g_state_mutex);

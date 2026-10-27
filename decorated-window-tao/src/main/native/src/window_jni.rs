@@ -72,6 +72,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     transparent: jboolean,
     undecorated_shadow: jboolean,
     force_x11: jboolean,
+    system_decorations: jboolean,
 ) {
     let title: String = match env.get_string(&title) {
         Ok(s) => s.into(),
@@ -91,6 +92,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         transparent: transparent != JNI_FALSE,
         undecorated_shadow: undecorated_shadow != JNI_FALSE,
         force_x11: force_x11 != JNI_FALSE,
+        system_decorations: system_decorations != JNI_FALSE,
     });
 }
 
@@ -134,6 +136,32 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     send_user_event(UserEvent::SetResizable {
         handle: handle as u64,
         resizable: resizable != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMinimizable(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    minimizable: jboolean,
+) {
+    send_user_event(UserEvent::SetMinimizable {
+        handle: handle as u64,
+        minimizable: minimizable != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMaximizable(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    maximizable: jboolean,
+) {
+    send_user_event(UserEvent::SetMaximizable {
+        handle: handle as u64,
+        maximizable: maximizable != JNI_FALSE,
     });
 }
 
@@ -188,6 +216,31 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 ) {
     send_user_event(UserEvent::Focus {
         handle: handle as u64,
+        activation_token: None,
+    });
+}
+
+/// [`nativeFocus`] with an xdg-activation token received from the compositor
+/// (portal global shortcut, notification action). A Wayland compositor only
+/// lets a window take focus with such a token; elsewhere it is ignored (#739).
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeFocusWithActivationToken(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    token: JString,
+) {
+    let activation_token = if token.is_null() {
+        None
+    } else {
+        env.get_string(&token)
+            .ok()
+            .map(String::from)
+            .filter(|t| !t.is_empty())
+    };
+    send_user_event(UserEvent::Focus {
+        handle: handle as u64,
+        activation_token,
     });
 }
 
@@ -442,6 +495,21 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMaxInnerSize(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    width: jdouble,
+    height: jdouble,
+) {
+    send_user_event(UserEvent::SetMaxInnerSize {
+        handle: handle as u64,
+        width,
+        height,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetWindowIcon(
     env: JNIEnv,
     _class: JClass,
@@ -493,6 +561,34 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         handle: handle as u64,
         x,
         y,
+    });
+}
+
+/// Linux only: see `UserEvent::PopupAnchor`. Logical parent-window pixels.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeLinuxPopupAnchor(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    x: jint,
+    y: jint,
+    width: jint,
+    height: jint,
+    shadow_left: jint,
+    shadow_top: jint,
+    shadow_right: jint,
+    shadow_bottom: jint,
+) {
+    send_user_event(UserEvent::PopupAnchor {
+        handle: handle as u64,
+        x,
+        y,
+        width,
+        height,
+        shadow_left,
+        shadow_top,
+        shadow_right,
+        shadow_bottom,
     });
 }
 
@@ -552,4 +648,43 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         return 1000;
     };
     (window.scale_factor() * 1000.0) as jint
+}
+
+/// Drops the Windows shutdown block reason a session-end query set (#751), once
+/// the quit it was waiting for has been cancelled by a window staying open.
+/// No-op elsewhere. Event-loop thread only.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeReleaseShutdownBlock(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::release_block();
+}
+
+/// The JVM exit has begun (#751): a session end reaching AWT's toolkit thread may
+/// now let AWT take its own shutdown path. Called from a shutdown hook. No-op
+/// elsewhere.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMarkJvmExiting(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::mark_jvm_exiting();
+}
+
+/// Takes the screen position, in physical pixels, of the last mouse button
+/// release, packed as `(x << 32) | (y & 0xffffffff)`; `i64::MIN` when there
+/// was none since the last take and on platforms that do not track it (#837).
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeTakeMouseReleaseScreenPosition(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jlong {
+    #[cfg(target_os = "windows")]
+    if let Some((x, y)) = tao::platform::windows::take_mouse_release_screen_position() {
+        return (i64::from(x) << 32) | i64::from(y as u32);
+    }
+    jlong::MIN
 }

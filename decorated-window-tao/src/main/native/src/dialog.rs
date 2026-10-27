@@ -427,7 +427,7 @@ fn show_error_dialog(title: &str, message: &str, detail: &str) {
         // the Tao loop has exited and every Tao window is destroyed by the
         // time the fatal path runs. Note the dialog is NOT modal to anything
         // (this fresh thread owns no other windows), so surviving foreign
-        // windows (e.g. a Swing JFrame in the swing-tao-demo interop mode)
+        // windows (e.g. a Swing JFrame in the Lab's swing-tao fixture)
         // stay interactive behind it.
         if !detail.is_empty() {
             let template = fatal_dialog_template(&title, &message);
@@ -475,6 +475,7 @@ fn show_error_dialog(title: &str, message: &str, detail: &str) {
     // recursive `gtk_dialog_run` main loop works here. Guard anyway — a
     // fatal reached before the loop ever initialized GTK (or a torn-down
     // display) must not turn the fatal path into a second crash.
+    crate::platform::linux::init_xlib_threads();
     if !gtk::is_initialized() && gtk::init().is_err() {
         return;
     }

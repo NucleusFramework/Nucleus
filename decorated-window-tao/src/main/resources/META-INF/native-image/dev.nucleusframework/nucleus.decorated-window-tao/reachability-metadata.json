@@ -17,6 +17,7 @@
             "jniAccessible": true,
             "methods": [
                 { "name": "dispatchDeepLink", "parameterTypes": ["java.lang.String"] },
+                { "name": "onA11yActivated", "parameterTypes": [] },
                 { "name": "dispatchA11yAction", "parameterTypes": ["long","long","int"] },
                 { "name": "dispatchA11yActionByNsView", "parameterTypes": ["long","long","int"] },
                 { "name": "dispatchA11ySetText", "parameterTypes": ["long","long","java.lang.String"] },
@@ -51,7 +52,8 @@
                         "int",
                         "int",
                         "int",
-                        "int"
+                        "int",
+                        "boolean"
                     ]
                 },
                 {
@@ -75,11 +77,26 @@
                     ]
                 },
                 {
+                    "name": "onDirectManipulation",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int",
+                        "float",
+                        "float",
+                        "float",
+                        "float",
+                        "float"
+                    ]
+                },
+                {
                     "name": "onTouchInput",
                     "parameterTypes": [
                         "long",
                         "int",
                         "long",
+                        "int",
                         "int",
                         "int",
                         "int"
@@ -106,6 +123,19 @@
                     "parameterTypes": [
                         "long",
                         "java.lang.String"
+                    ]
+                },
+                {
+                    "name": "onQueryEndSession",
+                    "parameterTypes": [
+                        "int"
+                    ]
+                },
+                {
+                    "name": "onEndSession",
+                    "parameterTypes": [
+                        "boolean",
+                        "boolean"
                     ]
                 }
             ]
@@ -132,7 +162,8 @@
                         "int",
                         "int",
                         "int",
-                        "int"
+                        "int",
+                        "boolean"
                     ]
                 },
                 {
@@ -156,11 +187,26 @@
                     ]
                 },
                 {
+                    "name": "onDirectManipulation",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int",
+                        "float",
+                        "float",
+                        "float",
+                        "float",
+                        "float"
+                    ]
+                },
+                {
                     "name": "onTouchInput",
                     "parameterTypes": [
                         "long",
                         "int",
                         "long",
+                        "int",
                         "int",
                         "int",
                         "int"
@@ -188,6 +234,19 @@
                         "long",
                         "java.lang.String"
                     ]
+                },
+                {
+                    "name": "onQueryEndSession",
+                    "parameterTypes": [
+                        "int"
+                    ]
+                },
+                {
+                    "name": "onEndSession",
+                    "parameterTypes": [
+                        "boolean",
+                        "boolean"
+                    ]
                 }
             ]
         },
@@ -208,6 +267,13 @@
                         "long",
                         "int",
                         "int"
+                    ]
+                },
+                {
+                    "name": "onOcclusionChanged",
+                    "parameterTypes": [
+                        "long",
+                        "boolean"
                     ]
                 }
             ]
@@ -262,6 +328,10 @@
                         "int",
                         "int"
                     ]
+                },
+                {
+                    "name": "nativeFontSmoothingPixelGeometry",
+                    "parameterTypes": []
                 }
             ]
         },
@@ -306,7 +376,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -322,7 +392,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -338,7 +408,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -354,7 +424,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean","int"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -374,7 +444,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -410,7 +480,7 @@
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
                 { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean","int"] },
-                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int","boolean"] }
             ]
         },
         {
@@ -449,6 +519,13 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge$ToplevelDrawCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onToplevelDraw", "parameterTypes": [] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxClipboardBridge",
             "jniAccessible": true
         },
@@ -474,6 +551,7 @@
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge$Callback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -484,6 +562,7 @@
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -494,6 +573,7 @@
             "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHost$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -522,6 +602,7 @@
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge$Callback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -532,6 +613,7 @@
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHost$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -542,6 +624,7 @@
             "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostMac$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -570,6 +653,7 @@
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge$Callback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -580,6 +664,7 @@
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -608,7 +693,7 @@
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge$Callback",
             "jniAccessible": true,
             "methods": [
-                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
+                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long","long"] },
                 { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
             ]
         },
@@ -616,7 +701,7 @@
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux$InboundTouchCallback",
             "jniAccessible": true,
             "methods": [
-                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
+                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long","long"] },
                 { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
             ]
         },

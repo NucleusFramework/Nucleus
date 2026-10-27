@@ -56,6 +56,8 @@ internal fun TitleBarScope.WindowControlsLinux(
     win: TaoWindow,
     state: DecoratedWindowState,
     isResizable: Boolean,
+    isMinimizable: Boolean,
+    isMaximizable: Boolean,
     style: TitleBarStyle,
     layout: LinuxButtonLayout = rememberLinuxButtonLayout(),
     isFullscreen: Boolean = false,
@@ -67,7 +69,7 @@ internal fun TitleBarScope.WindowControlsLinux(
     // Iterate over `layout.buttons` in natural order — `layout.buttons[0]` is
     // "closest to the edge". Core's `TitleBarMeasurePolicy` places End items
     // first-declared = rightmost (controls-on-right) and Start items
-    // first-declared = leftmost. Mirrors `decorated-window-jni`'s
+    // first-declared = leftmost. Mirrors the legacy AWT backend's
     // `WindowControlArea.kt` exactly.
     for (button in layout.buttons) {
         when (button) {
@@ -98,8 +100,9 @@ internal fun TitleBarScope.WindowControlsLinux(
                     )
                     continue
                 }
-                if (!isResizable) continue
                 if (state.isMaximized) {
+                    // Restore is never gated: the WM can maximize a window tao
+                    // has no client-side maximizable hint for.
                     LinuxControlButton(
                         onClick = { win.setMaximized(false) },
                         icon = icons.restore,
@@ -109,7 +112,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                         style = style,
                         modifier = Modifier.align(buttonAlignment),
                     )
-                } else {
+                } else if (isResizable && isMaximizable) {
                     LinuxControlButton(
                         onClick = { win.setMaximized(true) },
                         icon = icons.maximize,
@@ -122,6 +125,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                 }
             }
             LinuxTitleBarButton.MINIMIZE -> {
+                if (!isMinimizable) continue
                 LinuxControlButton(
                     onClick = { win.minimize() },
                     icon = icons.minimize,

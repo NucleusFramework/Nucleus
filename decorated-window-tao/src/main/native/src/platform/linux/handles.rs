@@ -52,22 +52,29 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 
 fn fill_linux_handles(window: &Window, out: &mut [jlong; 3]) {
     let Ok(wh) = window.window_handle() else { return };
-    let Ok(dh) = window.display_handle() else { return };
-    match (wh.as_raw(), dh.as_raw()) {
-        (RawWindowHandle::Xlib(w), RawDisplayHandle::Xlib(_)) => {
-            // Tao's `raw_display_handle_rwh_06` calls `XOpenDisplay(NULL)`
-            // and returns a *fresh* X11 connection. GLX requires the context,
-            // drawable and display to all share the same connection — using
-            // tao's display with a GDK-owned XID makes `glXMakeCurrent` fail
-            // silently. Pull GDK's actual `Display*` via `gdk_x11_*`.
+    match wh.as_raw() {
+        RawWindowHandle::Xlib(w) => {
+            // Never ask tao for the Xlib display handle: its
+            // `raw_display_handle_rwh_06` calls `XOpenDisplay(NULL)` and
+            // returns a *fresh* X11 connection on every call, which it never
+            // closes — a caller polling this export (the JVM reads the surface
+            // kind from slot 0) would exhaust the X server's client limit
+            // ("Maximum number of clients reached"). GLX could not use that
+            // connection anyway: context, drawable and display must share one,
+            // and the XID is GDK's. Pull GDK's actual `Display*` via `gdk_x11_*`.
             out[0] = 1;
             out[1] = gdk_x11_display_for_window(window).unwrap_or(0);
             out[2] = w.window as jlong;
         }
-        (RawWindowHandle::Wayland(w), RawDisplayHandle::Wayland(d)) => {
-            out[0] = 2;
-            out[1] = d.display.as_ptr() as jlong;
-            out[2] = w.surface.as_ptr() as jlong;
+        RawWindowHandle::Wayland(w) => {
+            // The Wayland display handle is GDK's own `wl_display*`; nothing
+            // is opened or leaked by asking for it.
+            let Ok(dh) = window.display_handle() else { return };
+            if let RawDisplayHandle::Wayland(d) = dh.as_raw() {
+                out[0] = 2;
+                out[1] = d.display.as_ptr() as jlong;
+                out[2] = w.surface.as_ptr() as jlong;
+            }
         }
         _ => {}
     }

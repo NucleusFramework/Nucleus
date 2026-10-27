@@ -28,6 +28,11 @@ import kotlin.getValue
 
 private const val KOTLIN_NATIVE_MIN_SUPPORTED_MAC_OS = "10.13"
 
+/**
+ * Assembles a macOS `.app` bundle around a native [executable]: copies the executable and [iconFile], compiles
+ * the optional layered icon with `actool`, writes `Info.plist` and copies the Compose resources into
+ * `Contents/Resources`.
+ */
 @DisableCachingByDefault(because = "Depends on external macOS native tools")
 @Suppress("UnnecessaryAbstractClass")
 abstract class AbstractNativeMacApplicationPackageAppDirTask : AbstractNativeMacApplicationPackageTask() {
@@ -82,6 +87,8 @@ abstract class AbstractNativeMacApplicationPackageAppDirTask : AbstractNativeMac
         appExecutableFile.setExecutable(true)
 
         macLayeredIcons.orNull?.let {
+            // The layered icon is optional: any failure of the external tool degrades to the plain icon.
+            @Suppress("TooGenericExceptionCaught")
             try {
                 macAssetsTool.compileAssets(
                     iconDir = it.asFile,

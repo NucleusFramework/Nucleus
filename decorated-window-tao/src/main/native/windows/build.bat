@@ -20,6 +20,7 @@ set "NATIVE_DIR=%SCRIPT_DIR%.."
 set "DECO_SRC=%SCRIPT_DIR%nucleus_tao_windows_deco.c"
 
 set "GL_SRC=%SCRIPT_DIR%nucleus_tao_gl.c"
+set "GL_MIRROR_SRC=%SCRIPT_DIR%nucleus_tao_gl_mirror.cpp"
 set "TEX_SRC=%SCRIPT_DIR%nucleus_tao_texture.c"
 set "DND_SRC=%SCRIPT_DIR%nucleus_tao_dnd.c"
 set "NV_SRC=%SCRIPT_DIR%nucleus_tao_windows_native_view.c"
@@ -144,7 +145,7 @@ if errorlevel 1 (
 
 cl /LD /O1 /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
-    "%GL_SRC%" "%TEX_SRC%" ^
+    "%GL_SRC%" "%TEX_SRC%" "%GL_MIRROR_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_gl.dll" ^
     /link /NODEFAULTLIB /ENTRY:DllMain gdi32.lib user32.lib kernel32.lib
 if errorlevel 1 (
@@ -208,7 +209,7 @@ if errorlevel 1 (
 
 cl /LD /O1 /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" /I"%ANGLE_INC%" ^
-    "%GL_SRC%" "%TEX_SRC%" ^
+    "%GL_SRC%" "%TEX_SRC%" "%GL_MIRROR_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_gl.dll" ^
     /link /ENTRY:DllMain gdi32.lib user32.lib kernel32.lib
 if errorlevel 1 (

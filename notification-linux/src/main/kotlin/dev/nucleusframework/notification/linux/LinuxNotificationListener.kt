@@ -3,7 +3,8 @@ package dev.nucleusframework.notification.linux
 /**
  * Listener for asynchronous notification signals from the freedesktop notification server.
  *
- * All callbacks are dispatched on the Swing EDT.
+ * All callbacks are dispatched on the host's UI thread (the Tao main thread
+ * under Nucleus, the AWT EDT in a plain Swing / Compose Desktop host).
  * Register via [LinuxNotificationCenter.addListener]; signal monitoring starts automatically
  * when the first listener is added and stops when the last is removed.
  */

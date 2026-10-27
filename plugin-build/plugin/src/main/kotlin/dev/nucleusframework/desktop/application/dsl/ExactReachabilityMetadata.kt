@@ -59,6 +59,7 @@ class ExactReachabilityMetadata
                 Kind.PACKAGES -> "ExactReachabilityMetadata.packages(${packages.joinToString()})"
             }
 
+        /** The available modes: [OFF], [APP_PACKAGES] and explicit [packages] scopes. */
         companion object {
             private const val serialVersionUID: Long = 1L
 

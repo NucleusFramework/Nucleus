@@ -36,7 +36,7 @@ internal object NativeMetalBridge {
 
     // ── Menu bar offset (event-driven via native NSEvent monitor) ──
     //
-    // Mirrors `decorated-window-jni`'s JniMacTitleBarBridge. Keyed by NSView
+    // Mirrors the legacy AWT backend's mac title-bar bridge. Keyed by NSView
     // pointer for consistency with the rest of this bridge (the JNI sibling
     // keys by NSWindow pointer because it owns AWT windows directly).
 
@@ -102,6 +102,29 @@ internal object NativeMetalBridge {
         fullscreenPrepares[nsViewPtr]?.invoke(widthPx, heightPx)
     }
 
+    // ── Occlusion: a window nobody can see (hidden app, covered, other Space,
+    // locked screen) stops rendering, so its animations park like when minimized.
+
+    private val occlusionListeners = ConcurrentHashMap<Long, (visible: Boolean) -> Unit>()
+
+    fun setOcclusionListener(
+        nsViewPtr: Long,
+        block: ((visible: Boolean) -> Unit)?,
+    ) {
+        if (nsViewPtr == 0L) return
+        if (block == null) occlusionListeners.remove(nsViewPtr) else occlusionListeners[nsViewPtr] = block
+    }
+
+    /** Called from native `windowDidChangeOcclusionState:` on the AppKit main thread. */
+    @JvmStatic
+    @Suppress("unused") // called from JNI
+    fun onOcclusionChanged(
+        nsViewPtr: Long,
+        visible: Boolean,
+    ) {
+        occlusionListeners[nsViewPtr]?.invoke(visible)
+    }
+
     // ── VSync pacing (CVDisplayLink, AWT/skiko MetalVSyncer pattern) ──
     //
     // A CVDisplayLink runs continuously; [nativeVSyncWait] blocks the calling
@@ -151,6 +174,16 @@ internal object NativeMetalBridge {
      */
     @JvmStatic
     external fun nativeConfigureChrome(nsViewPtr: Long)
+
+    /**
+     * Keeps AppKit's standard title bar (#841), in place of
+     * [nativeConfigureChrome]: no full-size content view, AppKit's own window
+     * dragging, and the fullscreen observer leaves the title bar, traffic
+     * lights and toolbar alone. Keeps native fullscreen and the fallback
+     * background.
+     */
+    @JvmStatic
+    external fun nativeConfigureSystemChrome(nsViewPtr: Long)
 
     /** True on macOS 26 (Tahoe) or later. Cached on the native side. */
     @JvmStatic
@@ -331,6 +364,23 @@ internal object NativeMetalBridge {
     )
 
     /**
+     * Partial redraw (#755): the buffer behind an acquired drawable, as
+     * `(IOSurfaceID shl 1) or lost` — `lost` set when its IOSurface was purged
+     * (contents discarded) since it was last drawn — or -1 when the drawable
+     * has no IOSurface. Leaves the IOSurface non-volatile, so a purge is
+     * reported once rather than on every frame after it.
+     */
+    @JvmStatic
+    external fun nativeDrawableBufferState(drawablePtr: Long): Long
+
+    /** `CAMetalLayer.framebufferOnly`; off only for the partial-redraw oracle, which reads drawables back. */
+    @JvmStatic
+    external fun nativeSetFramebufferOnly(
+        handle: Long,
+        flag: Boolean,
+    )
+
+    /**
      * Toggles `CAMetalLayer.presentsWithTransaction`. When `true`, the layer
      * defers its surface swap so it can be committed atomically inside the
      * enclosing `CATransaction` along with sibling AppKit mutations (subview
@@ -393,7 +443,7 @@ internal object NativeMetalBridge {
      * be called after [nativeApplyButtonLayout] has stashed the title-bar
      * height (otherwise this is a no-op until the height is published).
      *
-     * Mirrors `decorated-window-jni`'s `JniMacTitleBarBridge.nativeSetRTL`.
+     * Mirrors the legacy AWT backend's `nativeSetRTL`.
      */
     @JvmStatic
     external fun nativeSetButtonLayoutRtl(
@@ -409,7 +459,7 @@ internal object NativeMetalBridge {
      *
      * If the window is already in fullscreen, the menu bar event monitor is
      * installed/removed to match the new flag. Mirrors
-     * `decorated-window-jni`'s `JniMacTitleBarBridge.nativeSetNewFullscreenControls`.
+     * the legacy AWT backend's `nativeSetNewFullscreenControls`.
      */
     @JvmStatic
     external fun nativeSetNewFullscreenControls(
@@ -423,7 +473,7 @@ internal object NativeMetalBridge {
      * changes, the native side calls [onMenuBarOffsetChanged] via JNI so the
      * Compose layer can animate the title-bar offset.
      *
-     * Mirrors `decorated-window-jni`'s `nativeInstallMenuBarMonitor`.
+     * Mirrors the legacy AWT backend's `nativeInstallMenuBarMonitor`.
      */
     @JvmStatic
     external fun nativeInstallMenuBarMonitor(nsViewPtr: Long)
@@ -438,7 +488,7 @@ internal object NativeMetalBridge {
      * Compose animates the offset. Triggers an immediate
      * `updateFullScreenButtonsPosition` on the macOS main thread.
      *
-     * Mirrors `decorated-window-jni`'s `nativeSetMenuBarOffset`.
+     * Mirrors the legacy AWT backend's `nativeSetMenuBarOffset`.
      */
     @JvmStatic
     external fun nativeSetMenuBarOffset(
@@ -451,7 +501,7 @@ internal object NativeMetalBridge {
      * frame from the stored title-bar height + menu-bar offset. Useful after
      * a layout pass that may have moved the contentView.
      *
-     * Mirrors `decorated-window-jni`'s `nativeUpdateFullScreenButtons`.
+     * Mirrors the legacy AWT backend's `nativeUpdateFullScreenButtons`.
      */
     @JvmStatic
     external fun nativeUpdateFullScreenButtons(nsViewPtr: Long)
@@ -474,7 +524,8 @@ internal object NativeMetalBridge {
      * True on the AppKit main thread. [dispatch.TaoMainDispatcher.taoMainThread]
      * cannot answer this on macOS: `nativeRunBlocking` marshals the event loop
      * onto thread 0, so AppKit callbacks run on a different JVM thread than the
-     * one that entered `taoApplication`.
+     * one that entered `taoApplication` — and `taoMainThread` only learns the
+     * real thread on the loop's first callback (#829).
      */
     @JvmStatic
     external fun nativeIsMainThread(): Boolean
@@ -544,6 +595,46 @@ internal object NativeMetalBridge {
         precise: Boolean,
         phase: Int,
         momentumPhase: Int,
+    ): Boolean
+
+    /**
+     * Headful e2e only (#660): feeds a synthetic magnify / rotate /
+     * smart-magnify NSEvent on `NSApp`'s queue (`postEvent`, delivered after
+     * the current callback returns), so the trackpad gesture monitor handles
+     * it as a real trackpad pinch. [kind] is the
+     * `touchpad_gestures.m` wire (0 magnify, 1 rotate, 2 smart-magnify);
+     * [phase] the IOHID encoding (1 began, 2 changed, 4 ended, 8 cancelled,
+     * `0` = unset); [x] / [y] content-local points, top-left origin; [value]
+     * the magnification delta or the rotation in degrees. `false` when
+     * injection is disabled or the view or its window is gone.
+     */
+    @JvmStatic
+    @Suppress("LongParameterList")
+    external fun nativeDiagInjectTrackpadGesture(
+        nsViewPtr: Long,
+        kind: Int,
+        phase: Int,
+        x: Float,
+        y: Float,
+        value: Double,
+    ): Boolean
+
+    /**
+     * Headful e2e only (#827): queues a synthetic tablet event on `NSApp`
+     * (`postEvent`, delivered after the current callback returns), as a
+     * tablet driver sends it — a proximity event naming the tool, then mouse
+     * events with the `TabletPoint` subtype. [action]: 0 proximity enter,
+     * 1 proximity leave, 2 move, 3 down, 4 drag, 5 up; [tool]: 0 the mouse,
+     * 1 pen tip, 2 eraser; [x] / [y] content-local points, top-left origin.
+     * `false` when injection is disabled or the view or its window is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagInjectTabletEvent(
+        nsViewPtr: Long,
+        action: Int,
+        tool: Int,
+        x: Float,
+        y: Float,
     ): Boolean
 
     /**

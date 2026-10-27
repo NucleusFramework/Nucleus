@@ -109,8 +109,11 @@ struct ActivationProxy {
 
 impl ActivationHandler for ActivationProxy {
     fn request_initial_tree(&mut self) -> Option<TreeUpdate> {
-        AT_ACTIVE.store(true, Ordering::Relaxed);
+        let was_active = AT_ACTIVE.swap(true, Ordering::Relaxed);
         RESYNC.store(true, Ordering::Relaxed);
+        if !was_active {
+            crate::a11y::jvm::notify_a11y_activated();
+        }
         let mut st = self.state.lock().ok()?;
         st.has_been_activated = true;
         // Clone the cached tree if we have one. A `None` here is fine —

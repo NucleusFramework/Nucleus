@@ -44,6 +44,7 @@ abstract class AbstractPatchMacJvmTask : AbstractNucleusTask() {
     val patchedJavaBinary: Provider<RegularFile>
         get() = outputJavaHome.file("bin/java")
 
+    /** Writes the patched `bin/java` (with `lib` symlinked to the source JDK) into [outputJavaHome]. */
     @TaskAction
     fun patch() {
         val sourceHome = File(sourceJavaHome.get())

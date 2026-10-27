@@ -18,7 +18,6 @@ import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
-import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.TaoDnDDiagnostics
 import dev.nucleusframework.window.tao.TaoScreenGeometry
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
@@ -27,6 +26,7 @@ import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
 import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
+import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge
@@ -424,6 +424,8 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
                 heightPx = heightPx,
                 directContext = ctx,
                 clearColorArgb = 0x00000000,
+                // Per-pixel-alpha DComp surface — no LCD SurfaceProps.
+                windowTransparent = true,
                 present = { PopupNativeBridgeWindows.nativeSwapBuffers(panel) },
             ) { canvas, _ ->
                 bundle.render(canvas, frameNs)
@@ -484,6 +486,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
+            isRepeat: Boolean,
         ) {
             framePump.nonReentrant {
                 scene?.dispatchNativeKeyEvent(
@@ -491,6 +494,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
                     vkCode = vkCode,
                     codePoint = codePoint,
                     modifiers = modifiers,
+                    isRepeat = isRepeat,
                     onPreviewKeyEvent = onPreviewKeyEvent,
                     onKeyEvent = onKeyEvent,
                 )
@@ -536,6 +540,17 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     private inner class InboundDnDCallback : NativeTaoWindowsDndBridge.Callback {
         private fun node() = scene?.rootDragAndDropNode
 
+        private val dnd =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                .InboundState()
+
+        override fun onDragFiles(
+            hwnd: Long,
+            files: Array<String>?,
+        ) {
+            dnd.onDragFiles(files = files)
+        }
+
         override fun onDragEnter(
             hwnd: Long,
             x: Int,
@@ -545,7 +560,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         ): Int {
             TaoDnDDiagnostics.log("standalone popup onDragEnter x=$x y=$y hasFiles=$hasFiles")
             if (!hasFiles) return NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
-            return if (TaoSceneDnD.onDragEnter(node(), x, y)) {
+            return if (dnd.onDragEnter(node = node(), x = x, y = y)) {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
@@ -559,7 +574,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             keyState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (TaoSceneDnD.onDragOver(node(), x, y)) {
+            if (dnd.onDragOver(node = node(), x = x, y = y)) {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
@@ -567,7 +582,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
 
         override fun onDragLeave(hwnd: Long) {
             TaoDnDDiagnostics.log("standalone popup onDragLeave")
-            TaoSceneDnD.onDragLeave(node())
+            dnd.onDragLeave(node())
         }
 
         override fun onDrop(
@@ -578,7 +593,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             files: Array<String>?,
         ): Int {
             TaoDnDDiagnostics.log("standalone popup onDrop x=$x y=$y files=${files?.size ?: 0}")
-            return if (TaoSceneDnD.onDrop(node(), x, y, files)) {
+            return if (dnd.onDrop(node(), x, y, files)) {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
@@ -605,29 +620,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         }
     }
 
-    private fun mapPointerIcon(icon: PointerIcon): Int {
-        when {
-            icon === PointerIcon.Default -> return TaoCursorIcon.DEFAULT
-            icon === PointerIcon.Text -> return TaoCursorIcon.TEXT
-            icon === PointerIcon.Hand -> return TaoCursorIcon.HAND
-            icon === PointerIcon.Crosshair -> return TaoCursorIcon.CROSSHAIR
-        }
-        return runCatching {
-            val cursor = icon.javaClass.getMethod("getCursor").invoke(icon) as? java.awt.Cursor
-            when (cursor?.type) {
-                java.awt.Cursor.TEXT_CURSOR -> TaoCursorIcon.TEXT
-                java.awt.Cursor.HAND_CURSOR -> TaoCursorIcon.HAND
-                java.awt.Cursor.CROSSHAIR_CURSOR -> TaoCursorIcon.CROSSHAIR
-                java.awt.Cursor.WAIT_CURSOR -> TaoCursorIcon.WAIT
-                java.awt.Cursor.MOVE_CURSOR -> TaoCursorIcon.MOVE
-                java.awt.Cursor.E_RESIZE_CURSOR, java.awt.Cursor.W_RESIZE_CURSOR -> TaoCursorIcon.EW_RESIZE
-                java.awt.Cursor.N_RESIZE_CURSOR, java.awt.Cursor.S_RESIZE_CURSOR -> TaoCursorIcon.NS_RESIZE
-                java.awt.Cursor.NE_RESIZE_CURSOR, java.awt.Cursor.SW_RESIZE_CURSOR -> TaoCursorIcon.NESW_RESIZE
-                java.awt.Cursor.NW_RESIZE_CURSOR, java.awt.Cursor.SE_RESIZE_CURSOR -> TaoCursorIcon.NWSE_RESIZE
-                else -> TaoCursorIcon.DEFAULT
-            }
-        }.getOrDefault(TaoCursorIcon.DEFAULT)
-    }
+    private fun mapPointerIcon(icon: PointerIcon): Int = icon.toTaoCursorIconCode()
 
     private inner class FlushingDispatcher : kotlinx.coroutines.CoroutineDispatcher() {
         private val queue = ConcurrentLinkedQueue<Runnable>()

@@ -195,6 +195,9 @@ typedef struct {
 #define CWColormap        (1L << 13)
 
 #define VisualIDMask      0x0001
+#define VisualDepthMask   0x0004
+#define VisualClassMask   0x0008
+#define TrueColor         4
 
 /* XShape extension. Used to make the EGL-rendering child window
  * input-transparent so X routes pointer / keyboard events back to the GTK
@@ -225,9 +228,22 @@ typedef void      *(*PFN_eglGetProcAddress)(const char *);
 typedef const char *(*PFN_eglQueryString)(EGLDisplay, EGLint);
 typedef EGLContext (*PFN_eglGetCurrentContext)(void);
 typedef EGLDisplay (*PFN_eglGetCurrentDisplay)(void);
+typedef EGLBoolean (*PFN_eglQuerySurface)(EGLDisplay, EGLSurface, EGLint, EGLint *);
+typedef EGLBoolean (*PFN_eglSurfaceAttrib)(EGLDisplay, EGLSurface, EGLint, EGLint);
+/* EGL_KHR_swap_buffers_with_damage and EGL_EXT_swap_buffers_with_damage share
+ * this signature: rects are (x, y, w, h) with a bottom-left origin. */
+typedef EGLBoolean (*PFN_eglSwapBuffersWithDamage)(EGLDisplay, EGLSurface, const EGLint *, EGLint);
 
+#define NUCLEUS_EGL_BUFFER_AGE 0x313D
+#define NUCLEUS_EGL_SWAP_BEHAVIOR 0x3093
+#define NUCLEUS_EGL_BUFFER_PRESERVED 0x3094
+#define NUCLEUS_EGL_SWAP_BEHAVIOR_PRESERVED_BIT 0x0400
+
+#define EGL_SURF_HEIGHT 0x3056
+#define EGL_SURF_WIDTH  0x3057
 #define EGL_VENDOR  0x3053
 #define EGL_VERSION 0x3054
+#define NUCLEUS_EGL_EXTENSIONS 0x3055
 
 /* ── Wayland client + EGL helpers ───────────────────────────────────────── */
 
@@ -241,6 +257,7 @@ typedef struct wl_event_queue_ wl_event_queue;
 typedef wl_egl_window *(*PFN_wl_egl_window_create)(wl_surface *, int, int);
 typedef void           (*PFN_wl_egl_window_destroy)(wl_egl_window *);
 typedef void           (*PFN_wl_egl_window_resize)(wl_egl_window *, int, int, int, int);
+typedef void           (*PFN_wl_egl_window_get_attached_size)(wl_egl_window *, int *, int *);
 
 /* `wl_message` and `wl_interface` are the static introspection tables for
  * each Wayland interface. We don't define our own — we read pointers via
@@ -291,6 +308,7 @@ typedef int             (*PFN_wl_display_flush)(wl_display *);
 #define WL_SUBCOMPOSITOR_GET_SUBSURFACE    1
 #define WL_SUBSURFACE_DESTROY              0
 #define WL_SUBSURFACE_SET_POSITION         1
+#define WL_SUBSURFACE_SET_SYNC             4
 #define WL_SUBSURFACE_SET_DESYNC           5
 #define WL_SURFACE_DESTROY                 0
 #define WL_SURFACE_ATTACH                  1
@@ -345,6 +363,8 @@ static PFN_eglGetProcAddress     p_eglGetProcAddress     = NULL;
 static PFN_eglQueryString        p_eglQueryString        = NULL;
 static PFN_eglGetCurrentContext  p_eglGetCurrentContext  = NULL;
 static PFN_eglGetCurrentDisplay  p_eglGetCurrentDisplay  = NULL;
+static PFN_eglQuerySurface       p_eglQuerySurface       = NULL;
+static PFN_eglSurfaceAttrib      p_eglSurfaceAttrib      = NULL;
 
 static PFN_XGetWindowAttributes  p_XGetWindowAttributes  = NULL;
 static PFN_XVisualIDFromVisual   p_XVisualIDFromVisual   = NULL;
@@ -368,6 +388,7 @@ static int g_libs_loaded = 0;
 static PFN_wl_egl_window_create  p_wl_egl_window_create  = NULL;
 static PFN_wl_egl_window_destroy p_wl_egl_window_destroy = NULL;
 static PFN_wl_egl_window_resize  p_wl_egl_window_resize  = NULL;
+static PFN_wl_egl_window_get_attached_size p_wl_egl_window_get_attached_size = NULL;
 
 /* libwayland-client function pointers + interface globals (the latter
  * are exported `const struct wl_interface` symbols in the .so). */
@@ -453,6 +474,8 @@ static int load_libs(void) {
      * display/context the external-texture import must run on. */
     LOAD(g_libegl, eglGetCurrentContext);
     LOAD(g_libegl, eglGetCurrentDisplay);
+    LOAD(g_libegl, eglQuerySurface);
+    LOAD(g_libegl, eglSurfaceAttrib);
 
     LOAD(g_libx11, XGetWindowAttributes);
     LOAD(g_libx11, XVisualIDFromVisual);
@@ -477,6 +500,12 @@ static int load_libs(void) {
             (PFN_wl_egl_window_destroy) dlsym(g_libwlegl, "wl_egl_window_destroy");
         p_wl_egl_window_resize  =
             (PFN_wl_egl_window_resize)  dlsym(g_libwlegl, "wl_egl_window_resize");
+        /* The authoritative "what size is the buffer the compositor
+         * currently holds" — as opposed to the size we last asked for.
+         * Part of the stable libwayland-egl ABI since 1.0. */
+        p_wl_egl_window_get_attached_size =
+            (PFN_wl_egl_window_get_attached_size)
+                dlsym(g_libwlegl, "wl_egl_window_get_attached_size");
     }
     if (g_libwlclient) {
         p_wl_proxy_marshal_flags =
@@ -650,6 +679,67 @@ static void *nucleus_tao_egl_get_proc(void *ctx, const char *name) {
     return p;
 }
 
+/* ── Partial redraw (#755) ──────────────────────────────────────────────── */
+
+/** Whole-word match in an EGL extension string. */
+static int egl_has_extension(const char *exts, const char *name) {
+    if (!exts || !name) return 0;
+    size_t len = strlen(name);
+    const char *p = exts;
+    while ((p = strstr(p, name)) != NULL) {
+        int starts = (p == exts) || p[-1] == ' ';
+        int ends = p[len] == '\0' || p[len] == ' ';
+        if (starts && ends) return 1;
+        p += len;
+    }
+    return 0;
+}
+
+/**
+ * Resolves buffer age and swap-with-damage for [display]. Either may be
+ * missing; the Kotlin side only takes the partial path when both are there.
+ * `NUCLEUS_TAO_PARTIAL_REDRAW=0` disables both — the native kill switch next
+ * to the `nucleus.tao.partialRedraw` system property.
+ */
+static void egl_resolve_damage_support(EGLDisplay display, int *has_buffer_age,
+                                       PFN_eglSwapBuffersWithDamage *swap_with_damage) {
+    *has_buffer_age = 0;
+    *swap_with_damage = NULL;
+    const char *off = getenv("NUCLEUS_TAO_PARTIAL_REDRAW");
+    if (off && strcmp(off, "0") == 0) return;
+    if (!p_eglQueryString || !p_eglGetProcAddress || !p_eglQuerySurface) return;
+    const char *exts = p_eglQueryString(display, NUCLEUS_EGL_EXTENSIONS);
+    *has_buffer_age = egl_has_extension(exts, "EGL_EXT_buffer_age");
+    if (egl_has_extension(exts, "EGL_KHR_swap_buffers_with_damage")) {
+        *swap_with_damage = (PFN_eglSwapBuffersWithDamage)
+            p_eglGetProcAddress("eglSwapBuffersWithDamageKHR");
+    }
+    if (!*swap_with_damage && egl_has_extension(exts, "EGL_EXT_swap_buffers_with_damage")) {
+        *swap_with_damage = (PFN_eglSwapBuffersWithDamage)
+            p_eglGetProcAddress("eglSwapBuffersWithDamageEXT");
+    }
+    DBG("partial redraw: buffer_age=%d swap_with_damage=%p\n",
+        *has_buffer_age, (void *) *swap_with_damage);
+}
+
+/**
+ * Asks for EGL_BUFFER_PRESERVED on [surface] when its config allows it, so a
+ * driver that never reports a buffer age (NVIDIA on X11) still keeps the
+ * previous frame in the back buffer. Returns whether it took.
+ */
+static int egl_try_preserve(EGLDisplay display, EGLConfig config, EGLSurface surface) {
+    const char *off = getenv("NUCLEUS_TAO_PARTIAL_REDRAW");
+    if (off && strcmp(off, "0") == 0) return 0;
+    if (!p_eglSurfaceAttrib || !p_eglGetConfigAttrib || !p_eglQuerySurface) return 0;
+    EGLint types = 0;
+    if (!p_eglGetConfigAttrib(display, config, EGL_SURFACE_TYPE, &types)) return 0;
+    if (!(types & NUCLEUS_EGL_SWAP_BEHAVIOR_PRESERVED_BIT)) return 0;
+    if (!p_eglSurfaceAttrib(display, surface, NUCLEUS_EGL_SWAP_BEHAVIOR, NUCLEUS_EGL_BUFFER_PRESERVED)) return 0;
+    EGLint behavior = 0;
+    return p_eglQuerySurface(display, surface, NUCLEUS_EGL_SWAP_BEHAVIOR, &behavior) &&
+        behavior == NUCLEUS_EGL_BUFFER_PRESERVED;
+}
+
 /* ── Per-window state ───────────────────────────────────────────────────── */
 
 typedef struct {
@@ -693,6 +783,15 @@ typedef struct {
     int             widthPx;
     int             heightPx;
     float      scale;
+    /* Partial redraw (#755), resolved per display at attach: the back
+     * buffer's age (EGL_EXT_buffer_age) tells which earlier frames it still
+     * holds, and swap-with-damage (KHR or EXT) tells the compositor which
+     * part of it changed. Either missing ⇒ every frame is a full repaint. */
+    int        has_buffer_age;
+    PFN_eglSwapBuffersWithDamage swap_with_damage;
+    /* The surface keeps its back buffer across swaps (EGL_BUFFER_PRESERVED):
+     * the fallback for drivers whose buffer age stays 0 (NVIDIA on X11). */
+    int        preserved;
 } EglAttachment;
 
 /* ── Internal surface shared inside libnucleus_tao_egl.so ───────────────── */
@@ -718,6 +817,42 @@ void *nucleus_tao_egl_current_context(void) {
 void *nucleus_tao_egl_attachment_context(long long handle) {
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
     return att ? att->context : NULL;
+}
+
+/* The TrueColor visuals of [depth] the server offers, in a list to free with
+ * p_XFree (NULL and *count = 0 when there are none). One lookup per attach,
+ * so the configs can be tested against it without a query each. */
+static XVisualInfo *truecolor_visuals(Display *xdpy, int depth, int *count) {
+    *count = 0;
+    if (!p_XGetVisualInfo) return NULL;
+    XVisualInfo template;
+    memset(&template, 0, sizeof(template));
+    template.depth  = depth;
+    template.class_ = TrueColor;
+    XVisualInfo *vinfos = p_XGetVisualInfo(xdpy, VisualDepthMask | VisualClassMask, &template, count);
+    if (!vinfos) *count = 0;
+    return vinfos;
+}
+
+static int visual_in(const XVisualInfo *vinfos, int count, VisualID vid) {
+    for (int i = 0; i < count; ++i) {
+        if (vinfos[i].visualid == vid) return 1;
+    }
+    return 0;
+}
+
+/* The first of [configs] whose native visual is one of [vinfos], or NULL. */
+static EGLConfig config_with_visual(EGLDisplay edpy, const EGLConfig *configs, EGLint count,
+                                    const XVisualInfo *vinfos, int nvis) {
+    for (EGLint i = 0; i < count && nvis > 0; ++i) {
+        EGLint id = 0;
+        p_eglGetConfigAttrib(edpy, configs[i], EGL_NATIVE_VISUAL_ID, &id);
+        if (id != 0 && visual_in(vinfos, nvis, (VisualID) id)) {
+            DBG("  config %d has visual 0x%lx of the window's depth\n", i, (unsigned long)(unsigned)id);
+            return configs[i];
+        }
+    }
+    return NULL;
 }
 
 /* ── JNI surface ────────────────────────────────────────────────────────── */
@@ -822,12 +957,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
         if ((VisualID) id == want) { chosen = cfgs[i]; break; }
     }
 
-    /* Phase-1 widening: GTK 3 with `decorations=false` and no `transparent=true`
-     * gets a 24-bit RGB888 visual on most setups, which our default ALPHA_SIZE=8
-     * config request can't match. Re-query without the alpha constraint so we
-     * land on a 24-bit config whose native visual matches the window. The
-     * eventual rounded-corner work will pass `with_transparent(true)` to tao
-     * and round-trip through ARGB; until then this fallback keeps Mesa happy. */
+    /* No ARGB config matches the GTK window's visual. Either the window is
+     * 24-bit (no ARGB visual: no compositor, or GDK gave none), or it is
+     * 32-bit and Mesa did not register GDK's ARGB visual with EGL (typical on
+     * XWayland). Re-query without the alpha constraint, take an exact match
+     * if there is one, and otherwise a config for the child window below
+     * whose native visual has the window's depth. On a 32-bit window that
+     * must be a 32-bit visual: the frame carve clears the rounded corners to
+     * alpha 0, and a 24-bit child has no alpha to keep, so they come out
+     * opaque. An alpha channel in the config is not enough - Mesa lists ARGB
+     * configs against its 24-bit visual too. */
     if (!chosen) {
         DBG("no ARGB EGL config matches X visualid 0x%lx — retrying without alpha\n", want);
         const EGLint cfg_attrs_no_alpha[] = {
@@ -851,17 +990,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
                 DBG("    cfg2[%d] visualid=0x%lx\n", i, (unsigned long)(unsigned)id);
                 if ((VisualID) id == want) { chosen = cfgs2[i]; break; }
             }
-            /* If no exact-visual match, prefer an ARGB config (alpha > 0)
-             * so the eventual alpha-blended rounded-corner work has alpha
-             * available on the EGL surface. Mesa typically lists RGB-only
-             * configs first, so cfgs2[0] is a 24-bit visual on most setups —
-             * walk the list and grab the first one with EGL_ALPHA_SIZE > 0. */
             if (!chosen) {
-                for (EGLint i = 0; i < ncfg2; ++i) {
-                    EGLint a = 0;
-                    p_eglGetConfigAttrib(edpy, cfgs2[i], EGL_ALPHA_SIZE, &a);
-                    if (a > 0) { chosen = cfgs2[i]; break; }
-                }
+                /* The ARGB list first: the retry is capped at 64 and lists
+                 * the 24-bit configs ahead of the rest, so on a 32-bit window
+                 * the configs it needs can be cut off the end of it. */
+                int nvis = 0;
+                XVisualInfo *same_depth = truecolor_visuals(xdpy, wa.depth, &nvis);
+                chosen = config_with_visual(edpy, cfgs, ncfg, same_depth, nvis);
+                if (!chosen) chosen = config_with_visual(edpy, cfgs2, ncfg2, same_depth, nvis);
+                if (same_depth && p_XFree) p_XFree(same_depth);
             }
             /* Last resort: take cfgs2[0]. NVIDIA accepts the cross-match
              * silently; Mesa surfaces EGL_BAD_MATCH from
@@ -878,6 +1015,21 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
     EGLint chosen_vid = 0;
     p_eglGetConfigAttrib(edpy, chosen, EGL_NATIVE_VISUAL_ID, &chosen_vid);
     int needs_child = ((VisualID) chosen_vid != want);
+    /* Once per process: every window on the display gets the same answer. */
+    static int warned_opaque_corners = 0;
+    if (needs_child && wa.depth == 32 && !warned_opaque_corners) {
+        int nvis = 0;
+        XVisualInfo *argb = truecolor_visuals(xdpy, 32, &nvis);
+        if (!visual_in(argb, nvis, (VisualID) chosen_vid)) {
+            warned_opaque_corners = 1;
+            fprintf(stderr,
+                    "[nucleus_tao_egl] No EGL config has a 32-bit visual for window 0x%lx; "
+                    "rendering into a child of visual 0x%lx, so its rounded corners "
+                    "will be opaque.\n",
+                    (unsigned long) xwin, (unsigned long)(unsigned) chosen_vid);
+        }
+        if (argb && p_XFree) p_XFree(argb);
+    }
     DBG("chosen visualid=0x%lx, needs_child=%d\n", (unsigned long)(unsigned)chosen_vid, needs_child);
 
     /* 4) GL 3.3 context — compat then core (see create_gl_context). Drivers
@@ -1001,6 +1153,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
     att->config         = chosen;
     att->context        = ctx;
     att->surface        = surf;
+    egl_resolve_damage_support(edpy, &att->has_buffer_age, &att->swap_with_damage);
     att->xdisplay       = xdpy;
     att->parent_xid     = xwin;
     att->child_xid      = child_xid;
@@ -1423,6 +1576,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     att->config           = cfg;
     att->context          = ctx;
     att->surface          = surf;
+    egl_resolve_damage_support(edpy, &att->has_buffer_age, &att->swap_with_damage);
     att->wl_queue         = queue;
     att->wl_registry      = registry;
     att->wl_compositor    = bind_state.compositor;
@@ -1583,14 +1737,14 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeResize(
  * draws. Cheap no-op when the offset is unchanged; no-op on X11 (the CSD is
  * never latched there).
  */
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetContentOffset(
     JNIEnv *env, jclass clazz, jlong handle, jint xLogical, jint yLogical)
 {
     (void) env; (void) clazz;
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
-    if (!att || !att->wl_subsurface || !p_wl_proxy_marshal_flags) return;
-    if (att->content_off_x == xLogical && att->content_off_y == yLogical) return;
+    if (!att || !att->wl_subsurface || !p_wl_proxy_marshal_flags) return JNI_FALSE;
+    if (att->content_off_x == xLogical && att->content_off_y == yLogical) return JNI_FALSE;
     att->content_off_x = xLogical;
     att->content_off_y = yLogical;
     p_wl_proxy_marshal_flags(att->wl_subsurface, WL_SUBSURFACE_SET_POSITION,
@@ -1600,14 +1754,44 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetContentOffs
      * GTK's next commit, and after a maximize/restore GTK has already
      * committed its reallocation by the time this runs and then goes idle,
      * which would leave the old offset applied forever (content shifted
-     * bottom-right by the former shadow margins). Issue an empty commit on
-     * GTK's toplevel surface ourselves: it applies pending state only, and
-     * this call always runs on the GTK main thread (the render loop), so
-     * GTK is never mid-way through its own attach/damage/commit sequence. */
-    if (att->wl_parent_surface) {
-        p_wl_proxy_marshal_flags(att->wl_parent_surface, WL_SURFACE_COMMIT,
-            NULL, p_wl_proxy_get_version(att->wl_parent_surface), 0);
-    }
+     * bottom-right by the former shadow margins). This used to issue an
+     * empty commit on GTK's toplevel surface here. That is not safe: GDK
+     * attaches its SHM buffer in `end_paint` and commits it in
+     * `after_paint`, and a commit of ours between the two hands the
+     * compositor a buffer GDK still counts as staged — the release then
+     * fails GDK's `buffer_release_callback` check and cairo aborts the
+     * process (seen after a minimize/restore storm). The caller asks GTK to
+     * repaint the toplevel instead, and GTK's own commit applies the
+     * position. Returns whether the offset changed, so the caller knows to. */
+    if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
+    return JNI_TRUE;
+}
+
+/**
+ * Switches the content sub-surface between `set_sync` and `set_desync`.
+ *
+ * Normally desync: Compose's buffers land on their own, independently of
+ * GTK's cairo paint cycle (see the file header). Through an interactive
+ * resize that independence is the problem: an embedded native view
+ * (`NativeView`, e.g. WebKit's accelerated sub-surface) is positioned by GTK
+ * on its allocation, and a sub-surface position is parent state that only
+ * takes effect on GTK's toplevel commit — one GTK paint after Compose laid
+ * the new hole out and swapped. The embed peels off the hole by a frame on
+ * every configure. In sync mode our buffer is cached by the compositor and
+ * applied atomically with that same GTK commit, hole and embed together.
+ * Per the protocol, `set_desync` applies any cached state at once, so
+ * leaving sync mode never strands a frame.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetSubsurfaceSync(
+    JNIEnv *env, jclass clazz, jlong handle, jboolean sync)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_subsurface || !p_wl_proxy_marshal_flags) return;
+    p_wl_proxy_marshal_flags(att->wl_subsurface,
+        sync ? WL_SUBSURFACE_SET_SYNC : WL_SUBSURFACE_SET_DESYNC,
+        NULL, p_wl_proxy_get_version(att->wl_subsurface), 0);
     if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
 }
 
@@ -1630,6 +1814,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetContentOffs
  * `applyFrameDecoration` paints them transparent so the shadow shows through —
  * claiming them opaque would leave square corners with the shadow clipped away.
  *
+ * The bottom row is always left out. A toplevel covered edge to edge by an
+ * opaque subsurface — maximized, tiled or fullscreen, where GTK collapses the
+ * shadow margins — is culled by Mutter as obscured, and an obscured surface
+ * gets no frame callback. GDK's frame clock freezes on the callback of the
+ * last commit GTK made in that state (the one `applyContentOffset` asks for,
+ * to land the subsurface at (0, 0)), and with it the flush-events phase that
+ * delivers pointer motion: the app then renders at full rate but hover and
+ * drags only move when another event arrives. One row the compositor still
+ * has to blend keeps the toplevel painted and its callbacks flowing.
+ *
  * Pass `logicalW <= 0` to clear the region (window genuinely translucent).
  * Coordinates are surface-local (logical) units. Queued state: it lands with the
  * next `eglSwapBuffers` commit, so there is no extra commit and no race with the
@@ -1645,7 +1839,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetOpaqueRegio
     if (!att || !att->wl_child_surface || !p_wl_proxy_marshal_flags) return;
     if (!att->wl_compositor || !g_wl_region_interface) return;
 
-    if (logicalW <= 0 || logicalH <= 0) {
+    /* Bottom row excluded — see above. */
+    int opaqueH = logicalH - 1;
+    if (logicalW <= 0 || opaqueH <= 0) {
         p_wl_proxy_marshal_flags(
             att->wl_child_surface, WL_SURFACE_SET_OPAQUE_REGION, NULL,
             p_wl_proxy_get_version(att->wl_child_surface), 0, NULL);
@@ -1661,18 +1857,18 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetOpaqueRegio
 
     int r = cornerRadius;
     if (r < 0) r = 0;
-    if (2 * r >= logicalW || 2 * r >= logicalH) r = 0;
+    if (2 * r >= logicalW || 2 * r >= opaqueH) r = 0;
     if (r == 0) {
         p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
-            p_wl_proxy_get_version(region), 0, 0, 0, logicalW, logicalH);
+            p_wl_proxy_get_version(region), 0, 0, 0, logicalW, opaqueH);
     } else {
-        /* Everything except the four r x r corner squares. */
+        /* Everything except the four r x r corner squares (and the bottom row). */
         p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
-            p_wl_proxy_get_version(region), 0, 0, r, logicalW, logicalH - 2 * r);
+            p_wl_proxy_get_version(region), 0, 0, r, logicalW, opaqueH - 2 * r);
         p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
             p_wl_proxy_get_version(region), 0, r, 0, logicalW - 2 * r, r);
         p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
-            p_wl_proxy_get_version(region), 0, r, logicalH - r, logicalW - 2 * r, r);
+            p_wl_proxy_get_version(region), 0, r, opaqueH - r, logicalW - 2 * r, r);
     }
     p_wl_proxy_marshal_flags(
         att->wl_child_surface, WL_SURFACE_SET_OPAQUE_REGION, NULL,
@@ -1691,6 +1887,80 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativePresent(
     p_eglSwapBuffers(att->display, att->surface);
 }
 
+/**
+ * Age of the back buffer the current frame renders into (#755): 0 = its
+ * content is undefined, N = it holds the frame presented N swaps ago; 1 on a
+ * surface with EGL_BUFFER_PRESERVED, whose back buffer always holds the last.
+ * -1 when partial redraw is unavailable on this surface (no buffer age or no
+ * swap-with-damage). The context must be current on the calling thread.
+ */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeBufferAge(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->swap_with_damage || (!att->has_buffer_age && !att->preserved)) return -1;
+    EGLint age = 0;
+    if (att->has_buffer_age && !p_eglQuerySurface(att->display, att->surface, NUCLEUS_EGL_BUFFER_AGE, &age)) {
+        age = 0;
+    }
+    /* A preserved back buffer holds the previous frame whatever the age says. */
+    if (age == 0 && att->preserved) age = 1;
+    return (jint) age;
+}
+
+/**
+ * Presents with damage (#755): [rects] holds [count] (x, y, w, h) quadruples
+ * in buffer pixels with a **bottom-left** origin, the EGL convention. Falls
+ * back to a plain swap when swap-with-damage is unavailable or [count] is 0
+ * (a zero-rect damage call means "everything" to EGL, which is what the
+ * caller wants in that case too).
+ */
+/**
+ * EGL_BUFFER_PRESERVED on demand (#755): asked by the Kotlin side once the
+ * buffer age has stayed 0 (NVIDIA on X11), and only on a surface that can
+ * present with damage — a preserved swap may copy the whole surface on every
+ * frame, which only partial redraw repays.
+ */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeTryPreserve(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->swap_with_damage) return JNI_FALSE;
+    if (!att->preserved) att->preserved = egl_try_preserve(att->display, att->config, att->surface);
+    return att->preserved ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativePresentWithDamage(
+    JNIEnv *env, jclass clazz, jlong handle, jintArray rects, jint count)
+{
+    (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att) return;
+    if (!att->swap_with_damage || count <= 0 || !rects) {
+        p_eglSwapBuffers(att->display, att->surface);
+        return;
+    }
+    jsize len = (*env)->GetArrayLength(env, rects);
+    if (len < count * 4) {
+        p_eglSwapBuffers(att->display, att->surface);
+        return;
+    }
+    EGLint stack_buf[64];
+    EGLint *buf = count * 4 <= 64 ? stack_buf : (EGLint *) malloc(sizeof(EGLint) * count * 4);
+    if (!buf) {
+        p_eglSwapBuffers(att->display, att->surface);
+        return;
+    }
+    (*env)->GetIntArrayRegion(env, rects, 0, count * 4, (jint *) buf);
+    att->swap_with_damage(att->display, att->surface, buf, count);
+    if (buf != stack_buf) free(buf);
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetSwapInterval(
     JNIEnv *env, jclass clazz, jlong handle, jint interval)
@@ -1702,6 +1972,90 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetSwapInterva
      * always releases before signalling idle, so the caller must ensure it
      * holds the context (nativeMakeCurrent) before calling this. */
     p_eglSwapInterval(att->display, (EGLint) interval);
+}
+
+/**
+ * Diagnostic probe (#444): the size of the buffer actually behind the
+ * default framebuffer, as opposed to the size last *requested* through
+ * `wl_egl_window_resize` — which is what `nativeWidth`/`nativeHeight`
+ * report. On Wayland the two disagree until the next `eglSwapBuffers`
+ * reallocates. Packed as (width << 32) | height; 0 when unavailable.
+ */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeQueryDrawableSize(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !p_eglQuerySurface) return 0;
+    EGLint w = 0, h = 0;
+    if (!p_eglQuerySurface(att->display, att->surface, EGL_SURF_WIDTH, &w)) return 0;
+    if (!p_eglQuerySurface(att->display, att->surface, EGL_SURF_HEIGHT, &h)) return 0;
+    return ((jlong) (uint32_t) w << 32) | (jlong) (uint32_t) h;
+}
+
+/**
+ * Size of the buffer currently *attached* to the content surface, as
+ * libwayland-egl itself tracks it: what the compositor holds, not what we
+ * last requested through `wl_egl_window_resize`. Packed as
+ * (width << 32) | height; 0 on X11 or when the symbol is unavailable.
+ */
+/* GL entry points used by `nativeTouchDrawable`, resolved lazily through the
+ * same proc loader Skia is handed. Values from <GLES2/gl2.h>. */
+#define NUCLEUS_GL_FRAMEBUFFER      0x8D40
+#define NUCLEUS_GL_COLOR_BUFFER_BIT 0x00004000
+typedef void (*PFN_glBindFramebuffer)(unsigned int, unsigned int);
+typedef void (*PFN_glClear)(unsigned int);
+static PFN_glBindFramebuffer p_glBindFramebuffer = NULL;
+static PFN_glClear           p_glClear           = NULL;
+
+/**
+ * Forces the driver to acquire (and, if a `wl_egl_window_resize` is pending,
+ * reallocate) the buffer behind the default framebuffer, right now.
+ *
+ * The size of that buffer is what Skia's render target must agree with, and
+ * drivers disagree on *when* they act on a pending resize: Mesa defers it to
+ * `eglSwapBuffers`, the NVIDIA proprietary driver does it when the back buffer
+ * is first used for rendering — which, left to itself, is in the middle of our
+ * frame, after the render target was already built from a size that is by then
+ * stale. Rather than predict the driver, this pins the moment: issue the first
+ * use ourselves, before asking `eglQuerySurface`, so the answer describes the
+ * buffer the whole frame will land in on either driver.
+ *
+ * The clear is not wasted work — the frame clears the surface anyway. The
+ * caller must reset Skia's cached GL state afterwards, since this touches the
+ * binding behind its back.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeTouchDrawable(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att) return;
+    if (!p_glBindFramebuffer) {
+        p_glBindFramebuffer =
+            (PFN_glBindFramebuffer) nucleus_tao_egl_get_proc(NULL, "glBindFramebuffer");
+    }
+    if (!p_glClear) {
+        p_glClear = (PFN_glClear) nucleus_tao_egl_get_proc(NULL, "glClear");
+    }
+    if (!p_glBindFramebuffer || !p_glClear) return;
+    p_glBindFramebuffer(NUCLEUS_GL_FRAMEBUFFER, 0);
+    p_glClear(NUCLEUS_GL_COLOR_BUFFER_BIT);
+}
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachedSize(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_window || !p_wl_egl_window_get_attached_size) return 0;
+    int w = 0, h = 0;
+    p_wl_egl_window_get_attached_size(att->wl_window, &w, &h);
+    if (w <= 0 || h <= 0) return 0;
+    return ((jlong) (uint32_t) w << 32) | (jlong) (uint32_t) h;
 }
 
 JNIEXPORT jint JNICALL
