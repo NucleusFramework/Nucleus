@@ -734,17 +734,17 @@ unsafe fn release_mouse(mut window_state: parking_lot::MutexGuard<'_, WindowStat
   }
 }
 
-/// PATCH(nucleus): records the screen point a mouse message carries (#837).
-/// See `platform::windows::LAST_MOUSE_SCREEN_POSITION`. Called before the
+/// PATCH(nucleus): records the screen point a button release carries (#837).
+/// See `platform::windows::MOUSE_RELEASE_SCREEN_POSITION`. Called before the
 /// message is turned into events, so the window is still where the message
 /// was hit-tested and the conversion is exact.
-unsafe fn record_mouse_screen_position(window: HWND, lparam: LPARAM) {
+unsafe fn record_mouse_release_screen_position(window: HWND, lparam: LPARAM) {
   let mut point = POINT {
     x: i32::from(util::GET_X_LPARAM(lparam)),
     y: i32::from(util::GET_Y_LPARAM(lparam)),
   };
   if ClientToScreen(window, &mut point).as_bool() {
-    crate::platform::windows::record_mouse_screen_position(point.x, point.y);
+    crate::platform::windows::record_mouse_release_screen_position(point.x, point.y);
   }
 }
 
@@ -1390,7 +1390,6 @@ unsafe fn public_window_callback_inner<T: 'static>(
 
     win32wm::WM_MOUSEMOVE => {
       use crate::event::WindowEvent::{CursorEntered, CursorMoved};
-      record_mouse_screen_position(window, lparam);
       let mouse_was_outside_window = {
         let mut w = subclass_input.window_state.lock();
 
@@ -1542,7 +1541,6 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_LBUTTONDOWN => {
       use crate::event::{ElementState::Pressed, MouseButton::Left, WindowEvent::MouseInput};
 
-      record_mouse_screen_position(window, lparam);
       capture_mouse(window, &mut subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1562,7 +1560,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_LBUTTONUP => {
       use crate::event::{ElementState::Released, MouseButton::Left, WindowEvent::MouseInput};
 
-      record_mouse_screen_position(window, lparam);
+      record_mouse_release_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1582,7 +1580,6 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_RBUTTONDOWN => {
       use crate::event::{ElementState::Pressed, MouseButton::Right, WindowEvent::MouseInput};
 
-      record_mouse_screen_position(window, lparam);
       capture_mouse(window, &mut subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1602,7 +1599,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_RBUTTONUP => {
       use crate::event::{ElementState::Released, MouseButton::Right, WindowEvent::MouseInput};
 
-      record_mouse_screen_position(window, lparam);
+      record_mouse_release_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1622,7 +1619,6 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_MBUTTONDOWN => {
       use crate::event::{ElementState::Pressed, MouseButton::Middle, WindowEvent::MouseInput};
 
-      record_mouse_screen_position(window, lparam);
       capture_mouse(window, &mut subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1642,7 +1638,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_MBUTTONUP => {
       use crate::event::{ElementState::Released, MouseButton::Middle, WindowEvent::MouseInput};
 
-      record_mouse_screen_position(window, lparam);
+      record_mouse_release_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1663,7 +1659,6 @@ unsafe fn public_window_callback_inner<T: 'static>(
       use crate::event::{ElementState::Pressed, MouseButton::Other, WindowEvent::MouseInput};
       let xbutton = util::GET_XBUTTON_WPARAM(wparam);
 
-      record_mouse_screen_position(window, lparam);
       capture_mouse(window, &mut subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1684,7 +1679,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
       use crate::event::{ElementState::Released, MouseButton::Other, WindowEvent::MouseInput};
       let xbutton = util::GET_XBUTTON_WPARAM(wparam);
 
-      record_mouse_screen_position(window, lparam);
+      record_mouse_release_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
