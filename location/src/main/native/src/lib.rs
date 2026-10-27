@@ -54,7 +54,6 @@ mod platform {
 // Mirrors `NativeLocationBridge` on the Kotlin side.
 pub(crate) const AUTH_NOT_DETERMINED: i32 = 0;
 pub(crate) const AUTH_DENIED: i32 = 1;
-#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) const AUTH_RESTRICTED: i32 = 2;
 pub(crate) const AUTH_FOREGROUND: i32 = 3;
 pub(crate) const AUTH_BACKGROUND: i32 = 4;
