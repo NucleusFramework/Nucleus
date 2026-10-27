@@ -294,7 +294,14 @@ internal class IosSpeechSession(
         }
         val input = engine.inputNode
         val format = input.outputFormatForBus(0u)
-        if (format.sampleRate <= 0.0 || format.channelCount == 0u) {
+        // Without an input device the output side can still report a synthesized format while the
+        // hardware side is 0 Hz / 0 ch, and installTap then raises an NSException that aborts.
+        val hardware = input.inputFormatForBus(0u)
+        if (format.sampleRate <= 0.0 ||
+            format.channelCount == 0u ||
+            hardware.sampleRate <= 0.0 ||
+            hardware.channelCount == 0u
+        ) {
             fail("No working microphone is available.", SpeechErrorKind.Audio)
             return
         }

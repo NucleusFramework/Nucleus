@@ -109,8 +109,9 @@ before Apple's one-minute limit.
 ## Development
 
 - Native sources: `src/main/native` (Rust crate; `windows/build.bat`, `macos/build.sh`), built by
-  `./gradlew :speech-recognition:buildNativeWindows` / `buildNativeMacOs`. `robius-speech` is a git
-  dependency pinned by commit; bump `rev` in `Cargo.toml` and `cargo update -p robius-speech`.
+  `./gradlew :speech-recognition:buildNativeWindows` / `buildNativeMacOs`. `robius-speech` is vendored in
+  `src/main/native/robius-speech` (upstream commit and local change in its `Cargo.toml`); to update,
+  copy the upstream `crates/speech` over it and keep the inlined workspace fields.
 - `./gradlew :speech-recognition:jvmTest -Dnucleus.speech.live=true` opens the real microphone for
   a few seconds (Windows/macOS).
 - iOS klibs cross-compile on any host; iOS tests only run on macOS.
