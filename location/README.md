@@ -90,6 +90,13 @@ The prompt needs a resumed activity; the library tracks it through a `ContentPro
 the app manifest (no `androidx.startup` dependency). Removing that provider from the merged
 manifest disables the library.
 
+On Android 12+ a precise request shows the system's precise / approximate choice in one dialog;
+when only approximate access is granted, `requestAuthorization(accuracy = Precise)` shows the
+"change to precise location" dialog. Background access is asked separately after a foreground
+grant, and Android 11+ answers it with the app's location settings page rather than a dialog.
+After a second refusal the system stops showing the dialog: the request returns `Denied` at once.
+`examples/location-android-demo` exercises all of this on a device.
+
 ### iOS and macOS
 
 Core Location only prompts an app whose `Info.plist` explains why it wants the location:
@@ -163,7 +170,18 @@ interface), an unsandboxed app talks to GeoClue 2 directly, which attributes the
 app's `.desktop` id — the installed desktop entry, else `NucleusApp.appId`. A portal refusal is
 final: GeoClue is never tried behind the user's back. As on Windows, `authorization()` reports
 `NotDetermined` until a request in this process succeeded, and neither the portal nor GeoClue
-report a revocation, so `authorizationUpdates()` only changes on a request.
+report a revocation, so `authorizationUpdates()` only changes on a request. Location turned off
+in the desktop settings makes `isAvailable` `false` and the request `Denied` (as on Windows and
+macOS), so the location calls fail with `AuthorizationDenied`.
+
+The portal drives a single GeoClue client for every session of every app, so the library keeps one
+portal session per process for all its requests (a one-shot next to `locationUpdates` is answered
+from the running session at once). `minInterval` / `minDistanceMeters` are applied by the library
+there, since thresholds sent to the portal would apply to that shared client. Another app's
+portal session can still delay the first fix until the location changes.
+
+A sandboxed (Flatpak) app gets the portal's consent dialog. GNOME shows it only for the focused
+app: a request from an app without a focused window fails at once.
 
 The consent dialog is attached to a window only when the request names one:
 `NucleusWindow.requestLocationAuthorization()` from `nucleus-application`, or

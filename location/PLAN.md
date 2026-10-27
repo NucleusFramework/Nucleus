@@ -22,14 +22,17 @@ How to verify (any OS):
 
 - [x] Windows x64: `location-demo` built as a GraalVM native image and run — prints a fix
 - [ ] macOS: same, native image — prints a fix (hardened runtime + entitlement)
-- [ ] Linux: same, native image — prints a fix
-- [ ] Linux: XDG portal path on GNOME
-- [ ] Linux: XDG portal path on KDE
-- [ ] Linux: GeoClue fallback without a portal
-- [ ] Linux: Flatpak stays on the portal
+- [x] Linux: same, native image — prints a fix (GNOME 50 Wayland, GraalVM CE 25)
+- [x] Linux: XDG portal path on GNOME (xdg-desktop-portal 1.21.1). Found and fixed: the portal shares
+      one GeoClue client across all sessions — see `docs/internals/location.md` (`Hub` in `linux.rs`)
+- [x] Linux: XDG portal path on KDE (nested KWin + xdg-desktop-portal-kde 6): host app, and a
+      Flatpak app through the KDE consent dialog (granted by hand), stored grant, stored refusal
+- [x] Linux: GeoClue fallback without a portal (private session bus without portal, real GeoClue)
+- [x] Linux: Flatpak stays on the portal (`flatpak build` sandbox: no bus → `Restricted`, never
+      GeoClue; stored refusal → `Denied`)
 - [ ] Windows ARM64: DLL loads and returns a fix (JVM — no native-image toolchain there).
       No ARM64 machine available; the DLL is built and shipped
-- [x] `reachability-metadata.json` holds on Windows (demo + Lab native images); re-check on macOS / Linux
+- [x] `reachability-metadata.json` holds on Windows (demo + Lab native images) and Linux (demo); re-check on macOS
 
 ## 2. Lab probe
 
@@ -40,7 +43,9 @@ How to verify (any OS):
 - [ ] macOS: probe works (JVM + native image). The Lab's macOS packaging needs the location usage
       keys and the `com.apple.security.personal-information.location` entitlement first
       (see section 3), otherwise Core Location never prompts
-- [ ] Linux: probe works (JVM + native image)
+- [x] Linux: probe works on the JVM (host, and Flatpak sandbox on Wayland and XWayland)
+- [x] Linux: probe works in the Lab native image
+- [x] Linux: location turned off (GNOME) → `isAvailable` false, request `Denied` (was `NotDetermined`)
 
 ## 3. Visible gaps
 
@@ -49,8 +54,9 @@ How to verify (any OS):
       `NucleusWindow.requestLocationAuthorization()` in `nucleus-application` resolves it from the
       Tao window (`xdgPortalParent()`, Wayland export closed once answered). Compiles for the Linux
       target (`cargo check`), **not run on Linux yet**
-- [ ] Linux: verified on X11 and Wayland that the dialog sits above the app (Lab: "Request
-      foreground" goes through the Lab window)
+- [x] Linux: verified on X11 (XWayland) and Wayland that the dialog sits above the app (Lab in a
+      Flatpak sandbox: host apps never get a dialog). GNOME refuses the dialog to an app that is
+      not focused (`Response` 2), so an unparented request from a windowless sandboxed app fails
 - [ ] macOS (plugin, needs a Mac to verify): DSL generating the Info.plist usage keys
       (`NSLocationUsageDescription`, `NSLocationWhenInUseUsageDescription`, optionally
       `NSLocationAlwaysAndWhenInUseUsageDescription`) and adding
@@ -76,7 +82,8 @@ How to verify (any OS):
       Services, GNOME `gnome-control-center location`, Android app details, iOS app settings,
       web `false`
 - [x] Windows: settings page opens (Lab probe)
-- [ ] macOS / Linux (GNOME): settings page opens
+- [x] Linux (GNOME): settings page opens (`gnome-control-center location`; `false` inside Flatpak)
+- [ ] macOS: settings page opens
 - [x] `apiDump` committed (`location`, `nucleus-application`), README / `docs/internals/location.md`
       updated
 
@@ -89,6 +96,11 @@ and [jordond/compass](https://github.com/jordond/compass) (`compass-geolocation-
 - [ ] Android: compare our `LocationManager` backend with maplibre's `AndroidLocationProvider` /
       `AndroidLocationPermissionRequester` and compass's `StandardLocationProvider` /
       `PermissionRequester` (provider selection, last-known fix, activity tracking)
+- [x] Android (emulator API 36, `examples/location-android-demo`): coarse-only prompt, precise /
+      approximate choice, approximate → precise upgrade dialog (added), background via the settings
+      page, "don't ask again" (third request → `Denied` in < 100 ms, no dialog), location off →
+      `isAvailable` false + `PermanentlyUnavailable`. Fixed: precise requests ran the fused provider
+      at BALANCED (no GNSS); `authorization()` read `Denied` while the dialog was up
 - [ ] Android: report "denied, do not ask again" (`shouldShowRequestPermissionRationale`,
       compass `DeniedForever`, maplibre `NotGranted(canRequest, shouldShowRationale)`)
 - [ ] Android: report the granted accuracy (fine vs coarse)
