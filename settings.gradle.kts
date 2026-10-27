@@ -75,6 +75,7 @@ include(":updater-testing")
 include(":fs-watcher")
 include(":share")
 include(":authentication")
+include(":location")
 
 // Nucleus Lab: the single test bench app (examples/lab). One module per probe domain;
 // each contributes its probes to the Metro graph assembled by :examples:lab:app.
@@ -96,6 +97,9 @@ include(":examples:lab:app")
 // own (KMP/Android, JS, appex signing, the benchmark matrix, headless native-image smokes).
 include(":examples:cmp-demo")
 include(":examples:fs-watcher-smoke")
+include(":examples:location-demo")
+include(":examples:location-android-demo")
+include(":examples:location-web-demo")
 include(":examples:orphan-reflect-smoke")
 include(":examples:benchmark-demo")
 include(":examples:tao-native-test")

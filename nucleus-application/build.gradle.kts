@@ -51,6 +51,9 @@ dependencies {
     compileOnly(project(":share"))
     // compileOnly: NucleusWindow.authenticate likewise needs nucleus.authentication on the app's side.
     compileOnly(project(":authentication"))
+    // compileOnly: NucleusWindow.requestLocationAuthorization is only useful to an app that
+    // already depends on nucleus.location; never forced on consumers.
+    compileOnly(project(":location"))
 
     testImplementation(libs.junit)
     testImplementation(libs.filekit.core)

@@ -1,4 +1,4 @@
-// System probes: appearance, system info, energy, filesystem watcher, share sheet, authentication, native library extraction.
+// System probes: appearance, system info, energy, filesystem watcher, share sheet, authentication, location, native library extraction.
 plugins {
     alias(libs.plugins.kotlin)
     alias(libs.plugins.kotlinComposePlugin)
@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":fs-watcher"))
     implementation(project(":share"))
     implementation(project(":authentication"))
+    implementation(project(":location"))
     // Extract-and-load JNI library (#317): the call site the sandboxed pipeline rewrites.
     implementation(libs.zstd.kmp.jvm)
 
