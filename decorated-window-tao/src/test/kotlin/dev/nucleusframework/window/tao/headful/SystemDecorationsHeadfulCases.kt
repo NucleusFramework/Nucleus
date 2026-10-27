@@ -19,7 +19,10 @@ import kotlin.math.roundToInt
  * System decorations (#841): the platform draws the title bar and frame. Asserted
  * through real windows on every OS:
  *  - the outer frame is taller than the content (a native title bar / frame sits
- *    around it — on Windows and Linux the Nucleus chrome draws none of its own);
+ *    around it — on Windows and Linux the Nucleus chrome draws none of its own),
+ *    except under KWin's server-side decorations on Wayland, which are not part of
+ *    the client: there the outer frame must be exactly the content, since GTK
+ *    would draw a title bar of its own had KWin refused them;
  *  - a Nucleus [TitleBar] composed inside never claims a caption height, so no
  *    native caption zone, traffic-light layout or hit band is armed from it.
  */
@@ -104,13 +107,16 @@ internal object SystemDecorationsHeadfulCases {
     /**
      * Waits until the window's outer frame is known and taller than its content by at
      * least a title bar: the platform's decorations sit outside the Compose content.
+     * Under KWin's server-side decorations the frame is the compositor's, outside the
+     * client surface: the outer frame must then match the content exactly.
      */
     private suspend fun TaoWindowTestScope.awaitFramed(
         target: TaoWindow,
         content: () -> IntSize?,
     ) {
+        val serverSide = target.isNativeWaylandSurface && isKdeDesktop()
         awaitUntil(
-            "native frame around the content",
+            if (serverSide) "server-side decorations (no GTK title bar)" else "native frame around the content",
             detail = { "outer=${target.outerBoundsPx()?.toList()} content=${content()}" },
         ) {
             val outer = target.outerBoundsPx()
@@ -118,17 +124,33 @@ internal object SystemDecorationsHeadfulCases {
             outer != null &&
                 inner != null &&
                 inner.height > 0 &&
-                outer[3] - inner.height >= MIN_TITLE_BAR_PX &&
-                outer[2] >= inner.width
+                if (serverSide) {
+                    outer[2] == inner.width.toLong() && outer[3] == inner.height.toLong()
+                } else {
+                    outer[3] - inner.height >= MIN_TITLE_BAR_PX && outer[2] >= inner.width
+                }
         }
         val outer = checkNotNull(target.outerBoundsPx())
         val inner = checkNotNull(content())
-        val surface = if (target.isNativeWaylandSurface) "native Wayland" else "non-Wayland"
+        val surface =
+            when {
+                serverSide -> "native Wayland, server-side decorations"
+                target.isNativeWaylandSurface -> "native Wayland"
+                else -> "non-Wayland"
+            }
         println(
             "system decorations ($surface surface): outer ${outer[2]}x${outer[3]} px, content " +
                 "${inner.width}x${inner.height} px (frame adds ${outer[2] - inner.width}x${outer[3] - inner.height})",
         )
     }
+
+    /** KWin serves server-side decorations to GTK 3; Mutter never does. */
+    private fun isKdeDesktop(): Boolean =
+        System
+            .getenv("XDG_CURRENT_DESKTOP")
+            .orEmpty()
+            .split(':')
+            .any { it.equals("KDE", ignoreCase = true) }
 
     private fun assertNoNucleusCaption(requested: Float?) {
         check(requested == 0f) {

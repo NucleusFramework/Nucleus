@@ -47,9 +47,8 @@ use super::{
   monitor::{self, MonitorHandle},
   taskbar, util,
   window::{
-    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, is_system_decorated,
-    reports_content_space, WindowId,
-    WindowRequest,
+    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, is_on_system_decorations,
+    is_system_decorated, reports_content_space, WindowId, WindowRequest,
   },
 };
 
@@ -934,6 +933,12 @@ impl<T: 'static> EventLoop<T> {
                   log::warn!("Failed to send cursor moved event to event channel: {}", e);
                 }
               }
+              // PATCH(nucleus): GTK's own title bar and frame (system
+              // decorations, GNOME Wayland) track the pointer for their move /
+              // resize gestures; stopping the event here froze them.
+              if is_on_system_decorations(window, motion) {
+                return glib::Propagation::Proceed;
+              }
               glib::Propagation::Stop
             });
 
@@ -957,7 +962,16 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
-            window.connect_button_press_event(move |_, event| {
+            window.connect_button_press_event(move |window, event| {
+              // PATCH(nucleus): a press on GTK's own title bar or frame (system
+              // decorations, GNOME Wayland) belongs to GtkWindow's class handler,
+              // which runs after this one and starts the move, the double-click
+              // maximize or the edge resize. It is not forwarded either: the
+              // compositor keeps the release of a move / resize grab, so the
+              // embedder would be left with a button it believes held.
+              if is_on_system_decorations(window, event) {
+                return glib::Propagation::Proceed;
+              }
               let button = event.button();
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
@@ -983,7 +997,7 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
-            window.connect_button_release_event(move |_, event| {
+            window.connect_button_release_event(move |window, event| {
               let button = event.button();
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
@@ -1004,6 +1018,11 @@ impl<T: 'static> EventLoop<T> {
                   "Failed to send mouse input released event to event channel: {}",
                   e
                 );
+              }
+              // PATCH(nucleus): forwarded above (it may end a press that began in
+              // the content), and seen by GTK's title bar and frame too.
+              if is_on_system_decorations(window, event) {
+                return glib::Propagation::Proceed;
               }
               glib::Propagation::Stop
             });

@@ -167,6 +167,25 @@ pub(crate) fn event_coords_to_toplevel<W: IsA<gtk::Window>>(
   (ex, ey)
 }
 
+/// PATCH(nucleus): whether a pointer event on a system-decorated window lands
+/// on GTK's own decorations (default title bar, shadow and resize strips on
+/// GNOME Wayland) rather than on the content. GtkWindow's class handlers drive
+/// the title-bar move, the double-click and the edge resize from those events,
+/// so the embedder handlers must let them through. Always false under
+/// server-side or X11 window-manager decorations, where the content fills the
+/// toplevel.
+pub(crate) fn is_on_system_decorations(window: &gtk::Window, event: &gtk::gdk::Event) -> bool {
+  if !is_system_decorated(window) {
+    return false;
+  }
+  let Some((x, y)) = event.coords() else {
+    return false;
+  };
+  let (x, y) = event_coords_to_toplevel(window, event.window(), x, y);
+  let (cx, cy, cw, ch) = content_geometry(window);
+  x < cx as f64 || y < cy as f64 || x >= (cx + cw) as f64 || y >= (cy + ch) as f64
+}
+
 /// PATCH(nucleus): client-area size for a configure event on a (possibly)
 /// hidden-titlebar CSD window. The configure reports the FULL surface size
 /// (theme shadow margins included); `gtk_window_get_size` would subtract the
