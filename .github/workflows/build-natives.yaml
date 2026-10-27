@@ -102,6 +102,11 @@ jobs:
         shell: cmd
         run: call native-ssl\src\main\native\windows\build.bat
 
+      - name: Build native-proxy Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call native-proxy\src\main\native\windows\build.bat
+
       - name: Build system-color Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -190,6 +195,7 @@ jobs:
           FILES=(
             "darkmode-detector/nucleus_windows_theme.dll"
             "native-ssl/nucleus_ssl.dll"
+            "native-proxy/nucleus_proxy.dll"
             "system-color/nucleus_systemcolor.dll"
             "energy-manager/nucleus_energy_manager.dll"
             "taskbar-progress/nucleus_taskbar_progress.dll"
@@ -296,6 +302,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash native-ssl/src/main/native/macos/build.sh
 
+      - name: Build native-proxy macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash native-proxy/src/main/native/macos/build.sh
+
       - name: Build system-color macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash system-color/src/main/native/macos/build.sh
@@ -376,6 +386,7 @@ jobs:
           FILES=(
             "darkmode-detector/libnucleus_darkmode.dylib"
             "native-ssl/libnucleus_ssl.dylib"
+            "native-proxy/libnucleus_proxy.dylib"
             "system-color/libnucleus_systemcolor.dylib"
             "energy-manager/libnucleus_energy_manager.dylib"
             "taskbar-progress/libnucleus_taskbar_progress.dylib"
@@ -471,6 +482,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash linux-hidpi/src/main/native/linux/build.sh
 
+      - name: Build native-proxy Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash native-proxy/src/main/native/linux/build.sh
+
       - name: Build spellcheck native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash spellcheck/src/main/native/linux/build.sh
@@ -539,6 +554,7 @@ jobs:
           FILES=(
             "darkmode-detector/libnucleus_linux_theme.so"
             "linux-hidpi/libnucleus_linux_hidpi_jni.so"
+            "native-proxy/libnucleus_proxy.so"
             "spellcheck/libnucleus_spellcheck.so"
             "system-color/libnucleus_systemcolor.so"
             "energy-manager/libnucleus_energy_manager.so"
