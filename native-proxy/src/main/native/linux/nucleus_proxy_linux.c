@@ -97,6 +97,11 @@ static jstring utf8_to_java(JNIEnv *env, const char *text) {
     return (*env)->NewStringUTF(env, text);
 }
 
+/**
+ * Appends `[prefix]host[:port]` to the proxy list. IPv6 literals are bracketed
+ * so the port stays separable, and port 0 (GSettings' "unset") is omitted so the
+ * Kotlin parser applies the scheme's default port, as Chromium does.
+ */
 static void append_proxy_entry(
     char *buffer,
     size_t capacity,
@@ -105,19 +110,22 @@ static void append_proxy_entry(
     const char *host,
     int port) {
     size_t used;
+    int bracket;
+    char port_text[16];
     if (host == NULL || host[0] == '\0') return;
     used = strlen(buffer);
-    if (used + 64 >= capacity) return;
+    if (used + strlen(host) + 64 >= capacity) return;
     if (!*first) {
         buffer[used++] = ';';
         buffer[used] = '\0';
     }
     *first = 0;
-    if (scheme_prefix != NULL) {
-        snprintf(buffer + used, capacity - used, "%s%s:%d", scheme_prefix, host, port);
-    } else {
-        snprintf(buffer + used, capacity - used, "%s:%d", host, port);
-    }
+    bracket = host[0] != '[' && strchr(host, ':') != NULL;
+    port_text[0] = '\0';
+    if (port > 0) snprintf(port_text, sizeof(port_text), ":%d", port);
+    snprintf(buffer + used, capacity - used, "%s%s%s%s%s",
+        scheme_prefix != NULL ? scheme_prefix : "",
+        bracket ? "[" : "", host, bracket ? "]" : "", port_text);
 }
 
 static jobjectArray read_gsettings_config(JNIEnv *env) {
@@ -240,23 +248,8 @@ static jobjectArray read_gsettings_config(JNIEnv *env) {
             append_proxy_entry(proxy_buf, sizeof(proxy_buf), &first, "http=", http_host, http_port);
             append_proxy_entry(proxy_buf, sizeof(proxy_buf), &first, "https=", https_host, https_port);
             append_proxy_entry(proxy_buf, sizeof(proxy_buf), &first, "ftp=", ftp_host, ftp_port);
-            if (has_socks) {
-                char socks_spec[512];
-                int port = socks_port > 0 ? socks_port : 1080;
-                snprintf(socks_spec, sizeof(socks_spec), "socks5://%s:%d", socks_host, port);
-                if (!first) {
-                    size_t used = strlen(proxy_buf);
-                    if (used + 2 < sizeof(proxy_buf)) {
-                        proxy_buf[used++] = ';';
-                        proxy_buf[used] = '\0';
-                    }
-                }
-                first = 0;
-                {
-                    size_t used = strlen(proxy_buf);
-                    snprintf(proxy_buf + used, sizeof(proxy_buf) - used, "socks=%s", socks_spec);
-                }
-            }
+            append_proxy_entry(
+                proxy_buf, sizeof(proxy_buf), &first, "socks=socks5://", socks_host, socks_port);
         }
     }
 

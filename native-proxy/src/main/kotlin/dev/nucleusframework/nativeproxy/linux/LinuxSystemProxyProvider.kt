@@ -21,10 +21,12 @@ private const val NANOS_PER_MILLI = 1_000_000L
  * Linux backend modelled on Chromium's `ProxyConfigServiceLinux`.
  *
  * Resolution order:
- * 1. Desktop settings — `kioslaverc` on KDE, GSettings on every other session
- *    that ships `org.gnome.system.proxy` (GNOME, Cinnamon, …)
- * 2. Environment variables (`http_proxy`, `no_proxy`, …) when the desktop
- *    exposes no configuration
+ * 1. Desktop settings — `kioslaverc` on KDE, GSettings (`org.gnome.system.proxy`)
+ *    on GNOME-family desktops (GNOME, Cinnamon, Unity, …)
+ * 2. Environment variables (`http_proxy`, `no_proxy`, …) on every other session
+ *    (XFCE, LXQt, tiling WMs, headless) and when the desktop exposes no
+ *    configuration. The GSettings schema ships on most distributions whatever the
+ *    desktop, so its mere presence must not hide the environment.
  *
  * PAC / WPAD evaluation is not implemented: there is no WinHTTP equivalent on
  * Linux without embedding a JS engine. When a PAC URL or WPAD is configured,
@@ -44,12 +46,13 @@ internal object LinuxSystemProxyProvider : SystemProxyProvider {
     private val wakeRequested = AtomicBoolean(false)
 
     override fun readSettings(): SystemProxySettings {
-        val settings =
-            if (isKdeDesktop()) {
-                KdeProxySettings.read() ?: EnvProxySettings.read()
-            } else {
-                readGsettings() ?: EnvProxySettings.read()
-            } ?: SystemProxySettings.DIRECT
+        val desktopSettings =
+            when (desktopFamily()) {
+                DesktopFamily.KDE -> KdeProxySettings.read()
+                DesktopFamily.GNOME -> readGsettings()
+                DesktopFamily.OTHER -> null
+            }
+        val settings = desktopSettings ?: EnvProxySettings.read() ?: SystemProxySettings.DIRECT
 
         debugln(TAG) { "Linux proxy configuration: $settings" }
         return settings
@@ -112,7 +115,11 @@ internal object LinuxSystemProxyProvider : SystemProxyProvider {
         )
     }
 
-    internal fun isKdeDesktop(getenv: (String) -> String? = System::getenv): Boolean {
+    /**
+     * Classifies the session like Chromium's `base::nix::GetDesktopEnvironment`:
+     * `XDG_CURRENT_DESKTOP` first, then `DESKTOP_SESSION` / `GDMSESSION`.
+     */
+    internal fun desktopFamily(getenv: (String) -> String? = System::getenv): DesktopFamily {
         val tokens =
             sequenceOf(
                 getenv("XDG_CURRENT_DESKTOP"),
@@ -122,9 +129,33 @@ internal object LinuxSystemProxyProvider : SystemProxyProvider {
                 .flatMap { it.split(':', ';', ',') }
                 .map { it.trim().lowercase(Locale.ROOT) }
                 .filter { it.isNotEmpty() }
-        return tokens.any { it in KDE_TOKENS }
+                .toList()
+        return when {
+            tokens.any { it in KDE_TOKENS } -> DesktopFamily.KDE
+            tokens.any { it in GNOME_TOKENS } -> DesktopFamily.GNOME
+            else -> DesktopFamily.OTHER
+        }
     }
+
+    /** Which desktop configuration store the session uses for its proxy settings. */
+    internal enum class DesktopFamily { GNOME, KDE, OTHER }
 
     private val KDE_TOKENS =
         setOf("kde", "kde3", "kde4", "kde5", "kde6", "plasma", "plasma5", "plasma6")
+
+    private val GNOME_TOKENS =
+        setOf(
+            "gnome",
+            "gnome-classic",
+            "gnome-flashback",
+            "ubuntu",
+            "x-cinnamon",
+            "cinnamon",
+            "unity",
+            "pantheon",
+            "deepin",
+            "ukui",
+            "budgie",
+            "mate",
+        )
 }

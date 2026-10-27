@@ -2,6 +2,7 @@ package dev.nucleusframework.nativeproxy.linux
 
 import dev.nucleusframework.nativeproxy.NativeProxy
 import dev.nucleusframework.nativeproxy.ProxyProtocol
+import dev.nucleusframework.nativeproxy.ProxyServer
 import dev.nucleusframework.nativeproxy.SystemProxySettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,7 +16,9 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * End-to-end checks against the live GSettings on this machine.
- * Opt-in via `NUCLEUS_PROXY_E2E=true` so regular CI is not mutated.
+ * Opt-in via `NUCLEUS_PROXY_E2E=true` so regular CI is not mutated, and only on
+ * a GNOME-family session — elsewhere the provider ignores GSettings by design.
+ * Every test restores the keys it touches, whatever the outcome.
  */
 class LinuxProxyE2ETest {
     private val isLinux = System.getProperty("os.name", "").lowercase().contains("linux")
@@ -26,8 +29,10 @@ class LinuxProxyE2ETest {
         assumeTrue(isLinux && e2e)
         assumeTrue(LinuxProxyBridge.isLoaded)
         assumeTrue(hasProxySchema())
+        assumeTrue(LinuxSystemProxyProvider.desktopFamily() == LinuxSystemProxyProvider.DesktopFamily.GNOME)
 
-        withGsettingsMode("none") {
+        withRestoredGsettings {
+            runGsettings("set", PROXY_SCHEMA, "mode", "none")
             // HTTPS_PROXY is typically set in developer environments; mode=none
             // must still win, matching Chromium.
             val settings = NativeProxy.refresh()
@@ -41,8 +46,10 @@ class LinuxProxyE2ETest {
         assumeTrue(isLinux && e2e)
         assumeTrue(LinuxProxyBridge.isLoaded)
         assumeTrue(hasProxySchema())
+        assumeTrue(LinuxSystemProxyProvider.desktopFamily() == LinuxSystemProxyProvider.DesktopFamily.GNOME)
 
-        withManualProxy("proxy.e2e.test", 3128) {
+        withRestoredGsettings {
+            setManualProxy("proxy.e2e.test", 3128)
             val settings = NativeProxy.refresh()
             assertFalse(settings.isDirect)
             val proxies = NativeProxy.proxiesFor(URI("https://example.com"))
@@ -55,10 +62,34 @@ class LinuxProxyE2ETest {
     }
 
     @Test
+    fun `GSettings IPv6 host and unset port are parsed`() {
+        assumeTrue(isLinux && e2e)
+        assumeTrue(LinuxProxyBridge.isLoaded)
+        assumeTrue(hasProxySchema())
+        assumeTrue(LinuxSystemProxyProvider.desktopFamily() == LinuxSystemProxyProvider.DesktopFamily.GNOME)
+
+        withRestoredGsettings {
+            setManualProxy("fd00::1", 3128)
+            runGsettings("set", "$PROXY_SCHEMA.https", "port", "0")
+            NativeProxy.refresh()
+            assertEquals(
+                ProxyServer(ProxyProtocol.HTTP, "fd00::1", 3128),
+                NativeProxy.proxiesFor(URI("http://example.com")).single(),
+            )
+            // Port 0 is GSettings' "unset": the scheme default applies, as in Chromium.
+            assertEquals(
+                ProxyServer(ProxyProtocol.HTTP, "fd00::1", 80),
+                NativeProxy.proxiesFor(URI("https://example.com")).single(),
+            )
+        }
+    }
+
+    @Test
     fun `GSettings change is observed by the watcher`() {
         assumeTrue(isLinux && e2e)
         assumeTrue(LinuxProxyBridge.isLoaded)
         assumeTrue(hasProxySchema())
+        assumeTrue(LinuxSystemProxyProvider.desktopFamily() == LinuxSystemProxyProvider.DesktopFamily.GNOME)
 
         val latch = CountDownLatch(1)
         val seen = AtomicReference<SystemProxySettings?>(null)
@@ -67,61 +98,45 @@ class LinuxProxyE2ETest {
             latch.countDown()
         }
 
-        // Start from a known mode so the flip is always a real change.
-        runGsettings("set", "org.gnome.system.proxy", "mode", "none")
-        NativeProxy.refresh()
-        NativeProxy.addChangeListener(listener)
-        try {
-            runGsettings("set", "org.gnome.system.proxy", "mode", "manual")
-            runGsettings("set", "org.gnome.system.proxy.http", "host", "watch.e2e.test")
-            runGsettings("set", "org.gnome.system.proxy.http", "port", "9999")
-            val ok = latch.await(10, TimeUnit.SECONDS)
-            assertTrue("expected a configuration change within 10s", ok)
-            assertTrue(seen.get() != null)
-        } finally {
-            NativeProxy.removeChangeListener(listener)
-            runGsettings("set", "org.gnome.system.proxy", "mode", "none")
+        withRestoredGsettings {
+            // Start from a known mode so the flip is always a real change.
+            runGsettings("set", PROXY_SCHEMA, "mode", "none")
+            NativeProxy.refresh()
+            NativeProxy.addChangeListener(listener)
+            try {
+                setManualProxy("watch.e2e.test", 9999)
+                val ok = latch.await(10, TimeUnit.SECONDS)
+                assertTrue("expected a configuration change within 10s", ok)
+                assertTrue(seen.get() != null)
+            } finally {
+                NativeProxy.removeChangeListener(listener)
+            }
         }
     }
 
     private fun hasProxySchema(): Boolean = LinuxProxyBridge.getProxyConfig() != null
 
-    private fun withGsettingsMode(
-        mode: String,
-        block: () -> Unit,
-    ) {
-        val previous = runGsettings("get", "org.gnome.system.proxy", "mode").trim().trim('\'')
-        runGsettings("set", "org.gnome.system.proxy", "mode", mode)
+    /** Snapshots every key these tests write and puts it back after [block]. */
+    private fun withRestoredGsettings(block: () -> Unit) {
+        val snapshot =
+            RESTORED_KEYS.map { (schema, key) ->
+                Triple(schema, key, runGsettings("get", schema, key).trim())
+            }
         try {
             block()
         } finally {
-            runGsettings("set", "org.gnome.system.proxy", "mode", previous)
+            snapshot.forEach { (schema, key, value) -> runGsettings("set", schema, key, value) }
         }
     }
 
-    private fun withManualProxy(
+    private fun setManualProxy(
         host: String,
         port: Int,
-        block: () -> Unit,
     ) {
-        val prevMode = runGsettings("get", "org.gnome.system.proxy", "mode").trim().trim('\'')
-        val prevHost = runGsettings("get", "org.gnome.system.proxy.http", "host").trim().trim('\'')
-        val prevPort = runGsettings("get", "org.gnome.system.proxy.http", "port").trim()
-        val prevHttpsHost = runGsettings("get", "org.gnome.system.proxy.https", "host").trim().trim('\'')
-        val prevHttpsPort = runGsettings("get", "org.gnome.system.proxy.https", "port").trim()
-        runGsettings("set", "org.gnome.system.proxy", "mode", "manual")
-        runGsettings("set", "org.gnome.system.proxy.http", "host", host)
-        runGsettings("set", "org.gnome.system.proxy.http", "port", port.toString())
-        runGsettings("set", "org.gnome.system.proxy.https", "host", host)
-        runGsettings("set", "org.gnome.system.proxy.https", "port", port.toString())
-        try {
-            block()
-        } finally {
-            runGsettings("set", "org.gnome.system.proxy", "mode", prevMode)
-            runGsettings("set", "org.gnome.system.proxy.http", "host", prevHost)
-            runGsettings("set", "org.gnome.system.proxy.http", "port", prevPort)
-            runGsettings("set", "org.gnome.system.proxy.https", "host", prevHttpsHost)
-            runGsettings("set", "org.gnome.system.proxy.https", "port", prevHttpsPort)
+        runGsettings("set", PROXY_SCHEMA, "mode", "manual")
+        for (scheme in listOf("http", "https")) {
+            runGsettings("set", "$PROXY_SCHEMA.$scheme", "host", host)
+            runGsettings("set", "$PROXY_SCHEMA.$scheme", "port", port.toString())
         }
     }
 
@@ -131,5 +146,15 @@ class LinuxProxyE2ETest {
         val err = proc.errorStream.bufferedReader().readText()
         check(proc.waitFor() == 0) { "gsettings ${args.toList()} failed: $err" }
         return out
+    }
+
+    private companion object {
+        const val PROXY_SCHEMA = "org.gnome.system.proxy"
+
+        val RESTORED_KEYS =
+            listOf(PROXY_SCHEMA to "mode") +
+                listOf("http", "https").flatMap { scheme ->
+                    listOf("$PROXY_SCHEMA.$scheme" to "host", "$PROXY_SCHEMA.$scheme" to "port")
+                }
     }
 }
