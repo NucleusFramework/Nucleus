@@ -174,6 +174,16 @@ extern "C" BOOL nucleus_tao_mirror_available(void) {
     return resolveDComp() != NULL;
 }
 
+/* Direct3D 10.x-class GPUs (Intel Ironlake / GMA, GeForce 8-200, Radeon HD
+ * 2000-4000) only have WDDM 1.1 drivers on Windows 10. On one (Intel HD
+ * Graphics, Ironlake) the visual showed black over a blt content that was
+ * fine: a maximized or fullscreen window — both overhang the desktop — went
+ * black once the settle timer showed it, without any step failing, so
+ * mirrorBroken never latched. The mirror is gated on the tier instead. */
+extern "C" BOOL nucleus_tao_mirror_device_supported(ID3D11Device *device) {
+    return device && device->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0;
+}
+
 extern "C" NucleusTaoMirror *nucleus_tao_mirror_create(HWND surfaceHwnd, ID3D11Device *device) {
     PFN_DCompositionCreateDevice create = resolveDComp();
     if (!create || !surfaceHwnd || !device) return NULL;
