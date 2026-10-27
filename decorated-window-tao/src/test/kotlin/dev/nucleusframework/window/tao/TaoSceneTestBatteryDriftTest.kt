@@ -193,6 +193,8 @@ class TaoSceneTestBatteryDriftTest {
                 "writes an AWT comparison PNG; diagnostic, not a scene behaviour",
             TaoApplicationExitTest::class.java to
                 "pure finishTaoApplication / exitProcessOnExit mapping (#667); no ComposeScene",
+            TaoSessionEndMonkeyTest::class.java to
+                "seeded model of the Windows session-end state machine (#751); no ComposeScene",
         )
 
     // An @Ignore'd test is disabled everywhere, so it must not be in the battery either.

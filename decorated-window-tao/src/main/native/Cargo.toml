@@ -63,6 +63,8 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_Threading",
+    "Win32_System_Shutdown",
+    "Win32_UI_Accessibility",
     # Precision-touchpad pan / pinch (#706): the DirectManipulation viewport,
     # its COM plumbing, the pointer queries and the window subclass it hooks.
     "Win32_Graphics_DirectManipulation",
