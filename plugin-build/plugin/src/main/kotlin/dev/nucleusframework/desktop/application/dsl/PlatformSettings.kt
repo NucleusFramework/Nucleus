@@ -99,6 +99,24 @@ abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
     fun dmg(fn: Action<DmgSettings>) {
         fn.execute(dmg)
     }
+
+    /**
+     * Associates files with [extension] / [mimeType] with the application, declaring the macOS
+     * `CFBundleTypeRole` ([role]) and `LSHandlerRank` ([rank]) of the document type.
+     *
+     * The shorter overload uses [MacOSDocumentRole.Editor] and [MacOSHandlerRank.Default], so every
+     * document type carries the `LSHandlerRank` App Store Connect requires (ITMS-90788).
+     */
+    fun fileAssociation(
+        mimeType: String,
+        extension: String,
+        description: String,
+        iconFile: File? = null,
+        role: MacOSDocumentRole = MacOSDocumentRole.Editor,
+        rank: MacOSHandlerRank = MacOSHandlerRank.Default,
+    ) {
+        fileAssociations.add(FileAssociation(mimeType, extension, description, iconFile, role, rank))
+    }
 }
 
 /** macOS packaging settings of a Kotlin/Native application. */

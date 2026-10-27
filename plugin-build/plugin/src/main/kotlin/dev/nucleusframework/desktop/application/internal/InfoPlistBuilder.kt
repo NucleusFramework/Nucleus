@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
@@ -160,6 +161,7 @@ internal object PlistKeys {
     val CFBundleTypeMIMETypes by this
     val CFBundleTypeName by this
     val CFBundleTypeOSTypes by this
+    val LSHandlerRank by this
     val CFBundleExecutable by this
     val CFBundleIconFile by this
     val CFBundleIconName by this
@@ -180,3 +182,35 @@ internal object PlistKeys {
     val CFBundleURLName by this
     val CFBundleURLSchemes by this
 }
+
+/**
+ * `CFBundleDocumentTypes` entries: one per (MIME type, description, role, rank) group of
+ * [associations]. Every entry carries an `LSHandlerRank`, which App Store Connect requires (ITMS-90788).
+ */
+internal fun plistDocumentTypes(
+    associations: Set<FileAssociation>,
+    iconMapping: Map<File, File>,
+    defaultIconFileName: String,
+): List<InfoPlistMapValue> =
+    associations
+        .groupBy { listOf(it.mimeType, it.description, it.macOSRole, it.macOSRank) }
+        .values
+        .map { extensions ->
+            val first = extensions.first()
+            val iconPath =
+                extensions
+                    .firstNotNullOfOrNull { it.iconFile }
+                    ?.let { iconMapping[it]?.name }
+            InfoPlistMapValue(
+                PlistKeys.CFBundleTypeRole to InfoPlistStringValue(first.macOSRole.id),
+                PlistKeys.LSHandlerRank to InfoPlistStringValue(first.macOSRank.id),
+                PlistKeys.CFBundleTypeExtensions to
+                    InfoPlistListValue(extensions.map { InfoPlistStringValue(it.extension) }),
+                PlistKeys.CFBundleTypeIconFile to
+                    InfoPlistStringValue(iconPath ?: defaultIconFileName),
+                PlistKeys.CFBundleTypeMIMETypes to InfoPlistStringValue(first.mimeType),
+                PlistKeys.CFBundleTypeName to InfoPlistStringValue(first.description),
+                PlistKeys.CFBundleTypeOSTypes to
+                    InfoPlistListValue(InfoPlistStringValue("****")),
+            )
+        }
