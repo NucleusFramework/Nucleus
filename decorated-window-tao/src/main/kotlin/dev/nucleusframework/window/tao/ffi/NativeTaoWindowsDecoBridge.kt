@@ -243,6 +243,22 @@ internal object NativeTaoWindowsDecoBridge {
     )
 
     /**
+     * `EnableWindow`: disables or re-enables mouse and keyboard input to
+     * [hwnd]. A modal `DecoratedDialog` disables its owner while it is shown
+     * (#832) and re-enables it before it is hidden or destroyed, so Windows
+     * hands the owner the activation.
+     */
+    @JvmStatic
+    external fun nativeSetWindowEnabled(
+        hwnd: Long,
+        enabled: Boolean,
+    )
+
+    /** E2E probe: `IsWindowEnabled` (#832). */
+    @JvmStatic
+    external fun nativeIsWindowEnabled(hwnd: Long): Boolean
+
+    /**
      * Returns the window's outer bounds as `[x, y, width, height]` in physical
      * screen pixels, or `null` if the HWND is invalid.
      */
@@ -325,6 +341,10 @@ internal object NativeTaoWindowsDecoBridge {
     /** Win32 `IsZoomed(hwnd)`. */
     @JvmStatic
     external fun nativeIsMaximized(hwnd: Long): Boolean
+
+    /** `DwmFlush()`: blocks until DWM's next composition. False when it failed. */
+    @JvmStatic
+    external fun nativeDwmFlush(): Boolean
 
     /**
      * Atomic unmaximize + reposition under the finger when a touch drag

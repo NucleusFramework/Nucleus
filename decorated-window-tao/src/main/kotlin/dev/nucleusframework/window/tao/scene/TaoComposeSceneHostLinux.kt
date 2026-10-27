@@ -537,6 +537,14 @@ internal class TaoComposeSceneHostLinux(
     private var lastResizePurgeNs: Long = 0L
     private var resizePurgeDue: Boolean = false
 
+    /**
+     * Reclaims the cache an animation filled once the window is at rest but
+     * still visible (#638); [onMinimizedChanged] covers minimize. Never waits
+     * on the swap thread: the event loop is idle, not parked, and a busy swap
+     * just moves the purge to the next rest period.
+     */
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest(swapWaitNs = 0L) }
+
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
@@ -1589,6 +1597,14 @@ internal class TaoComposeSceneHostLinux(
         }
 
     /**
+     * Recomposes and lays the scene out without drawing — for a window that is
+     * not mapped yet, so no frame will do it (wrap-content sizing, #532).
+     */
+    fun layoutNow() {
+        sceneBundle?.composeAndLayoutNow()
+    }
+
+    /**
      * Forwards a parent composition's locals into this scene via
      * `ComposeScene.compositionLocalContext` — applied above the scene's own
      * `LocalComposeSceneContext`, so popups keep routing into THIS scene. See
@@ -1929,7 +1945,7 @@ internal class TaoComposeSceneHostLinux(
      * budget, and a minimized window allocates nothing.
      */
     fun onMinimizedChanged(minimized: Boolean) {
-        if (minimized) purgeGpuResourceCacheAtRest()
+        if (minimized) purgeGpuResourceCacheAtRest(REST_PURGE_SWAP_WAIT_NS)
     }
 
     /**
@@ -1937,19 +1953,26 @@ internal class TaoComposeSceneHostLinux(
      * context has to be current — which it can only be once the swap thread
      * has handed it back. Only the render thread
      * (this one) queues swaps, so a swap thread found idle stays idle until we
-     * release the context again. A present that does not drain in time (a
-     * Wayland compositor withholding the frame callback of a hidden surface)
-     * just skips the purge: binding now would steal the context mid-swap.
+     * release the context again. A present that does not drain within
+     * [swapWaitNs] (a Wayland compositor withholding the frame callback of a
+     * hidden surface) skips the purge: binding now would steal the context
+     * mid-swap. So does a size not yet pushed to the native window —
+     * `eglMakeCurrent` would acquire a back buffer at the old one (#444).
+     * Returns `false` when skipped, `true` when done or nothing to do (no
+     * context: a Wayland hide closed it in [suspendGpu]).
      *
      * Not under a live [TaoGpuRenderContextConsumers] consumer: an in-process
      * renderer drawing on this context must not lose its cache mid-frame (#478).
      */
-    private fun purgeGpuResourceCacheAtRest() {
-        val ctx = directContext ?: return
-        if (attachmentHandle == 0L || TaoGpuRenderContextConsumers.isActive(ctx)) return
-        if (swapThread?.awaitIdle(REST_PURGE_SWAP_WAIT_NS) == false) {
-            linuxHostLogger.fine("swap still in flight at minimize; GPU resource cache left as is")
-            return
+    private fun purgeGpuResourceCacheAtRest(swapWaitNs: Long): Boolean {
+        val ctx = directContext ?: return true
+        if (attachmentHandle == 0L || TaoGpuRenderContextConsumers.isActive(ctx)) return true
+        if (swapThread?.awaitIdle(swapWaitNs) == false) {
+            linuxHostLogger.fine("swap still in flight; GPU resource cache purge skipped")
+            return false
+        }
+        if (widthPx != lastAppliedWidthPx || heightPx != lastAppliedHeightPx || scale != lastAppliedScale) {
+            return false
         }
         NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
         // Same reason as the frame path: an embed may have run GL on this
@@ -1957,6 +1980,7 @@ internal class TaoComposeSceneHostLinux(
         if (foreignGlInterop) ctx.resetGLAll()
         ctx.purgeAtRest()
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+        return true
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -2232,6 +2256,7 @@ internal class TaoComposeSceneHostLinux(
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
         if (widthPx <= 0 || heightPx <= 0) return
+        restReclaimer.onFrame()
         if (isWayland && attachedKind == 2 && !window.isPopup) ensureToplevelDrawHook()
 
         val now = System.nanoTime()
@@ -3693,6 +3718,7 @@ internal class TaoComposeSceneHostLinux(
         if (NativeTaoLinuxTouchBridge.isLoaded && window.handle != 0L) {
             NativeTaoLinuxTouchBridge.nativeRevoke(window.handle)
         }
+        restReclaimer.close()
         // Stop the swap thread first. It may be parked inside
         // `eglSwapBuffers` waiting on a frame callback — joining without a
         // wakeup would hang. `shutdownAndJoin` requests shutdown before

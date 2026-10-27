@@ -13,7 +13,7 @@ use tao::window::WindowBuilder;
 use crate::events::{
     current_modifier_bits, dispatch, dispatch_ime_commit, dispatch_ime_preedit,
     dispatch_ime_replace_commit, dispatch_key, dispatch_scroll_gesture, dispatch_touch_input,
-    handle_for, mouse_button_code, pack_modifiers, pointer_kind_code, UserEvent,
+    handle_for, mouse_button_code, pack_modifiers, pointer_kind_code, touch_kind_code, UserEvent,
     AWT_LINE_TO_POINTS, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT,
     EVENT_CURSOR_MOVED, EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED,
     EVENT_KEY_UP, EVENT_LAUNCHED, EVENT_MAIN_EVENTS_CLEARED, EVENT_MODIFIERS_CHANGED,
@@ -888,13 +888,16 @@ pub(crate) fn run_event_loop_blocking() {
                     width,
                     height,
                 } => {
-                    let inner = {
+                    let (inner, mapped) = {
                         let guard = WINDOWS.lock().unwrap();
-                        guard.as_ref().and_then(|map| {
-                            let w = map.get(&handle)?;
-                            w.set_inner_size(LogicalSize::new(width, height));
-                            Some(w.inner_size())
-                        })
+                        guard
+                            .as_ref()
+                            .and_then(|map| {
+                                let w = map.get(&handle)?;
+                                w.set_inner_size(LogicalSize::new(width, height));
+                                Some((Some(w.inner_size()), w.is_visible()))
+                            })
+                            .unwrap_or((None, true))
                     };
                     // Win32 `SetWindowPos(SWP_ASYNCWINDOWPOS)` and a GCD-async
                     // `setContentSize:` both update the live window rect before
@@ -914,8 +917,22 @@ pub(crate) fn run_event_loop_blocking() {
                             size.height as jint,
                         );
                     }
+                    // GTK sends no configure for a window that is not mapped
+                    // yet, so the real `Resized` would only come with the map:
+                    // a window sized while hidden (wrap content, #532) waits
+                    // for this echo before it is shown. tao records the size
+                    // of an unmapped window as it is requested (patch 0015).
                     #[cfg(target_os = "linux")]
-                    let _ = inner;
+                    if let (Some(size), false) = (inner, mapped) {
+                        dispatch(
+                            handle,
+                            EVENT_RESIZED,
+                            size.width as jint,
+                            size.height as jint,
+                        );
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    let _ = mapped;
                 }
                 UserEvent::SetOuterPosition { handle, x, y } => {
                     let guard = WINDOWS.lock().unwrap();
@@ -1285,6 +1302,8 @@ pub(crate) fn run_event_loop_blocking() {
                             (touch.location.x * CURSOR_FIXED_SCALE) as jint,
                             (touch.location.y * CURSOR_FIXED_SCALE) as jint,
                             force_fixed,
+                            // A pen comes through WM_POINTER as a touch too (#827).
+                            touch_kind_code(touch.device_id),
                         );
                     }
                     _ => {}

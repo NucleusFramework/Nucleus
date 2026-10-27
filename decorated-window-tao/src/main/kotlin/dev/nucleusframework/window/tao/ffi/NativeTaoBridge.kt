@@ -4,6 +4,7 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.window.tao.TaoAccessibilityRegistry
 import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
+import dev.nucleusframework.window.tao.scene.TaoA11yActivation
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -149,6 +150,8 @@ internal object NativeTaoBridge {
          * [TaoEventCode.CURSOR_MOVED]).
          * [forceFixed] is the touch pressure × 10 000 in `[0, 10000]`, or
          * `-1` when the digitizer doesn't report pressure.
+         * [kind] is the [TaoPointerKind] of the contact: a finger, or a pen
+         * (and its eraser end), which WM_POINTER reports the same way (#827).
          *
          * Default no-op so non-Windows callers can ignore it.
          */
@@ -160,6 +163,7 @@ internal object NativeTaoBridge {
             xFixed: Int,
             yFixed: Int,
             forceFixed: Int,
+            kind: Int,
         ) {
         }
 
@@ -621,6 +625,15 @@ internal object NativeTaoBridge {
     /** Scale factor encoded as `(scale * 1000) as Int` to keep a single signature. */
     @JvmStatic
     external fun nativeScaleFactor(handle: Long): Int
+
+    /**
+     * Screen position, in physical px, of the last mouse move or button
+     * message, packed as `(x shl 32) or (y and 0xffffffff)`; [Long.MIN_VALUE]
+     * before the first one and outside Windows, which is the only platform
+     * that tracks it (#837).
+     */
+    @JvmStatic
+    external fun nativeLastMouseScreenPosition(): Long
 
     /**
      * Linux only: returns `[x, y, width, height]` of the primary monitor's
@@ -1136,6 +1149,13 @@ internal object NativeTaoBridge {
         action: Int,
     ) {
         fatalUpcall { TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action) }
+    }
+
+    /** An accessibility client started listening: run the semantics walks parked while none was. */
+    @JvmStatic
+    @Suppress("unused") // called from JNI (a11y/jvm.rs → notify_a11y_activated)
+    fun onA11yActivated() {
+        fatalUpcall { TaoA11yActivation.onActivated() }
     }
 
     @JvmStatic

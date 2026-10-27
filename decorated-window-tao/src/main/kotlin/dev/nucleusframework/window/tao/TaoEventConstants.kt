@@ -99,7 +99,8 @@ public object TaoEventCode {
 
     /**
      * `a` = the [TaoPointerKind] of the cursor / button events that follow,
-     * sent only when it changes. Linux and macOS (#827).
+     * sent only when it changes. Linux and macOS (#827); a Windows pen comes
+     * as a touch, whose kind rides with each touch event instead.
      */
     internal const val POINTER_KIND: Int = 28
 }
@@ -109,6 +110,9 @@ internal object TaoPointerKind {
     const val MOUSE: Int = 0
     const val STYLUS: Int = 1
     const val ERASER: Int = 2
+
+    /** A finger; Windows touch events only. */
+    const val TOUCH: Int = 3
 }
 
 /** The Compose pointer type of a [TaoPointerKind] code; unknown codes are the mouse. */
@@ -116,6 +120,7 @@ internal fun taoPointerType(kind: Int): PointerType =
     when (kind) {
         TaoPointerKind.STYLUS -> PointerType.Stylus
         TaoPointerKind.ERASER -> PointerType.Eraser
+        TaoPointerKind.TOUCH -> PointerType.Touch
         else -> PointerType.Mouse
     }
 

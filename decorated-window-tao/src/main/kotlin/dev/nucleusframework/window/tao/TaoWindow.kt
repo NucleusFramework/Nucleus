@@ -42,6 +42,13 @@ private const val STALE_REDRAW_NANOS: Long = 1_000_000_000L
 private const val PLACEHOLDER_MOVE_WINDOW_NANOS: Long = 2_000_000_000L
 
 /**
+ * Called on every [TaoWindow.show], before the native visibility flip, for
+ * every window. A test probe: the headful suite reads what a window looks
+ * like at the instant it maps (#532).
+ */
+internal val showObservers: MutableList<(TaoWindow) -> Unit> = CopyOnWriteArrayList()
+
+/**
  * Phase 2 handle to a window owned by the Tao event loop.
  *
  * Native commands are thread-safe: they post commands as user events to the
@@ -304,6 +311,13 @@ public class TaoWindow internal constructor(
      */
     @Volatile
     internal var directManipulationListener: ((TaoDirectManipulationEvent) -> Unit)? = null
+
+    /**
+     * Tool behind the touch event being dispatched to [touchInputListener]:
+     * a finger, or a Windows pen and its eraser end (#827).
+     */
+    internal var touchPointerType: PointerType = PointerType.Touch
+        private set
 
     @Volatile
     private var keyListener: KeyEventListener? = null
@@ -1303,6 +1317,7 @@ public class TaoWindow internal constructor(
         startupEraseActive = true
         setStartupBackgroundEraseEnabled(true)
         showHook?.invoke()
+        showObservers.forEach { it(this) }
         NativeTaoBridge.nativeSetVisible(handle, true)
         // Queued behind the show above (both ride the same event loop), so the
         // click-through state lands on the mapped window — see
@@ -1549,7 +1564,9 @@ public class TaoWindow internal constructor(
         xFixed: Int,
         yFixed: Int,
         forceFixed: Int,
+        kind: Int,
     ) {
+        touchPointerType = taoPointerType(kind)
         touchInputListener?.onTouch(phase, id, xFixed, yFixed, forceFixed)
     }
 

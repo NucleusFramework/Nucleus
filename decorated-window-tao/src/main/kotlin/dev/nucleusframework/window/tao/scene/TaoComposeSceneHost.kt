@@ -426,6 +426,12 @@ internal class TaoComposeSceneHost(
         NativeMetalBridge.setFullscreenPrepare(nsViewHandle) { targetW, targetH ->
             prepareFullscreenFrame(targetW, targetH)
         }
+        // Back in sight: re-kick the render loop, which skipped every frame
+        // (and so parked the frame clock) while the window was occluded.
+        NativeMetalBridge.setOcclusionListener(nsViewHandle) { visible ->
+            occluded = !visible
+            if (visible) requestFrame()
+        }
 
         // The DnD manager needs lazy access to the scene's rootDragAndDropNode,
         // but the scene cannot be constructed before we hand it the
@@ -751,6 +757,9 @@ internal class TaoComposeSceneHost(
 
     private var lastResizePurgeNs: Long = 0
 
+    /** Reclaims the cache an animation filled once the window is at rest (#638). */
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest() }
+
     /**
      * Set by [onResized] once its same-turn present is on its way; the next
      * render-loop frame then skips its own replay + present (#576). That frame
@@ -792,7 +801,7 @@ internal class TaoComposeSceneHost(
      * on an animating window as a visible stall — a window with a live
      * `NativeView` embed dropped below 4 frames per 400 ms right after a storm.
      * Cost with no measured benefit. The reclaim that #638 is actually after is
-     * at rest, not at drag end, and belongs on the idle path.
+     * at rest, not at drag end — that is [restReclaimer].
      */
     private fun purgeResizeScratchIfDue() {
         val now = System.nanoTime()
@@ -884,15 +893,20 @@ internal class TaoComposeSceneHost(
      * (#478), whose renderer must not lose its cache mid-frame.
      */
     fun onMinimizedChanged(minimized: Boolean) {
-        if (!minimized) return
-        val ctx = directContext ?: return
+        if (minimized) purgeGpuResourceCacheAtRest()
+    }
+
+    /** [onMinimizedChanged]'s purge, also [restReclaimer]'s. Always `true`: nothing to retry. */
+    private fun purgeGpuResourceCacheAtRest(): Boolean {
+        val ctx = directContext ?: return true
         if (dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
                 .isActive(ctx)
         ) {
-            return
+            return true
         }
         // Rejected once detach() shut the executor down — nothing to reclaim then.
         runCatching { renderExecutor.submit { ctx.purgeAtRest() } }
+        return true
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -1689,6 +1703,12 @@ internal class TaoComposeSceneHost(
         // once per frame.
         private const val PUMP_PARK_NANOS = 50_000L // 50 µs
 
+        // How long the CVDisplayLink keeps firing after the last frame. A
+        // running link wakes its CoreVideo thread on every refresh even with
+        // nothing to draw, so an idle window must stop it; the next frame
+        // restarts it.
+        private const val DISPLAY_LINK_IDLE_MILLIS = 500L
+
         // Wire scales (must match `TRACKPAD_VALUE_FIXED_SCALE` and
         // `CURSOR_FIXED_SCALE` on the Rust side).
         private const val TRACKPAD_POSITION_SCALE: Float = 1024f
@@ -1764,6 +1784,14 @@ internal class TaoComposeSceneHost(
     // ── VSync-paced render loop (AWT/skiko MetalVSyncer pattern) ──
     private var frameDispatcher: org.jetbrains.skiko.FrameDispatcher? = null
     private val renderLoopJob = kotlinx.coroutines.SupervisorJob()
+    private var renderLoopScope: kotlinx.coroutines.CoroutineScope? = null
+
+    // Set from the AppKit occlusion notification (main thread): no frame is
+    // rendered while nothing of the window can be seen.
+    private var occluded = false
+
+    private val isOutOfSight: Boolean get() = window.isMinimized || occluded
+    private var displayLinkIdleStop: kotlinx.coroutines.Job? = null
 
     /** Schedules a single coalesced frame on the render loop. The sole entry
      *  point for "please repaint" — both Compose `invalidate` and Tao
@@ -1787,6 +1815,7 @@ internal class TaoComposeSceneHost(
             kotlinx.coroutines.CoroutineScope(
                 coroutineContext + TaoMainDispatcher + renderLoopJob + TaoFatalCoroutineExceptionHandler,
             )
+        renderLoopScope = scope
         frameDispatcher =
             org.jetbrains.skiko.FrameDispatcher(scope) {
                 renderFrameSuspending(handle)
@@ -1803,12 +1832,17 @@ internal class TaoComposeSceneHost(
         val ctx = directContext ?: return
         if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
 
-        // Minimized: nothing is visible. Drop the frame before recording +
-        // advancing the frame clock — that parks Compose animations (no
-        // withFrameNanos tick → no re-invalidation), so the FrameDispatcher
+        // Minimized or occluded: nothing is visible. Drop the frame before
+        // recording + advancing the frame clock — that parks Compose animations
+        // (no withFrameNanos tick → no re-invalidation), so the FrameDispatcher
         // quiesces instead of rendering into a hidden surface. Restored via
-        // TaoWindow's requestRedraw on the MINIMIZED-off event.
-        if (window.isMinimized) return
+        // TaoWindow's requestRedraw on the MINIMIZED-off event, or the
+        // occlusion listener once the window is back in sight.
+        if (isOutOfSight) return
+        restReclaimer.onFrame()
+
+        displayLinkIdleStop?.cancel()
+        NativeMetalBridge.nativeStartDisplayLink(handle) // no-op while running
 
         // ── interop transaction snapshot (main) ──
         val tx = retrieveTransaction()
@@ -1865,6 +1899,11 @@ internal class TaoComposeSceneHost(
         // ([onResized]) must not queue behind this park — the frame it puts
         // on screen is for the bounds AppKit is committing now.
         withContext(Dispatchers.IO) { NativeMetalBridge.nativeVSyncWait(handle) }
+        displayLinkIdleStop =
+            renderLoopScope?.launch {
+                kotlinx.coroutines.delay(DISPLAY_LINK_IDLE_MILLIS)
+                NativeMetalBridge.nativeStopDisplayLink(handle)
+            }
         if (mainPresented) TaoPresentDiagnostics.record(window.handle, IntSize(frameW, frameH))
         // The window was resized while this frame was in flight (#817): its
         // timed present of the old size can reach the screen *after* the
@@ -2137,10 +2176,12 @@ internal class TaoComposeSceneHost(
         // Drop the transition hook before the scene goes: a late
         // willEnterFS would otherwise re-enter a torn-down host.
         NativeMetalBridge.setFullscreenPrepare(nsViewHandle, null)
+        NativeMetalBridge.setOcclusionListener(nsViewHandle, null)
         // Stop driving frames first: after this no new replay is submitted.
         frameDispatcher?.cancel()
         frameDispatcher = null
         renderLoopJob.cancel()
+        restReclaimer.close()
         textToolbar.hide()
         window.clearContentMeasurer()
         sceneBundle?.close()

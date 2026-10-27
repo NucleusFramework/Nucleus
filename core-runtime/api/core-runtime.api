@@ -238,10 +238,12 @@ public final class dev/nucleusframework/core/runtime/Platform$Companion {
 public final class dev/nucleusframework/core/runtime/SingleInstanceManager {
 	public static final field INSTANCE Ldev/nucleusframework/core/runtime/SingleInstanceManager;
 	public final fun getConfiguration ()Ldev/nucleusframework/core/runtime/SingleInstanceManager$Configuration;
+	public final fun getDirectoryWatcher ()Lkotlin/jvm/functions/Function2;
 	public final fun isSingleInstance (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Z
 	public static synthetic fun isSingleInstance$default (Ldev/nucleusframework/core/runtime/SingleInstanceManager;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Z
 	public final fun releaseForHandoff ()V
 	public final fun setConfiguration (Ldev/nucleusframework/core/runtime/SingleInstanceManager$Configuration;)V
+	public final fun setDirectoryWatcher (Lkotlin/jvm/functions/Function2;)V
 }
 
 public final class dev/nucleusframework/core/runtime/SingleInstanceManager$Configuration {

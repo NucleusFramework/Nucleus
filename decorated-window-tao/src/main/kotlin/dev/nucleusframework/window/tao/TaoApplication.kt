@@ -577,8 +577,9 @@ public object TaoApplication {
             xFixed: Int,
             yFixed: Int,
             forceFixed: Int,
+            kind: Int,
         ) {
-            guarded { lookup(handle)?.dispatchTouchInput(phase, id, xFixed, yFixed, forceFixed) }
+            guarded { lookup(handle)?.dispatchTouchInput(phase, id, xFixed, yFixed, forceFixed, kind) }
         }
 
         override fun onImeReplaceCommit(

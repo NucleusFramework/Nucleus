@@ -195,12 +195,13 @@ pub(crate) const EVENT_DECORATIONS_SUPPRESSED: jint = 27;
 // the new tool, so the JVM keeps it as state like the modifiers. Linux: GDK
 // names a tablet pen or eraser as the source of its events; macOS: mouse
 // events with the `TabletPoint` subtype, the tool named by proximity.
+// Windows reports a pen through WM_POINTER as a touch, so its kind rides
+// with each `dispatch_touch_input` instead (`POINTER_KIND_TOUCH` = a finger).
 pub(crate) const EVENT_POINTER_KIND: jint = 28;
 pub(crate) const POINTER_KIND_MOUSE: jint = 0;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) const POINTER_KIND_STYLUS: jint = 1;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) const POINTER_KIND_ERASER: jint = 2;
+pub(crate) const POINTER_KIND_TOUCH: jint = 3;
 
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;
@@ -734,6 +735,7 @@ pub(crate) fn dispatch_touch_input(
     x_fixed: jint,
     y_fixed: jint,
     force_fixed: jint,
+    kind: jint,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(guard) = EVENT_CALLBACK.lock() else {
@@ -748,7 +750,7 @@ pub(crate) fn dispatch_touch_input(
     let _ = env.call_method(
         callback.as_obj(),
         "onTouchInput",
-        "(JIJIII)V",
+        "(JIJIIII)V",
         &[
             JValue::Long(handle as jlong),
             JValue::Int(phase),
@@ -756,6 +758,7 @@ pub(crate) fn dispatch_touch_input(
             JValue::Int(x_fixed),
             JValue::Int(y_fixed),
             JValue::Int(force_fixed),
+            JValue::Int(kind),
         ],
     );
     if env.exception_check().unwrap_or(false) {
@@ -792,10 +795,28 @@ pub(crate) fn pointer_kind_code(device_id: DeviceId) -> jint {
             _ => POINTER_KIND_MOUSE,
         }
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(target_os = "windows")]
+    {
+        use tao::platform::windows::{DeviceIdExtWindows, PointerSource};
+        match device_id.pointer_source() {
+            PointerSource::Pen => POINTER_KIND_STYLUS,
+            PointerSource::Eraser => POINTER_KIND_ERASER,
+            _ => POINTER_KIND_MOUSE,
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         let _ = device_id;
         POINTER_KIND_MOUSE
+    }
+}
+
+/// The POINTER_KIND_* of the tool behind a Windows `WindowEvent::Touch`: a
+/// pen or its eraser end, else a finger.
+pub(crate) fn touch_kind_code(device_id: DeviceId) -> jint {
+    match pointer_kind_code(device_id) {
+        POINTER_KIND_MOUSE => POINTER_KIND_TOUCH,
+        kind => kind,
     }
 }
 

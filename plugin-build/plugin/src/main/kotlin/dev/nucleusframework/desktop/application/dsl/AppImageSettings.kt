@@ -17,7 +17,18 @@ abstract class AppImageSettings {
     /** Synopsis (short description for .desktop) */
     var synopsis: String? = null
 
-    /** Additional desktop file entries (key=value) */
+    /**
+     * Additional desktop file entries (key=value), applied to the `.desktop` file of every
+     * Linux target (deb, rpm, pacman, AppImage, …), not only the AppImage.
+     *
+     * Entries win over the values Nucleus derives: `Name` over `appName`, `Comment` over
+     * `description`, `Categories` over [LinuxPlatformSettings.appCategory]. Localized keys
+     * (`Name[he]`, `Comment[ru]`, …) are written as-is, so a launcher found by typing in one
+     * script can carry translations, e.g. `"Name" to "Zayit", "Name[he]" to "זית"`.
+     *
+     * A `Comment` entry also replaces `description` as the Linux package description, since
+     * electron-builder reads both from the same option.
+     */
     var desktopEntries: Map<String, String> = emptyMap()
 
     /**
