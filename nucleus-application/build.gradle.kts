@@ -49,6 +49,9 @@ dependencies {
     // compileOnly: NucleusWindow.share is only callable by an app that already builds a
     // ShareRequest, i.e. that has nucleus.share; never forced on consumers.
     compileOnly(project(":share"))
+    // compileOnly: NucleusWindow.requestLocationAuthorization is only useful to an app that
+    // already depends on nucleus.location; never forced on consumers.
+    compileOnly(project(":location"))
 
     testImplementation(libs.junit)
     testImplementation(libs.filekit.core)
