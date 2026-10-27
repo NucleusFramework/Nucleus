@@ -14,9 +14,9 @@ import dev.nucleusframework.location.LocationAccuracy
 import dev.nucleusframework.location.LocationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -29,8 +29,6 @@ import kotlin.time.Duration.Companion.minutes
  * `track`, `settings`.
  */
 class MainActivity : Activity() {
-    private val scope = MainScope()
-    private var tracking: Job? = null
     private lateinit var output: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,12 +59,17 @@ class MainActivity : Activity() {
                 addView(output)
             }
         setContentView(ScrollView(this).apply { addView(column) })
+        output.text = history
 
-        log("available: ${Geolocation.isAvailable}")
-        scope.launch {
-            Geolocation.authorizationUpdates().collect { log("authorization: $it") }
+        current = WeakReference(this)
+        if (savedInstanceState == null && authorizationWatch == null) {
+            log("available: ${Geolocation.isAvailable}")
+            authorizationWatch =
+                scope.launch {
+                    Geolocation.authorizationUpdates().collect { log("authorization: $it") }
+                }
         }
-        intent.getStringExtra(EXTRA_ACTION)?.let(::run)
+        if (savedInstanceState == null) intent.getStringExtra(EXTRA_ACTION)?.let(::run)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -75,7 +78,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        scope.cancel()
+        if (current.get() === this) current = WeakReference(null)
         super.onDestroy()
     }
 
@@ -128,13 +131,22 @@ class MainActivity : Activity() {
             }
     }
 
-    private fun log(line: String) {
-        Log.i(TAG, line)
-        output.append("$line\n")
-    }
-
     private companion object {
         const val TAG = "LocationDemo"
         const val EXTRA_ACTION = "action"
+
+        // Process-wide, so a request survives the activity being recreated (the permission
+        // dialog itself can cause a configuration change), as it would in a ViewModel.
+        val scope = MainScope()
+        var tracking: Job? = null
+        var authorizationWatch: Job? = null
+        val history = StringBuilder()
+        var current = WeakReference<MainActivity>(null)
+
+        fun log(line: String) {
+            Log.i(TAG, line)
+            history.append(line).append('\n')
+            current.get()?.output?.text = history
+        }
     }
 }
