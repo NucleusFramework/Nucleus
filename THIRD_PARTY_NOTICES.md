@@ -12,10 +12,11 @@ Full license texts are in [`licenses/`](licenses/):
 | [`licenses/LICENSE-APACHE-2.0.txt`](licenses/LICENSE-APACHE-2.0.txt) | Gradle plugin (derived), `tao`, AccessKit crates (Apache option) |
 | [`licenses/LICENSE-MIT-accesskit.txt`](licenses/LICENSE-MIT-accesskit.txt) | AccessKit crates (MIT option) |
 | [`licenses/LICENSE-BSD-3-Clause-angle.txt`](licenses/LICENSE-BSD-3-Clause-angle.txt) | ANGLE runtime libraries and EGL/KHR headers |
-| [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt) | `robius-share` (derived source in `share`) |
+| [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt) | `robius-share` (derived source in `share`), `robius-authentication` (derived source in `authentication`) |
 
 The artifacts that redistribute third-party code ship this file and `licenses/` inside their JAR
-under `META-INF/` (`nucleus.decorated-window-tao`, the desktop JAR of `nucleus.share` and the
+under `META-INF/` (`nucleus.decorated-window-tao`, the desktop JARs of `nucleus.share` and
+`nucleus.authentication`, and the
 `dev.nucleusframework` Gradle plugin), as required by Apache-2.0 §4(a) and the MIT notice clause.
 
 ---
@@ -111,6 +112,29 @@ portal), and its minimal D-Bus client is ported from it:
 | `share/src/commonMain/kotlin/dev/nucleusframework/share/MimeTypes.kt` | `primaryMimeType` in `crates/share/src/sys/android/ShareSheet.java` |
 
 - Project: Project Robius — https://github.com/project-robius/robius (commit `71966dc2`)
+- License: MIT — [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt)
+- Copyright (c) 2023-2025 Project Robius
+
+---
+
+## 6. robius-authentication — derived source, compiled into a shipped binary (MIT)
+
+The `authentication` module's desktop bridge follows `robius-authentication`'s per-platform
+strategies (macOS `LAContext` policy and `LAError` mapping, Windows Hello through
+`IUserConsentVerifierInterop` with a CredUI + `LogonUserW` password fallback, polkit
+`CheckAuthorization` on Linux); the Windows fallback is ported from it:
+
+| Nucleus file | Derived from |
+|--------------|--------------|
+| `authentication/src/main/native/src/platform/windows/fallback.rs` | `crates/authentication/src/sys/windows/fallback.rs` |
+| `authentication/src/main/native/src/platform/windows/mod.rs` | `crates/authentication/src/sys/windows/mod.rs` |
+| `authentication/src/main/native/src/platform/macos.rs` | `crates/authentication/src/sys/apple.rs` |
+| `authentication/src/main/native/src/platform/linux/mod.rs` | `crates/authentication/src/sys/linux/mod.rs` |
+
+The Linux D-Bus client (`platform/linux/dbus.rs`) reuses the marshalling of `share`'s, itself
+ported from `robius-share` (§5).
+
+- Project: Project Robius — https://github.com/project-robius/robius (commit `ad00d61b`)
 - License: MIT — [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt)
 - Copyright (c) 2023-2025 Project Robius
 
