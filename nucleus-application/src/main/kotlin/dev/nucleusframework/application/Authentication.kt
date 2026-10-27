@@ -22,6 +22,9 @@ import dev.nucleusframework.core.runtime.Platform
  * }
  * ```
  *
+ * Cancelling the caller resumes it at once; the Hello dialog itself may stay up until the
+ * user dismisses it (see `Authenticator`).
+ *
  * Requires `nucleus.authentication` on the app's classpath; `nucleus-application` never ships it.
  *
  * @throws AuthenticationException when the user did not authenticate or the prompt could not be shown

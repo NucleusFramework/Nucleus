@@ -5,7 +5,7 @@ mod fallback;
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use windows::core::{factory, BOOL, HSTRING};
 use windows::Security::Credentials::UI::{
@@ -34,6 +34,12 @@ struct Pending {
 }
 
 static PENDING: Mutex<BTreeMap<i64, Pending>> = Mutex::new(BTreeMap::new());
+
+/// When this process last cancelled a Hello request, see [wait_for_cancelled_dialog].
+static LAST_HELLO_CANCEL: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// How long a cancelled Hello dialog may stay on screen before a new request goes ahead anyway.
+const CANCELLED_DIALOG_GRACE: Duration = Duration::from_secs(15);
 
 pub(crate) fn availability(policy: Policy) -> (Biometry, Result<()>) {
     let _com = ComGuard::new_multithreaded();
@@ -92,6 +98,9 @@ pub(crate) fn cancel(id: i64) {
     match hello {
         Some(Some(operation)) => {
             let _ = operation.Cancel();
+            if let Ok(mut last) = LAST_HELLO_CANCEL.lock() {
+                *last = Some(Instant::now());
+            }
         }
         // The CredUI prompt runs in this process and has no cancel API: close its dialog.
         Some(None) => close_own_credential_dialog(),
@@ -117,6 +126,9 @@ fn authenticate_blocking(id: i64, hwnd: HWND, prompt: &Prompt) -> Result<()> {
     if !hello_available() {
         return fallback::authenticate(hwnd, prompt);
     }
+    if !wait_for_cancelled_dialog(id) {
+        return Err(Error::AppCanceled.into());
+    }
     let interop = factory::<UserConsentVerifier, IUserConsentVerifierInterop>()?;
     let operation: IAsyncOperation<UserConsentVerificationResult> =
         unsafe { interop.RequestVerificationForWindowAsync(hwnd, &HSTRING::from(prompt.reason.as_str())) }?;
@@ -137,6 +149,34 @@ fn authenticate_blocking(id: i64, hwnd: HWND, prompt: &Prompt) -> Result<()> {
         focus_credential_dialog();
     }
     convert(operation.join()?)
+}
+
+/// Waits for the dialog of a Hello request this process cancelled to leave the screen, and
+/// returns false when this request is cancelled meanwhile.
+///
+/// NOTE: Windows shows one Hello request at a time, and `Cancel()` closes the dialog seconds
+/// later at best, sometimes never: a request sent before it is gone queues behind it.
+/// Nothing else can close it (UIPI), see docs/internals/authentication.md.
+fn wait_for_cancelled_dialog(id: i64) -> bool {
+    let Some(cancelled_at) = LAST_HELLO_CANCEL.lock().ok().and_then(|last| *last) else {
+        return true;
+    };
+    let deadline = cancelled_at + CANCELLED_DIALOG_GRACE;
+    while Instant::now() < deadline && credential_dialog_visible() {
+        if is_canceled(id) {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    !is_canceled(id)
+}
+
+fn is_canceled(id: i64) -> bool {
+    PENDING
+        .lock()
+        .ok()
+        .and_then(|pending| pending.get(&id).map(|pending| pending.canceled))
+        .unwrap_or(true)
 }
 
 fn convert(result: UserConsentVerificationResult) -> Result<()> {
@@ -170,6 +210,26 @@ fn focus_credential_dialog() {
     }
 }
 
+fn credential_dialog_visible() -> bool {
+    let mut found = false;
+    let _ = unsafe { EnumWindows(Some(find_visible_dialog), LPARAM(&mut found as *mut bool as isize)) };
+    found
+}
+
+unsafe extern "system" fn find_visible_dialog(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    if IsWindowVisible(hwnd).as_bool() && is_credential_dialog(hwnd) {
+        *(lparam.0 as *mut bool) = true;
+        return BOOL(0);
+    }
+    TRUE
+}
+
+fn is_credential_dialog(hwnd: HWND) -> bool {
+    let mut class = [0u16; 64];
+    let len = unsafe { GetClassNameW(hwnd, &mut class) } as usize;
+    String::from_utf16_lossy(&class[..len]) == CREDENTIAL_DIALOG_CLASS
+}
+
 fn close_own_credential_dialog() {
     let _ = unsafe { EnumWindows(Some(close_if_own_dialog), LPARAM(0)) };
 }
@@ -177,12 +237,8 @@ fn close_own_credential_dialog() {
 unsafe extern "system" fn close_if_own_dialog(hwnd: HWND, _lparam: LPARAM) -> BOOL {
     let mut pid = 0u32;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
-    if pid == GetCurrentProcessId() {
-        let mut class = [0u16; 64];
-        let len = GetClassNameW(hwnd, &mut class) as usize;
-        if String::from_utf16_lossy(&class[..len]) == CREDENTIAL_DIALOG_CLASS {
-            let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
-        }
+    if pid == GetCurrentProcessId() && is_credential_dialog(hwnd) {
+        let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
     }
     TRUE
 }

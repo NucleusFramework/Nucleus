@@ -67,11 +67,33 @@ outcome finds nothing and is dropped:
 | Platform | Cancel |
 |---|---|
 | macOS / iOS | `LAContext.invalidate()`; the reply then arrives with `LAErrorAppCancel` |
-| Windows | `IAsyncOperation.Cancel()` on Hello; the in-process CredUI dialog has no cancel API, so its `Credential Dialog Xaml Host` window gets `WM_CLOSE` |
+| Windows | `IAsyncOperation.Cancel()` on Hello, best effort (below); the in-process CredUI dialog has no cancel API, so its `Credential Dialog Xaml Host` window gets `WM_CLOSE` |
 | Linux | `CancelCheckAuthorization(cancellation_id)` on the same connection (polkit only lets the caller that started a check cancel it), sent from another thread through a shared writer |
 
 The cancellation handler is installed after the native call returns, so a caller already
 cancelled at that point dismisses the prompt at once instead of leaving it up.
+
+### Windows Hello may outlive the cancel
+
+The caller always resumes at once, but the Hello dialog is not ours to close. It lives in
+`CredentialUIBroker.exe`, which UIPI shields from this process: `WM_CLOSE`, `SendInput`, UI
+Automation and `TerminateProcess` are all refused. `Cancel()` is the only lever, and on
+Windows 11 26100 it closes the dialog 2-7 s later at best; in a run of attempts it stopped
+closing it at all, cancel after cancel, the dialog staying up even after the app exited
+(neither releasing the operation without `Cancel()` nor giving the dialog the foreground
+changed that). Windows shows one Hello request at a time, so a later request queues behind
+a dialog left up. The outcome of an abandoned dialog is dropped: answering it changes nothing.
+
+Other libraries live with the same limit. Flutter `local_auth_windows`, Bitwarden, KeePassXC
+and robius offer no cancel; Chrome's password-manager reauth abandons the result and lets the
+OS prompt close whenever it does; docket (#178) hit the same stuck dialog and documents it.
+Only `webauthn.dll` has a documented cancel (`WebAuthNCancelCurrentOperation`, Chromium's
+WebAuthn path), at the price of a passkey ceremony instead of a consent prompt.
+
+So a new Hello request first waits, up to 15 s after this process last cancelled one, for no
+`Credential Dialog Xaml Host` window to be visible (`wait_for_cancelled_dialog`): when the
+system does close the old dialog, the new one never queues behind it. A caller cancelled
+while waiting ends without showing anything.
 
 ## Verification
 
@@ -94,6 +116,11 @@ cancelled at that point dismisses the prompt at once instead of leaving it up.
 - macOS E2E recipe: poll `CGWindowListCopyWindowInfo` for an on-screen window owned by
   `coreautha` (layer 1000) to time the panel's appearance and disappearance. Measured on macOS 27:
   the panel appears ~0.1 s after the request and is gone ~0.1 s after `invalidate()`.
+- Windows E2E recipe: enumerate visible top-level windows of class `Credential Dialog Xaml Host`
+  (owner process `CredentialUIBroker`, `GetWindow(GW_OWNER)` = the app's HWND with
+  `NucleusWindow.authenticate`) to time the dialog without screenshots. Measured on Windows 11
+  26100: the dialog appears ~0.4 s after the request; after a cancel it leaves 2-7 s later or
+  not at all (above). A dialog left up can only be dismissed by a person.
 - Linux E2E recipe (GNOME): gnome-shell runs `polkit-agent-helper-1` (`pgrep -x polkit-agent-he`)
   exactly while its dialog is up, so polling it times the dialog without screenshots. Measured on
   GNOME 50: the dialog appears ~0.1 s after the request and is gone ~0.25 s after the cancel.

@@ -28,9 +28,11 @@ package dev.nucleusframework.authentication
  * can patch the app can skip it. Secrets that must stay locked belong in a store that
  * releases them only after the same check (Keychain access control, Android Keystore).
  *
- * Cancelling the calling coroutine dismisses the prompt. Desktop and Android have
- * overloads naming the parent window or activity; without one, the frontmost one of the
- * app is used.
+ * Cancelling the calling coroutine dismisses the prompt, and the caller resumes at once.
+ * Windows Hello is the exception: its dialog belongs to the system, which may leave it on
+ * screen until the user dismisses it; answering it then changes nothing. Desktop and
+ * Android have overloads naming the parent window or activity; without one, the frontmost
+ * one of the app is used.
  */
 public object Authenticator {
     /** Whether this platform has an authentication backend (on desktop: whether the native bridge loaded). */
@@ -56,7 +58,8 @@ public object Authenticator {
      * call from any dispatcher: the platform hops to its UI thread itself.
      *
      * @throws AuthenticationException when the user did not authenticate or the prompt
-     * could not be shown; cancelling the caller dismisses the prompt instead
+     * could not be shown; cancelling the caller dismisses the prompt instead (except, possibly,
+     * the Windows Hello dialog: see [Authenticator])
      */
     public suspend fun authenticate(
         prompt: AuthenticationPrompt,

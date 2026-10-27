@@ -33,7 +33,9 @@ scope.launch {
 ```
 
 From `nucleus-application`, `window.authenticate(prompt)` parents the Windows Hello dialog to the
-window. Cancelling the calling coroutine dismisses the prompt.
+window. Cancelling the calling coroutine dismisses the prompt and resumes the caller at once,
+with one exception: Windows may leave the Hello dialog on screen until the user dismisses it
+(no app can close it), and an answer given there no longer counts.
 
 `AuthenticationPolicy.Biometrics` requires a biometric. Windows (Hello always accepts its PIN) and
 Linux (PAM decides) cannot enforce it and fail with `UnsupportedPolicy` instead of accepting less.
