@@ -598,13 +598,13 @@ internal object NativeTaoBridge {
     external fun nativeScaleFactor(handle: Long): Int
 
     /**
-     * Screen position, in physical px, of the last mouse move or button
-     * message, packed as `(x shl 32) or (y and 0xffffffff)`; [Long.MIN_VALUE]
-     * before the first one and outside Windows, which is the only platform
-     * that tracks it (#837).
+     * Takes the screen position, in physical px, of the last mouse button
+     * release, packed as `(x shl 32) or (y and 0xffffffff)`, and clears it;
+     * [Long.MIN_VALUE] when there was none since the last take and outside
+     * Windows, which is the only platform that tracks it (#837).
      */
     @JvmStatic
-    external fun nativeLastMouseScreenPosition(): Long
+    external fun nativeTakeMouseReleaseScreenPosition(): Long
 
     /**
      * Linux only: returns `[x, y, width, height]` of the primary monitor's
