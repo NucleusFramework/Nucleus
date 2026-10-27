@@ -68,6 +68,9 @@ pub struct PlatformSpecificWindowBuilderAttributes {
   /// on X11 the EGL embedder renders straight into the toplevel, which is
   /// incompatible with GTK-drawn frame pixels, so the flag is ignored there.
   pub csd_hidden_titlebar: bool,
+  /// Nucleus patch: no tao `WlHeader` on Wayland, so GTK 3 picks server-side
+  /// decorations where offered and draws its default title bar otherwise.
+  pub system_decorations: bool,
 }
 
 impl Default for PlatformSpecificWindowBuilderAttributes {
@@ -83,6 +86,7 @@ impl Default for PlatformSpecificWindowBuilderAttributes {
       default_vbox: true,
       popup_transient_for: None,
       csd_hidden_titlebar: false,
+      system_decorations: false,
     }
   }
 }

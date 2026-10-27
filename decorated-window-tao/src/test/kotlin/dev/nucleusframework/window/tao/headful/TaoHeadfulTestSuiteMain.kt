@@ -386,6 +386,7 @@ public object TaoHeadfulTestSuiteMain {
             MacOsTrackpadGestureMonkeyHeadfulCases.all() +
             ChromeReviewHeadfulCases.all() +
             ChromeCoverageHeadfulCases.all() +
+            SystemDecorationsHeadfulCases.all() +
             DisplayScaleHeadfulCases.all() +
             FramePacingHeadfulCases.all() +
             ModalLoopFramePacingHeadfulCases.all() +
@@ -767,6 +768,7 @@ private fun ApplicationScope.CaseWindow(
             title = "tao-headful: ${case.name}",
             transparent = case.transparent,
             nativePopupLayers = case.nativePopupLayers,
+            systemDecorations = case.systemDecorations,
             content = windowContent,
         )
     } else {
@@ -777,6 +779,7 @@ private fun ApplicationScope.CaseWindow(
             minimumSize = case.minimumSize?.value,
             transparent = case.transparent,
             nativePopupLayers = case.nativePopupLayers,
+            systemDecorations = case.systemDecorations,
             content = windowContent,
         )
     }
@@ -791,6 +794,7 @@ private fun ApplicationScope.CaseWindow(
                         size = case.dialogSize ?: DpSize(400.dp, 300.dp),
                     ),
                 title = "tao-headful-dialog: ${case.name}",
+                systemDecorations = case.systemDecorations,
             ) {
                 dialogContent()
                 val w = window

@@ -86,6 +86,28 @@ pub(crate) fn is_csd_hidden_titlebar<W: IsA<gtk::Window>>(window: &W) -> bool {
   }
 }
 
+/// PATCH(nucleus): whether the window was built with
+/// `WindowBuilderExtUnix::with_system_decorations`.
+pub(crate) fn is_system_decorated<W: IsA<gtk::Window>>(window: &W) -> bool {
+  unsafe {
+    window
+      .as_ref()
+      .data::<bool>("nucleus_system_decorations")
+      .map(|ptr| *ptr.as_ref())
+      .unwrap_or(false)
+  }
+}
+
+/// PATCH(nucleus): whether sizes and pointer positions are reported in the
+/// content area's own space rather than the toplevel's. True for the
+/// hidden-titlebar CSD (shadow ring around the content) and for system
+/// decorations, where GTK may draw its own title bar and shadow on Wayland
+/// (GNOME). Under server-side or X11 window-manager decorations the content
+/// fills the toplevel, so the mapping is the identity there.
+pub(crate) fn reports_content_space<W: IsA<gtk::Window>>(window: &W) -> bool {
+  is_csd_hidden_titlebar(window) || is_system_decorated(window)
+}
+
 /// PATCH(nucleus): content-area geometry of a toplevel, in toplevel-widget
 /// logical coordinates: `(x, y, w, h)` of the child (default vbox) GTK
 /// allocated inside the client-side decorations. For a hidden-titlebar CSD
@@ -145,6 +167,25 @@ pub(crate) fn event_coords_to_toplevel<W: IsA<gtk::Window>>(
   (ex, ey)
 }
 
+/// PATCH(nucleus): whether a pointer event on a system-decorated window lands
+/// on GTK's own decorations (default title bar, shadow and resize strips on
+/// GNOME Wayland) rather than on the content. GtkWindow's class handlers drive
+/// the title-bar move, the double-click and the edge resize from those events,
+/// so the embedder handlers must let them through. Always false under
+/// server-side or X11 window-manager decorations, where the content fills the
+/// toplevel.
+pub(crate) fn is_on_system_decorations(window: &gtk::Window, event: &gtk::gdk::Event) -> bool {
+  if !is_system_decorated(window) {
+    return false;
+  }
+  let Some((x, y)) = event.coords() else {
+    return false;
+  };
+  let (x, y) = event_coords_to_toplevel(window, event.window(), x, y);
+  let (cx, cy, cw, ch) = content_geometry(window);
+  x < cx as f64 || y < cy as f64 || x >= (cx + cw) as f64 || y >= (cy + ch) as f64
+}
+
 /// PATCH(nucleus): client-area size for a configure event on a (possibly)
 /// hidden-titlebar CSD window. The configure reports the FULL surface size
 /// (theme shadow margins included); `gtk_window_get_size` would subtract the
@@ -157,7 +198,7 @@ pub(crate) fn configure_client_size<W: IsA<gtk::Window>>(
   event_w: u32,
   event_h: u32,
 ) -> (u32, u32) {
-  if !is_csd_hidden_titlebar(window) {
+  if !reports_content_space(window) {
     return (event_w, event_h);
   }
   let widget = window.as_ref();
@@ -248,6 +289,18 @@ impl Window {
           // Read back by the event-loop handlers (Resized source, pointer
           // translation) and by the content-geometry accessors below.
           window.set_data("nucleus_csd_hidden_titlebar", true);
+        }
+      } else if pl_attribs.system_decorations {
+        // Nucleus patch: system decorations install no custom title bar.
+        // `set_titlebar` latches CSD for good, which would stop GTK from
+        // negotiating server-side decorations with KWin; without it GTK 3
+        // asks for them and draws its own default title bar where the
+        // compositor refuses (GNOME).
+        unsafe {
+          // Read back by `reports_content_space`: GTK's own title bar and
+          // shadow (GNOME on Wayland) sit around the content like the hidden
+          // header's ring does.
+          window.set_data("nucleus_system_decorations", true);
         }
       } else if is_wayland {
         WlHeader::setup(&window, &attributes.title);

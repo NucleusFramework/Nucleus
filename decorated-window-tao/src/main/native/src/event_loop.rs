@@ -359,6 +359,7 @@ pub(crate) fn run_event_loop_blocking() {
                     transparent,
                     undecorated_shadow,
                     force_x11,
+                    system_decorations,
                 } => {
                     #[allow(unused_mut)]
                     let mut builder = WindowBuilder::new()
@@ -405,8 +406,11 @@ pub(crate) fn run_event_loop_blocking() {
                         use tao::platform::unix::WindowBuilderExtUnix;
                         builder = builder
                             .with_skip_taskbar(skip_taskbar)
-                            .with_csd_hidden_titlebar(undecorated_shadow);
+                            .with_csd_hidden_titlebar(undecorated_shadow && !system_decorations)
+                            .with_system_decorations(system_decorations);
                     }
+                    #[cfg(not(target_os = "linux"))]
+                    let _ = system_decorations;
                     // Linux: build cursor-following overlays as GTK_WINDOW_POPUP
                     // transient children — on Wayland GDK maps them as
                     // `wl_subsurface`s, the only client-positionable window
@@ -469,7 +473,10 @@ pub(crate) fn run_event_loop_blocking() {
                                 crate::state::mark_gtk_destroyed(handle);
                             });
                             // Popups are no toplevels: nothing to decorate.
-                            if popup_of == 0 {
+                            // System decorations (#841) ask for the server's
+                            // decorations: KWin answering `server` is the
+                            // outcome wanted there, not a suppression.
+                            if popup_of == 0 && !system_decorations {
                                 crate::platform::linux::server_decoration::watch(
                                     handle,
                                     window.gtk_window(),

@@ -202,6 +202,14 @@ pub trait WindowBuilderExtUnix {
   /// (native GTK drop shadow with no visible titlebar). Wayland only; ignored
   /// on X11. See `PlatformSpecificWindowBuilderAttributes::csd_hidden_titlebar`.
   fn with_csd_hidden_titlebar(self, csd: bool) -> WindowBuilder;
+
+  /// Nucleus patch: leave the decorations to GTK and the compositor. On
+  /// Wayland the window gets no tao `WlHeader`, so GTK 3 asks for server-side
+  /// decorations where the compositor offers them (KWin's
+  /// `org_kde_kwin_server_decoration`) and otherwise draws its own default
+  /// client-side title bar (GNOME). On X11 the window manager decorates it
+  /// either way. Requires `with_decorations(true)`.
+  fn with_system_decorations(self, system: bool) -> WindowBuilder;
 }
 
 impl WindowBuilderExtUnix for WindowBuilder {
@@ -254,6 +262,11 @@ impl WindowBuilderExtUnix for WindowBuilder {
 
   fn with_csd_hidden_titlebar(mut self, csd: bool) -> WindowBuilder {
     self.platform_specific.csd_hidden_titlebar = csd;
+    self
+  }
+
+  fn with_system_decorations(mut self, system: bool) -> WindowBuilder {
+    self.platform_specific.system_decorations = system;
     self
   }
 }

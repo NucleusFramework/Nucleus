@@ -716,6 +716,10 @@ public object TaoApplication {
         // session, so it can use the window management Wayland has no protocol
         // for. Creation-time only. See [TaoWindow.isNativeWaylandSurface].
         forceX11: Boolean = false,
+        // The platform draws the title bar and frame (#841): the AppKit title
+        // bar, the Win32 caption, the window manager's or GTK's decorations on
+        // Linux. Implies `decorations`. See [TaoWindow.hasSystemDecorations].
+        systemDecorations: Boolean = false,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
         val window =
@@ -725,6 +729,7 @@ public object TaoApplication {
                 isPopup = popupOf != null,
                 popupParentHandle = popupOf?.handle ?: 0L,
                 requestedX11 = forceX11,
+                hasSystemDecorations = systemDecorations,
             )
         windows[handle] = window
         val safeWidth = if (width.isFinite() && width > 0.0) width else DEFAULT_WINDOW_WIDTH_DP
@@ -734,7 +739,7 @@ public object TaoApplication {
             title,
             safeWidth,
             safeHeight,
-            decorations,
+            decorations || systemDecorations,
             resizable,
             visible,
             maximized,
@@ -743,6 +748,7 @@ public object TaoApplication {
             transparent,
             undecoratedShadow,
             forceX11,
+            systemDecorations,
         )
         return window
     }
