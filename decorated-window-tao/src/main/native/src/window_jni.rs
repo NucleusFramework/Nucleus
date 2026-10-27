@@ -672,16 +672,16 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     crate::platform::windows::end_session::mark_jvm_exiting();
 }
 
-/// Screen position, in physical pixels, of the last mouse move or button
-/// message, packed as `(x << 32) | (y & 0xffffffff)`; `i64::MIN` before the
-/// first one and on platforms that do not track it (#837).
+/// Takes the screen position, in physical pixels, of the last mouse button
+/// release, packed as `(x << 32) | (y & 0xffffffff)`; `i64::MIN` when there
+/// was none since the last take and on platforms that do not track it (#837).
 #[no_mangle]
-pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeLastMouseScreenPosition(
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeTakeMouseReleaseScreenPosition(
     _env: JNIEnv,
     _class: JClass,
 ) -> jlong {
     #[cfg(target_os = "windows")]
-    if let Some((x, y)) = tao::platform::windows::last_mouse_screen_position() {
+    if let Some((x, y)) = tao::platform::windows::take_mouse_release_screen_position() {
         return (i64::from(x) << 32) | i64::from(y as u32);
     }
     jlong::MIN

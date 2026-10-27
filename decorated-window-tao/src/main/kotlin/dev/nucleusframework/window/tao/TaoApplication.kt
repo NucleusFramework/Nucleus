@@ -1,10 +1,13 @@
 package dev.nucleusframework.window.tao
 
 import dev.nucleusframework.core.runtime.NucleusUiThread
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.core.runtime.WindowBackend
 import dev.nucleusframework.window.tao.dispatch.LifecycleMainDispatcherPriming
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationGesture
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDirectManipulationBridge
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
@@ -109,6 +112,11 @@ public object TaoApplication {
         LifecycleMainDispatcherPriming.primeWithCurrentThread()
         markJvmExitOnce()
         onLaunched = block
+        if (Platform.Current == Platform.Windows) {
+            NativeTaoWindowsDirectManipulationBridge.nativeSetDirectManipulationEnabled(
+                TaoDirectManipulationGesture.enabled,
+            )
+        }
         // Watch the loop from the outside (#643): a stall deadlocks this
         // thread, so nothing downstream of `nativeRunBlocking` — including
         // `rethrowPendingFatal` below — can ever report it.
@@ -842,6 +850,31 @@ public object TaoApplication {
             dyFixed: Int,
         ) {
             guarded { lookup(handle)?.dispatchScrollGesture(phase, dxFixed, dyFixed) }
+        }
+
+        override fun onDirectManipulation(
+            handle: Long,
+            kind: Int,
+            status: Int,
+            previousStatus: Int,
+            scale: Float,
+            offsetX: Float,
+            offsetY: Float,
+            focalX: Float,
+            focalY: Float,
+        ) {
+            guarded {
+                lookup(handle)?.dispatchDirectManipulation(
+                    kind,
+                    status,
+                    previousStatus,
+                    scale,
+                    offsetX,
+                    offsetY,
+                    focalX,
+                    focalY,
+                )
+            }
         }
 
         override fun onTouchInput(

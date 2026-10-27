@@ -157,6 +157,9 @@ internal fun Modifier.screenDragHandle(
                             ?: return@awaitEachGesture
                     var pointer = screenPx(start.position) ?: return@awaitEachGesture
                     val session = currentBegin(window, pointer) ?: return@awaitEachGesture
+                    // A release recorded before this drag belongs to another
+                    // gesture: drop it so only the one that ends this drag counts.
+                    releaseScreenPx(down.type)
                     try {
                         session.update(pointer)
                         val released =
@@ -185,9 +188,10 @@ internal fun Modifier.screenDragHandle(
     }
 
 /**
- * Where a mouse button was just released, in physical screen pixels, read from
- * the OS rather than from the last move Compose delivered; `null` for any
- * other pointer and where the native side does not track it (outside Windows).
+ * Where a mouse button was last released, in physical screen pixels, read from
+ * the OS rather than from the last move Compose delivered — taken, so a second
+ * call returns `null` until the next release; `null` as well for any other
+ * pointer and where the native side does not track it (outside Windows).
  *
  * The last move can be one sample short when the dragged thing is the window
  * itself (#837). The window follows the pointer one sample late, so a step
@@ -199,7 +203,7 @@ internal fun Modifier.screenDragHandle(
 @Suppress("MagicNumber") // packed as (x shl 32) or y
 private fun releaseScreenPx(type: PointerType): Offset? {
     if (type != PointerType.Mouse) return null
-    val packed = NativeTaoBridge.nativeLastMouseScreenPosition()
+    val packed = NativeTaoBridge.nativeTakeMouseReleaseScreenPosition()
     if (packed == Long.MIN_VALUE) return null
     return Offset((packed shr 32).toInt().toFloat(), packed.toInt().toFloat())
 }

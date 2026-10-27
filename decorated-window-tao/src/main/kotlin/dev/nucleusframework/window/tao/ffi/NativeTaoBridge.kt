@@ -168,6 +168,35 @@ internal object NativeTaoBridge {
         }
 
         /**
+         * Windows precision-touchpad manipulation (#706): the raw stream of
+         * the window's DirectManipulation viewport, turned into pan and pinch
+         * phases by [dev.nucleusframework.window.tao.event.TaoDirectManipulationGesture].
+         *
+         * [kind] is [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.STATUS]
+         * (the viewport moved from [previousStatus] to [status]) or
+         * [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.CONTENT]
+         * (a new content transform while in [status]). Statuses are
+         * `DIRECTMANIPULATION_STATUS` values. [scale] / [offsetX] / [offsetY]
+         * are the content transform at that moment, [focalX] / [focalY] where
+         * the gesture is — both in client-area physical pixels.
+         *
+         * Default no-op so non-Windows callers can ignore it.
+         */
+        @Suppress("LongParameterList")
+        fun onDirectManipulation(
+            handle: Long,
+            kind: Int,
+            status: Int,
+            previousStatus: Int,
+            scale: Float,
+            offsetX: Float,
+            offsetY: Float,
+            focalX: Float,
+            focalY: Float,
+        ) {
+        }
+
+        /**
          * macOS replacement commit: `insertText:` with a valid
          * `replacementRange` outside a composition — how the press-and-hold
          * accent picker replaces the base letter on a document-backed client
@@ -635,13 +664,13 @@ internal object NativeTaoBridge {
     external fun nativeScaleFactor(handle: Long): Int
 
     /**
-     * Screen position, in physical px, of the last mouse move or button
-     * message, packed as `(x shl 32) or (y and 0xffffffff)`; [Long.MIN_VALUE]
-     * before the first one and outside Windows, which is the only platform
-     * that tracks it (#837).
+     * Takes the screen position, in physical px, of the last mouse button
+     * release, packed as `(x shl 32) or (y and 0xffffffff)`, and clears it;
+     * [Long.MIN_VALUE] when there was none since the last take and outside
+     * Windows, which is the only platform that tracks it (#837).
      */
     @JvmStatic
-    external fun nativeLastMouseScreenPosition(): Long
+    external fun nativeTakeMouseReleaseScreenPosition(): Long
 
     /**
      * Linux only: returns `[x, y, width, height]` of the primary monitor's

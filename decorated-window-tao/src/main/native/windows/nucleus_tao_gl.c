@@ -932,6 +932,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeAttach(
     return (jlong)(uintptr_t)attachEgl(hwnd);
 }
 
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeRenderSurfaceHandle(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    return att ? (jlong)(uintptr_t)att->surfaceHwnd : 0;
+}
+
 /* Address of the GrGLGetProc trampoline for ANGLE (see nucleus_tao_egl_get_proc).
  * Passed to GLAssembledInterface.createFromNativePointers as the fPtr. */
 JNIEXPORT jlong JNICALL
