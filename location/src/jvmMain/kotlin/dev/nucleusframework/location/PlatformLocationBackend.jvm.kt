@@ -4,6 +4,7 @@ import dev.nucleusframework.core.runtime.NucleusApp
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.core.runtime.tools.LinuxDesktopFileDetector
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
@@ -91,4 +92,23 @@ internal object DesktopLocationBackend : LocationBackend {
     }
 
     override fun nowMillis(): Long = System.currentTimeMillis()
+
+    override fun openSettings(): Boolean {
+        val command =
+            when (Platform.Current) {
+                Platform.Windows -> listOf("explorer.exe", "ms-settings:privacy-location")
+                Platform.MacOS ->
+                    listOf("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices")
+                // GNOME is the only desktop with a location panel; elsewhere (and inside a
+                // Flatpak sandbox) the launch fails and there is nothing to open.
+                Platform.Linux -> listOf("gnome-control-center", "location")
+                Platform.Unknown -> return false
+            }
+        return try {
+            ProcessBuilder(command).start()
+            true
+        } catch (_: IOException) {
+            false
+        }
+    }
 }

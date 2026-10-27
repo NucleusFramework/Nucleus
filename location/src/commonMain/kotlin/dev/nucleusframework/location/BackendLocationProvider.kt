@@ -1,9 +1,14 @@
 package dev.nucleusframework.location
 
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.atomics.AtomicBoolean
@@ -37,6 +42,9 @@ internal interface LocationBackend {
 
     /** Wall-clock milliseconds since the Unix epoch, to age cached fixes. */
     fun nowMillis(): Long
+
+    /** See [LocationProvider.openSettings]. */
+    fun openSettings(): Boolean
 }
 
 /**
@@ -72,6 +80,19 @@ internal class BackendLocationProvider(
         get() = backend.isAvailable
 
     override fun authorization(): LocationAuthorization = backend.authorization()
+
+    override fun authorizationUpdates(pollInterval: Duration): Flow<LocationAuthorization> {
+        require(pollInterval.isPositive()) { "pollInterval must be positive" }
+        // The desktop status query is a native call: keep it off the collector's (UI) thread.
+        return flow {
+            while (true) {
+                emit(backend.authorization())
+                delay(pollInterval)
+            }
+        }.distinctUntilChanged().flowOn(Dispatchers.Default)
+    }
+
+    override fun openSettings(): Boolean = backend.openSettings()
 
     override suspend fun requestAuthorization(
         access: LocationAccess,

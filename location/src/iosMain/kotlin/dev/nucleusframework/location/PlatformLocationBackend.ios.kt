@@ -24,8 +24,11 @@ import platform.Foundation.NSDate
 import platform.Foundation.NSError
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
+import platform.Foundation.NSURL
 import platform.Foundation.timeIntervalSince1970
+import platform.UIKit.UIApplication
 import platform.UIKit.UIApplicationDidBecomeActiveNotification
+import platform.UIKit.UIApplicationOpenSettingsURLString
 import platform.darwin.NSObject
 import platform.darwin.NSObjectProtocol
 import platform.darwin.dispatch_async
@@ -84,6 +87,15 @@ internal object IosLocationBackend : LocationBackend {
     }
 
     override fun nowMillis(): Long = (NSDate().timeIntervalSince1970 * MILLIS_PER_SECOND).toLong()
+
+    // The app's own page in Settings, which carries its Location entry.
+    override fun openSettings(): Boolean {
+        val url = NSURL.URLWithString(UIApplicationOpenSettingsURLString) ?: return false
+        dispatch_async(dispatch_get_main_queue()) {
+            UIApplication.sharedApplication.openURL(url, emptyMap<Any?, Any>(), null)
+        }
+        return true
+    }
 
     private fun onMain(block: () -> Unit) = dispatch_async(dispatch_get_main_queue(), block)
 

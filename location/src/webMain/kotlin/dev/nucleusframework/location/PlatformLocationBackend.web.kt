@@ -119,6 +119,9 @@ internal object WebLocationBackend : LocationBackend {
 
     override fun nowMillis(): Long = jsNow().toLong()
 
+    // A page cannot open the browser's site settings.
+    override fun openSettings(): Boolean = false
+
     private fun String.toAuthorization(): LocationAuthorization? =
         when (this) {
             "granted" -> LocationAuthorization.Foreground

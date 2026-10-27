@@ -12,6 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -160,6 +161,30 @@ class BackendLocationProviderTest {
         isCached = cached,
     )
 
+    @Test
+    fun authorizationUpdatesEmitEachChangeOnce() =
+        runTest {
+            backend.statuses +=
+                listOf(
+                    LocationAuthorization.NotDetermined,
+                    LocationAuthorization.NotDetermined,
+                    LocationAuthorization.Foreground,
+                    LocationAuthorization.Foreground,
+                )
+            backend.status = LocationAuthorization.Denied
+
+            val seen = provider.authorizationUpdates(pollInterval = 1.milliseconds).take(3).toList()
+
+            assertEquals(
+                listOf(
+                    LocationAuthorization.NotDetermined,
+                    LocationAuthorization.Foreground,
+                    LocationAuthorization.Denied,
+                ),
+                seen,
+            )
+        }
+
     private fun assertLocationException(result: Result<*>): LocationException {
         val error = result.exceptionOrNull()
         assertTrue(error is LocationException, "expected a LocationException, got $error")
@@ -168,13 +193,16 @@ class BackendLocationProviderTest {
 
     private class FakeBackend : LocationBackend {
         var status = LocationAuthorization.Foreground
+
+        /** Answers of successive [authorization] calls, before falling back to [status]. */
+        val statuses = ArrayDeque<LocationAuthorization>()
         var answer = LocationAuthorization.Foreground
         val requests = mutableListOf<Pair<LocationAccess, LocationAccuracy>>()
         val sessions = mutableListOf<FakeSession>()
 
         override val isAvailable: Boolean = true
 
-        override fun authorization(): LocationAuthorization = status
+        override fun authorization(): LocationAuthorization = statuses.removeFirstOrNull() ?: status
 
         override suspend fun requestAuthorization(
             access: LocationAccess,
@@ -191,6 +219,8 @@ class BackendLocationProviderTest {
         ): LocationSession = FakeSession(request, listener).also { sessions += it }
 
         override fun nowMillis(): Long = NOW
+
+        override fun openSettings(): Boolean = false
     }
 
     private class FakeSession(

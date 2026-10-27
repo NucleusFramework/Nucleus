@@ -1,9 +1,11 @@
 public final class dev/nucleusframework/location/Geolocation : dev/nucleusframework/location/LocationProvider {
 	public static final field INSTANCE Ldev/nucleusframework/location/Geolocation;
 	public fun authorization ()Ldev/nucleusframework/location/LocationAuthorization;
+	public fun authorizationUpdates-LRDsOJo (J)Lkotlinx/coroutines/flow/Flow;
 	public fun currentLocation-vLdBGDU (Ldev/nucleusframework/location/LocationAccuracy;JJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun isAvailable ()Z
 	public fun locationUpdates-8Mi8wO0 (Ldev/nucleusframework/location/LocationAccuracy;JD)Lkotlinx/coroutines/flow/Flow;
+	public fun openSettings ()Z
 	public fun requestAuthorization (Ldev/nucleusframework/location/LocationAccess;Ldev/nucleusframework/location/LocationAccuracy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
@@ -83,16 +85,20 @@ public final class dev/nucleusframework/location/LocationException : java/lang/E
 
 public abstract interface class dev/nucleusframework/location/LocationProvider {
 	public abstract fun authorization ()Ldev/nucleusframework/location/LocationAuthorization;
+	public abstract fun authorizationUpdates-LRDsOJo (J)Lkotlinx/coroutines/flow/Flow;
+	public static synthetic fun authorizationUpdates-LRDsOJo$default (Ldev/nucleusframework/location/LocationProvider;JILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
 	public abstract fun currentLocation-vLdBGDU (Ldev/nucleusframework/location/LocationAccuracy;JJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun currentLocation-vLdBGDU$default (Ldev/nucleusframework/location/LocationProvider;Ldev/nucleusframework/location/LocationAccuracy;JJLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun isAvailable ()Z
 	public abstract fun locationUpdates-8Mi8wO0 (Ldev/nucleusframework/location/LocationAccuracy;JD)Lkotlinx/coroutines/flow/Flow;
 	public static synthetic fun locationUpdates-8Mi8wO0$default (Ldev/nucleusframework/location/LocationProvider;Ldev/nucleusframework/location/LocationAccuracy;JDILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
+	public abstract fun openSettings ()Z
 	public abstract fun requestAuthorization (Ldev/nucleusframework/location/LocationAccess;Ldev/nucleusframework/location/LocationAccuracy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun requestAuthorization$default (Ldev/nucleusframework/location/LocationProvider;Ldev/nucleusframework/location/LocationAccess;Ldev/nucleusframework/location/LocationAccuracy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class dev/nucleusframework/location/LocationProvider$DefaultImpls {
+	public static synthetic fun authorizationUpdates-LRDsOJo$default (Ldev/nucleusframework/location/LocationProvider;JILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
 	public static synthetic fun currentLocation-vLdBGDU$default (Ldev/nucleusframework/location/LocationProvider;Ldev/nucleusframework/location/LocationAccuracy;JJLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun locationUpdates-8Mi8wO0$default (Ldev/nucleusframework/location/LocationProvider;Ldev/nucleusframework/location/LocationAccuracy;JDILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
 	public static synthetic fun requestAuthorization$default (Ldev/nucleusframework/location/LocationProvider;Ldev/nucleusframework/location/LocationAccess;Ldev/nucleusframework/location/LocationAccuracy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;

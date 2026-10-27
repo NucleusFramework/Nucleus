@@ -33,6 +33,26 @@ public interface LocationProvider {
     public fun authorization(): LocationAuthorization
 
     /**
+     * [authorization] as it changes, starting with the current value. Cold: while collected, the
+     * platform state is read again every [pollInterval], so a change made outside the app (system
+     * settings, a revoked permission) shows up without a prompt or a location request.
+     *
+     * On Linux the portal and GeoClue report no revocation: the value only changes when a
+     * request in this process is answered.
+     */
+    public fun authorizationUpdates(pollInterval: Duration = 1.seconds): Flow<LocationAuthorization>
+
+    /**
+     * Opens the system page where the user grants or revokes this app's location access: Windows
+     * *Settings → Privacy & security → Location*, macOS *Privacy & Security → Location Services*,
+     * the app's settings on Android and iOS, GNOME's Location panel on Linux.
+     *
+     * @return `false` when the platform has no such page (the web, a Linux desktop without one)
+     *     or it could not be opened
+     */
+    public fun openSettings(): Boolean
+
+    /**
      * Asks the user for access, prompting only when the platform has not recorded an answer yet,
      * and returns the resulting authorization. Suspends while the prompt is shown.
      */

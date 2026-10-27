@@ -2,15 +2,19 @@ package dev.nucleusframework.location
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,6 +28,7 @@ internal actual fun platformLocationBackend(): LocationBackend = AndroidLocation
  * The framework `LocationManager` — no Google Play services dependency. The fused provider is
  * used where the platform has one (API 31+), GPS / network otherwise.
  */
+@Suppress("TooManyFunctions")
 internal object AndroidLocationBackend : LocationBackend {
     private const val PREFERENCES = "dev.nucleusframework.location"
     private const val KEY_ASKED = "asked"
@@ -93,6 +98,21 @@ internal object AndroidLocationBackend : LocationBackend {
     }
 
     override fun nowMillis(): Long = System.currentTimeMillis()
+
+    override fun openSettings(): Boolean {
+        val application = AndroidLocationContext.applicationOrNull ?: return false
+        val intent =
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", application.packageName, null),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            (AndroidLocationContext.resumedActivity ?: application).startActivity(intent)
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        }
+    }
 
     private fun granted(permission: String): Boolean =
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
