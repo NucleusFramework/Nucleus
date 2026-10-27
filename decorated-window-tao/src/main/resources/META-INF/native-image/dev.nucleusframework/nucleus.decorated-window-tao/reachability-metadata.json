@@ -551,6 +551,7 @@
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge$Callback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -561,6 +562,7 @@
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -571,6 +573,7 @@
             "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHost$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -599,6 +602,7 @@
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge$Callback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -609,6 +613,7 @@
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHost$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -619,6 +624,7 @@
             "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostMac$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -647,6 +653,7 @@
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge$Callback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
@@ -657,6 +664,7 @@
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
+                { "name": "onDragFiles", "parameterTypes": ["long","java.lang.String[]"] },
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
