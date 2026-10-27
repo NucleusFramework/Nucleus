@@ -3,6 +3,11 @@ public final class dev/nucleusframework/application/AotTrainingKt {
 	public static synthetic fun aotTraining-8Mi8wO0$default (Ldev/nucleusframework/application/NucleusApplicationScope;JLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
 }
 
+public final class dev/nucleusframework/application/AuthenticationKt {
+	public static final fun authenticate (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/authentication/AuthenticationPrompt;Ldev/nucleusframework/authentication/AuthenticationPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun authenticate$default (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/authentication/AuthenticationPrompt;Ldev/nucleusframework/authentication/AuthenticationPolicy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
 public final class dev/nucleusframework/application/ComposableSingletons$SatelliteKt {
 	public static final field INSTANCE Ldev/nucleusframework/application/ComposableSingletons$SatelliteKt;
 	public fun <init> ()V

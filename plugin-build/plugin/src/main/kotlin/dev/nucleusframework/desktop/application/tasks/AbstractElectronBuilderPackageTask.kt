@@ -9,6 +9,7 @@ import dev.nucleusframework.desktop.application.dsl.CompressionLevel
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
 import dev.nucleusframework.desktop.application.dsl.MacAppExtension
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
+import dev.nucleusframework.desktop.application.dsl.PolkitActionDefinition
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
@@ -16,6 +17,7 @@ import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
+import dev.nucleusframework.desktop.application.internal.LinuxPolkitActions
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
 import dev.nucleusframework.desktop.application.internal.MacPkgScripts
 import dev.nucleusframework.desktop.application.internal.MacDmgLzma
@@ -118,6 +120,9 @@ abstract class AbstractElectronBuilderPackageTask
             private const val DEFAULT_PACKAGE_VERSION = "1.0.0"
             private val NSIS_FORMATS = setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)
             private val LINUX_SIGNED_FORMATS = setOf(TargetFormat.Deb, TargetFormat.Rpm)
+
+            /** The formats whose install scripts can write `/usr/share/polkit-1/actions/`. */
+            private val POLKIT_FORMATS = setOf(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Pacman)
             internal val CUSTOM_INSTALL_MACRO = Regex("""!macro\s+customInstall\b""")
         }
 
@@ -353,6 +358,7 @@ abstract class AbstractElectronBuilderPackageTask
 
             ensureResourcesDirForElectronBuilder(workingAppDir)
             bundleSilentUpdateArtifacts(workingAppDir, dist)
+            bundlePolkitPolicies(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir)
@@ -365,8 +371,9 @@ abstract class AbstractElectronBuilderPackageTask
             val linuxIconOverride = prepareLinuxIconSet(outputDir)
             val windowsIconOverride = resolveWindowsIcon()
             val silentUpdate = isLinuxSilentUpdateEnabled(dist)
-            val linuxAfterInstallTemplate = prepareLinuxAfterInstallTemplate(outputDir, silentUpdate)
-            val linuxAfterRemoveTemplate = prepareLinuxAfterRemoveTemplate(outputDir, silentUpdate)
+            val polkitActions = dist.linux.polkitActions.actions
+            val linuxAfterInstallTemplate = prepareLinuxAfterInstallTemplate(outputDir, silentUpdate, polkitActions)
+            val linuxAfterRemoveTemplate = prepareLinuxAfterRemoveTemplate(outputDir, silentUpdate, polkitActions)
             if (targetFormat == TargetFormat.AppX) {
                 val hasExplicitWindowsIcon =
                     dist.windows.iconFile.orNull
@@ -593,7 +600,7 @@ abstract class AbstractElectronBuilderPackageTask
             appendLine("description: ${dist.description}")
             appendLine("vendor: ${dist.vendor}")
             when (currentOS) {
-                OS.Linux ->
+                OS.Linux -> {
                     if (targetFormat in LINUX_SIGNED_FORMATS) {
                         // signLinuxPackage(), bundleSilentUpdateArtifacts()
                         val signing = dist.linux.signing
@@ -603,6 +610,13 @@ abstract class AbstractElectronBuilderPackageTask
                         appendLine("linuxSigning.debMethod: ${signing.debMethod}")
                         appendLine("linuxSigning.silentUpdate: ${signing.silentUpdate.get()}")
                     }
+                    // writePolicies(), prepareLinuxAfterInstallTemplate(), prepareLinuxAfterRemoveTemplate()
+                    if (targetFormat in POLKIT_FORMATS) {
+                        for (action in dist.linux.polkitActions.actions) {
+                            appendLine("polkitAction: ${LinuxPolkitActions.policyXml(action)}")
+                        }
+                    }
+                }
                 OS.Windows -> {
                     // signWindowsAppImage(), generateNsisInclude()
                     appendLine("windowsSigning.signNativeLibraries: ${dist.windows.signing.signNativeLibraries}")
@@ -1862,6 +1876,15 @@ abstract class AbstractElectronBuilderPackageTask
          * Ships silent-update artifacts in the **package payload** (helper + public key).
          * afterInstall only installs polkit — see [LinuxUpdateHelper.polkitAfterInstallFragment].
          */
+        /** Ships the `linux.polkitActions` policies in the payload, see [LinuxPolkitActions]. */
+        private fun bundlePolkitPolicies(
+            workingAppDir: File,
+            dist: JvmApplicationDistributions,
+        ) {
+            if (currentOS != OS.Linux || targetFormat !in POLKIT_FORMATS) return
+            LinuxPolkitActions.writePolicies(workingAppDir, dist.linux.polkitActions.actions)
+        }
+
         private fun bundleSilentUpdateArtifacts(
             workingAppDir: File,
             dist: JvmApplicationDistributions,
@@ -2088,6 +2111,7 @@ abstract class AbstractElectronBuilderPackageTask
         private fun prepareLinuxAfterInstallTemplate(
             outputDir: File,
             silentUpdate: Boolean,
+            polkitActions: List<PolkitActionDefinition>,
         ): File? {
             if (currentOS != OS.Linux) return null
             if (targetFormat != TargetFormat.Deb &&
@@ -2168,20 +2192,21 @@ abstract class AbstractElectronBuilderPackageTask
                     ?.takeIf { it.isFile }
                     ?.readText()
             templateFile.writeText(
-                LinuxUpdateHelper.composeAfterInstallScript(script, silentUpdate, userScript),
+                LinuxUpdateHelper.composeAfterInstallScript(script, silentUpdate, userScript, polkitActions),
             )
             logger.info("Generated Linux after-install template at: ${templateFile.absolutePath}")
             return templateFile
         }
 
         /**
-         * afterRemove template: removes the polkit policy for silent update and appends any
-         * user after-remove script. Omitted when neither is present so electron-builder keeps
-         * its default unlink behaviour.
+         * afterRemove template: removes the polkit policies of silent update and of
+         * `linux.polkitActions`, then appends any user after-remove script. Omitted when none is
+         * present so electron-builder keeps its default unlink behaviour.
          */
         private fun prepareLinuxAfterRemoveTemplate(
             outputDir: File,
             silentUpdate: Boolean,
+            polkitActions: List<PolkitActionDefinition>,
         ): File? {
             if (currentOS != OS.Linux) return null
             if (targetFormat != TargetFormat.Deb &&
@@ -2195,7 +2220,8 @@ abstract class AbstractElectronBuilderPackageTask
                     ?.asFile
                     ?.takeIf { it.isFile }
                     ?.readText()
-            val composed = LinuxUpdateHelper.composeAfterRemoveScript(silentUpdate, userScript) ?: return null
+            val composed =
+                LinuxUpdateHelper.composeAfterRemoveScript(silentUpdate, userScript, polkitActions) ?: return null
             val templateFile = outputDir.resolve("after-remove-nucleus.tpl")
             templateFile.writeText(composed)
             logger.info("Generated Linux after-remove template at: ${templateFile.absolutePath}")

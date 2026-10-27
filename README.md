@@ -247,6 +247,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.scheduler-testing` | Test doubles for `scheduler` |
 | `nucleus.fs-watcher` | Native filesystem watcher |
 | `nucleus.share` | Native share sheet, Kotlin Multiplatform (Android, iOS, macOS, Windows, Linux, web) |
+| `nucleus.authentication` | Device-owner authentication — Touch ID / Face ID, Windows Hello, polkit, BiometricPrompt — Kotlin Multiplatform |
 | `nucleus.speech-recognition` | Streaming speech-to-text, Kotlin Multiplatform (Windows, macOS, Android, iOS) |
 | `nucleus.location` | Kotlin Multiplatform geolocation — Rust bridge on desktop (Windows Geolocator, Core Location, XDG portal / GeoClue), `LocationManager` on Android, Core Location on iOS, Geolocation API on the web (JS / Wasm) |
 | `nucleus.service-management-macos` | macOS `SMAppService` — login items, launch agents, daemons |
