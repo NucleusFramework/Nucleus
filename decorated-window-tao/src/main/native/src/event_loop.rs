@@ -880,13 +880,16 @@ pub(crate) fn run_event_loop_blocking() {
                     width,
                     height,
                 } => {
-                    let inner = {
+                    let (inner, mapped) = {
                         let guard = WINDOWS.lock().unwrap();
-                        guard.as_ref().and_then(|map| {
-                            let w = map.get(&handle)?;
-                            w.set_inner_size(LogicalSize::new(width, height));
-                            Some(w.inner_size())
-                        })
+                        guard
+                            .as_ref()
+                            .and_then(|map| {
+                                let w = map.get(&handle)?;
+                                w.set_inner_size(LogicalSize::new(width, height));
+                                Some((Some(w.inner_size()), w.is_visible()))
+                            })
+                            .unwrap_or((None, true))
                     };
                     // Win32 `SetWindowPos(SWP_ASYNCWINDOWPOS)` and a GCD-async
                     // `setContentSize:` both update the live window rect before
@@ -906,8 +909,22 @@ pub(crate) fn run_event_loop_blocking() {
                             size.height as jint,
                         );
                     }
+                    // GTK sends no configure for a window that is not mapped
+                    // yet, so the real `Resized` would only come with the map:
+                    // a window sized while hidden (wrap content, #532) waits
+                    // for this echo before it is shown. tao records the size
+                    // of an unmapped window as it is requested (patch 0015).
                     #[cfg(target_os = "linux")]
-                    let _ = inner;
+                    if let (Some(size), false) = (inner, mapped) {
+                        dispatch(
+                            handle,
+                            EVENT_RESIZED,
+                            size.width as jint,
+                            size.height as jint,
+                        );
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    let _ = mapped;
                 }
                 UserEvent::SetOuterPosition { handle, x, y } => {
                     let guard = WINDOWS.lock().unwrap();

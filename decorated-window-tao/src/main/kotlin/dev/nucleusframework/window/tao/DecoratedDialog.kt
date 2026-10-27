@@ -30,6 +30,7 @@ import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.DecoratedDialogState
+import dev.nucleusframework.window.LocalModalDialogCount
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
@@ -45,12 +46,17 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
  * on Win32, `[NSWindow addChildWindow:ordered:]` on AppKit, and
  * `gtk_window_set_transient_for` on Linux/GTK. The dialog sits above its
  * owner in z-order, follows it across minimisation / Spaces / workspace
- * switches, stays out of the taskbar, and disappears with it. The parent is **not** disabled
- * — that matches the legacy AWT backend (its `JDialog` is not
- * `APPLICATION_MODAL`) and avoids losing the parent's keyboard focus across
- * the dialog lifetime. The parent is captured from [LocalTaoWindow] at the
- * call site, so a `DecoratedDialog` declared outside any [DecoratedWindow]
- * degrades cleanly to a regular top-level.
+ * switches, stays out of the taskbar, and disappears with it.
+ *
+ * The dialog is modal over its parent while it is visible (#832), like
+ * Compose Desktop's `DialogWindow`. On Windows the parent is disabled
+ * natively (`EnableWindow`, as `DialogBox` does): it takes no click, key or
+ * title-bar drag, and a click on it beeps and flashes the dialog. Elsewhere
+ * the parent's content is covered by an input blocker. For a secondary window
+ * that leaves its owner usable, use a [SatelliteWindow]. The parent is
+ * captured from [LocalTaoWindow] at the call site, so a `DecoratedDialog`
+ * declared outside any [DecoratedWindow] degrades cleanly to a regular
+ * top-level.
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
@@ -115,6 +121,9 @@ public fun ApplicationScope.DecoratedDialog(
     // creation-size frame (top edge left at the parent's top, #546).
     val ownerApplied = remember { mutableStateOf(false) }
 
+    // The dialog's own window, published by its content once it exists.
+    val dialogWindow = remember { mutableStateOf<TaoWindow?>(null) }
+
     DecoratedWindow(
         onCloseRequest = {
             // Just delegate: the user callback typically toggles the `showDialog`
@@ -170,6 +179,7 @@ public fun ApplicationScope.DecoratedDialog(
                         autoCenter = autoCenterRequested,
                     )
                     ownerApplied.value = true
+                    dialogWindow.value = windowScope.window
                 }
                 onDispose { /* native handle destruction restores focus to owner */ }
             }
@@ -177,6 +187,26 @@ public fun ApplicationScope.DecoratedDialog(
             with(dialogScope) { latestContent() }
         },
     )
+
+    // Modality (#832). The parent's in-scene input blocker counts the modal
+    // dialogs over it; one composed outside any window lands on
+    // GlobalModalDialogCount and blocks every window.
+    val parentModalCount = LocalModalDialogCount.current
+    DisposableEffect(parentModalCount, visible) {
+        if (!visible) return@DisposableEffect onDispose { }
+        parentModalCount.value++
+        onDispose { parentModalCount.value-- }
+    }
+    // Native modality. Declared after DecoratedWindow on purpose: Compose
+    // disposes effects in reverse order, so the owner is enabled again before
+    // the dialog window is hidden or closed, and the platform hands the owner
+    // the activation back.
+    DisposableEffect(parent, dialogWindow.value, visible) {
+        val owner = parent
+        if (owner == null || dialogWindow.value == null || !visible) return@DisposableEffect onDispose { }
+        TaoWindowModality.block(owner)
+        onDispose { TaoWindowModality.unblock(owner) }
+    }
 
     // Bidirectional bridge between DialogState and the WindowState plumbed
     // into the underlying DecoratedWindow. A wrap-content dialog centres on
@@ -284,14 +314,9 @@ private fun centerOnParent(
  * follows it across minimisation / Spaces / workspace switches, stays out of
  * the taskbar, and disappears with it — while the owner stays interactive.
  *
- * For dialogs this mirrors the legacy AWT backend, which uses Compose
- * Desktop's `DialogWindow` → AWT `JDialog`: the JDialog is created with the
- * parent as owner but **not** `APPLICATION_MODAL`.
+ * Modality is not part of it: a dialog layers it on top through
+ * [TaoWindowModality] (#832), a satellite leaves its owner usable.
  *
- * On Win32 we never call `EnableWindow(owner, false)`: disabling the owner
- * strips its keyboard focus and Win32 won't restore it cleanly when the
- * child closes (`SetForegroundWindow` gets rejected once we lose the
- * foreground role), leaving the user having to click the owner to revive it.
  * On macOS `addChildWindow:ordered:` gives us the right behaviour (owner
  * stays usable, child stays above) but it also makes the child visible at
  * its current frame — we therefore pass [autoCenter] through so the native

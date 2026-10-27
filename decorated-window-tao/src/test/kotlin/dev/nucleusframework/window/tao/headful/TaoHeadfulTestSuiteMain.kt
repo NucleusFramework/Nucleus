@@ -386,6 +386,7 @@ public object TaoHeadfulTestSuiteMain {
             ChromeCoverageHeadfulCases.all() +
             DisplayScaleHeadfulCases.all() +
             FramePacingHeadfulCases.all() +
+            ModalLoopFramePacingHeadfulCases.all() +
             OutOfFrameExecutorHeadfulCases.all() +
             MacWindowChromeStateHeadfulCases.all() +
             PopupScaleHeadfulCases.all() +
@@ -433,10 +434,12 @@ public object TaoHeadfulTestSuiteMain {
             OffScreenPresentHeadfulCases.all() +
             UnpaintedFlashHeadfulCases.all() +
             ResizeSyncHeadfulCases.all() +
+            MacOsGpuCacheReclaimHeadfulCases.all() +
             TearOffFlashHeadfulCases.all() +
             NativeViewMonkeyHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all() +
-            GpuCacheReclaimHeadfulCases.all()
+            GpuCacheReclaimHeadfulCases.all() +
+            ModalDialogHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { case ->

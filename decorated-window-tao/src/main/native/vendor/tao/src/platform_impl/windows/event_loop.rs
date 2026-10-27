@@ -734,6 +734,20 @@ unsafe fn release_mouse(mut window_state: parking_lot::MutexGuard<'_, WindowStat
   }
 }
 
+/// PATCH(nucleus): records the screen point a mouse message carries (#837).
+/// See `platform::windows::LAST_MOUSE_SCREEN_POSITION`. Called before the
+/// message is turned into events, so the window is still where the message
+/// was hit-tested and the conversion is exact.
+unsafe fn record_mouse_screen_position(window: HWND, lparam: LPARAM) {
+  let mut point = POINT {
+    x: i32::from(util::GET_X_LPARAM(lparam)),
+    y: i32::from(util::GET_Y_LPARAM(lparam)),
+  };
+  if ClientToScreen(window, &mut point).as_bool() {
+    crate::platform::windows::record_mouse_screen_position(point.x, point.y);
+  }
+}
+
 const WINDOW_SUBCLASS_ID: usize = 0;
 const THREAD_EVENT_TARGET_SUBCLASS_ID: usize = 1;
 pub(crate) fn subclass_window<T>(window: HWND, subclass_input: SubclassInput<T>) {
@@ -1103,7 +1117,18 @@ unsafe fn public_window_callback_inner<T: 'static>(
       let mut state = subclass_input.window_state.lock();
       if state.dragging {
         state.dragging = false;
-        let _ = unsafe { PostMessageW(Some(window), WM_LBUTTONUP, WPARAM::default(), lparam) };
+        // PATCH(nucleus): the release the modal loop swallowed happened
+        // where the cursor is now; WM_EXITSIZEMOVE's own lparam is unused
+        // (0), which would put it at the client origin (#837).
+        let mut cursor = POINT::default();
+        let release_lparam = unsafe {
+          if GetCursorPos(&mut cursor).is_ok() && ScreenToClient(window, &mut cursor).as_bool() {
+            util::MAKELPARAM(cursor.x as i16, cursor.y as i16)
+          } else {
+            lparam
+          }
+        };
+        let _ = unsafe { PostMessageW(Some(window), WM_LBUTTONUP, WPARAM::default(), release_lparam) };
       }
       state.set_window_flags_in_place(|f| f.remove(WindowFlags::MARKER_IN_SIZE_MOVE));
       drop(state);
@@ -1383,6 +1408,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
 
     win32wm::WM_MOUSEMOVE => {
       use crate::event::WindowEvent::{CursorEntered, CursorMoved};
+      record_mouse_screen_position(window, lparam);
       let mouse_was_outside_window = {
         let mut w = subclass_input.window_state.lock();
 
@@ -1534,6 +1560,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_LBUTTONDOWN => {
       use crate::event::{ElementState::Pressed, MouseButton::Left, WindowEvent::MouseInput};
 
+      record_mouse_screen_position(window, lparam);
       capture_mouse(window, &mut subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1553,6 +1580,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_LBUTTONUP => {
       use crate::event::{ElementState::Released, MouseButton::Left, WindowEvent::MouseInput};
 
+      record_mouse_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1572,6 +1600,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_RBUTTONDOWN => {
       use crate::event::{ElementState::Pressed, MouseButton::Right, WindowEvent::MouseInput};
 
+      record_mouse_screen_position(window, lparam);
       capture_mouse(window, &mut subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1591,6 +1620,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_RBUTTONUP => {
       use crate::event::{ElementState::Released, MouseButton::Right, WindowEvent::MouseInput};
 
+      record_mouse_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1610,6 +1640,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_MBUTTONDOWN => {
       use crate::event::{ElementState::Pressed, MouseButton::Middle, WindowEvent::MouseInput};
 
+      record_mouse_screen_position(window, lparam);
       capture_mouse(window, &mut subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1629,6 +1660,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
     win32wm::WM_MBUTTONUP => {
       use crate::event::{ElementState::Released, MouseButton::Middle, WindowEvent::MouseInput};
 
+      record_mouse_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1649,6 +1681,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
       use crate::event::{ElementState::Pressed, MouseButton::Other, WindowEvent::MouseInput};
       let xbutton = util::GET_XBUTTON_WPARAM(wparam);
 
+      record_mouse_screen_position(window, lparam);
       capture_mouse(window, &mut subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1669,6 +1702,7 @@ unsafe fn public_window_callback_inner<T: 'static>(
       use crate::event::{ElementState::Released, MouseButton::Other, WindowEvent::MouseInput};
       let xbutton = util::GET_XBUTTON_WPARAM(wparam);
 
+      record_mouse_screen_position(window, lparam);
       release_mouse(subclass_input.window_state.lock());
 
       let modifiers = update_modifiers(window, subclass_input);
@@ -1932,12 +1966,20 @@ unsafe fn public_window_callback_inner<T: 'static>(
 
     win32wm::WM_NCACTIVATE => {
       let is_active = wparam != WPARAM(0);
-      let active_focus_changed = subclass_input.window_state.lock().set_active(is_active);
-      if active_focus_changed {
-        if is_active {
-          gain_active_focus(window, subclass_input);
-        } else {
-          lose_active_focus(window, subclass_input);
+      // PATCH(nucleus): an inactive caption on the window that is still the
+      // active one is `FlashWindow` blinking it — Windows does so when a click
+      // hits the owner a modal dialog disabled (NucleusFramework/Nucleus#832).
+      // Nothing was deactivated: reporting it would toggle the focus at every
+      // blink. A real deactivation still comes through WM_KILLFOCUS.
+      let flashing = !is_active && GetActiveWindow() == window;
+      if !flashing {
+        let active_focus_changed = subclass_input.window_state.lock().set_active(is_active);
+        if active_focus_changed {
+          if is_active {
+            gain_active_focus(window, subclass_input);
+          } else {
+            lose_active_focus(window, subclass_input);
+          }
         }
       }
       result = ProcResult::DefWindowProc;

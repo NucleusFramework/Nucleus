@@ -626,10 +626,20 @@ internal class ElectronBuilderConfigGenerator(
             "  icon",
             linuxIcon.ref(),
         )
-        appendIfNotNull(yaml, "  category", distributions.linux.appCategory)
+        // electron-builder writes the desktop entry's Categories and Comment after merging
+        // desktop.entry, from linux.category and linux.description: route explicit entries
+        // there so they are not silently overwritten.
+        val desktopEntries = distributions.linux.appImage.desktopEntries
+        appendIfNotNull(
+            yaml,
+            "  category",
+            desktopEntries.entryValue("Categories")
+                ?: distributions.linux.appCategory
+                ?: distributions.linux.menuGroup,
+        )
         appendIfNotNull(yaml, "  maintainer", distributions.linux.debMaintainer)
         appendIfNotNull(yaml, "  vendor", distributions.vendor)
-        appendIfNotNull(yaml, "  description", distributions.description)
+        appendIfNotNull(yaml, "  description", desktopEntries.entryValue("Comment") ?: distributions.description)
         appendLinuxDesktopEntryConfig(yaml, distributions, startupWMClass)
 
         when (targetFormat) {
@@ -689,7 +699,10 @@ internal class ElectronBuilderConfigGenerator(
         startupWMClass: String?,
     ) {
         val entryOverrides = linkedMapOf<String, String>()
-        entryOverrides.putAll(distributions.linux.appImage.desktopEntries)
+        // Categories and Comment are emitted as linux.category / linux.description instead.
+        distributions.linux.appImage.desktopEntries
+            .filterKeys { key -> ELECTRON_BUILDER_OWNED_DESKTOP_KEYS.none { it.equals(key, ignoreCase = true) } }
+            .let(entryOverrides::putAll)
         // On Linux productName is the filesystem-safe executable name (see generate), and
         // electron-builder derives the desktop entry's Name from it: put the display name back.
         val hasNameOverride = entryOverrides.keys.any { it.equals("Name", ignoreCase = true) }
@@ -916,6 +929,9 @@ internal class ElectronBuilderConfigGenerator(
         toolsets.forEach { (name, version) -> yaml.appendLine("  $name: \"$version\"") }
     }
 
+    private fun Map<String, String>.entryValue(key: String): String? =
+        entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value?.takeIf { it.isNotBlank() }
+
     private fun appendIfNotNull(
         yaml: StringBuilder,
         key: String,
@@ -935,6 +951,9 @@ internal class ElectronBuilderConfigGenerator(
 
     private companion object {
         const val REDACTED = "<redacted>"
+
+        // Desktop entry keys electron-builder recomputes after merging linux.desktop.entry.
+        val ELECTRON_BUILDER_OWNED_DESKTOP_KEYS = listOf("Categories", "Comment")
     }
 }
 

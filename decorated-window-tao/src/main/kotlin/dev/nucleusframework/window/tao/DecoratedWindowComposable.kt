@@ -465,13 +465,6 @@ public fun ApplicationScope.DecoratedWindow(
             resolved.width.value.toDouble(),
             resolved.height.value.toDouble(),
         )
-        // GTK has no configure for a window that is not mapped yet, so the
-        // echo the other platforms send back never comes: report the size
-        // ourselves, as the native side does for Win32/AppKit. The window is
-        // still hidden here (see `showReady`), and maps at this size.
-        if (Platform.Current == Platform.Linux && !sizePolicy.showReady.value) {
-            applied.pendingProgrammaticPx?.let { window.dispatch(TaoEventCode.RESIZED, it.width, it.height) }
-        }
         applied.size = resolved
         latestState.size = resolved
         applied.wrapSettled = true

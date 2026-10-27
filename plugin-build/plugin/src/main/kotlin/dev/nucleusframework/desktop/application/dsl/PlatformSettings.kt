@@ -278,8 +278,16 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
     var startupWMClass: String? = null
     var packageName: String? = null
     var appRelease: String? = null
+
+    /**
+     * `Categories` of the desktop entry, e.g. `"Education"` or `"Education;X-Kodesh"`
+     * (non-registered categories need the `X-` prefix). Defaults to electron-builder's
+     * `Utility` when neither this nor [menuGroup] is set.
+     */
     var appCategory: String? = null
     var debMaintainer: String? = null
+
+    /** jpackage-era name for [appCategory], used when [appCategory] is not set. */
     var menuGroup: String? = null
     var rpmLicenseType: String? = null
     var debPackageVersion: String? = null

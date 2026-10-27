@@ -3,6 +3,10 @@ package dev.nucleusframework.window.tao.headful
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -36,7 +40,12 @@ import kotlin.math.roundToInt
  */
 internal object ResizeSyncHeadfulCases {
     fun all(): List<TaoWindowTestCase> =
-        listOf(borderDrag(overhanging = false), borderDrag(overhanging = true), programmaticResize())
+        listOf(
+            borderDrag(overhanging = false),
+            borderDrag(overhanging = true),
+            borderDrag(overhanging = false, animated = true),
+            programmaticResize(),
+        )
 
     private fun skipReason(): String? =
         when {
@@ -57,11 +66,23 @@ internal object ResizeSyncHeadfulCases {
             ?: "too slow on hosted CI runners to film a border drag (passes on hardware and local WARP)"
                 .takeIf { System.getenv("CI") != null }
 
-    private fun content(): @Composable TaoDecoratedWindowScope.() -> Unit =
+    /**
+     * [animated]: a frame-clock animation runs too, so frames the animation asks
+     * for land between the drag's WM_SIZEs (#484). Its tint stays under the
+     * film's colour tolerance.
+     */
+    private fun content(animated: Boolean = false): @Composable TaoDecoratedWindowScope.() -> Unit =
         {
+            val tick = remember { mutableIntStateOf(0) }
+            if (animated) {
+                LaunchedEffect(Unit) {
+                    while (true) withFrameNanos { tick.intValue++ }
+                }
+            }
             Box(
                 Modifier.fillMaxSize().drawBehind {
                     drawRect(FILL)
+                    if (animated) drawRect(Color.Black.copy(alpha = (tick.intValue % 2) * ANIMATION_ALPHA))
                     val stripe = EDGE_STRIPE_DP.dp.toPx()
                     drawRect(EDGE, topLeft = Offset(size.width - stripe, 0f), size = Size(stripe, size.height))
                 },
@@ -70,19 +91,24 @@ internal object ResizeSyncHeadfulCases {
 
     /**
      * The user's resize: the bottom-right corner dragged out and back with the
-     * real mouse (OS modal size loop). [overhanging]: the window's left part lies outside the desktop, so its
-     * frames go through the DirectComposition mirror too — which must step
-     * aside for the resize and come back after it.
+     * real mouse (OS modal size loop). [overhanging]: the window's left part
+     * lies outside the desktop, so its frames go through the DirectComposition
+     * mirror too — which must step aside for the resize and come back after
+     * it. [animated]: see [content].
      */
-    private fun borderDrag(overhanging: Boolean): TaoWindowTestCase =
+    private fun borderDrag(
+        overhanging: Boolean,
+        animated: Boolean = false,
+    ): TaoWindowTestCase =
         TaoWindowTestCase(
             name =
                 "windows content stays on the border while the border is dragged" +
-                    if (overhanging) " (window overhanging the desktop)" else "",
+                    (if (overhanging) " (window overhanging the desktop)" else "") +
+                    if (animated) " (content animating)" else "",
             skip = ::borderDragSkipReason,
             paintDefaultBackground = false,
             size = DpSize(START_W_DP.dp, START_H_DP.dp),
-            content = content(),
+            content = content(animated),
         ) {
             val film = prepare(window, overhanging)
             val start = requireNotNull(bounds())
@@ -295,6 +321,7 @@ internal object ResizeSyncHeadfulCases {
     private const val START_W_DP = 420
     private const val START_H_DP = 300
     private const val EDGE_STRIPE_DP = 6
+    private const val ANIMATION_ALPHA = 0.01f
     private const val CORNER_INSET_PX = 4
     private const val STEPS = 30
     private const val STEP_PX = 12
