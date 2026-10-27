@@ -495,6 +495,7 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     let active_context = Rc::new(RefCell::new(None::<gtk::gdk::DragContext>));
     let drag_data = Rc::new(RefCell::new(DragDataState::default()));
     let last_motion = Rc::new(Cell::new((0, 0, 0)));
+    let preview_ready = Rc::new(Cell::new(false));
     let pending_leave: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
 
     // ── drag-motion ─────────────────────────────────────────────────────
@@ -506,6 +507,7 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     let context_motion = Rc::clone(&active_context);
     let data_motion = Rc::clone(&drag_data);
     let position_motion = Rc::clone(&last_motion);
+    let ready_motion = Rc::clone(&preview_ready);
     let motion_id = widget.connect_drag_motion(move |w, ctx, x, y, time| {
         // Cancel any deferred leave — a fresh motion proves we never left.
         if let Some(src) = pending_motion.borrow_mut().take() {
@@ -518,6 +520,7 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
             }
             *context_motion.borrow_mut() = Some(ctx.clone());
             *data_motion.borrow_mut() = DragDataState::default();
+            ready_motion.set(false);
             dispatch_files(handle, &cb_motion, &[]);
         }
         position_motion.set((x, y, time));
@@ -528,6 +531,17 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
             .any(|atom| atom.name() == "text/uri-list");
 
         let (px, py) = translate_to_content_phys(&widget_motion, x, y);
+
+        // Defer the enter until the paths arrive so acceptance can inspect them.
+        if has_files && !ready_motion.get() {
+            if data_motion.borrow_mut().request_preview() {
+                let target = gtk::gdk::Atom::intern("text/uri-list");
+                w.drag_get_data(ctx, &target, time);
+            }
+            ctx.drag_status(DragAction::COPY, time);
+            acc_motion.set(true);
+            return true;
+        }
 
         let method = if ent_motion.get() {
             "onDragOver"
@@ -560,6 +574,7 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     let pending_leave_for_cb = Rc::clone(&pending_leave);
     let context_leave = Rc::clone(&active_context);
     let data_leave = Rc::clone(&drag_data);
+    let ready_leave = Rc::clone(&preview_ready);
     let leave_id = widget.connect_drag_leave(move |_w, _ctx, _time| {
         // GTK 3 fires drag-leave between every pair of drag-motion events
         // when the cursor crosses any internal widget boundary — we *cannot*
@@ -575,15 +590,18 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
         let slot = Rc::clone(&pending_leave_for_cb);
         let context = Rc::clone(&context_leave);
         let data = Rc::clone(&data_leave);
+        let ready = Rc::clone(&ready_leave);
         let id = glib::timeout_add_local_once(
             std::time::Duration::from_millis(LEAVE_DEBOUNCE_MS as u64),
             move || {
                 slot.borrow_mut().take();
                 acc.set(false);
-                ent.set(false);
                 context.borrow_mut().take();
                 *data.borrow_mut() = DragDataState::default();
-                dispatch_leave(handle, &cb);
+                ready.set(false);
+                if ent.replace(false) {
+                    dispatch_leave(handle, &cb);
+                }
             },
         );
         *pending_leave_for_cb.borrow_mut() = Some(id);
@@ -628,6 +646,7 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     let data_received = Rc::clone(&drag_data);
     let position_received = Rc::clone(&last_motion);
     let pending_received = Rc::clone(&pending_leave);
+    let ready_received = Rc::clone(&preview_ready);
     let widget_received = widget.clone();
     let received_id =
         widget.connect_drag_data_received(move |w, ctx, _x, _y, data, _info, _time| {
@@ -659,16 +678,19 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
             }
             match received {
                 ReceivedData::Preview => {
-                    if !ent_received.get() {
-                        return;
-                    }
+                    ready_received.set(true);
                     dispatch_files(handle, &cb_received, &paths);
                     if pending_received.borrow().is_some() {
                         return;
                     }
                     let (x, y, time) = position_received.get();
                     let (px, py) = translate_to_content_phys(&widget_received, x, y);
-                    let effect = dispatch_motion(handle, &cb_received, "onDragOver", px, py, true);
+                    let method = if ent_received.replace(true) {
+                        "onDragOver"
+                    } else {
+                        "onDragEnter"
+                    };
+                    let effect = dispatch_motion(handle, &cb_received, method, px, py, true);
                     acc_received.set(effect != DROP_EFFECT_NONE);
                     let action = if effect == DROP_EFFECT_NONE {
                         DragAction::empty()
@@ -680,6 +702,11 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
                 ReceivedData::Drop(position) => {
                     let (px, py) =
                         translate_to_content_phys(&widget_received, position.x, position.y);
+                    // Released before the preview arrived: enter with the real payload first.
+                    if !ent_received.replace(true) {
+                        dispatch_files(handle, &cb_received, &paths);
+                        dispatch_motion(handle, &cb_received, "onDragEnter", px, py, true);
+                    }
                     let effect = dispatch_drop(handle, &cb_received, px, py, &paths);
                     ctx.drag_finish(effect != DROP_EFFECT_NONE, false, position.time);
                     ent_received.set(false);
