@@ -75,6 +75,7 @@ include(":updater-testing")
 include(":fs-watcher")
 include(":share")
 include(":authentication")
+include(":speech-recognition")
 include(":location")
 
 // Nucleus Lab: the single test bench app (examples/lab). One module per probe domain;

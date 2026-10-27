@@ -269,14 +269,6 @@ impl Window {
       .unwrap_or((800, 600));
     window.set_default_size(1, 1);
     window.resize(width, height);
-    // Nucleus patch: `gtk_window_resize` has no effect on a non-resizable
-    // window — GTK sizes it to the content's natural size instead, so a
-    // 200×40 overlay came up 200×200. Pin the requested size through the
-    // widget size request (the only sizing channel GTK honours when
-    // `resizable == false`). Applies to both X11 and Wayland.
-    if !attributes.resizable && !attributes.maximized {
-      window.set_size_request(width, height);
-    }
 
     if attributes.maximized {
       // Nucleus patch: apply `maximize()` synchronously, before the GTK window
@@ -346,6 +338,16 @@ impl Window {
     } else {
       None
     };
+
+    // Nucleus patch: `gtk_window_resize` has no effect on a non-resizable
+    // window — GTK sizes it to the content's natural size instead, so a
+    // 200×40 overlay came up 200×200. Pin the requested size through the
+    // content's size request (the only sizing channel GTK honours when
+    // `resizable == false`), once the content box exists so the client-side
+    // decorations stay outside it. Applies to both X11 and Wayland.
+    if !attributes.resizable && !attributes.maximized {
+      util::set_content_size_request(&window, width, height);
+    }
 
     // Rest attributes
     window.set_title(&attributes.title);

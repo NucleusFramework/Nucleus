@@ -66,7 +66,7 @@ nucleusNative {
 }
 
 // The desktop bridge is derived from robius-authentication (MIT): its notice travels with
-// the binaries — see THIRD_PARTY_NOTICES.md §6.
+// the binaries — see THIRD_PARTY_NOTICES.md §7.
 tasks.named<Jar>("jvmJar") {
     metaInf {
         from(rootProject.file("THIRD_PARTY_NOTICES.md"))

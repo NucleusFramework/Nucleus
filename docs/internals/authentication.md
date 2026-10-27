@@ -5,7 +5,7 @@ prompt. It is the second **Kotlin Multiplatform** library after `share` and copi
 `commonMain` holds the API, Android and iOS are pure Kotlin, only the `jvm` target goes through a
 Rust JNI crate (`src/main/native`, derived from
 [`robius-authentication`](https://github.com/project-robius/robius/tree/main/crates/authentication),
-THIRD_PARTY_NOTICES §6), and `nucleus.native-module` wires `jvmProcessResources`.
+THIRD_PARTY_NOTICES §7), and `nucleus.native-module` wires `jvmProcessResources`.
 
 ## A gate, not a key
 
