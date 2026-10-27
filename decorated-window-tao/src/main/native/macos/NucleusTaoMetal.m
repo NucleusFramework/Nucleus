@@ -98,6 +98,16 @@ static const char kTaoNsViewPtrKey = 12;
 // changes) dead on anything drawn over the title bar. Mirrors
 // `decorated-window-jni`'s NucleusDragView.
 static const char kTaoPassthroughViewKey = 13;
+// Set by nativeConfigureSystemChrome (#841): the window keeps AppKit's
+// standard title bar, so none of the full-size-content chrome above applies
+// and the fullscreen observer leaves the title bar, the traffic lights, the
+// toolbar and `movable` to AppKit.
+static const char kTaoSystemChromeKey = 20;
+
+static BOOL isSystemChrome(NSWindow *w) {
+    NSNumber *flag = objc_getAssociatedObject(w, &kTaoSystemChromeKey);
+    return flag != nil && flag.boolValue;
+}
 // Last themed fallback background ARGB. Applied to NSWindow and CAMetalLayer so
 // AppKit fullscreen/title-bar animations never reveal the default white window.
 static const char kTaoBackgroundArgbKey = 14;
@@ -1015,30 +1025,34 @@ static void removeMenuBarMonitor(NSWindow *window) {
     [self setTransition:1];
     NSWindow *w = _view.window;
     if (w == nil) return;
-    // Drop any in-flight menu bar offset so the monitor (re)installed in
-    // didEnterFS starts from a known baseline.
-    removeMenuBarMonitor(w);
-    removeButtonConstraints(w);
-    // Restore the standard chrome so AppKit's fullscreen animation can run.
-    // Tahoe-only: on older macOS this briefly reveals the opaque native
-    // title bar sliding to the top during the transition (issue #310).
-    if (isTahoeOrLater()) {
-        w.titlebarAppearsTransparent = NO;
-        w.titleVisibility = NSWindowTitleVisible;
-    }
-    w.movableByWindowBackground = NO;
-    // Keep the window movable for the whole fullscreen session: the real zoom
-    // button (carrying the hover responder) is hidden in fullscreen, and the
-    // replacement button installed by installFullScreenButtons has none — a
-    // non-movable window would build its hover menu without the tiling
-    // sections again (issue #497). Restored to NO in didExitFS. Mirrors
-    // decorated-window-jni's willEnterFullScreen/didExitFullScreen.
-    [w setMovable:YES];
-    // Drop the invisible toolbar to avoid AppKit's white-band glitch.
-    if (w.toolbar != nil) {
-        objc_setAssociatedObject(w, &kTaoHadToolbarKey, @YES,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        w.toolbar = nil;
+    // System chrome (#841): AppKit owns the title bar through the transition;
+    // only the frame prepare below applies.
+    if (!isSystemChrome(w)) {
+        // Drop any in-flight menu bar offset so the monitor (re)installed in
+        // didEnterFS starts from a known baseline.
+        removeMenuBarMonitor(w);
+        removeButtonConstraints(w);
+        // Restore the standard chrome so AppKit's fullscreen animation can run.
+        // Tahoe-only: on older macOS this briefly reveals the opaque native
+        // title bar sliding to the top during the transition (issue #310).
+        if (isTahoeOrLater()) {
+            w.titlebarAppearsTransparent = NO;
+            w.titleVisibility = NSWindowTitleVisible;
+        }
+        w.movableByWindowBackground = NO;
+        // Keep the window movable for the whole fullscreen session: the real zoom
+        // button (carrying the hover responder) is hidden in fullscreen, and the
+        // replacement button installed by installFullScreenButtons has none — a
+        // non-movable window would build its hover menu without the tiling
+        // sections again (issue #497). Restored to NO in didExitFS. Mirrors
+        // decorated-window-jni's willEnterFullScreen/didExitFullScreen.
+        [w setMovable:YES];
+        // Drop the invisible toolbar to avoid AppKit's white-band glitch.
+        if (w.toolbar != nil) {
+            objc_setAssociatedObject(w, &kTaoHadToolbarKey, @YES,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            w.toolbar = nil;
+        }
     }
     // Render the final fullscreen layout NOW, then let AppKit scale it.
     //
@@ -1106,6 +1120,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
         [CATransaction commit];
     }
     applyStoredWindowBackground(w, _view);
+    if (isSystemChrome(w)) return;
     // Tear down replacement buttons + un-hide the AppKit titlebar container so
     // AppKit can drive the exit animation against its standard chrome.
     removeFullScreenButtons(w);
@@ -1138,6 +1153,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
     NSWindow *w = _view.window;
     if (w == nil) return;
     applyStoredWindowBackground(w, _view);
+    if (isSystemChrome(w)) return;
     // Install replacement traffic-light buttons inside the contentView so
     // they remain visible when AppKit auto-hides the native title bar (and
     // they don't disappear with our custom Compose title bar in fullscreen).
@@ -1203,6 +1219,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
     NSWindow *w = _view.window;
     if (w == nil) return;
     applyStoredWindowBackground(w, _view);
+    if (isSystemChrome(w)) return;
     // Re-show the standard buttons (hidden in willExitFS).
     [[w standardWindowButton:NSWindowCloseButton] setHidden:NO];
     [[w standardWindowButton:NSWindowMiniaturizeButton] setHidden:NO];
@@ -1416,6 +1433,33 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeConfigureChrome
         // after the transition completes (AppKit reparents the contentView,
         // which can otherwise leave the layer detached and crash the next
         // nextDrawable call).
+        NSWindowCollectionBehavior cb = win.collectionBehavior;
+        cb |= NSWindowCollectionBehaviorFullScreenPrimary;
+        win.collectionBehavior = cb;
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+/**
+ * The counterpart of nativeConfigureChrome for a window that keeps AppKit's
+ * standard title bar (#841): no full-size content view, no transparent or
+ * hidden title, AppKit's own window dragging. Marks the window so the
+ * fullscreen observer leaves its chrome alone; keeps the fallback background
+ * and native fullscreen.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeConfigureSystemChrome(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        objc_setAssociatedObject(win, &kTaoSystemChromeKey, @YES,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        applyStoredWindowBackground(win, view);
         NSWindowCollectionBehavior cb = win.collectionBehavior;
         cb |= NSWindowCollectionBehaviorFullScreenPrimary;
         win.collectionBehavior = cb;

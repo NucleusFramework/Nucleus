@@ -228,6 +228,15 @@ public final class dev/nucleusframework/application/TabKt {
 	public static final fun TabWindows (Ldev/nucleusframework/window/tao/TabWorkspace;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;ZLkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
 }
 
+public final class dev/nucleusframework/application/WindowKt {
+	public static final fun DialogWindow (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DialogWindow (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Window (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Window (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Window-DzYreS0 (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Window-SrgVveE (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+}
+
 public abstract class dev/nucleusframework/application/contextmenu/ContextMenuEntry {
 	public static final field $stable I
 }

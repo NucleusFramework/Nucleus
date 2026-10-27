@@ -47,7 +47,8 @@ use super::{
   monitor::{self, MonitorHandle},
   taskbar, util,
   window::{
-    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, WindowId, WindowRequest,
+    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, is_on_system_decorations,
+    reports_content_space, WindowId, WindowRequest,
   },
 };
 
@@ -870,7 +871,7 @@ impl<T: 'static> EventLoop<T> {
               // GdkWindow coordinates to the toplevel, then shift into
               // content-area coordinates so the embedder's (0,0) stays the
               // visible window corner.
-              let (x, y) = if is_csd_hidden_titlebar(window) {
+              let (x, y) = if reports_content_space(window) {
                 let (x, y) = event_coords_to_toplevel(window, crossing.window(), x, y);
                 let (cx, cy, _, _) = content_geometry(window);
                 (x - cx as f64, y - cy as f64)
@@ -906,7 +907,7 @@ impl<T: 'static> EventLoop<T> {
                 // PATCH(nucleus): hidden-titlebar CSD — translate from
                 // decorated-surface to content-area coordinates (see the
                 // crossing handler above).
-                let (x, y) = if is_csd_hidden_titlebar(window) {
+                let (x, y) = if reports_content_space(window) {
                   let (x, y) = event_coords_to_toplevel(window, motion.window(), x, y);
                   let (cx, cy, _, _) = content_geometry(window);
                   (x - cx as f64, y - cy as f64)
@@ -924,6 +925,12 @@ impl<T: 'static> EventLoop<T> {
                 }) {
                   log::warn!("Failed to send cursor moved event to event channel: {}", e);
                 }
+              }
+              // PATCH(nucleus): GTK's own title bar and frame (system
+              // decorations, GNOME Wayland) track the pointer for their move /
+              // resize gestures; stopping the event here froze them.
+              if is_on_system_decorations(window, motion) {
+                return glib::Propagation::Proceed;
               }
               glib::Propagation::Stop
             });
@@ -948,7 +955,16 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
-            window.connect_button_press_event(move |_, event| {
+            window.connect_button_press_event(move |window, event| {
+              // PATCH(nucleus): a press on GTK's own title bar or frame (system
+              // decorations, GNOME Wayland) belongs to GtkWindow's class handler,
+              // which runs after this one and starts the move, the double-click
+              // maximize or the edge resize. It is not forwarded either: the
+              // compositor keeps the release of a move / resize grab, so the
+              // embedder would be left with a button it believes held.
+              if is_on_system_decorations(window, event) {
+                return glib::Propagation::Proceed;
+              }
               let button = event.button();
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
@@ -974,7 +990,7 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
-            window.connect_button_release_event(move |_, event| {
+            window.connect_button_release_event(move |window, event| {
               let button = event.button();
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
@@ -995,6 +1011,11 @@ impl<T: 'static> EventLoop<T> {
                   "Failed to send mouse input released event to event channel: {}",
                   e
                 );
+              }
+              // PATCH(nucleus): forwarded above (it may end a press that began in
+              // the content), and seen by GTK's title bar and frame too.
+              if is_on_system_decorations(window, event) {
+                return glib::Propagation::Proceed;
               }
               glib::Propagation::Stop
             });

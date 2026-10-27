@@ -64,6 +64,8 @@ public fun ApplicationScope.DecoratedWindow(
     visibleOnAllWorkspaces: Boolean = false,
     forceX11: Boolean = false,
     alwaysOnBottom: Boolean = false,
+    /** Let the platform draw the title bar and frame (#841); see the v1 overload. */
+    systemDecorations: Boolean = false,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val v1 = remember(state) { nucleusWindowStateToV1(state) }
@@ -95,6 +97,7 @@ public fun ApplicationScope.DecoratedWindow(
         visibleOnAllWorkspaces = visibleOnAllWorkspaces,
         forceX11 = forceX11,
         alwaysOnBottom = alwaysOnBottom,
+        systemDecorations = systemDecorations,
         content = {
             ApplyMaxSizeNucleus(maxSize)
             CaptureNativeWindowNucleus(nativeWindow)
@@ -127,6 +130,8 @@ public fun ApplicationScope.DecoratedDialog(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     compositionLocalContext: CompositionLocalContext? = null,
+    /** Let the platform draw the title bar and frame (#841); see the v1 overload. */
+    systemDecorations: Boolean = false,
     content: @Composable TaoDecoratedDialogScope.() -> Unit,
 ) {
     val v1 = remember(state) { nucleusDialogStateToV1(state) }
@@ -154,6 +159,7 @@ public fun ApplicationScope.DecoratedDialog(
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
         compositionLocalContext = compositionLocalContext,
+        systemDecorations = systemDecorations,
         content = {
             ApplySizeConstraintsNucleus(minSize, maxSize)
             CaptureNativeDialogWindowNucleus(nativeWindow)

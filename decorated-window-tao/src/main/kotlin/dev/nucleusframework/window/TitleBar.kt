@@ -149,14 +149,18 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // The compositor wants no decorations (#816): the bar keeps whatever the
     // app put in it (tabs, title, menus) but loses the window controls and the
     // room reserved for them, and takes no room at all when nothing is left.
-    val decorationSuppressed = taoWindow.isDecorationSuppressed
+    // System decorations (#841): the platform draws the title bar, so this one
+    // is plain app content, suppressed the same way, and never drives native
+    // chrome (no window controls, caption zone or traffic-light layout).
+    val systemDecorations = taoWindow.hasSystemDecorations
+    val decorationSuppressed = taoWindow.isDecorationSuppressed || systemDecorations
 
     // Modifier-driven flags. `macOSLargeCornerRadius` re-runs the NSToolbar
     // install at composition time so the modifier-driven path matches the
     // AWT backends (the `MacOSStyle` parameter at window creation is the
     // imperative equivalent — both are honoured).
-    val newFullscreenControls = modifier.hasNewFullscreenControls()
-    val macOSLargeCornerRadius = modifier.hasMacOSLargeCornerRadius()
+    val newFullscreenControls = modifier.hasNewFullscreenControls() && !systemDecorations
+    val macOSLargeCornerRadius = modifier.hasMacOSLargeCornerRadius() && !systemDecorations
     val isMacOS = Platform.Current == Platform.MacOS
     if (isMacOS && macOSLargeCornerRadius) {
         LaunchedEffect(taoWindow) {
@@ -285,7 +289,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
 
     // macOS: flip the AppKit traffic-lights to the right edge when RTL is
     // active. Mirrors the legacy AWT backend's `nativeSetRTL` call path.
-    if (Platform.Current == Platform.MacOS) {
+    if (Platform.Current == Platform.MacOS && !systemDecorations) {
         LaunchedEffect(taoWindow, controlIsRtl) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
             if (nsView != 0L && NativeMetalBridge.isLoaded) {
@@ -314,7 +318,8 @@ public fun DecoratedWindowScope.BasicTitleBar(
 
     val overlayHolder = LocalFullscreenTitleBarHolder.current
     val useOverlay =
-        newFullscreenControls &&
+        !systemDecorations &&
+            newFullscreenControls &&
             currentState.isFullscreen &&
             (Platform.Current == Platform.Windows || Platform.Current == Platform.Linux) &&
             overlayHolder != null
@@ -332,7 +337,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 // In overlay mode the bar lives outside the user content tree;
                 // the inline slot is collapsed so heightHolder must stay at 0
                 // (drives both the Compose top inset and the deco caption zone).
-                if (!useOverlay) {
+                if (!useOverlay && !systemDecorations) {
                     heightHolder.value = measuredHeight.value
                 }
                 if (decorationSuppressed) {
@@ -350,7 +355,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 // macOS fullscreen: keep the AppKit replacement traffic-lights
                 // pinned to whatever Y the Compose title bar is currently at.
                 // Mirrors the legacy AWT backend's `nativeUpdateFullScreenButtons`.
-                if (isMacOS && currentState.isFullscreen && NativeMetalBridge.isLoaded) {
+                if (isMacOS && !systemDecorations && currentState.isFullscreen && NativeMetalBridge.isLoaded) {
                     val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
                     if (nsView != 0L) {
                         NativeMetalBridge.nativeUpdateFullScreenButtons(nsView)
@@ -368,7 +373,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 // ahead of `content()`.
                 when (Platform.Current) {
                     Platform.Linux ->
-                        if (linuxLayout != null && (!decorationSuppressed || useOverlay)) {
+                        if (linuxLayout != null && !systemDecorations && (!decorationSuppressed || useOverlay)) {
                             WindowControlsLinux(
                                 win = taoWindow,
                                 state = titleBarState,
@@ -399,14 +404,16 @@ public fun DecoratedWindowScope.BasicTitleBar(
                             )
                         }
                     Platform.Windows ->
-                        WindowControlsWindows(
-                            win = taoWindow,
-                            state = titleBarState,
-                            style = style,
-                            modifier = Modifier.align(Alignment.End),
-                            isFullscreen = titleBarState.isFullscreen,
-                            onExitFullscreen = { taoWindow.setFullscreen(false) },
-                        )
+                        if (!systemDecorations) {
+                            WindowControlsWindows(
+                                win = taoWindow,
+                                state = titleBarState,
+                                style = style,
+                                modifier = Modifier.align(Alignment.End),
+                                isFullscreen = titleBarState.isFullscreen,
+                                onExitFullscreen = { taoWindow.setFullscreen(false) },
+                            )
+                        }
                     else -> Unit // macOS uses native AppKit traffic-lights
                 }
 
@@ -453,7 +460,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // Push the resolved caption height to the deco WndProc on every overlay
     // toggle. host.syncTitleBarHeight() only fires on resize/scale changes,
     // which can race the recomposition that flips `useOverlay`.
-    if (Platform.Current == Platform.Windows) {
+    if (Platform.Current == Platform.Windows && !systemDecorations) {
         val styleHeightPx = with(LocalDensity.current) { style.metrics.height.roundToPx() }
         LaunchedEffect(taoWindow, useOverlay) {
             if (!NativeTaoWindowsDecoBridge.isLoaded) return@LaunchedEffect

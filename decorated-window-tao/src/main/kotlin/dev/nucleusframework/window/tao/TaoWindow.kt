@@ -84,6 +84,19 @@ public class TaoWindow internal constructor(
      * request the native side could not honour.
      */
     internal val requestedX11: Boolean = false,
+    /**
+     * `true` when the platform draws this window's title bar and frame (#841):
+     * the standard AppKit title bar on macOS, the Win32 caption and frame on
+     * Windows, and on Linux the window manager's decorations (X11, KWin) or
+     * GTK's own title bar (GNOME on Wayland). Fixed at creation
+     * (`openWindow(systemDecorations = true)`).
+     *
+     * The stock title bars and [dev.nucleusframework.window.WindowScaffold]
+     * then behave as under [isDecorationSuppressed]: no window controls, no
+     * room reserved for them, no native caption zone, and a bar with no
+     * content takes no room at all.
+     */
+    public val hasSystemDecorations: Boolean = false,
 ) {
     // Snapshot-backed so Compose consumers (WindowControls*, resize hit-test
     // gating) recompose when resizability changes at runtime — the AWT

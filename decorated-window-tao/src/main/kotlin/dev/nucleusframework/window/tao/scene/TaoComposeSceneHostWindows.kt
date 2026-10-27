@@ -410,17 +410,12 @@ internal class TaoComposeSceneHostWindows(
         }, delay, TimeUnit.NANOSECONDS)
     }
 
-    fun attach() {
-        check(NativeTaoBridge.isLoaded && NativeTaoGlBridge.isLoaded && NativeTaoWindowsDecoBridge.isLoaded) {
-            "Tao Windows native libraries not loaded"
-        }
-        hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
-        require(hwnd != 0L) { "HWND unavailable; window not yet realised" }
-
-        // The swap after a show() must always happen, clean scene or not —
-        // see [forcePresentOnce].
-        window.showHook = { forcePresentOnce = true }
-
+    /**
+     * Installs the window's frame: the Nucleus custom decoration (WndProc subclass +
+     * DwmExtendFrameIntoClientArea), or the Win32 caption and frame for system
+     * decorations (#841).
+     */
+    private fun installChrome() {
         // Install custom decoration (WndProc subclass + DwmExtendFrameIntoClientArea).
         // Title-bar height is set later — the value the TitleBar composable publishes
         // via SideEffect arrives after first composition.
@@ -434,8 +429,16 @@ internal class TaoComposeSceneHostWindows(
             } else {
                 (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
             }
-        NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
-        if (borderlessChrome || fullyTransparent) {
+        if (window.hasSystemDecorations) {
+            // #841: keep the Win32 caption and frame; the subclass still
+            // serves fullscreen, the startup erase and dark mode.
+            NativeTaoWindowsDecoBridge.nativeInstallSystemFrame(hwnd)
+        } else {
+            NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
+        }
+        // A system frame (#841) stays the system's even when the content is
+        // transparent: it is real non-client area, not a contour to hide.
+        if (!window.hasSystemDecorations && (borderlessChrome || fullyTransparent)) {
             // Kill DWM 1px contour + shadow margin (Compose border is already
             // skipped by the openDecoratedWindowWindows undecorated path).
             // Fully transparent windows (#416) need the same treatment even
@@ -443,6 +446,20 @@ internal class TaoComposeSceneHostWindows(
             // trace the rectangular HWND, betraying the content-defined shape.
             NativeTaoWindowsDecoBridge.nativeSetBorderlessChrome(hwnd, true)
         }
+    }
+
+    fun attach() {
+        check(NativeTaoBridge.isLoaded && NativeTaoGlBridge.isLoaded && NativeTaoWindowsDecoBridge.isLoaded) {
+            "Tao Windows native libraries not loaded"
+        }
+        hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+        require(hwnd != 0L) { "HWND unavailable; window not yet realised" }
+
+        // The swap after a show() must always happen, clean scene or not —
+        // see [forcePresentOnce].
+        window.showHook = { forcePresentOnce = true }
+
+        installChrome()
 
         // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
         // Skia needs an EGL-assembled GL interface — the default makeGL()
