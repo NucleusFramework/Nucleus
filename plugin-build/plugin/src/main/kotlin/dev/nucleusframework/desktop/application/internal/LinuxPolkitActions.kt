@@ -1,22 +1,30 @@
 package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.PolkitActionDefinition
+import java.io.File
 
 /**
- * The `linux.polkitActions` of a Deb/RPM/Pacman package: afterInstall writes one `.policy` per
- * action under [ACTIONS_DIR], afterRemove deletes them on a real uninstall.
+ * The `linux.polkitActions` of a Deb/RPM/Pacman package: the `.policy` files ship in the payload
+ * under [PAYLOAD_DIR], afterInstall copies them to [ACTIONS_DIR], afterRemove deletes them on a
+ * real uninstall.
  *
- * Both fragments go through electron-builder's template pass, which substitutes (or rejects)
- * every `${name}`: user text reaches the script XML-escaped, `$` included, inside a quoted
- * heredoc the shell does not expand.
+ * In the payload rather than inlined in afterInstall: electron-builder's template pass
+ * substitutes (or rejects) every `${name}` of the scripts, and the text cannot be escaped for it,
+ * see [policyXml].
  */
 internal object LinuxPolkitActions {
     const val ACTIONS_DIR: String = "/usr/share/polkit-1/actions"
-    private const val HEREDOC_END = "NUCLEUS_POLKIT_ACTION_EOF"
+
+    /** Relative to the app dir, installed as `/opt/<sanitizedProductName>/`. */
+    const val PAYLOAD_DIR: String = "resources/polkit-actions"
 
     fun policyPath(id: String): String = "$ACTIONS_DIR/$id.policy"
 
-    /** The `.policy` document declaring [action]. */
+    /**
+     * The `.policy` document declaring [action]. Texts go in CDATA, never escaped: polkitd keeps
+     * only the last character-data chunk expat hands it, and expat splits text at every entity,
+     * so `A &amp; B` reads as ` B`. `PolkitActionSettings.action` rejects what would split a CDATA.
+     */
     fun policyXml(action: PolkitActionDefinition): String {
         val message = action.message.orEmpty()
         return """
@@ -25,8 +33,8 @@ internal object LinuxPolkitActions {
              "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
             <policyconfig>
               <action id="${action.id}">
-                <description>${xml(action.description ?: message)}</description>
-                <message>${xml(message)}</message>
+                <description><![CDATA[${action.description ?: message}]]></description>
+                <message><![CDATA[$message]]></message>
                 <defaults>
                   <allow_any>${action.allowAny.value}</allow_any>
                   <allow_inactive>${action.allowInactive.value}</allow_inactive>
@@ -34,21 +42,30 @@ internal object LinuxPolkitActions {
                 </defaults>
               </action>
             </policyconfig>
-            """.trimIndent()
+            """.trimIndent() + "\n"
     }
 
-    /** afterInstall fragment writing every action's `.policy`; empty without actions. */
+    /** Writes every action's `.policy` into the app image, under [PAYLOAD_DIR]. */
+    fun writePolicies(
+        appDir: File,
+        actions: List<PolkitActionDefinition>,
+    ) {
+        if (actions.isEmpty()) return
+        val dir = appDir.resolve(PAYLOAD_DIR).apply { mkdirs() }
+        for (action in actions) {
+            dir.resolve("${action.id}.policy").writeText(policyXml(action))
+        }
+    }
+
+    /** afterInstall fragment copying every action's `.policy` out of the payload; empty without actions. */
     fun afterInstallFragment(actions: List<PolkitActionDefinition>): String {
         if (actions.isEmpty()) return ""
         return buildString {
             append("\n# --- Nucleus polkit actions (linux.polkitActions) ---\n")
             append("mkdir -p '$ACTIONS_DIR'\n")
             for (action in actions) {
-                val path = policyPath(action.id)
-                append("cat > '$path' <<'$HEREDOC_END'\n")
-                append(policyXml(action))
-                append("\n$HEREDOC_END\n")
-                append("chmod 0644 '$path'\n")
+                val source = "/opt/\${sanitizedProductName}/$PAYLOAD_DIR/${action.id}.policy"
+                append("install -m 0644 '$source' '${policyPath(action.id)}'\n")
             }
         }
     }
@@ -72,23 +89,4 @@ internal object LinuxPolkitActions {
           *) rm -f ${paths.joinToString(" ") { "'$it'" }} 2>/dev/null || true ;;
         esac
         """.trimIndent() + "\n"
-
-    private fun xml(text: String): String =
-        buildString {
-            for (c in text) {
-                when (c) {
-                    '&' -> append("&amp;")
-                    '<' -> append("&lt;")
-                    '>' -> append("&gt;")
-                    '"' -> append("&quot;")
-                    '\'' -> append("&apos;")
-                    // electron-builder's template pass would take `${…}` for a macro.
-                    '$' -> append("&#36;")
-                    // One line per element: no user text can end the heredoc.
-                    '\n' -> append("&#10;")
-                    '\r' -> append("&#13;")
-                    else -> append(c)
-                }
-            }
-        }
 }

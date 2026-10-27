@@ -42,9 +42,10 @@ and the dialog shows that file's `<message>`, never `AuthenticationPrompt.reason
 the action id as `AuthenticationPrompt.linuxActionId`; a missing id is `InvalidPrompt` before any
 D-Bus traffic, an undeclared one is `InvalidPrompt` from polkit's `Error.Failed … not registered`.
 An action the user may never perform (`allow_active` `no`) is `DisabledByPolicy`, with no prompt.
-The plugin's `linux { polkitActions { } }` writes the file from the Deb/RPM/Pacman afterInstall
-and deletes it on uninstall but not on an upgrade (`LinuxPolkitActions`: RPM runs the old
-package's `%postun` after the new one's `%post`). The Lab, run from Gradle and never installed, uses
+The plugin's `linux { polkitActions { } }` ships the file in the Deb/RPM/Pacman payload, copies it
+there from afterInstall and deletes it on uninstall but not on an upgrade (`LinuxPolkitActions`:
+RPM runs the old package's `%postun` after the new one's `%post`). Texts are CDATA, never
+escaped: polkitd keeps only the last chunk expat hands it, so `A &amp; B` would read ` B`. The Lab, run from Gradle and never installed, uses
 `org.freedesktop.policykit.exec`, pkexec's own action, because every polkit system declares it.
 
 The subject is `unix-process` with `pid`, `start-time` (field 22 of `/proc/self/stat`) and `uid`,

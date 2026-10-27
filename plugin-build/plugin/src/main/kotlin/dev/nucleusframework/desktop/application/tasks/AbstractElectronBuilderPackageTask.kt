@@ -120,6 +120,9 @@ abstract class AbstractElectronBuilderPackageTask
             private const val DEFAULT_PACKAGE_VERSION = "1.0.0"
             private val NSIS_FORMATS = setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)
             private val LINUX_SIGNED_FORMATS = setOf(TargetFormat.Deb, TargetFormat.Rpm)
+
+            /** The formats whose install scripts can write `/usr/share/polkit-1/actions/`. */
+            private val POLKIT_FORMATS = setOf(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Pacman)
             internal val CUSTOM_INSTALL_MACRO = Regex("""!macro\s+customInstall\b""")
         }
 
@@ -355,6 +358,7 @@ abstract class AbstractElectronBuilderPackageTask
 
             ensureResourcesDirForElectronBuilder(workingAppDir)
             bundleSilentUpdateArtifacts(workingAppDir, dist)
+            bundlePolkitPolicies(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir)
@@ -606,9 +610,11 @@ abstract class AbstractElectronBuilderPackageTask
                         appendLine("linuxSigning.debMethod: ${signing.debMethod}")
                         appendLine("linuxSigning.silentUpdate: ${signing.silentUpdate.get()}")
                     }
-                    // prepareLinuxAfterInstallTemplate(), prepareLinuxAfterRemoveTemplate()
-                    for (action in dist.linux.polkitActions.actions) {
-                        appendLine("polkitAction: ${LinuxPolkitActions.policyXml(action)}")
+                    // writePolicies(), prepareLinuxAfterInstallTemplate(), prepareLinuxAfterRemoveTemplate()
+                    if (targetFormat in POLKIT_FORMATS) {
+                        for (action in dist.linux.polkitActions.actions) {
+                            appendLine("polkitAction: ${LinuxPolkitActions.policyXml(action)}")
+                        }
                     }
                 }
                 OS.Windows -> {
@@ -1870,6 +1876,15 @@ abstract class AbstractElectronBuilderPackageTask
          * Ships silent-update artifacts in the **package payload** (helper + public key).
          * afterInstall only installs polkit — see [LinuxUpdateHelper.polkitAfterInstallFragment].
          */
+        /** Ships the `linux.polkitActions` policies in the payload, see [LinuxPolkitActions]. */
+        private fun bundlePolkitPolicies(
+            workingAppDir: File,
+            dist: JvmApplicationDistributions,
+        ) {
+            if (currentOS != OS.Linux || targetFormat !in POLKIT_FORMATS) return
+            LinuxPolkitActions.writePolicies(workingAppDir, dist.linux.polkitActions.actions)
+        }
+
         private fun bundleSilentUpdateArtifacts(
             workingAppDir: File,
             dist: JvmApplicationDistributions,

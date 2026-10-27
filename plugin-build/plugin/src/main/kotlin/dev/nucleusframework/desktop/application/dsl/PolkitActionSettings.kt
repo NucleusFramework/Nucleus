@@ -41,6 +41,13 @@ class PolkitActionSettings : Serializable {
         val definition = PolkitActionDefinition(id)
         fn.execute(definition)
         require(!definition.message.isNullOrBlank()) { "polkit action '$id' needs a message" }
+        // Written as one CDATA each (see LinuxPolkitActions.policyXml): anything that splits
+        // it would reach polkitd truncated.
+        for (text in listOfNotNull(definition.message, definition.description)) {
+            require(text.none { it == '\n' || it == '\r' } && "]]>" !in text) {
+                "polkit action '$id': the message and description must be one line without ']]>'"
+            }
+        }
         actions.add(definition)
     }
 
@@ -56,7 +63,7 @@ class PolkitActionDefinition(
     /** The action id, also the `.policy` file name. */
     val id: String,
 ) : Serializable {
-    /** The dialog text (`<message>`). Required. */
+    /** The dialog text (`<message>`), on one line. Required. */
     var message: String? = null
 
     /** What `pkaction` lists (`<description>`); [message] when `null`. */

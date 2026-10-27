@@ -33,8 +33,18 @@ class LinuxPolkitActionsTest {
         assertTrue(xml.contains("<allow_any>no</allow_any>"))
         assertTrue(
             "description falls back to the message",
-            xml.contains("<description>Unlock com.example.unlock</description>"),
+            xml.contains("<description><![CDATA[Unlock com.example.unlock]]></description>"),
         )
+    }
+
+    @Test
+    fun `texts are one CDATA without entities, so polkitd reads them whole`() {
+        // polkitd keeps the last chunk expat hands it, and expat splits at every entity:
+        // an escaped `A &amp; B` was installed and read back by pkaction as ` B`.
+        val settings = PolkitActionSettings()
+        settings.action("com.example.unlock") { it.message = "Déverrouiller A & <B> pour \$5" }
+        val xml = LinuxPolkitActions.policyXml(settings.actions.single())
+        assertTrue(xml.contains("<message><![CDATA[Déverrouiller A & <B> pour \$5]]></message>"))
     }
 
     @Test
@@ -43,22 +53,23 @@ class LinuxPolkitActionsTest {
         assertThrows(IllegalArgumentException::class.java) { settings.action("../evil") { it.message = "x" } }
         assertThrows(IllegalArgumentException::class.java) { settings.action("a b") { it.message = "x" } }
         assertThrows(IllegalArgumentException::class.java) { settings.action("com.example.none") { } }
+        assertThrows(IllegalArgumentException::class.java) { settings.action("com.example.n") { it.message = "a\nb" } }
+        assertThrows(IllegalArgumentException::class.java) { settings.action("com.example.c") { it.message = "a]]>b" } }
         settings.action("com.example.once") { it.message = "x" }
         assertThrows(IllegalArgumentException::class.java) { settings.action("com.example.once") { it.message = "y" } }
     }
 
     @Test
-    fun `user text never reaches electron-builder as a macro`() {
+    fun `user text never reaches electron-builder's macro pass`() {
         val settings = PolkitActionSettings()
-        settings.action("com.example.unlock") {
-            it.message = "Unlock \${executable} & <friends>"
-            it.description = "\${sanitizedProductName}"
-        }
+        settings.action("com.example.unlock") { it.message = "Unlock \${executable}" }
         val script =
             LinuxUpdateHelper.composeAfterInstallScript("#!/bin/bash", silentUpdate = false, null, settings.actions) +
                 LinuxUpdateHelper.composeAfterRemoveScript(silentUpdate = false, null, settings.actions)
+        assertFalse("the text lives in the payload, not in a script", script.contains("Unlock"))
         // FpmTarget.writeConfigFile replaces every match, and fails on an unknown name.
-        assertFalse(Regex("""\$\{[a-zA-Z]+}""").containsMatchIn(script))
+        val macros = Regex("""\$\{([a-zA-Z]+)}""").findAll(script).map { it.groupValues[1] }.toSet()
+        assertEquals(setOf("sanitizedProductName"), macros)
     }
 
     @Test
@@ -72,18 +83,28 @@ class LinuxPolkitActionsTest {
     }
 
     @Test
-    fun `install and remove scripts write then delete well-formed policies`() {
+    fun `install and remove scripts copy then delete the payload policies`() {
         assumeTrue(File("/bin/bash").canExecute())
         val settings = PolkitActionSettings()
-        val message = "Unlock \"Ex'ample\" & <co> for \$5 `whoami` \$(id)\nNUCLEUS_POLKIT_ACTION_EOF"
+        val message = "Unlock \"Ex'ample\" & <co> for \$5 `whoami` \$(id)"
         settings.action("com.example.unlock") {
             it.message = message
             it.allowActive = PolkitAuthorization.AuthAdminKeep
         }
         settings.action("com.example.other") { it.message = "Other" }
+        val appDir = tmp.newFolder("opt-app")
         val root = tmp.newFolder("actions")
-        fun run(script: String, vararg args: String) {
-            val file = tmp.newFile().apply { writeText(script.replace(LinuxPolkitActions.ACTIONS_DIR, root.path)) }
+        LinuxPolkitActions.writePolicies(appDir, settings.actions)
+
+        fun run(
+            script: String,
+            vararg args: String,
+        ) {
+            val resolved =
+                script
+                    .replace("/opt/\${sanitizedProductName}", appDir.path)
+                    .replace(LinuxPolkitActions.ACTIONS_DIR, root.path)
+            val file = tmp.newFile().apply { writeText(resolved) }
             val process = ProcessBuilder("/bin/bash", file.path, *args).redirectErrorStream(true).start()
             val output = process.inputStream.bufferedReader().readText()
             assertEquals(output, 0, process.waitFor())
