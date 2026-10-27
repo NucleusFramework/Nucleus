@@ -46,6 +46,7 @@ import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
 import dev.nucleusframework.desktop.application.internal.files.transformJar
 import dev.nucleusframework.desktop.application.internal.files.unpackNucleusNativeLibs
 import dev.nucleusframework.desktop.application.internal.installInfoPlistLocalizations
+import dev.nucleusframework.desktop.application.internal.plistDocumentTypes
 import dev.nucleusframework.desktop.application.internal.javaOption
 import dev.nucleusframework.desktop.application.internal.renameMacAppBundle
 import dev.nucleusframework.desktop.application.internal.validation.validate
@@ -1137,22 +1138,7 @@ abstract class AbstractJPackageTask
             val fileAssociationMutableSet = fileAssociations.get()
             if (fileAssociationMutableSet.isNotEmpty()) {
                 plist[PlistKeys.CFBundleDocumentTypes] =
-                    fileAssociationMutableSet
-                        .groupBy { it.mimeType to it.description }
-                        .map { (key, extensions) ->
-                            val (mimeType, description) = key
-                            val iconPath =
-                                extensions.firstNotNullOfOrNull { it.iconFile }?.let { iconMapping[it]?.name }
-                            InfoPlistMapValue(
-                                PlistKeys.CFBundleTypeRole to InfoPlistStringValue("Editor"),
-                                PlistKeys.CFBundleTypeExtensions to
-                                    InfoPlistListValue(extensions.map { InfoPlistStringValue(it.extension) }),
-                                PlistKeys.CFBundleTypeIconFile to InfoPlistStringValue(iconPath ?: "$packageName.icns"),
-                                PlistKeys.CFBundleTypeMIMETypes to InfoPlistStringValue(mimeType),
-                                PlistKeys.CFBundleTypeName to InfoPlistStringValue(description),
-                                PlistKeys.CFBundleTypeOSTypes to InfoPlistListValue(InfoPlistStringValue("****")),
-                            )
-                        }
+                    plistDocumentTypes(fileAssociationMutableSet, iconMapping, "$packageName.icns")
             }
 
             val protocols = urlProtocols.get()

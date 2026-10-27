@@ -234,6 +234,8 @@ internal object NativeWindowsSystemInfoBridge {
 
     @JvmStatic external fun nativeGpuPowerDraws(): FloatArray?
 
+    @JvmStatic external fun nativeRenderTier(): Int
+
     // Battery
     @JvmStatic external fun nativeBatteryPresent(): Boolean
 

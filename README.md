@@ -220,6 +220,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.darkmode-detector` | Reactive OS dark mode detection |
 | `nucleus.system-color` | Reactive accent color & high contrast detection |
 | `nucleus.system-info` | CPU, memory, GPU (NVIDIA/AMD/Intel), temperature, network, processes |
+| `nucleus.screen-capture` | Native screen & window capture in physical pixels, window listing, no AWT (GDI / ScreenCaptureKit / X11 / xdg-desktop-portal) |
 | `nucleus.decorated-window-tao` | Windowing backend (Rust `tao`, no AWT) |
 | `nucleus.decorated-window-core` | Shared window types, layout, chrome (design-system agnostic) |
 | `nucleus.decorated-window-jewel` | Jewel (IntelliJ theme) integration |
@@ -247,11 +248,13 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.fs-watcher` | Native filesystem watcher |
 | `nucleus.share` | Native share sheet, Kotlin Multiplatform (Android, iOS, macOS, Windows, Linux, web) |
 | `nucleus.speech-recognition` | Streaming speech-to-text, Kotlin Multiplatform (Windows, macOS, Android, iOS) |
+| `nucleus.location` | Kotlin Multiplatform geolocation — Rust bridge on desktop (Windows Geolocator, Core Location, XDG portal / GeoClue), `LocationManager` on Android, Core Location on iOS, Geolocation API on the web (JS / Wasm) |
 | `nucleus.service-management-macos` | macOS `SMAppService` — login items, launch agents, daemons |
 | `nucleus.native-ssl` | OS trust store integration |
 | `nucleus.native-http` | HTTP client with native SSL |
 | `nucleus.native-http-okhttp` | OkHttp engine on `native-http` |
 | `nucleus.native-http-ktor` | Ktor engine on `native-http` |
+| `nucleus.native-proxy` | OS proxy configuration — WPAD/PAC (Windows), SCDynamicStore/PAC (macOS), GSettings/KDE/env (Linux) |
 | `nucleus.linux-hidpi` | Native HiDPI scale detection on Linux |
 | `nucleus.graalvm-runtime` | Native-image bootstrap, font fixes, automatic resource inclusion. Daemons/CLIs: `graalvm { headless = true }` to skip AWT/Skiko metadata and GUI `.so`/`.dll` copies |
 

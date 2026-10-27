@@ -16,6 +16,7 @@ public final class dev/nucleusframework/systeminfo/SystemInfo {
 	public final fun process (J)Ldev/nucleusframework/systeminfo/model/ProcessInfo;
 	public final fun processes ()Ljava/util/List;
 	public final fun product ()Ldev/nucleusframework/systeminfo/model/ProductInfo;
+	public final fun renderTier ()Ldev/nucleusframework/systeminfo/model/RenderTier;
 	public final fun users ()Ljava/util/List;
 }
 
@@ -374,6 +375,16 @@ public final class dev/nucleusframework/systeminfo/model/ProductInfo {
 	public final fun getVersion ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/systeminfo/model/RenderTier : java/lang/Enum {
+	public static final field CAPABLE Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static final field LEGACY Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static final field SOFTWARE Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static final field UNKNOWN Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static fun values ()[Ldev/nucleusframework/systeminfo/model/RenderTier;
 }
 
 public final class dev/nucleusframework/systeminfo/model/UserInfo {

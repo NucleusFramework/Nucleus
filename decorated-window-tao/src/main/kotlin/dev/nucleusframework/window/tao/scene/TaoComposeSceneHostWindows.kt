@@ -963,6 +963,17 @@ internal class TaoComposeSceneHostWindows(
         dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.Callback {
         private fun node() = window.inboundDragAndDropNode?.invoke()
 
+        private val dnd =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                .InboundState()
+
+        override fun onDragFiles(
+            hwnd: Long,
+            files: Array<String>?,
+        ) {
+            dnd.onDragFiles(files = files)
+        }
+
         override fun onDragEnter(
             hwnd: Long,
             x: Int,
@@ -976,8 +987,8 @@ internal class TaoComposeSceneHostWindows(
             if (!hasFiles) {
                 return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             }
-            return if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragEnter(node(), x, y)
+            return if (dnd
+                    .onDragEnter(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
@@ -992,8 +1003,8 @@ internal class TaoComposeSceneHostWindows(
             keyState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragOver(node(), x, y)
+            if (dnd
+                    .onDragOver(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
@@ -1003,7 +1014,7 @@ internal class TaoComposeSceneHostWindows(
         override fun onDragLeave(hwnd: Long) {
             dev.nucleusframework.window.tao.TaoDnDDiagnostics
                 .log("onDragLeave")
-            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            dnd
                 .onDragLeave(node())
         }
 
@@ -1017,7 +1028,7 @@ internal class TaoComposeSceneHostWindows(
             dev.nucleusframework.window.tao.TaoDnDDiagnostics.log(
                 "onDrop x=$x y=$y files=${files?.size ?: 0}",
             )
-            return if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            return if (dnd
                     .onDrop(node(), x, y, files)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
@@ -2874,7 +2885,7 @@ internal class TaoComposeSceneHostWindows(
      * translucent frame over the same frame below it.
      */
     private fun syncMirror() {
-        val wanted = !fullyTransparent && !transparentBackgroundState.value
+        val wanted = frameMirrorEnabled && !fullyTransparent && !transparentBackgroundState.value
         if (wanted == mirrorWanted) return
         mirrorWanted = wanted
         // What the driver allows, not what was asked for.
@@ -2988,6 +2999,15 @@ internal class TaoComposeSceneHostWindows(
     }
 
     internal companion object {
+        /**
+         * `-Dnucleus.tao.windowsFrameMirror=false` never mirrors frames into
+         * DirectComposition, for a driver that shows the mirror black over a
+         * fine window. Moves are then answered with a repaint, as on a GPU
+         * without mirror support. Read once.
+         */
+        private val frameMirrorEnabled: Boolean =
+            System.getProperty("nucleus.tao.windowsFrameMirror", "true").toBoolean()
+
         /**
          * Floor between two frames painted from inside `DoDragDrop`'s modal
          * loop — see [OutboundDragPump]. ~8 ms leaves headroom above 120 Hz

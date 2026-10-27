@@ -648,6 +648,30 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     (window.scale_factor() * 1000.0) as jint
 }
 
+/// Drops the Windows shutdown block reason a session-end query set (#751), once
+/// the quit it was waiting for has been cancelled by a window staying open.
+/// No-op elsewhere. Event-loop thread only.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeReleaseShutdownBlock(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::release_block();
+}
+
+/// The JVM exit has begun (#751): a session end reaching AWT's toolkit thread may
+/// now let AWT take its own shutdown path. Called from a shutdown hook. No-op
+/// elsewhere.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMarkJvmExiting(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    #[cfg(target_os = "windows")]
+    crate::platform::windows::end_session::mark_jvm_exiting();
+}
+
 /// Takes the screen position, in physical pixels, of the last mouse button
 /// release, packed as `(x << 32) | (y & 0xffffffff)`; `i64::MIN` when there
 /// was none since the last take and on platforms that do not track it (#837).

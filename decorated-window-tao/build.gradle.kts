@@ -105,7 +105,7 @@ fun Test.forwardSystemProperty(key: String) {
     }
 }
 
-// The watchdog concurrency monkey's knobs, forwarded into the test JVM — a
+// The watchdog and session-end monkeys' knobs, forwarded into the test JVM — a
 // Gradle `-D` does not reach it otherwise, so a seed sweep would silently run
 // the defaults. Registered as task inputs too: a new seed must re-run the
 // task instead of being served the previous verdict as UP-TO-DATE.
@@ -113,6 +113,8 @@ tasks.withType<Test>().configureEach {
     forwardSystemProperty("nucleus.tao.watchdogMonkeySeed")
     forwardSystemProperty("nucleus.tao.watchdogMonkeySeeds")
     forwardSystemProperty("nucleus.tao.watchdogMonkeyProfile")
+    forwardSystemProperty("nucleus.tao.sessionEndMonkeySeed")
+    forwardSystemProperty("nucleus.tao.sessionEndMonkeySeeds")
 }
 
 // ── macOS standalone-popup smoke check ──────────────────────────────────────

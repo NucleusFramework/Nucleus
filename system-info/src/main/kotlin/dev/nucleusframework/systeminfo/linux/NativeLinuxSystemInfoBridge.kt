@@ -230,6 +230,8 @@ internal object NativeLinuxSystemInfoBridge {
 
     @JvmStatic external fun nativeGpuPowerDraws(): FloatArray?
 
+    @JvmStatic external fun nativeRenderTier(): Int
+
     // Single process by PID: fills [longs], [floats] and [strings] at the PROCESS_* slots.
     @JvmStatic external fun nativeProcessByPid(
         pid: Long,
