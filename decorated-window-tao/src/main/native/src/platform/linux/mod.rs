@@ -28,3 +28,41 @@ pub(crate) fn init_xlib_threads() {
         }
     });
 }
+
+/// The `xdg_toplevel` app_id to send on a Wayland display, set from the JVM before the loop
+/// starts (`nativeSetWaylandAppId`). `None` keeps GTK's default.
+pub(crate) static WAYLAND_APP_ID: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The `WM_CLASS` to give windows on an X11 display, set from the JVM before the loop starts
+/// (`nativeSetX11WmClass`). `None` keeps GTK's default.
+pub(crate) static X11_WM_CLASS: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Makes GTK name the windows the way the desktop pairs them with their `.desktop` entry. Call it
+/// after GTK is initialised (its display chosen) and before the first window is realized.
+///
+/// GTK 3 (no `GApplication` id, as with Tao) derives both names from `g_get_prgname()`, the
+/// launcher binary's name, which the entry need not match:
+///
+/// - **Wayland:** the `xdg_toplevel` app_id is the prgname; compositors match it against the
+///   entry's basename, so it is set to [WAYLAND_APP_ID].
+/// - **X11:** `WM_CLASS` is the prgname (instance) and `gdk_get_program_class()` (class, the
+///   prgname capitalised by default); desktops match either against the entry's
+///   `StartupWMClass`, so both are set to [X11_WM_CLASS].
+pub(crate) fn apply_window_identity() {
+    use gtk::prelude::*;
+
+    let Some(display) = gtk::gdk::Display::default() else {
+        return;
+    };
+    let backend = display.backend();
+    if backend.is_wayland() {
+        if let Some(app_id) = WAYLAND_APP_ID.lock().ok().and_then(|id| id.clone()) {
+            glib::set_prgname(Some(app_id.as_str()));
+        }
+    } else if backend.is_x11() {
+        if let Some(wm_class) = X11_WM_CLASS.lock().ok().and_then(|class| class.clone()) {
+            glib::set_prgname(Some(wm_class.as_str()));
+            gtk::gdk::set_program_class(&wm_class);
+        }
+    }
+}
