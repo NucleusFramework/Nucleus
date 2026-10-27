@@ -141,7 +141,8 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     /**
      * Associates files with [extension] / [mimeType] with the application on every platform,
-     * optionally with a per-platform icon.
+     * optionally with a per-platform icon. On macOS the type is declared `Editor` with the
+     * `Default` handler rank; use [AbstractMacOSPlatformSettings.fileAssociation] for another role or rank.
      */
     @JvmOverloads
     fun fileAssociation(

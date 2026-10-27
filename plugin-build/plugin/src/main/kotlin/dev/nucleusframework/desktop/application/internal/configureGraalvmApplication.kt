@@ -2007,33 +2007,6 @@ private fun uniqueIconName(
         .map { n -> "${icon.nameWithoutExtension} ($n).${icon.extension}" }
         .first { candidate -> usedNames.add(candidate) }
 
-/** `CFBundleDocumentTypes` entries: one per (MIME type, description) group of [associations]. */
-private fun plistDocumentTypes(
-    associations: Set<FileAssociation>,
-    iconMapping: Map<File, File>,
-    defaultIconFileName: String,
-): List<InfoPlistMapValue> =
-    associations
-        .groupBy { it.mimeType to it.description }
-        .map { (key, extensions) ->
-            val (mimeType, description) = key
-            val iconPath =
-                extensions
-                    .firstNotNullOfOrNull { it.iconFile }
-                    ?.let { iconMapping[it]?.name }
-            InfoPlistMapValue(
-                PlistKeys.CFBundleTypeRole to InfoPlistStringValue("Editor"),
-                PlistKeys.CFBundleTypeExtensions to
-                    InfoPlistListValue(extensions.map { InfoPlistStringValue(it.extension) }),
-                PlistKeys.CFBundleTypeIconFile to
-                    InfoPlistStringValue(iconPath ?: defaultIconFileName),
-                PlistKeys.CFBundleTypeMIMETypes to InfoPlistStringValue(mimeType),
-                PlistKeys.CFBundleTypeName to InfoPlistStringValue(description),
-                PlistKeys.CFBundleTypeOSTypes to
-                    InfoPlistListValue(InfoPlistStringValue("****")),
-            )
-        }
-
 /** `CFBundleURLTypes` entries: one per URL protocol (deep link) handler. */
 private fun plistUrlTypes(protocols: List<UrlProtocol>): List<InfoPlistMapValue> =
     protocols.map { protocol ->
