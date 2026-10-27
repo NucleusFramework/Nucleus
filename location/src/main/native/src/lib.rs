@@ -42,7 +42,7 @@ mod platform {
         super::AUTH_RESTRICTED
     }
 
-    pub fn request_authorization(_: bool, _: bool, _: String, done: AuthCallback) {
+    pub fn request_authorization(_: bool, _: bool, _: String, _: String, done: AuthCallback) {
         done(super::AUTH_RESTRICTED)
     }
 
@@ -289,13 +289,16 @@ pub extern "system" fn Java_dev_nucleusframework_location_NativeLocationBridge_n
     background: jboolean,
     precise: jboolean,
     desktop_id: JString,
+    parent_window: JString,
 ) {
     cache_bridge_class(&mut env, &class);
     let desktop_id = java_string(&mut env, &desktop_id);
+    let parent_window = java_string(&mut env, &parent_window);
     platform::request_authorization(
         background == JNI_TRUE,
         precise == JNI_TRUE,
         desktop_id,
+        parent_window,
         Box::new(move |status| emit_authorization(request_id, status)),
     );
 }

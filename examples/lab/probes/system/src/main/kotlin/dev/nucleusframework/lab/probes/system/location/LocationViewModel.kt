@@ -68,10 +68,7 @@ class LocationViewModel(
             is LocationIntent.RequestAuthorization -> {
                 val (answer, millis) =
                     timedMillis {
-                        provider.requestAuthorization(
-                            intent.access,
-                            state.value.accuracy,
-                        )
+                        gateway.requestAuthorization(intent.access, state.value.accuracy, intent.window)
                     }
                 log("requestAuthorization(${intent.access}) → $answer in $millis ms", LocationTone.Ok)
             }

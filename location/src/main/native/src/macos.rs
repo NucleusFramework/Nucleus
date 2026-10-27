@@ -385,7 +385,13 @@ pub fn authorization_status() -> i32 {
     receiver.recv_timeout(QUERY_TIMEOUT).unwrap_or(AUTH_RESTRICTED)
 }
 
-pub fn request_authorization(background: bool, precise: bool, _desktop_id: String, done: AuthCallback) {
+pub fn request_authorization(
+    background: bool,
+    precise: bool,
+    _desktop_id: String,
+    _parent_window: String,
+    done: AuthCallback,
+) {
     let done = Arc::new(Mutex::new(Some(done)));
     let answer = done.clone();
     let posted = on_loop(move || {

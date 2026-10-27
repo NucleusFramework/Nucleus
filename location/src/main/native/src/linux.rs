@@ -81,7 +81,15 @@ pub fn authorization_status() -> i32 {
     }
 }
 
-pub fn request_authorization(background: bool, precise: bool, desktop_id: String, done: AuthCallback) {
+/// `parent_window` is the portal's parent window identifier (`x11:<xid>`, `wayland:<handle>`) for
+/// the consent dialog, or empty for none.
+pub fn request_authorization(
+    background: bool,
+    precise: bool,
+    desktop_id: String,
+    parent_window: String,
+    done: AuthCallback,
+) {
     let options = SessionOptions {
         precise,
         continuous: false,
@@ -94,7 +102,7 @@ pub fn request_authorization(background: bool, precise: bool, desktop_id: String
     let _ = thread::Builder::new().name("nucleus-location-auth".into()).spawn(move || {
         let granted = if background { AUTH_BACKGROUND } else { AUTH_FOREGROUND };
         let status = match open(&options) {
-            Ok(Backend::Portal(portal)) => match portal.start() {
+            Ok(Backend::Portal(portal)) => match portal.start(&parent_window) {
                 Ok(()) => match portal.await_response(|| false) {
                     Ok(()) => granted,
                     Err((ErrorKind::AuthorizationDenied, _)) => AUTH_DENIED,
@@ -258,12 +266,13 @@ impl Portal {
     }
 
     /// Starts the session; the portal answers on the request object once the user has decided.
-    fn start(&self) -> Result<(), (ErrorKind, String)> {
+    /// The consent dialog, when one is shown, is parented to `parent_window`.
+    fn start(&self, parent_window: &str) -> Result<(), (ErrorKind, String)> {
         let proxy = Proxy::new(&self.connection, PORTAL_DESTINATION, PORTAL_PATH, PORTAL_LOCATION).map_err(to_error)?;
         let mut start_options: HashMap<&str, Value> = HashMap::new();
         start_options.insert("handle_token", Value::from(self.request_token.as_str()));
         let _request: OwnedObjectPath = proxy
-            .call("Start", &(&self.session, "", start_options))
+            .call("Start", &(&self.session, parent_window, start_options))
             .map_err(to_error)?;
         Ok(())
     }
@@ -306,7 +315,8 @@ impl Portal {
     }
 
     fn run(self, options: &SessionOptions, sink: &dyn Sink, stopped: &dyn Fn() -> bool) -> Result<(), (ErrorKind, String)> {
-        self.start()?;
+        // Sessions are unparented: the consent dialog belongs to `request_authorization`.
+        self.start("")?;
         let mut started = false;
         for message in self.messages.clone() {
             if stopped() {

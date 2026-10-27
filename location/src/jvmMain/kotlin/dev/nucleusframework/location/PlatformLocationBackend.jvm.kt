@@ -40,6 +40,13 @@ internal object DesktopLocationBackend : LocationBackend {
     override suspend fun requestAuthorization(
         access: LocationAccess,
         accuracy: LocationAccuracy,
+    ): LocationAuthorization = requestAuthorization(access, accuracy, parentWindow = "")
+
+    /** @param parentWindow the portal parent of the Linux consent dialog; empty for none */
+    suspend fun requestAuthorization(
+        access: LocationAccess,
+        accuracy: LocationAccuracy,
+        parentWindow: String,
     ): LocationAuthorization {
         if (!NativeLocationBridge.isLoaded) return LocationAuthorization.Restricted
         val id = nextId.getAndIncrement()
@@ -51,6 +58,7 @@ internal object DesktopLocationBackend : LocationBackend {
                 background = access == LocationAccess.Background,
                 precise = accuracy == LocationAccuracy.Precise,
                 desktopId = desktopId,
+                parentWindow = parentWindow,
             )
         }
     }

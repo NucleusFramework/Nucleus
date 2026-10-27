@@ -67,6 +67,7 @@ internal object NativeLocationBridge {
         background: Boolean,
         precise: Boolean,
         desktopId: String,
+        parentWindow: String,
     )
 
     @Suppress("LongParameterList")

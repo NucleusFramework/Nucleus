@@ -3,6 +3,7 @@ package dev.nucleusframework.lab.probes.system.location
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import dev.nucleusframework.application.LocalNucleusWindow
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.lab.core.Capability
 import dev.nucleusframework.lab.core.Check
@@ -57,6 +58,10 @@ class LocationProbe : Probe {
                             "without pressing anything here",
                     ),
                     Check("settings", "Open settings shows the OS location privacy page"),
+                    Check(
+                        "parented",
+                        "Linux: the portal consent dialog is attached to the Lab window (X11 and Wayland)",
+                    ),
                 ),
             keywords = listOf("location", "geolocation", "GPS", "Geolocator", "Core Location", "GeoClue", "portal"),
         )
@@ -66,6 +71,7 @@ class LocationProbe : Probe {
         val vm = metroViewModel<LocationViewModel>()
         val state by vm.state.collectAsState()
         val usable = state.available.isAvailable
+        val window = LocalNucleusWindow.current
 
         ProbeLayout(
             capabilities = listOf(Capability("Location service", state.available, detail = backendName())),
@@ -76,10 +82,10 @@ class LocationProbe : Probe {
                 SubHeading("Authorization")
                 Actions {
                     PrimaryAction("Request foreground", enabled = usable) {
-                        vm.onIntent(LocationIntent.RequestAuthorization(LocationAccess.Foreground))
+                        vm.onIntent(LocationIntent.RequestAuthorization(LocationAccess.Foreground, window))
                     }
                     SecondaryAction("Request background", enabled = usable) {
-                        vm.onIntent(LocationIntent.RequestAuthorization(LocationAccess.Background))
+                        vm.onIntent(LocationIntent.RequestAuthorization(LocationAccess.Background, window))
                     }
                     SecondaryAction("Open settings") { vm.onIntent(LocationIntent.OpenSettings) }
                 }

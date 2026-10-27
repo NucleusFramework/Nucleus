@@ -1,6 +1,7 @@
 package dev.nucleusframework.lab.probes.system.location
 
 import androidx.compose.runtime.Immutable
+import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.lab.core.Availability
 import dev.nucleusframework.lab.core.mvi.Reducer
 import dev.nucleusframework.lab.core.mvi.append
@@ -36,9 +37,13 @@ sealed interface LocationIntent {
         val accuracy: LocationAccuracy,
     ) : LocationIntent
 
+    /** [window] parents the Linux portal dialog; `null` leaves it unparented. */
     data class RequestAuthorization(
         val access: LocationAccess,
-    ) : LocationIntent
+        val window: NucleusWindow? = null,
+    ) : LocationIntent {
+        override fun toString(): String = "RequestAuthorization($access, parented=${window != null})"
+    }
 
     /** One fix; [cached] accepts one already acquired in the last 10 minutes. */
     data class CurrentLocation(

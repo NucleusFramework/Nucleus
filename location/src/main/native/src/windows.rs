@@ -86,7 +86,13 @@ pub fn authorization_status() -> i32 {
     }
 }
 
-pub fn request_authorization(background: bool, _precise: bool, _desktop_id: String, done: AuthCallback) {
+pub fn request_authorization(
+    background: bool,
+    _precise: bool,
+    _desktop_id: String,
+    _parent_window: String,
+    done: AuthCallback,
+) {
     // `.get()` blocks until the user answers a consent prompt, so never on the caller's thread.
     // A failed spawn drops the callback; the Kotlin side times the request out.
     let _ = thread::Builder::new().name("nucleus-location-auth".into()).spawn(move || {
