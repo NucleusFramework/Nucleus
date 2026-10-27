@@ -1343,10 +1343,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         // would draw Compose content into the off-screen frame area.
         val (initialW, initialH) =
             if (maximized && NativeTaoWindowsDecoBridge.isLoaded && window.hasSystemDecorations) {
-                // A system frame keeps its caption: the client is smaller than
-                // the work area, so ask the window itself.
+                // A system frame keeps its caption: the client is the work
+                // area of the window's monitor minus the caption.
                 val hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
-                val client = if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeGetClientSize(hwnd) else null
+                val client = if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeGetMaximizedClientSize(hwnd) else null
                 if (client != null && client.size == 2) client[0] to client[1] else w to h
             } else if (maximized && NativeTaoWindowsDecoBridge.isLoaded) {
                 val workArea = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea()

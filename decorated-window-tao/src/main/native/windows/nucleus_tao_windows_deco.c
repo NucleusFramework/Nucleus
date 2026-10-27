@@ -1091,19 +1091,28 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
     installDecoration(env, (HWND)(uintptr_t)hwndLong, (int)titleBarHeightPx, FALSE);
 }
 
-/* The client area's size in physical pixels as [width, height], or NULL. A
- * maximized system-framed window (#841) keeps its caption, so its client is
- * not the work area the custom-frame path assumes for the first frame. */
+/* The client size of the window once maximized, in physical pixels as
+ * [width, height], or NULL. A maximized system-framed window (#841) keeps its
+ * caption, so its client is not the work area the custom-frame path assumes
+ * for the first frame. Computed rather than read: the first frame renders
+ * before show(), while the hidden window is not maximized yet and
+ * GetClientRect still returns the restored size. A maximized frame overhangs
+ * the work area on every side by exactly its sizing border, so the client is
+ * the work area minus the caption. */
 JNIEXPORT jintArray JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetClientSize(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetMaximizedClientSize(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)clazz;
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
-    RECT rc;
-    if (!hwnd || !IsWindow(hwnd) || !GetClientRect(hwnd, &rc)) return NULL;
-    if (rc.right <= 0 || rc.bottom <= 0) return NULL;
-    jint size[2] = { (jint)rc.right, (jint)rc.bottom };
+    if (!hwnd || !IsWindow(hwnd)) return NULL;
+    MONITORINFO mi;
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi)) return NULL;
+    int w = mi.rcWork.right - mi.rcWork.left;
+    int h = mi.rcWork.bottom - mi.rcWork.top - getSystemMetrics(SM_CYCAPTION, getDpi(hwnd));
+    if (w <= 0 || h <= 0) return NULL;
+    jint size[2] = { (jint)w, (jint)h };
     jintArray out = (*env)->NewIntArray(env, 2);
     if (!out) return NULL;
     (*env)->SetIntArrayRegion(env, out, 0, 2, size);

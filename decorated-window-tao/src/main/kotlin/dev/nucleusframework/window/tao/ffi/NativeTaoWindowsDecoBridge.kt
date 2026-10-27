@@ -36,12 +36,14 @@ internal object NativeTaoWindowsDecoBridge {
     external fun nativeInstallSystemFrame(hwnd: Long)
 
     /**
-     * The client area's size in physical pixels as `[width, height]`, or
-     * `null`. Used for the first frame of a maximized system-framed window
-     * (#841), whose client excludes the caption.
+     * The client size the window will have once maximized, in physical pixels
+     * as `[width, height]`, or `null`: its monitor's work area minus the
+     * caption. Used for the first frame of a maximized system-framed window
+     * (#841), rendered before `show()` while the hidden window still has its
+     * restored size.
      */
     @JvmStatic
-    external fun nativeGetClientSize(hwnd: Long): IntArray?
+    external fun nativeGetMaximizedClientSize(hwnd: Long): IntArray?
 
     @JvmStatic
     external fun nativeUninstallDecoration(hwnd: Long)
