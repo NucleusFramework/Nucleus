@@ -25,6 +25,13 @@ kotlin {
 nucleus.application {
     mainClass = "dev.nucleusframework.locationdemo.MainKt"
 
+    // Console app: the native image proves the JNI bridge and its reachability metadata.
+    graalvm {
+        isEnabled = true
+        headless = true
+        imageName = "location-demo"
+    }
+
     nativeDistributions {
         targetFormats(TargetFormat.Nsis, TargetFormat.Dmg, TargetFormat.Deb)
         appName = "Location Demo"
