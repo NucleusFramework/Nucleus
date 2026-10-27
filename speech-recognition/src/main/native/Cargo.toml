@@ -18,5 +18,9 @@ robius-speech = { git = "https://github.com/project-robius/robius", rev = "71966
 opt-level = "z"
 lto = true
 codegen-units = 1
-strip = "symbols"
+# Not "symbols" (nor "debuginfo"): rustc's own strip pass, run with Xcode 27's toolchain
+# (ld-27037), leaves a mis-aligned LINKEDIT string pool that dyld refuses to load. The
+# macOS build script strips the copied library instead (`strip -x`); MSVC keeps symbols
+# in the PDB, not the DLL.
+strip = false
 # Unwinding stays on: robius-speech catches panics at its native callback boundaries.
