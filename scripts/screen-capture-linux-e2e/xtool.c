@@ -35,11 +35,11 @@ static unsigned long to_pixel(Visual *v, unsigned rgb) {
 }
 
 static Window make(Display *d, int x, int y, int w, int h) {
+    /* Not override-redirect: windows() skips those (menus, tooltips) when there is no window manager. */
     XSetWindowAttributes a;
-    a.override_redirect = True;
     a.background_pixmap = None;
     Window win = XCreateWindow(d, DefaultRootWindow(d), x, y, w, h, 0, CopyFromParent, InputOutput, CopyFromParent,
-                               CWOverrideRedirect | CWBackPixmap, &a);
+                               CWBackPixmap, &a);
     XSelectInput(d, win, ExposureMask);
     XMapRaised(d, win);
     return win;

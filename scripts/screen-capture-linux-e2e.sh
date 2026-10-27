@@ -78,7 +78,7 @@ solid 150 150 50 50 FF0000; sleep 0.3
 $J window-only "100,100,200,150,3366CC,$W1" $($X destroyed)
 echo "=== partly off-screen window"
 solid -50 -40 200 150 00FF00; sleep 0.3
-$J window-only "0,0,200,150,00FF00,$WID" $($X destroyed) 2>&1 | grep -E "window|RESULT|FAIL"
+$J window-only "-50,-40,200,150,00FF00,$WID" $($X destroyed) 2>&1 | grep -E "window|RESULT|FAIL"
 cleanup
 
 echo "=== X server dies mid-capture"
@@ -96,7 +96,8 @@ echo "=== portal"
 rm -rf $W/shots; mkdir -p $W/shots; echo ok > $W/mode
 dbus-run-session -- bash -c "PORTAL_MODE_FILE=$W/mode PORTAL_DIR=$W/shots python3 $T/fake_portal.py & sleep 1.5; $JV -DportalMode=$W/mode -DportalDir=$W/shots $H portal"
 echo "=== portal missing (bus without portal)"
-dbus-run-session -- $J portal-missing
+# A bus with no service directories: an installed xdg-desktop-portal would otherwise be activated.
+dbus-run-session --config-file="$T/bus-no-services.conf" -- $J portal-missing
 echo "=== portal missing (no session bus)"
 env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR=/nonexistent $J portal-missing
 }
