@@ -31,6 +31,7 @@ Deep dives (why a mechanism is built the way it is, measurements, E2E) live in [
 - `darkmode-detector` - Reactive OS dark mode detection via JNI
 - `system-color` - Reactive system accent color and high contrast detection via JNI
 - `system-info` - CPU, memory, GPU, temperature, network, processes
+- `screen-capture` - AWT-free screen and window capture in physical pixels (`ScreenCapture.displays()` / `captureDisplay` / `windows()` / `captureWindow`). Windows `PrintWindow` runs on a worker thread with a 2 s timeout (it waits forever on a thread that does not pump); macOS regions are captured from a 32 pt grid-aligned rect and cropped. Backends and E2E: [docs/internals/screen-capture.md](docs/internals/screen-capture.md)
 - `energy-manager` - Energy efficiency & screen-awake APIs
 - `autolaunch` - Start at login (Win32/MSIX/SMAppService/systemd/Flatpak portal)
 - `scheduler` / `scheduler-testing` - OS-scheduled background tasks (Task Scheduler / launchd / systemd) + test doubles
