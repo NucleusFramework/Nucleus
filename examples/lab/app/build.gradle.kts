@@ -234,11 +234,11 @@ nucleus.application {
                 // Microsoft Store identity: the "Nucleus Lab" reservation of the KDroidFilter account
                 // (Partner Center > Product identity). The Store only answers a package that matches it.
                 applicationId = "NucleusLab"
-                publisherDisplayName = "KDroidFilter"
+                publisherDisplayName = "KdroidFilter"
                 displayName = "Nucleus Lab"
                 addAutoLaunchExtension = true
                 publisher = "CN=D541E802-6D30-446A-864E-2E8ABD2DAA5E"
-                identityName = "KDroidFilter.NucleusLab"
+                identityName = "KdroidFilter.NucleusLab"
                 languages = listOf("en-US", "fr-FR")
                 backgroundColor = "#001F3F"
                 showNameOnTiles = true
