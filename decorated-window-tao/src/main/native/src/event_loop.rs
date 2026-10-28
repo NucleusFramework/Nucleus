@@ -277,6 +277,9 @@ pub(crate) fn run_event_loop_blocking() {
             crate::platform::macos::trackpad_gesture_callback,
         );
         crate::platform::macos::ffi::nucleus_tao_install_trackpad_gesture_monitor();
+        crate::platform::macos::ffi::nucleus_tao_register_direct_touch_callback(
+            crate::platform::macos::direct_touch_callback,
+        );
     }
 
     // Use run_return() so this function returns to the JNI layer after the

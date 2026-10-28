@@ -15,7 +15,7 @@ use crate::events::{
 };
 use crate::state::WINDOWS;
 
-fn handle_for_ns_window(ns_window_ptr: i64) -> Option<u64> {
+pub(crate) fn handle_for_ns_window(ns_window_ptr: i64) -> Option<u64> {
     if ns_window_ptr == 0 {
         return None;
     }
