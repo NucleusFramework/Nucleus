@@ -1,3 +1,27 @@
+public final class dev/nucleusframework/iap/AppLicense {
+	public fun <init> (ZZLjava/time/Instant;Ljava/time/Duration;ZLjava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/time/Instant;
+	public final fun component4 ()Ljava/time/Duration;
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (ZZLjava/time/Instant;Ljava/time/Duration;ZLjava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/iap/AppLicense;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/AppLicense;ZZLjava/time/Instant;Ljava/time/Duration;ZLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/iap/AppLicense;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpirationTime ()Ljava/time/Instant;
+	public final fun getSkuStoreId ()Ljava/lang/String;
+	public final fun getTrialTimeRemaining ()Ljava/time/Duration;
+	public final fun getTrialUniqueId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isActive ()Z
+	public final fun isFullLicense ()Z
+	public final fun isTrial ()Z
+	public final fun isTrialOwnedByThisUser ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class dev/nucleusframework/iap/EntitlementState : java/lang/Enum {
 	public static final field Active Ldev/nucleusframework/iap/EntitlementState;
 	public static final field Expired Ldev/nucleusframework/iap/EntitlementState;
@@ -32,10 +56,12 @@ public final class dev/nucleusframework/iap/EntitlementStatus {
 
 public final class dev/nucleusframework/iap/InAppPurchase {
 	public static final field INSTANCE Ldev/nucleusframework/iap/InAppPurchase;
+	public final fun appLicense (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun availability (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun consume (Ldev/nucleusframework/iap/Purchase;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun consume$default (Ldev/nucleusframework/iap/InAppPurchase;Ldev/nucleusframework/iap/Purchase;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun entitlement (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getAppLicenseUpdates ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getPurchaseUpdates ()Lkotlinx/coroutines/flow/Flow;
 	public final fun isSupported ()Z
 	public final fun product (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -45,6 +71,8 @@ public final class dev/nucleusframework/iap/InAppPurchase {
 	public final fun purchase (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun purchase$default (Ldev/nucleusframework/iap/InAppPurchase;Ldev/nucleusframework/iap/StoreProduct;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun purchase$default (Ldev/nucleusframework/iap/InAppPurchase;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun purchaseApp (Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun purchaseApp$default (Ldev/nucleusframework/iap/InAppPurchase;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun purchases (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun restorePurchases (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }

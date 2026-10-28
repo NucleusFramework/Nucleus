@@ -16,6 +16,8 @@ dependencies {
 
 ## Usage
 
+### In-app products
+
 ```kotlin
 // Gate features at launch: local, cheap, works offline.
 if (InAppPurchase.entitlement("pro").isActive) unlockPro()
@@ -38,6 +40,35 @@ when (val result = InAppPurchase.purchase(pro) { windows { ownerWindowHandle = w
     is PurchaseResult.Failed -> showError(result.error)
 }
 ```
+
+### Paid app and free trial
+
+Give the app a price and a free trial in Partner Center, then gate on its own license:
+
+```kotlin
+val license = InAppPurchase.appLicense()
+when {
+    license.isFullLicense -> unlockEverything()
+    license.isTrial && license.isActive -> showTrialBanner(license.trialTimeRemaining)
+    else -> showTrialOver() // offer InAppPurchase.purchaseApp()
+}
+
+scope.launch {
+    InAppPurchase.appLicenseUpdates.collect { if (it.isFullLicense) unlockEverything() }
+}
+```
+
+- **The Store does not end a trial for you**: when it runs out, `isActive` turns `false` and the
+  app locks what it decides to. Trial time running down is not an update: re-read `appLicense()`
+  at launch, or schedule on `trialTimeRemaining`.
+- **An install the Store did not license** (sideloaded, a development build, a package without
+  a listing) reads as active and not a trial, with no `skuStoreId`. `isFullLicense` is `false`
+  for it; do not gate on `isActive && !isTrial`.
+- `trialUniqueId` is stable per customer across reinstalls: key your own trial records on it.
+- `purchaseApp()` shows the Store's dialog for the app itself; its result works like
+  `purchase()`, with the app's `StoreId` as `productId`.
+
+### Add-ons
 
 - **Product ids** are your own: Partner Center's add-on *product id* (`InAppOfferToken`).
   Microsoft's `StoreId` is only exposed as `StoreProduct.platformId`.

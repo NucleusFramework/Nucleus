@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-// The JSON exchanged with the native backends (Rust `protocol.rs`, Swift `IapStore.swift`).
+// The JSON exchanged with the native backend (Rust `protocol.rs`).
 // Enums travel as strings and unknown values degrade to `Unknown`, so a newer backend never
 // breaks an older Kotlin side and vice versa.
 
@@ -109,10 +109,22 @@ internal data class WireConsumeResult(
 )
 
 @Serializable
+internal data class WireAppLicense(
+    val isActive: Boolean = false,
+    val isTrial: Boolean = false,
+    val expirationTime: Long? = null,
+    val trialTimeRemaining: Long? = null,
+    val isTrialOwnedByThisUser: Boolean = false,
+    val trialUniqueId: String? = null,
+    val skuStoreId: String? = null,
+)
+
+@Serializable
 internal data class WireEvent(
     val type: String = "",
     val purchase: WirePurchase? = null,
     val purchases: List<WirePurchase>? = null,
+    val appLicense: WireAppLicense? = null,
 )
 
 internal fun jsonArgs(vararg pairs: Pair<String, Any?>): String =

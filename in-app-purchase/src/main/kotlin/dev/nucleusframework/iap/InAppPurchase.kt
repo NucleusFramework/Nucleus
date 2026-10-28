@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.Flow
  * On Windows the Store only serves apps with package identity (an MSIX/AppX install); an
  * NSIS/MSI/portable build reports [StoreAvailability.NotPackaged].
  */
+@Suppress("TooManyFunctions") // The module's whole facade, one entry point per store operation.
 public object InAppPurchase {
     @Volatile
     private var override: StoreBackend? = null
@@ -132,6 +133,38 @@ public object InAppPurchase {
     ) {
         backend.consume(purchase, quantity)
     }
+
+    /**
+     * The license of the app itself: bought, in trial, or neither. Reads the local license, so
+     * it is cheap and works offline — call it at launch to decide what to unlock.
+     *
+     * The Store does not end a trial for you: once [AppLicense.isActive] is `false`, lock what
+     * the trial gave. To sell an app with a trial, give it a price and a free trial in Partner
+     * Center; [purchaseApp] then converts the trial.
+     *
+     * @throws StoreException when the store cannot be queried
+     */
+    public suspend fun appLicense(): AppLicense = backend.appLicense()
+
+    /**
+     * Shows the Store's purchase dialog for the app itself — the "Buy the full version" of a
+     * trial. On success the [PurchaseResult.Success] purchase's `productId` is the app's
+     * `StoreId`, and [appLicenseUpdates] reports the new license.
+     *
+     * Store failures come back as [PurchaseResult.Failed], never as an exception.
+     */
+    public suspend fun purchaseApp(options: PurchaseOptions.() -> Unit = {}): PurchaseResult =
+        backend.purchaseApp(PurchaseOptions().apply(options))
+
+    /**
+     * Changes of the app's own [AppLicense]: a trial converted to a full license, a license
+     * granted or revoked from outside the app. Trial time running down is not reported; schedule
+     * on [AppLicense.trialTimeRemaining] or re-read [appLicense] to notice the end of a trial.
+     *
+     * Empty on unsupported platforms.
+     */
+    public val appLicenseUpdates: Flow<AppLicense>
+        get() = backend.appLicenseUpdates
 
     /**
      * Purchase changes the app did not start: renewals, refunds and purchases made elsewhere.

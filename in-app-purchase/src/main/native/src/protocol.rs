@@ -128,6 +128,30 @@ pub struct EntitlementDto {
     pub purchase: Option<PurchaseDto>,
 }
 
+/// The license of the app itself, as opposed to its add-ons.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppLicenseDto {
+    pub is_active: bool,
+    pub is_trial: bool,
+    /// When the license (the trial, for a trial) ends; `None` for one that never does.
+    pub expiration_time: Option<i64>,
+    /// Milliseconds of trial left; `None` outside a trial or for an unlimited one.
+    pub trial_time_remaining: Option<i64>,
+    pub is_trial_owned_by_this_user: bool,
+    pub trial_unique_id: Option<String>,
+    pub sku_store_id: Option<String>,
+}
+
+/// A `TimeSpan` beyond this is the Store's "unlimited" sentinel, not a real duration.
+const UNLIMITED_SPAN_MILLIS: i64 = 100 * 365 * 24 * 60 * 60 * 1000;
+
+/// A WinRT `TimeSpan` (100 ns ticks) as milliseconds; `None` for the unlimited sentinel.
+pub fn span_ticks_to_millis(ticks: i64) -> Option<i64> {
+    let millis = ticks.max(0) / 10_000;
+    (millis < UNLIMITED_SPAN_MILLIS).then_some(millis)
+}
+
 pub const PRODUCT_CONSUMABLE: &str = "consumable";
 pub const PRODUCT_NON_CONSUMABLE: &str = "nonConsumable";
 pub const PRODUCT_AUTO_RENEWABLE: &str = "autoRenewable";
@@ -247,6 +271,15 @@ pub fn normalize_price(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spans_convert_and_unlimited_is_none() {
+        // 7 days, as a trial reports it.
+        assert_eq!(span_ticks_to_millis(6_048_000_000_000), Some(604_800_000));
+        assert_eq!(span_ticks_to_millis(0), Some(0));
+        assert_eq!(span_ticks_to_millis(-5), Some(0));
+        assert_eq!(span_ticks_to_millis(i64::MAX), None);
+    }
 
     #[test]
     fn ticks_epoch_is_zero() {

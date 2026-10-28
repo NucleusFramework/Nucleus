@@ -32,6 +32,24 @@ of active add-on licenses, and `LicenseTracker` diffs it against the previous on
 flight through `InAppPurchase.purchase` is absorbed so it is not reported twice. Consumables are
 not licenses and are never tracked there.
 
+## App license
+
+`appLicense` reads `StoreAppLicense` (offline). `TrialTimeRemaining` is only reported during a
+trial: outside one the Store returns a meaningless span, and an unlimited trial returns a
+`TimeSpan` sentinel that `span_ticks_to_millis` maps to `null`. Each `licensesChanged` event
+carries the app license next to the add-on licenses; Kotlin reports it only when its state
+changes (the trial countdown alone is not news), against a baseline read when the first
+collector subscribes.
+
+Observed on the real API: an install the Store did not license (here the unpackaged test process
+with `diag.allowUnpackaged`) gets `IsActive = true`, `IsTrial = false` and an empty
+`SkuStoreId`. `AppLicense.isFullLicense` therefore also requires a `skuStoreId`, and
+`WindowsNativeTortureTest` pins that answer. Whether a Store install always carries a
+`SkuStoreId` is to confirm on a real listing.
+
+`purchaseApp` buys `GetStoreProductForCurrentAppAsync`'s product and shares `purchase_outcome`
+with add-on purchases, so both map Store statuses the same way.
+
 ## Failure modes
 
 - No package identity: fails fast with `NotPackaged`, before touching WinRT.

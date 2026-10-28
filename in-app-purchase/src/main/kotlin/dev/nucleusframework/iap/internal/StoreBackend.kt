@@ -1,5 +1,6 @@
 package dev.nucleusframework.iap.internal
 
+import dev.nucleusframework.iap.AppLicense
 import dev.nucleusframework.iap.EntitlementStatus
 import dev.nucleusframework.iap.ProductType
 import dev.nucleusframework.iap.Purchase
@@ -35,6 +36,7 @@ import kotlin.coroutines.resumeWithException
 internal interface StoreBackend {
     val isSupported: Boolean
     val updates: Flow<PurchaseUpdate>
+    val appLicenseUpdates: Flow<AppLicense>
 
     suspend fun availability(): StoreAvailability
 
@@ -55,6 +57,10 @@ internal interface StoreBackend {
         purchase: Purchase,
         quantity: Int,
     )
+
+    suspend fun appLicense(): AppLicense
+
+    suspend fun purchaseApp(options: PurchaseOptions): PurchaseResult
 }
 
 /** Linux, or a platform whose native bridge did not load. */
@@ -63,6 +69,7 @@ internal class UnsupportedStoreBackend(
 ) : StoreBackend {
     override val isSupported: Boolean = false
     override val updates: Flow<PurchaseUpdate> = emptyFlow()
+    override val appLicenseUpdates: Flow<AppLicense> = emptyFlow()
 
     private fun unsupported(): Nothing = throw StoreException(StoreErrorCode.Unsupported, reason)
 
@@ -85,6 +92,11 @@ internal class UnsupportedStoreBackend(
         purchase: Purchase,
         quantity: Int,
     ): Unit = unsupported()
+
+    override suspend fun appLicense(): AppLicense = unsupported()
+
+    override suspend fun purchaseApp(options: PurchaseOptions): PurchaseResult =
+        PurchaseResult.Failed(StoreException(StoreErrorCode.Unsupported, reason))
 }
 
 /** A native answer: the `ok` payload, or the `error` the backend reported. */
@@ -99,9 +111,8 @@ private sealed interface Answer {
 }
 
 /**
- * The StoreKit and Microsoft Store backends: both speak the same request/response protocol, and
- * differ only in how out-of-band updates arrive (whole transactions from StoreKit, license
- * snapshots to diff from the Microsoft Store).
+ * The native backend's request/response protocol. Out-of-band updates arrive as license
+ * snapshots (diffed by [LicenseTracker]) or, from a store that reports them, whole transactions.
  */
 internal class NativeStoreBackend(
     private val transport: NativeTransport,
@@ -117,6 +128,10 @@ internal class NativeStoreBackend(
     // Unbounded: events come from native threads that cannot suspend, and an update must not
     // be dropped because a collector is slow.
     private val updateFlow = MutableSharedFlow<PurchaseUpdate>(extraBufferCapacity = Int.MAX_VALUE)
+    private val appLicenseFlow = MutableSharedFlow<AppLicense>(extraBufferCapacity = Int.MAX_VALUE)
+
+    // The last app license known, so an add-on change does not repeat an unchanged one.
+    private var lastAppLicense: AppLicense? = null
 
     init {
         transport.attach(this)
@@ -127,9 +142,26 @@ internal class NativeStoreBackend(
 
     override val updates: Flow<PurchaseUpdate> = updateFlow.onSubscription { ensureListening() }
 
+    override val appLicenseUpdates: Flow<AppLicense> = appLicenseFlow.onSubscription { ensureListening() }
+
     /** Requests still waiting for their answer; for tests. */
     internal val pendingCount: Int
         get() = pending.size
+
+    @Synchronized
+    private fun seedAppLicense(license: AppLicense) {
+        if (lastAppLicense == null) lastAppLicense = license
+    }
+
+    @Synchronized
+    private fun reportAppLicense(license: AppLicense) {
+        // Trial time ticks down between snapshots; only a change of state is news.
+        val previous = lastAppLicense
+        lastAppLicense = license
+        if (previous?.withoutCountdown() != license.withoutCountdown()) appLicenseFlow.tryEmit(license)
+    }
+
+    private fun AppLicense.withoutCountdown() = copy(trialTimeRemaining = null)
 
     private fun ensureListening() {
         if (!listening.compareAndSet(false, true)) return
@@ -139,6 +171,11 @@ internal class NativeStoreBackend(
             runCatching { decodeList("purchases", "{}", WirePurchase.serializer()) }
                 .onSuccess { list -> licenses.seed(list.map { it.toPurchase() }) }
                 .onFailure { logger.log(Level.FINE, "No license baseline for purchase updates", it) }
+        }
+        scope.launch {
+            runCatching { appLicense() }
+                .onSuccess(::seedAppLicense)
+                .onFailure { logger.log(Level.FINE, "No baseline for app license updates", it) }
         }
     }
 
@@ -222,10 +259,12 @@ internal class NativeStoreBackend(
                     if (revoked) PurchaseUpdate.Revoked(purchase) else PurchaseUpdate.Purchased(purchase),
                 )
             }
-            "licensesChanged" ->
+            "licensesChanged" -> {
+                event.appLicense?.toAppLicense()?.let(::reportAppLicense)
                 licenses
                     .onSnapshot(event.purchases.orEmpty().map { it.toPurchase() })
                     .forEach { updateFlow.tryEmit(it) }
+            }
             else -> logger.fine { "Ignoring in-app purchase event '${event.type}'" }
         }
     }
@@ -255,12 +294,9 @@ internal class NativeStoreBackend(
         productId: String,
         options: PurchaseOptions,
     ): PurchaseResult {
-        val invalid =
-            when {
-                productId.isBlank() -> "productId must not be blank"
-                else -> null
-            }
-        if (invalid != null) return PurchaseResult.Failed(StoreException(StoreErrorCode.InvalidArgument, invalid))
+        if (productId.isBlank()) {
+            return PurchaseResult.Failed(StoreException(StoreErrorCode.InvalidArgument, "productId must not be blank"))
+        }
         val args =
             jsonArgs(
                 "productId" to productId,
@@ -269,7 +305,19 @@ internal class NativeStoreBackend(
             )
         licenses.beginPurchase(productId)
         return try {
-            when (val answer = call("purchase", args)) {
+            callPurchase("purchase", args)
+        } finally {
+            licenses.endPurchase(productId)
+        }
+    }
+
+    /** Runs a purchase-shaped request; store failures become [PurchaseResult.Failed]. */
+    private suspend fun callPurchase(
+        method: String,
+        args: String,
+    ): PurchaseResult =
+        try {
+            when (val answer = call(method, args)) {
                 is Answer.Err ->
                     if (answer.error.code == "cancelled") {
                         PurchaseResult.Cancelled
@@ -280,10 +328,13 @@ internal class NativeStoreBackend(
             }
         } catch (e: StoreException) {
             PurchaseResult.Failed(e)
-        } finally {
-            licenses.endPurchase(productId)
         }
-    }
+
+    override suspend fun appLicense(): AppLicense =
+        decode("appLicense", "{}", WireAppLicense.serializer()).toAppLicense()
+
+    override suspend fun purchaseApp(options: PurchaseOptions): PurchaseResult =
+        callPurchase("purchaseApp", jsonArgs("ownerWindow" to options.windows.ownerWindowHandle))
 
     private fun purchaseResult(payload: JsonElement): PurchaseResult {
         val outcome =

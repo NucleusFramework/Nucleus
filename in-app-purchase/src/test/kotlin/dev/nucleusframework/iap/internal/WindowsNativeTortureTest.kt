@@ -30,7 +30,9 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -84,6 +86,7 @@ class WindowsNativeTortureTest {
                     { backend.purchases() },
                     { backend.restorePurchases() },
                     { backend.entitlement("pro") },
+                    { backend.appLicense() },
                 )
             for (call in calls) {
                 val e = assertFailsWith<StoreException> { call() }
@@ -92,6 +95,8 @@ class WindowsNativeTortureTest {
             }
             val failed = assertIs<PurchaseResult.Failed>(backend.purchase("pro", PurchaseOptions()))
             assertEquals(StoreErrorCode.NotPackaged, failed.error.code)
+            val failedApp = assertIs<PurchaseResult.Failed>(backend.purchaseApp(PurchaseOptions()))
+            assertEquals(StoreErrorCode.NotPackaged, failedApp.error.code)
             assertEquals(false, NativeIapBridge.startUpdates())
         }
 
@@ -108,6 +113,12 @@ class WindowsNativeTortureTest {
             // Licenses are local: they read fine, and are empty.
             assertEquals(emptyList(), backend.purchases())
             assertEquals(EntitlementState.NotOwned, backend.entitlement("pro").state)
+            // The Store answers an unlicensed install with an active, non-trial license and no
+            // SKU: it must not read as bought.
+            val license = backend.appLicense()
+            assertTrue(license.isActive && !license.isTrial)
+            assertNull(license.skuStoreId)
+            assertFalse(license.isFullLicense)
             val coins =
                 Purchase(
                     "coins",

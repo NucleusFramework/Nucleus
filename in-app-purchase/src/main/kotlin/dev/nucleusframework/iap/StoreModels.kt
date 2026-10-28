@@ -1,6 +1,7 @@
 package dev.nucleusframework.iap
 
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.Instant
 
 /** What kind of product a [StoreProduct] or [Purchase] is. */
@@ -229,6 +230,47 @@ public sealed interface PurchaseUpdate {
     public data class Revoked(
         override val purchase: Purchase,
     ) : PurchaseUpdate
+}
+
+/**
+ * The license of the app itself, as opposed to its add-ons: whether the customer bought it, is
+ * trying it, or neither.
+ *
+ * The Store does not stop a trial from running once it ends: [isActive] turns `false` and the
+ * app decides what to lock. Read it at launch and after [InAppPurchase.appLicenseUpdates].
+ *
+ * An app the Store did not license — sideloaded, a development build, a package without a
+ * listing — reads as active and not a trial, with no [skuStoreId]. Gate on [isFullLicense],
+ * which accounts for it, rather than on `isActive && !isTrial`.
+ *
+ * @property isActive the customer may use the app: a full license, or a trial not yet over
+ * @property isTrial the license is a trial (which may be over: check [isActive])
+ * @property expirationTime when the license ends — the end of the trial for a trial; `null`
+ *   for a license that never ends
+ * @property trialTimeRemaining what is left of the trial; `null` outside a trial and for an
+ *   unlimited one
+ * @property isTrialOwnedByThisUser the trial belongs to the signed-in customer, not to another
+ *   account on the device
+ * @property trialUniqueId stable per customer and app across reinstalls: key your own trial
+ *   records on it to tell a reinstall from a new customer
+ * @property skuStoreId the Store id of the licensed SKU (`9NBLGGH4R315/000N`); `null` when the
+ *   Store did not license this install
+ */
+public data class AppLicense(
+    val isActive: Boolean,
+    val isTrial: Boolean,
+    val expirationTime: Instant?,
+    val trialTimeRemaining: Duration?,
+    val isTrialOwnedByThisUser: Boolean,
+    val trialUniqueId: String?,
+    val skuStoreId: String?,
+) {
+    /**
+     * `true` when the customer bought the app: an active Store license that is not a trial.
+     * `false` for an install the Store did not license (no [skuStoreId]).
+     */
+    val isFullLicense: Boolean
+        get() = isActive && !isTrial && skuStoreId != null
 }
 
 /** Whether in-app purchases can work in this process. */

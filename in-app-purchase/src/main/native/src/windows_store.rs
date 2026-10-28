@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use windows::Foundation::TypedEventHandler;
 use windows::Services::Store::{
     StoreAppLicense, StoreConsumableStatus, StoreContext, StoreLicense, StorePrice, StoreProduct,
-    StorePurchaseStatus, StoreSku,
+    StorePurchaseResult, StorePurchaseStatus, StoreSku,
 };
 use windows::Win32::Foundation::{
     APPMODEL_ERROR_NO_PACKAGE, ERROR_INSUFFICIENT_BUFFER, HWND, LPARAM, WIN32_ERROR,
@@ -35,11 +35,11 @@ use windows_core::{AgileReference, Interface, BOOL, GUID, HRESULT, HSTRING};
 use windows_future::{IAsyncInfo, IAsyncOperation};
 
 use crate::protocol::{
-    normalize_price, period_unit, store_id_from_sku_store_id, store_ticks_to_unix_millis, to_value,
-    EntitlementDto, OfferDto, PeriodDto, ProductDto, PurchaseDto, StoreError, StoreResult,
-    SubscriptionDto, ENTITLEMENT_ACTIVE, ENTITLEMENT_EXPIRED, ENTITLEMENT_NOT_OWNED,
-    PRODUCT_AUTO_RENEWABLE, PRODUCT_CONSUMABLE, PRODUCT_NON_CONSUMABLE, PRODUCT_UNKNOWN,
-    STATE_EXPIRED, STATE_PURCHASED,
+    normalize_price, period_unit, span_ticks_to_millis, store_id_from_sku_store_id,
+    store_ticks_to_unix_millis, to_value, AppLicenseDto, EntitlementDto, OfferDto, PeriodDto,
+    ProductDto, PurchaseDto, StoreError, StoreResult, SubscriptionDto, ENTITLEMENT_ACTIVE,
+    ENTITLEMENT_EXPIRED, ENTITLEMENT_NOT_OWNED, PRODUCT_AUTO_RENEWABLE, PRODUCT_CONSUMABLE,
+    PRODUCT_NON_CONSUMABLE, PRODUCT_UNKNOWN, STATE_EXPIRED, STATE_PURCHASED,
 };
 use crate::requests::{cancelled_error, Request};
 use crate::Sink;
@@ -521,6 +521,36 @@ fn app_license(request: &Request, store: &StoreContext) -> StoreResult<StoreAppL
     wait(request, "GetAppLicenseAsync", store.GetAppLicenseAsync())
 }
 
+fn app_license_dto(license: &StoreAppLicense) -> AppLicenseDto {
+    let is_trial = license.IsTrial().unwrap_or(false);
+    AppLicenseDto {
+        is_active: license.IsActive().unwrap_or(false),
+        is_trial,
+        expiration_time: license
+            .ExpirationDate()
+            .ok()
+            .and_then(|d| store_ticks_to_unix_millis(d.UniversalTime)),
+        // Outside a trial the Store reports a meaningless span; only a trial has time left.
+        trial_time_remaining: if is_trial {
+            license
+                .TrialTimeRemaining()
+                .ok()
+                .and_then(|t| span_ticks_to_millis(t.Duration))
+        } else {
+            None
+        },
+        is_trial_owned_by_this_user: license.IsTrialOwnedByThisUser().unwrap_or(false),
+        trial_unique_id: non_blank(text(license.TrialUniqueId())),
+        sku_store_id: non_blank(text(license.SkuStoreId())),
+    }
+}
+
+/// The license of the app itself: trial or full, active or not. Offline, like add-on licenses.
+fn app_license_request(request: &Request, _args: &Value) -> StoreResult<Value> {
+    let store = store_context()?;
+    to_value(&app_license_dto(&app_license(request, &store)?))
+}
+
 fn add_on_licenses(license: &StoreAppLicense) -> StoreResult<Vec<StoreLicense>> {
     let mut out = Vec::new();
     for pair in license.AddOnLicenses().ctx("AddOnLicenses")? {
@@ -702,37 +732,11 @@ fn entitlement(request: &Request, args: &Value) -> StoreResult<Value> {
 // Purchase / consume
 // -------------------------------------------------------------------------------------------
 
-fn purchase(request: &Request, args: &Value) -> StoreResult<Value> {
-    let product_id = required_str(args, "productId")?;
-    let sku_id = args["skuStoreId"].as_str().filter(|s| !s.trim().is_empty());
-    let owner = resolve_owner(args["ownerWindow"].as_i64())?;
-    let store = store_context()?;
-    attach_owner(&store, owner)?;
-    let product = find_product(request, &store, product_id)?;
-    let kind = product_kind(&product);
-
-    let operation = match sku_id {
-        Some(sku_id) => {
-            let sku = product
-                .Skus()
-                .ctx("Skus")?
-                .into_iter()
-                .find(|s| text(s.StoreId()) == sku_id)
-                .ok_or_else(|| {
-                    StoreError::new(
-                        "productNotFound",
-                        format!("'{product_id}' has no SKU '{sku_id}'"),
-                    )
-                })?;
-            sku.RequestPurchaseAsync()
-        }
-        None => product.RequestPurchaseAsync(),
-    };
-    let result = wait(request, "RequestPurchaseAsync", operation)?;
+/// `"success"`, `"alreadyOwned"` or `"cancelled"`; any other outcome is a typed error.
+fn purchase_outcome(result: &StorePurchaseResult) -> StoreResult<&'static str> {
     let status = result.Status().ctx("Status")?;
     let extended = result.ExtendedError().unwrap_or(HRESULT(0));
-
-    let outcome = match status {
+    Ok(match status {
         StorePurchaseStatus::Succeeded => "success",
         StorePurchaseStatus::AlreadyPurchased => "alreadyOwned",
         StorePurchaseStatus::NotPurchased
@@ -766,7 +770,37 @@ fn purchase(request: &Request, args: &Value) -> StoreResult<Value> {
                 &windows_core::Error::from_hresult(extended),
             ));
         }
+    })
+}
+
+fn purchase(request: &Request, args: &Value) -> StoreResult<Value> {
+    let product_id = required_str(args, "productId")?;
+    let sku_id = args["skuStoreId"].as_str().filter(|s| !s.trim().is_empty());
+    let owner = resolve_owner(args["ownerWindow"].as_i64())?;
+    let store = store_context()?;
+    attach_owner(&store, owner)?;
+    let product = find_product(request, &store, product_id)?;
+    let kind = product_kind(&product);
+
+    let operation = match sku_id {
+        Some(sku_id) => {
+            let sku = product
+                .Skus()
+                .ctx("Skus")?
+                .into_iter()
+                .find(|s| text(s.StoreId()) == sku_id)
+                .ok_or_else(|| {
+                    StoreError::new(
+                        "productNotFound",
+                        format!("'{product_id}' has no SKU '{sku_id}'"),
+                    )
+                })?;
+            sku.RequestPurchaseAsync()
+        }
+        None => product.RequestPurchaseAsync(),
     };
+    let result = wait(request, "RequestPurchaseAsync", operation)?;
+    let outcome = purchase_outcome(&result)?;
     if outcome == "cancelled" {
         return Ok(json!({ "status": outcome }));
     }
@@ -807,6 +841,51 @@ fn purchase(request: &Request, args: &Value) -> StoreResult<Value> {
             })
     };
     Ok(json!({ "status": outcome, "purchase": purchase.map(|p| to_value(&p)).transpose()? }))
+}
+
+/// Buys the app itself: a trial converts to the full license. The license change also arrives
+/// through `OfflineLicensesChanged`.
+fn purchase_app(request: &Request, args: &Value) -> StoreResult<Value> {
+    let owner = resolve_owner(args["ownerWindow"].as_i64())?;
+    let store = store_context()?;
+    attach_owner(&store, owner)?;
+    let found = wait(
+        request,
+        "GetStoreProductForCurrentAppAsync",
+        store.GetStoreProductForCurrentAppAsync(),
+    )?;
+    let extended = found.ExtendedError().ctx("ExtendedError")?;
+    if extended.is_err() {
+        return Err(winrt_error(
+            "GetStoreProductForCurrentAppAsync",
+            &windows_core::Error::from_hresult(extended),
+        ));
+    }
+    let product = found.Product().ctx("Product")?;
+    let result = wait(
+        request,
+        "RequestPurchaseAsync",
+        product.RequestPurchaseAsync(),
+    )?;
+    let outcome = purchase_outcome(&result)?;
+    if outcome == "cancelled" {
+        return Ok(json!({ "status": outcome }));
+    }
+    let purchase = PurchaseDto {
+        product_id: text(product.StoreId()),
+        product_type: PRODUCT_NON_CONSUMABLE,
+        transaction_id: None,
+        original_transaction_id: None,
+        purchase_time: None,
+        expiration_time: None,
+        revocation_time: None,
+        quantity: 1,
+        is_auto_renewing: None,
+        state: STATE_PURCHASED,
+        jws: None,
+        consume_token: None,
+    };
+    Ok(json!({ "status": outcome, "purchase": to_value(&purchase)? }))
 }
 
 fn consume(request: &Request, args: &Value) -> StoreResult<Value> {
@@ -896,6 +975,8 @@ pub fn dispatch(request: &Request, method: &str, args: &Value) -> StoreResult<Va
         "purchases" | "restore" => purchases,
         "entitlement" => entitlement,
         "purchase" => purchase,
+        "appLicense" => app_license_request,
+        "purchaseApp" => purchase_app,
         "consume" => consume,
         _ => {
             return Err(StoreError::new(
@@ -933,9 +1014,14 @@ pub fn start_listener(sink: &'static dyn Sink) -> bool {
                 .name("nucleus-iap-licenses".into())
                 .spawn(move || {
                     let _com = init_thread();
-                    let payload = snapshot_licenses();
+                    let (app_license, purchases) = snapshot_licenses();
                     sink.event(
-                        json!({ "type": "licensesChanged", "purchases": payload }).to_string(),
+                        json!({
+                            "type": "licensesChanged",
+                            "appLicense": app_license,
+                            "purchases": purchases,
+                        })
+                        .to_string(),
                     );
                 });
             Ok(())
@@ -952,24 +1038,27 @@ pub fn start_listener(sink: &'static dyn Sink) -> bool {
     }
 }
 
-fn snapshot_licenses() -> Value {
+/// The app license (`null` when unreadable) and the active add-on licenses.
+fn snapshot_licenses() -> (Value, Value) {
     let Ok(store) = store_context() else {
-        return json!([]);
+        return (Value::Null, json!([]));
     };
     let Ok(license) = store.GetAppLicenseAsync().and_then(|op| op.join()) else {
-        return json!([]);
+        return (Value::Null, json!([]));
     };
+    let app = to_value(&app_license_dto(&license)).unwrap_or(Value::Null);
     let Ok(licenses) = add_on_licenses(&license) else {
-        return json!([]);
+        return (app, json!([]));
     };
-    Value::Array(
+    let purchases = Value::Array(
         licenses
             .iter()
             .filter(|l| l.IsActive().unwrap_or(false))
             .filter_map(|l| license_purchase(l, PRODUCT_UNKNOWN))
             .filter_map(|p| to_value(&p).ok())
             .collect(),
-    )
+    );
+    (app, purchases)
 }
 
 #[cfg(test)]

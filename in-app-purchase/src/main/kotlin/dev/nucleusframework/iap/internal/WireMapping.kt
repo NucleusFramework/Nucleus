@@ -1,5 +1,6 @@
 package dev.nucleusframework.iap.internal
 
+import dev.nucleusframework.iap.AppLicense
 import dev.nucleusframework.iap.EntitlementStatus
 import dev.nucleusframework.iap.IntroductoryOffer
 import dev.nucleusframework.iap.Purchase
@@ -7,6 +8,7 @@ import dev.nucleusframework.iap.StoreProduct
 import dev.nucleusframework.iap.SubscriptionInfo
 import dev.nucleusframework.iap.SubscriptionPeriod
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.Instant
 
 internal fun decimal(value: String?): BigDecimal? = value?.takeIf { it.isNotBlank() }?.toBigDecimalOrNull()
@@ -67,4 +69,15 @@ internal fun WireEntitlement.toStatus(): EntitlementStatus =
         expirationTime = instant(expirationTime),
         willAutoRenew = willAutoRenew,
         purchase = purchase?.toPurchase(),
+    )
+
+internal fun WireAppLicense.toAppLicense(): AppLicense =
+    AppLicense(
+        isActive = isActive,
+        isTrial = isTrial,
+        expirationTime = instant(expirationTime),
+        trialTimeRemaining = trialTimeRemaining?.let(Duration::ofMillis),
+        isTrialOwnedByThisUser = isTrialOwnedByThisUser,
+        trialUniqueId = trialUniqueId?.takeIf { it.isNotBlank() },
+        skuStoreId = skuStoreId?.takeIf { it.isNotBlank() },
     )
