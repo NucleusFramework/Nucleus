@@ -1,0 +1,23 @@
+{
+  "reflection": [
+    {
+      "type": "dev.nucleusframework.iap.internal.NativeIapBridge",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "onResponse",
+          "parameterTypes": [
+            "long",
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "onEvent",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    }
+  ]
+}

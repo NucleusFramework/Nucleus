@@ -14,10 +14,12 @@ Full license texts are in [`licenses/`](licenses/):
 | [`licenses/LICENSE-BSD-3-Clause-angle.txt`](licenses/LICENSE-BSD-3-Clause-angle.txt) | ANGLE runtime libraries and EGL/KHR headers |
 | [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt) | `robius-share` (derived source in `share`), `robius-authentication` (derived source in `authentication`) |
 | [`licenses/LICENSE-MIT-robius-speech.txt`](licenses/LICENSE-MIT-robius-speech.txt) | `robius-speech` (desktop binary, Kotlin ports in `speech-recognition`) |
+| [`licenses/LICENSE-MIT-tauri-plugin-iap.txt`](licenses/LICENSE-MIT-tauri-plugin-iap.txt) | `tauri-plugin-iap` (derived source in `in-app-purchase`) |
 
 The artifacts that redistribute third-party code ship this file and `licenses/` inside their JAR
 under `META-INF/` (`nucleus.decorated-window-tao`, the desktop JARs of `nucleus.share` and
-`nucleus.authentication`, the JVM JAR and AAR of `nucleus.speech-recognition` and the
+`nucleus.authentication`, the JVM JAR and AAR of `nucleus.speech-recognition`,
+`nucleus.in-app-purchase` and the
 `dev.nucleusframework` Gradle plugin), as required by Apache-2.0 §4(a) and the MIT notice clause.
 
 ---
@@ -154,6 +156,25 @@ ported from `robius-share` (§5).
 - Project: Project Robius — https://github.com/project-robius/robius (commit `ad00d61b`)
 - License: MIT — [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt)
 - Copyright (c) 2023-2025 Project Robius
+
+---
+
+## 8. tauri-plugin-iap — derived source, compiled into a shipped binary (MIT)
+
+The Windows backend of `in-app-purchase` is derived from tauri-plugin-iap's desktop code and keeps
+its copyright notice in the file headers:
+
+| Nucleus file | Derived from |
+|--------------|--------------|
+| `in-app-purchase/src/main/native/src/windows_store.rs` | `src/windows.rs` |
+| `in-app-purchase/src/main/native/src/protocol.rs` | `src/windows.rs` |
+
+Both are compiled into `nucleus_iap.dll`. Nucleus decoupled the code from Tauri, replaced its model
+and FFI with a JSON protocol of its own, and reworked the parts listed in the file headers.
+
+- Project: tauri-plugin-iap — https://github.com/Choochmeque/tauri-plugin-iap
+- License: MIT — [`licenses/LICENSE-MIT-tauri-plugin-iap.txt`](licenses/LICENSE-MIT-tauri-plugin-iap.txt)
+- Copyright (c) 2025 Vladimir Pankratov
 
 ---
 
