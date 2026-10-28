@@ -15,12 +15,10 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.scene.ComposeScene
-import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
@@ -639,22 +637,10 @@ internal class TaoComposeSceneHostWindows(
     // release.
     //
     // A pen comes through the same WM_POINTER path (#827), tagged Stylus or
-    // Eraser. Unlike a finger it hovers: a Move without a contact is an
-    // unpressed pointer, a lift keeps it as one, and only leaving (CANCEL
-    // while unpressed) takes it out, as an Exit. Compose Desktop tracks hover
-    // for the mouse only, so no Enter / Exit reaches a modifier for now.
+    // Eraser — see [TaoTouchContacts]. Compose Desktop tracks hover for the
+    // mouse only, so no Enter / Exit reaches a modifier for now.
 
-    private data class ActiveTouch(
-        val id: Long,
-        var xPx: Float,
-        var yPx: Float,
-        var pressed: Boolean,
-        var pressure: Float,
-        var type: PointerType,
-    )
-
-    /** Insertion order matters for stable pointer ordering across events. */
-    private val activeTouches = LinkedHashMap<Long, ActiveTouch>()
+    private val touches = TaoTouchContacts()
 
     private fun registerTouchInput() {
         // Touch runs user pointer-input code (clickable, drag) exactly like the
@@ -689,18 +675,9 @@ internal class TaoComposeSceneHostWindows(
                 forceFixed / TOUCH_FORCE_SCALE
             }
 
-        val composeType = updateActiveTouch(phase, id, xPx, yPx, pressure, type) ?: return
+        val composeType =
+            touches.update(phase, id, xPx, yPx, pressure, type, ::markOwnerFocusedFromPointerInput) ?: return
 
-        val pointers =
-            activeTouches.values.map { t ->
-                ComposeScenePointer(
-                    id = PointerId(t.id),
-                    position = Offset(t.xPx, t.yPx),
-                    pressed = t.pressed,
-                    type = t.type,
-                    pressure = t.pressure,
-                )
-            }
         // Match Compose iOS (`ComposeSceneMediator.uikit.kt`): direct
         // touchscreen contacts are PointerType.Touch events with no
         // event-level button and an empty button mask. Skiko's primary
@@ -710,82 +687,23 @@ internal class TaoComposeSceneHostWindows(
         // comes through the mouse path.
         val penButtonChanged =
             pen && (composeType == PointerEventType.Press || composeType == PointerEventType.Release)
-        val penPressed = activeTouches.values.any { it.pressed && it.type != PointerType.Touch }
+        // Cancel first: a Release delivered before the cancel is an ordinary
+        // touch-up, which a tap detector takes as a tap (#892).
+        if (phase == TaoTouchEvent.CANCEL && composeType == PointerEventType.Release) {
+            sc.cancelPointerInput()
+        }
         sc.sendPointerEvent(
             eventType = composeType,
-            pointers = pointers,
-            buttons = PointerButtons(isPrimaryPressed = penPressed),
+            pointers = touches.pointers(),
+            buttons = PointerButtons(isPrimaryPressed = touches.penPressed),
             keyboardModifiers = currentKeyboardModifiers,
             button = if (penButtonChanged) PointerButton.Primary else null,
         )
 
         // Purge after the dispatch so the JVM saw the released finger one
-        // last time with `pressed=false` — same convention as Linux. A lifted
-        // pen stays, hovering, until it leaves range.
-        if (phase == TaoTouchEvent.CANCEL || (phase == TaoTouchEvent.RELEASE && !pen)) {
-            activeTouches.remove(id)
-            if (phase == TaoTouchEvent.CANCEL && composeType == PointerEventType.Release) {
-                sc.cancelPointerInput()
-            }
-        }
+        // last time with `pressed=false` — same convention as Linux.
+        touches.purgeAfterDispatch(phase, id)
     }
-
-    /**
-     * Applies one touch or pen update to [activeTouches] and returns the
-     * Compose event it makes, or null when it makes none.
-     */
-    private fun updateActiveTouch(
-        phase: Int,
-        id: Long,
-        xPx: Float,
-        yPx: Float,
-        pressure: Float,
-        type: PointerType,
-    ): PointerEventType? =
-        when (phase) {
-            TaoTouchEvent.PRESS -> {
-                markOwnerFocusedFromPointerInput()
-                activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure, type)
-                PointerEventType.Press
-            }
-            TaoTouchEvent.MOVE -> {
-                val existing = activeTouches[id]
-                if (existing != null) {
-                    existing.xPx = xPx
-                    existing.yPx = yPx
-                    existing.pressure = pressure
-                    existing.type = type
-                    PointerEventType.Move
-                } else if (type != PointerType.Touch) {
-                    // A pen coming into hover range.
-                    activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = false, pressure, type)
-                    PointerEventType.Move
-                } else {
-                    // Synthetic Press for an unknown id - defensive in case Tao
-                    // ever forwards a Move without a prior Started (palm-reject
-                    // race observed on some Surface drivers).
-                    markOwnerFocusedFromPointerInput()
-                    activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure, type)
-                    PointerEventType.Press
-                }
-            }
-            TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> {
-                activeTouches[id]?.let { existing ->
-                    val wasPressed = existing.pressed
-                    existing.xPx = xPx
-                    existing.yPx = yPx
-                    existing.pressed = false
-                    existing.type = type
-                    when {
-                        wasPressed -> PointerEventType.Release
-                        // A hovering pen leaving; a lifted one sends no second release.
-                        phase == TaoTouchEvent.CANCEL -> PointerEventType.Exit
-                        else -> null
-                    }
-                }
-            }
-            else -> null
-        }
 
     // ── Precision touchpad: pan and pinch ─────────────────────────────────
     //
