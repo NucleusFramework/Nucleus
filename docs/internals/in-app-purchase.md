@@ -34,9 +34,11 @@ not licenses and are never tracked there.
 
 ## App license
 
-`appLicense` reads `StoreAppLicense` (offline). `TrialTimeRemaining` is only reported during a
-trial: outside one the Store returns a meaningless span, and an unlimited trial returns a
-`TimeSpan` sentinel that `span_ticks_to_millis` maps to `null`. Each `licensesChanged` event
+`appLicense` reads `StoreAppLicense` (offline). A time-limited trial ends at `ExpirationDate`;
+`TrialTimeRemaining` only counts down usage-limited trials and, on a 7-day Store trial
+(observed), reports the unlimited `TimeSpan` sentinel. `trial_time_left` therefore derives the
+time left from the expiration whenever there is one, and falls back to the span (sentinel →
+`null`) only without one. Outside a trial there is no time left. Each `licensesChanged` event
 carries the app license next to the add-on licenses; Kotlin reports it only when its state
 changes (the trial countdown alone is not news), against a baseline read when the first
 collector subscribes.
@@ -44,8 +46,10 @@ collector subscribes.
 Observed on the real API: an install the Store did not license (here the unpackaged test process
 with `diag.allowUnpackaged`) gets `IsActive = true`, `IsTrial = false` and an empty
 `SkuStoreId`. `AppLicense.isFullLicense` therefore also requires a `skuStoreId`, and
-`WindowsNativeTortureTest` pins that answer. Whether a Store install always carries a
-`SkuStoreId` is to confirm on a real listing.
+`WindowsNativeTortureTest` pins that answer. A real Store install (Nucleus Lab, 7-day trial)
+reads `SkuStoreId = 9MV8ZRKS4KT4/0011`, so the rule holds; on that trial `TrialUniqueId` is
+empty and `IsTrialOwnedByThisUser` is `false` too — like `TrialTimeRemaining`, they only
+describe usage-limited trials.
 
 `purchaseApp` buys `GetStoreProductForCurrentAppAsync`'s product and shares `purchase_outcome`
 with add-on purchases, so both map Store statuses the same way.

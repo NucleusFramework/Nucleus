@@ -35,11 +35,11 @@ use windows_core::{AgileReference, Interface, BOOL, GUID, HRESULT, HSTRING};
 use windows_future::{IAsyncInfo, IAsyncOperation};
 
 use crate::protocol::{
-    normalize_price, period_unit, span_ticks_to_millis, store_id_from_sku_store_id,
-    store_ticks_to_unix_millis, to_value, AppLicenseDto, EntitlementDto, OfferDto, PeriodDto,
-    ProductDto, PurchaseDto, StoreError, StoreResult, SubscriptionDto, ENTITLEMENT_ACTIVE,
-    ENTITLEMENT_EXPIRED, ENTITLEMENT_NOT_OWNED, PRODUCT_AUTO_RENEWABLE, PRODUCT_CONSUMABLE,
-    PRODUCT_NON_CONSUMABLE, PRODUCT_UNKNOWN, STATE_EXPIRED, STATE_PURCHASED,
+    normalize_price, period_unit, store_id_from_sku_store_id, store_ticks_to_unix_millis, to_value,
+    trial_time_left, AppLicenseDto, EntitlementDto, OfferDto, PeriodDto, ProductDto, PurchaseDto,
+    StoreError, StoreResult, SubscriptionDto, ENTITLEMENT_ACTIVE, ENTITLEMENT_EXPIRED,
+    ENTITLEMENT_NOT_OWNED, PRODUCT_AUTO_RENEWABLE, PRODUCT_CONSUMABLE, PRODUCT_NON_CONSUMABLE,
+    PRODUCT_UNKNOWN, STATE_EXPIRED, STATE_PURCHASED,
 };
 use crate::requests::{cancelled_error, Request};
 use crate::Sink;
@@ -523,22 +523,20 @@ fn app_license(request: &Request, store: &StoreContext) -> StoreResult<StoreAppL
 
 fn app_license_dto(license: &StoreAppLicense) -> AppLicenseDto {
     let is_trial = license.IsTrial().unwrap_or(false);
+    let expiration_time = license
+        .ExpirationDate()
+        .ok()
+        .and_then(|d| store_ticks_to_unix_millis(d.UniversalTime));
     AppLicenseDto {
         is_active: license.IsActive().unwrap_or(false),
         is_trial,
-        expiration_time: license
-            .ExpirationDate()
-            .ok()
-            .and_then(|d| store_ticks_to_unix_millis(d.UniversalTime)),
-        // Outside a trial the Store reports a meaningless span; only a trial has time left.
-        trial_time_remaining: if is_trial {
-            license
-                .TrialTimeRemaining()
-                .ok()
-                .and_then(|t| span_ticks_to_millis(t.Duration))
-        } else {
-            None
-        },
+        expiration_time,
+        trial_time_remaining: trial_time_left(
+            is_trial,
+            expiration_time,
+            license.TrialTimeRemaining().ok().map(|t| t.Duration),
+            now_millis(),
+        ),
         is_trial_owned_by_this_user: license.IsTrialOwnedByThisUser().unwrap_or(false),
         trial_unique_id: non_blank(text(license.TrialUniqueId())),
         sku_store_id: non_blank(text(license.SkuStoreId())),

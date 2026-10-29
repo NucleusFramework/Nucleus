@@ -152,6 +152,26 @@ pub fn span_ticks_to_millis(ticks: i64) -> Option<i64> {
     (millis < UNLIMITED_SPAN_MILLIS).then_some(millis)
 }
 
+/// What is left of a trial, in milliseconds; `None` outside a trial and for an unlimited one.
+///
+/// A time-limited trial ends at the license's `ExpirationDate`: `TrialTimeRemaining` only
+/// counts down usage-limited trials and reports the unlimited sentinel for a timed one
+/// (observed on a 7-day Store trial), so the expiration wins whenever there is one.
+pub fn trial_time_left(
+    is_trial: bool,
+    expiration_millis: Option<i64>,
+    remaining_span_ticks: Option<i64>,
+    now_millis: i64,
+) -> Option<i64> {
+    if !is_trial {
+        return None;
+    }
+    match expiration_millis {
+        Some(end) => Some((end - now_millis).max(0)),
+        None => remaining_span_ticks.and_then(span_ticks_to_millis),
+    }
+}
+
 pub const PRODUCT_CONSUMABLE: &str = "consumable";
 pub const PRODUCT_NON_CONSUMABLE: &str = "nonConsumable";
 pub const PRODUCT_AUTO_RENEWABLE: &str = "autoRenewable";
@@ -271,6 +291,24 @@ pub fn normalize_price(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_timed_trial_counts_down_to_its_expiration() {
+        let day = 86_400_000;
+        // The Store's answer for a 7-day trial: an expiration, and the unlimited span.
+        assert_eq!(
+            trial_time_left(true, Some(7 * day), Some(i64::MAX), 0),
+            Some(7 * day)
+        );
+        assert_eq!(trial_time_left(true, Some(day), None, 3 * day), Some(0));
+        // Usage-limited trial: no expiration, a real span.
+        assert_eq!(
+            trial_time_left(true, None, Some(6_000_000_000), 0),
+            Some(600_000)
+        );
+        assert_eq!(trial_time_left(true, None, Some(i64::MAX), 0), None);
+        assert_eq!(trial_time_left(false, Some(day), Some(10), 0), None);
+    }
 
     #[test]
     fn spans_convert_and_unlimited_is_none() {

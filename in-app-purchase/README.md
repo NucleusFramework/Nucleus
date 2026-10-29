@@ -64,7 +64,9 @@ scope.launch {
 - **An install the Store did not license** (sideloaded, a development build, a package without
   a listing) reads as active and not a trial, with no `skuStoreId`. `isFullLicense` is `false`
   for it; do not gate on `isActive && !isTrial`.
-- `trialUniqueId` is stable per customer across reinstalls: key your own trial records on it.
+- A time-limited trial (the Partner Center "free trial" of N days) is tied to the customer's
+  Microsoft account by the Store itself: reinstalling does not restart it. `trialUniqueId` and
+  `isTrialOwnedByThisUser` only describe usage-limited trials and stay `null` / `false` for it.
 - `purchaseApp()` shows the Store's dialog for the app itself; its result works like
   `purchase()`, with the app's `StoreId` as `productId`.
 

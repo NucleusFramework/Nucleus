@@ -247,12 +247,12 @@ public sealed interface PurchaseUpdate {
  * @property isTrial the license is a trial (which may be over: check [isActive])
  * @property expirationTime when the license ends — the end of the trial for a trial; `null`
  *   for a license that never ends
- * @property trialTimeRemaining what is left of the trial; `null` outside a trial and for an
- *   unlimited one
- * @property isTrialOwnedByThisUser the trial belongs to the signed-in customer, not to another
- *   account on the device
- * @property trialUniqueId stable per customer and app across reinstalls: key your own trial
- *   records on it to tell a reinstall from a new customer
+ * @property trialTimeRemaining what is left of the trial, counted to [expirationTime] for a
+ *   time-limited trial; `null` outside a trial and for an unlimited one
+ * @property isTrialOwnedByThisUser the usage-limited trial belongs to the signed-in customer;
+ *   always `false` for a time-limited trial (the Store tracks only usage-limited ones per user)
+ * @property trialUniqueId identifies the customer's usage-limited trial; `null` for a
+ *   time-limited trial, which the Store already ties to the customer's account
  * @property skuStoreId the Store id of the licensed SKU (`9NBLGGH4R315/000N`); `null` when the
  *   Store did not license this install
  */
