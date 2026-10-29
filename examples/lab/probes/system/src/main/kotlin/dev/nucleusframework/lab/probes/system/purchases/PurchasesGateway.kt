@@ -12,7 +12,13 @@ import dev.nucleusframework.lab.core.Availability
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import java.util.logging.Handler
+import java.util.logging.Level
+import java.util.logging.LogRecord
+import java.util.logging.Logger
 
 /** Port over `in-app-purchase`. Store failures surface as `StoreException`, as the module throws them. */
 interface PurchasesGateway {
@@ -42,6 +48,12 @@ interface PurchasesGateway {
     fun appLicenseUpdates(): Flow<AppLicense>
 
     fun purchaseUpdates(): Flow<PurchaseUpdate>
+
+    /**
+     * The module's own diagnostics (JUL, FINE and up): among them every license notification
+     * the Store sends, even one that changes nothing the app sees.
+     */
+    fun diagnostics(): Flow<String>
 }
 
 @ContributesBinding(AppScope::class)
@@ -78,4 +90,26 @@ class NucleusPurchasesGateway : PurchasesGateway {
     override fun appLicenseUpdates(): Flow<AppLicense> = InAppPurchase.appLicenseUpdates
 
     override fun purchaseUpdates(): Flow<PurchaseUpdate> = InAppPurchase.purchaseUpdates
+
+    override fun diagnostics(): Flow<String> =
+        callbackFlow {
+            val handler =
+                object : Handler() {
+                    override fun publish(record: LogRecord) {
+                        trySend(record.message)
+                    }
+
+                    override fun flush() = Unit
+
+                    override fun close() = Unit
+                }.apply { level = Level.FINE }
+            iapLogger.level = Level.FINE
+            iapLogger.addHandler(handler)
+            awaitClose { iapLogger.removeHandler(handler) }
+        }
+
+    private companion object {
+        // Held strongly: JUL keeps loggers weakly, and a collected one loses its level and handler.
+        val iapLogger: Logger = Logger.getLogger("dev.nucleusframework.iap")
+    }
 }

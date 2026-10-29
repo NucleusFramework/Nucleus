@@ -47,6 +47,11 @@ class PurchasesViewModel(
                     dispatch(PurchasesEvent.Delivered(unjudgedDelivery(update.toString())))
                 }
             }
+            launch {
+                gateway.diagnostics().collect { message ->
+                    dispatch(PurchasesEvent.Delivered(unjudgedDelivery("store: $message")))
+                }
+            }
         }
         // nucleus-lab://probe/system.purchases?ids=pro,coins
         onParams(commands) { params ->

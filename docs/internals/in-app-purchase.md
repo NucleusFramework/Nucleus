@@ -25,6 +25,13 @@ Each request runs on a worker thread of its own, which dictates two rules:
 `StoreContext::GetDefault()` returns a new instance per call, so every purchase binds its own owner
 window through `IInitializeWithWindow`.
 
+- **The license listener is subscribed from a thread of our own, in the MTA.** `nativeInit` runs
+  on whatever thread first collects an update flow — in practice the UI thread, an STA (tao's
+  `OleInitialize`), where `RoInitialize(MULTITHREADED)` fails with `RPC_E_CHANGED_MODE`. Subscribed
+  there, `OfflineLicensesChanged` never reached the app on a real Store install (trial converted
+  to a full license, no update). `register_in_mta` makes the subscription on a short-lived MTA
+  thread instead; the Rust test calls it from an STA and checks the apartment.
+
 ## Licenses and updates
 
 `OfflineLicensesChanged` says *that* licenses changed, not what: each event carries the full list

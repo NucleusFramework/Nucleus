@@ -167,7 +167,11 @@ class PurchasesProbe : Probe {
                     }
                 }
                 SubSection("Updates") {
-                    Hint("Sent by the Store without a request: trial conversions, purchases made elsewhere, refunds.")
+                    Hint(
+                        "Sent by the Store without a request: trial conversions, purchases made elsewhere, " +
+                            "refunds. \"store:\" lines are every license notification received, even one " +
+                            "that changes nothing.",
+                    )
                     EventLog(state.updates, empty = "No update yet.")
                 }
                 SubSection("Calls") {

@@ -260,6 +260,10 @@ internal class NativeStoreBackend(
                 )
             }
             "licensesChanged" -> {
+                logger.fine {
+                    "Microsoft Store licenses changed: app ${event.appLicense?.skuStoreId ?: "unread"}, " +
+                        "add-ons ${event.purchases.orEmpty().map { it.productId }}"
+                }
                 event.appLicense?.toAppLicense()?.let(::reportAppLicense)
                 licenses
                     .onSnapshot(event.purchases.orEmpty().map { it.toPurchase() })

@@ -23,7 +23,9 @@ use windows::Win32::Foundation::{
     APPMODEL_ERROR_NO_PACKAGE, ERROR_INSUFFICIENT_BUFFER, HWND, LPARAM, WIN32_ERROR,
 };
 use windows::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
-use windows::Win32::System::Com::CoIncrementMTAUsage;
+use windows::Win32::System::Com::{
+    CoGetApartmentType, CoIncrementMTAUsage, APTTYPE, APTTYPEQUALIFIER,
+};
 use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::UI::Shell::IInitializeWithWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -64,6 +66,9 @@ const CONSUMABLE_KINDS: [&str; 2] = ["Consumable", "UnmanagedConsumable"];
 struct Listener {
     _store: StoreContext,
     _token: i64,
+    /// The apartment the subscription was made in; read by tests.
+    #[cfg_attr(not(test), allow(dead_code))]
+    apartment: i32,
 }
 
 fn listener() -> MutexGuard<'static, Option<Listener>> {
@@ -994,7 +999,6 @@ pub fn dispatch(request: &Request, method: &str, args: &Value) -> StoreResult<Va
 /// Subscribes to `OfflineLicensesChanged` (purchases made elsewhere, renewals, refunds). Each
 /// change is reported with the full list of active licenses; the Kotlin side diffs it.
 pub fn start_listener(sink: &'static dyn Sink) -> bool {
-    let _com = init_thread();
     if !packaged() {
         return false;
     }
@@ -1002,37 +1006,69 @@ pub fn start_listener(sink: &'static dyn Sink) -> bool {
     if guard.is_some() {
         return true;
     }
-    let Ok(store) = store_context() else {
-        return false;
-    };
-    let handler =
-        TypedEventHandler::<StoreContext, windows_core::IInspectable>::new(move |_, _| {
-            // Never block the Store's callback thread on another Store call.
-            let _ = std::thread::Builder::new()
-                .name("nucleus-iap-licenses".into())
-                .spawn(move || {
-                    let _com = init_thread();
-                    let (app_license, purchases) = snapshot_licenses();
-                    sink.event(
-                        json!({
-                            "type": "licensesChanged",
-                            "appLicense": app_license,
-                            "purchases": purchases,
-                        })
-                        .to_string(),
-                    );
-                });
-            Ok(())
-        });
-    match store.OfflineLicensesChanged(&handler) {
-        Ok(token) => {
-            *guard = Some(Listener {
-                _store: store,
-                _token: token,
-            });
+    match register_in_mta(sink) {
+        Ok(registered) => {
+            *guard = Some(registered);
             true
         }
         Err(_) => false,
+    }
+}
+
+/// Registers the handler from a thread of our own in the MTA, whatever thread asked.
+///
+/// The caller is usually the UI thread, an STA (tao's `OleInitialize`): registering there tied
+/// the `StoreContext` to that apartment instead of the MTA every request uses, and no license
+/// change ever reached the app on a real Store install. The thread exits once registered; the
+/// pinned MTA and the agile context keep the subscription alive.
+fn register_in_mta(sink: &'static dyn Sink) -> windows_core::Result<Listener> {
+    std::thread::Builder::new()
+        .name("nucleus-iap-listener".into())
+        .spawn(move || {
+            let _com = init_thread();
+            let store = StoreContext::GetDefault()?;
+            let token = store.OfflineLicensesChanged(&license_handler(sink))?;
+            Ok(Listener {
+                _store: store,
+                _token: token,
+                apartment: current_apartment(),
+            })
+        })
+        .map_err(|_| windows_core::Error::from_hresult(HRESULT(E_ABORT)))?
+        .join()
+        .unwrap_or_else(|_| Err(windows_core::Error::from_hresult(HRESULT(E_ABORT))))
+}
+
+fn license_handler(
+    sink: &'static dyn Sink,
+) -> TypedEventHandler<StoreContext, windows_core::IInspectable> {
+    TypedEventHandler::new(move |_, _| {
+        // Never block the Store's callback thread on another Store call.
+        let _ = std::thread::Builder::new()
+            .name("nucleus-iap-licenses".into())
+            .spawn(move || {
+                let _com = init_thread();
+                let (app_license, purchases) = snapshot_licenses();
+                sink.event(
+                    json!({
+                        "type": "licensesChanged",
+                        "appLicense": app_license,
+                        "purchases": purchases,
+                    })
+                    .to_string(),
+                );
+            });
+        Ok(())
+    })
+}
+
+/// The COM apartment of the calling thread (`APTTYPE`), `-1` when it has none.
+fn current_apartment() -> i32 {
+    let mut kind = APTTYPE(-1);
+    let mut qualifier = APTTYPEQUALIFIER(0);
+    match unsafe { CoGetApartmentType(&mut kind, &mut qualifier) } {
+        Ok(()) => kind.0,
+        Err(_) => -1,
     }
 }
 
@@ -1062,6 +1098,9 @@ fn snapshot_licenses() -> (Value, Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::System::Com::{
+        CoInitializeEx, APTTYPE_MAINSTA, APTTYPE_MTA, APTTYPE_STA, COINIT_APARTMENTTHREADED,
+    };
 
     #[test]
     fn consume_token_round_trips() {
@@ -1108,6 +1147,27 @@ mod tests {
         assert_eq!(classify(0x803F_6107), "notAssociated");
         assert_eq!(classify(0x803F_6100), "platform");
         assert_eq!(classify(0x8007_0005), "platform");
+    }
+
+    #[test]
+    fn the_listener_subscribes_in_the_mta_even_from_an_sta() {
+        struct Silent;
+        impl Sink for Silent {
+            fn respond(&self, _: i64, _: String) {}
+            fn event(&self, _: String) {}
+        }
+        static SILENT: Silent = Silent;
+        // The UI thread that usually asks is an STA (tao's OleInitialize).
+        let apartment = std::thread::spawn(|| {
+            unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.unwrap();
+            // STA, or MAINSTA when it is the process's first one.
+            assert!([APTTYPE_STA.0, APTTYPE_MAINSTA.0].contains(&current_apartment()));
+            let listener = register_in_mta(&SILENT).expect("OfflineLicensesChanged subscription");
+            listener.apartment
+        })
+        .join()
+        .unwrap();
+        assert_eq!(apartment, APTTYPE_MTA.0);
     }
 
     #[test]
