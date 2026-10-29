@@ -120,11 +120,38 @@ internal data class WireAppLicense(
 )
 
 @Serializable
+internal data class WireUpdate(
+    val version: String? = null,
+    val mandatory: Boolean = false,
+)
+
+@Serializable
+internal data class WireUpdates(
+    val updates: List<WireUpdate> = emptyList(),
+)
+
+@Serializable
+internal data class WireUpdateOutcome(
+    val state: String = "",
+)
+
+@Serializable
+internal data class WireOpened(
+    val opened: Boolean = false,
+)
+
+@Serializable
 internal data class WireEvent(
     val type: String = "",
     val purchase: WirePurchase? = null,
     val purchases: List<WirePurchase>? = null,
     val appLicense: WireAppLicense? = null,
+    // updateProgress: the request it belongs to, and where it stands.
+    val request: Long? = null,
+    val state: String? = null,
+    val progress: Double = 0.0,
+    val bytesDownloaded: Long = 0,
+    val bytesTotal: Long = 0,
 )
 
 internal fun jsonArgs(vararg pairs: Pair<String, Any?>): String =

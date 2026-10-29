@@ -15,10 +15,13 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use serde_json::{json, Value};
 use windows::Foundation::TypedEventHandler;
+use windows::Foundation::Uri;
 use windows::Services::Store::{
-    StoreAppLicense, StoreConsumableStatus, StoreContext, StoreLicense, StorePrice, StoreProduct,
-    StorePurchaseResult, StorePurchaseStatus, StoreSku,
+    StoreAppLicense, StoreConsumableStatus, StoreContext, StoreLicense, StorePackageUpdate,
+    StorePackageUpdateResult, StorePackageUpdateState, StorePackageUpdateStatus, StorePrice,
+    StoreProduct, StorePurchaseResult, StorePurchaseStatus, StoreSku,
 };
+use windows::System::Launcher;
 use windows::Win32::Foundation::{
     APPMODEL_ERROR_NO_PACKAGE, ERROR_INSUFFICIENT_BUFFER, HWND, LPARAM, WIN32_ERROR,
 };
@@ -34,7 +37,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows_collections::IIterable;
 use windows_core::{AgileReference, Interface, BOOL, GUID, HRESULT, HSTRING};
-use windows_future::{IAsyncInfo, IAsyncOperation};
+use windows_future::{
+    AsyncOperationProgressHandler, IAsyncInfo, IAsyncOperation, IAsyncOperationWithProgress,
+};
 
 use crate::protocol::{
     normalize_price, period_unit, store_id_from_sku_store_id, store_ticks_to_unix_millis, to_value,
@@ -163,15 +168,38 @@ fn wait<T: windows_core::RuntimeType + 'static>(
 ) -> StoreResult<T> {
     let operation = operation.ctx(what)?;
     let info: IAsyncInfo = operation.cast().ctx(what)?;
+    wait_on(request, what, &info, || operation.join())
+}
+
+/// [wait] for an operation that reports progress.
+fn wait_with_progress<
+    T: windows_core::RuntimeType + 'static,
+    P: windows_core::RuntimeType + 'static,
+>(
+    request: &Request,
+    what: &str,
+    operation: &IAsyncOperationWithProgress<T, P>,
+) -> StoreResult<T> {
+    let info: IAsyncInfo = operation.cast().ctx(what)?;
+    wait_on(request, what, &info, || operation.join())
+}
+
+/// Blocks on [join], cancelling the operation behind [info] when the request is cancelled.
+fn wait_on<T>(
+    request: &Request,
+    what: &str,
+    info: &IAsyncInfo,
+    join: impl FnOnce() -> windows_core::Result<T>,
+) -> StoreResult<T> {
     // IAsyncInfo is not Send in windows-rs; WinRT async objects are agile, so an agile
     // reference resolves on the cancelling thread without marshalling.
-    let info = AgileReference::new(&info).ctx(what)?;
+    let info = AgileReference::new(info).ctx(what)?;
     let armed = request.arm(Box::new(move || {
         if let Ok(info) = info.resolve() {
             let _ = info.Cancel();
         }
     }));
-    let result = operation.join();
+    let result = join();
     drop(armed);
     if request.is_cancelled() {
         return Err(cancelled_error());
@@ -946,6 +974,152 @@ fn consume(request: &Request, args: &Value) -> StoreResult<Value> {
     }
 }
 
+// -------------------------------------------------------------------------------------------
+// App updates
+// -------------------------------------------------------------------------------------------
+
+/// The Store's pending updates for this app and its optional packages.
+fn package_updates(
+    request: &Request,
+    store: &StoreContext,
+) -> StoreResult<Vec<StorePackageUpdate>> {
+    let updates = wait(
+        request,
+        "GetAppAndOptionalStorePackageUpdatesAsync",
+        store.GetAppAndOptionalStorePackageUpdatesAsync(),
+    )?;
+    Ok(updates.into_iter().collect())
+}
+
+/// `major.minor.build.revision` of the package an update installs.
+fn update_version(update: &StorePackageUpdate) -> Option<String> {
+    let version = update.Package().ok()?.Id().ok()?.Version().ok()?;
+    Some(format!(
+        "{}.{}.{}.{}",
+        version.Major, version.Minor, version.Build, version.Revision
+    ))
+}
+
+/// Whether the Store has a newer version of this app. Silent: shows nothing.
+fn check_updates(request: &Request, _args: &Value) -> StoreResult<Value> {
+    let store = store_context()?;
+    let updates = package_updates(request, &store)?
+        .iter()
+        .map(|update| {
+            json!({
+                "version": update_version(update),
+                "mandatory": update.Mandatory().unwrap_or(false),
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({ "updates": updates }))
+}
+
+fn update_state(state: StorePackageUpdateState) -> &'static str {
+    match state {
+        StorePackageUpdateState::Pending => "pending",
+        StorePackageUpdateState::Downloading => "downloading",
+        StorePackageUpdateState::Deploying => "installing",
+        StorePackageUpdateState::Completed => "completed",
+        StorePackageUpdateState::Canceled => "cancelled",
+        _ => "failed",
+    }
+}
+
+fn progress_event(request_id: i64, status: &StorePackageUpdateStatus) -> Value {
+    json!({
+        "type": "updateProgress",
+        "request": request_id,
+        "state": update_state(status.PackageUpdateState),
+        "progress": status.TotalDownloadProgress,
+        "bytesDownloaded": status.PackageBytesDownloaded,
+        "bytesTotal": status.PackageDownloadSizeInBytes,
+    })
+}
+
+/// The outcome of an update operation: `completed`, or the error the Store gave up with.
+fn update_outcome(result: &StorePackageUpdateResult) -> StoreResult<Value> {
+    match result.OverallState().ctx("OverallState")? {
+        StorePackageUpdateState::Completed => Ok(json!({ "state": "completed" })),
+        StorePackageUpdateState::Canceled => Err(cancelled_error()),
+        StorePackageUpdateState::ErrorLowBattery => Err(StoreError::new(
+            "updateBlocked",
+            "The Store holds the update until the device is charging",
+        )),
+        StorePackageUpdateState::ErrorWiFiRecommended
+        | StorePackageUpdateState::ErrorWiFiRequired => Err(StoreError::new(
+            "updateBlocked",
+            "The Store holds the update until the device is on Wi-Fi",
+        )),
+        other => Err(StoreError::new(
+            "platform",
+            format!("The Store could not install the update (state {})", other.0),
+        )),
+    }
+}
+
+/// Downloads and installs this app's pending updates, with the Store's dialog parented on the
+/// app's window, or silently. Progress goes out as `updateProgress` events carrying the request
+/// id. Windows closes the app to install it.
+fn install_updates(request: &Request, args: &Value) -> StoreResult<Value> {
+    let silent = args["silent"].as_bool().unwrap_or(false);
+    let store = store_context()?;
+    if !silent {
+        attach_owner(&store, resolve_owner(args["ownerWindow"].as_i64())?)?;
+    }
+    let updates = package_updates(request, &store)?;
+    if updates.is_empty() {
+        return Ok(json!({ "state": "upToDate" }));
+    }
+    let updates: IIterable<StorePackageUpdate> =
+        updates.into_iter().map(Some).collect::<Vec<_>>().into();
+    let (what, operation) = if silent {
+        (
+            "TrySilentDownloadAndInstallStorePackageUpdatesAsync",
+            store.TrySilentDownloadAndInstallStorePackageUpdatesAsync(&updates),
+        )
+    } else {
+        (
+            "RequestDownloadAndInstallStorePackageUpdatesAsync",
+            store.RequestDownloadAndInstallStorePackageUpdatesAsync(&updates),
+        )
+    };
+    let operation = operation.ctx(what)?;
+    let request_id = request.id;
+    let sink = crate::sink();
+    operation
+        .SetProgress(&AsyncOperationProgressHandler::new(move |_, status| {
+            sink.event(progress_event(request_id, &status).to_string());
+            Ok(())
+        }))
+        .ctx("SetProgress")?;
+    let result = wait_with_progress(request, what, &operation)?;
+    update_outcome(&result)
+}
+
+/// Opens this app's page in the Store app, for an update the user starts there.
+fn open_store_page(request: &Request, _args: &Value) -> StoreResult<Value> {
+    let store = store_context()?;
+    let found = wait(
+        request,
+        "GetStoreProductForCurrentAppAsync",
+        store.GetStoreProductForCurrentAppAsync(),
+    )?;
+    let store_id = text(found.Product().ctx("Product")?.StoreId());
+    if store_id.is_empty() {
+        return Err(StoreError::new(
+            "productNotFound",
+            "The Store has no listing for this app",
+        ));
+    }
+    let uri = Uri::CreateUri(&HSTRING::from(format!(
+        "ms-windows-store://pdp/?productid={store_id}"
+    )))
+    .ctx("Uri")?;
+    let opened = wait(request, "LaunchUriAsync", Launcher::LaunchUriAsync(&uri))?;
+    Ok(json!({ "opened": opened, "storeId": store_id }))
+}
+
 fn availability() -> StoreResult<Value> {
     Ok(json!({ "state": if packaged() { "available" } else { "notPackaged" } }))
 }
@@ -979,6 +1153,9 @@ pub fn dispatch(request: &Request, method: &str, args: &Value) -> StoreResult<Va
         "entitlement" => entitlement,
         "purchase" => purchase,
         "appLicense" => app_license_request,
+        "updates.check" => check_updates,
+        "updates.install" => install_updates,
+        "updates.openStorePage" => open_store_page,
         "purchaseApp" => purchase_app,
         "consume" => consume,
         _ => {

@@ -77,7 +77,7 @@ impl Sink for JvmSink {
     }
 }
 
-fn sink() -> &'static dyn Sink {
+pub(crate) fn sink() -> &'static dyn Sink {
     static SINK: JvmSink = JvmSink;
     &SINK
 }

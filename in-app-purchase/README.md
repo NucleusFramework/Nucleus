@@ -87,6 +87,30 @@ scope.launch {
 - `StoreProduct.price` is a `BigDecimal` read from the store's (locale-formatted) price string;
   `displayPrice` is what to show.
 
+### App updates
+
+The Store updates apps on its own, in the background. `StoreUpdates` is for not waiting for it, and
+for updates Partner Center marks mandatory:
+
+```kotlin
+when (val check = StoreUpdates.check()) {
+    is StoreUpdateCheck.Available -> {
+        if (check.isMandatory) blockUntilUpdated()
+        StoreUpdates.install { windows { ownerWindowHandle = window.nativeHandle } }
+            .collect { showProgress(it.state, it.progress) }
+    }
+    StoreUpdateCheck.UpToDate -> Unit
+}
+```
+
+- `install()` shows the Store's dialog over the app; `install { silent = true }` shows nothing, and
+  Windows may refuse it (policy, metered connection) — the flow then fails instead of asking.
+  Windows closes the app to install the new version.
+- The flow ends with `Completed`, `UpToDate` (nothing to install) or `Cancelled` (the user declined
+  the dialog); it fails with `StoreErrorCode.UpdateBlocked` while the Store waits for a charger or
+  Wi-Fi. Cancelling the collection cancels the download.
+- `StoreUpdates.openStorePage()` opens the app's page in the Store app instead.
+
 ## Platform requirements
 
 The Store only answers apps with package identity — build `TargetFormat.AppX`. An NSIS/MSI/portable

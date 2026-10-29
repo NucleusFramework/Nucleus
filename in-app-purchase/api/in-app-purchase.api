@@ -270,6 +270,7 @@ public final class dev/nucleusframework/iap/StoreErrorCode : java/lang/Enum {
 	public static final field ProductNotFound Ldev/nucleusframework/iap/StoreErrorCode;
 	public static final field Server Ldev/nucleusframework/iap/StoreErrorCode;
 	public static final field Unsupported Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field UpdateBlocked Ldev/nucleusframework/iap/StoreErrorCode;
 	public static final field VerificationFailed Ldev/nucleusframework/iap/StoreErrorCode;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/StoreErrorCode;
@@ -311,6 +312,73 @@ public final class dev/nucleusframework/iap/StoreProduct {
 	public fun toString ()Ljava/lang/String;
 }
 
+public abstract interface class dev/nucleusframework/iap/StoreUpdateCheck {
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateCheck$Available : dev/nucleusframework/iap/StoreUpdateCheck {
+	public fun <init> (Ljava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Ldev/nucleusframework/iap/StoreUpdateCheck$Available;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/StoreUpdateCheck$Available;Ljava/lang/String;ZILjava/lang/Object;)Ldev/nucleusframework/iap/StoreUpdateCheck$Available;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isMandatory ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateCheck$UpToDate : dev/nucleusframework/iap/StoreUpdateCheck {
+	public static final field INSTANCE Ldev/nucleusframework/iap/StoreUpdateCheck$UpToDate;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateOptions {
+	public final fun getSilent ()Z
+	public final fun setSilent (Z)V
+	public final fun windows (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateProgress {
+	public fun <init> (Ldev/nucleusframework/iap/StoreUpdateState;DJJ)V
+	public final fun component1 ()Ldev/nucleusframework/iap/StoreUpdateState;
+	public final fun component2 ()D
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun copy (Ldev/nucleusframework/iap/StoreUpdateState;DJJ)Ldev/nucleusframework/iap/StoreUpdateProgress;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/StoreUpdateProgress;Ldev/nucleusframework/iap/StoreUpdateState;DJJILjava/lang/Object;)Ldev/nucleusframework/iap/StoreUpdateProgress;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBytesDownloaded ()J
+	public final fun getBytesTotal ()J
+	public final fun getProgress ()D
+	public final fun getState ()Ldev/nucleusframework/iap/StoreUpdateState;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateState : java/lang/Enum {
+	public static final field Cancelled Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field Completed Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field Downloading Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field Installing Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field Pending Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field UpToDate Ldev/nucleusframework/iap/StoreUpdateState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/StoreUpdateState;
+	public static fun values ()[Ldev/nucleusframework/iap/StoreUpdateState;
+}
+
+public final class dev/nucleusframework/iap/StoreUpdates {
+	public static final field INSTANCE Ldev/nucleusframework/iap/StoreUpdates;
+	public final fun check (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun install (Lkotlin/jvm/functions/Function1;)Lkotlinx/coroutines/flow/Flow;
+	public static synthetic fun install$default (Ldev/nucleusframework/iap/StoreUpdates;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
+	public final fun isSupported ()Z
+	public final fun openStorePage (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
 public final class dev/nucleusframework/iap/SubscriptionInfo {
 	public fun <init> (Ldev/nucleusframework/iap/SubscriptionPeriod;Ljava/lang/String;Ldev/nucleusframework/iap/IntroductoryOffer;)V
 	public final fun component1 ()Ldev/nucleusframework/iap/SubscriptionPeriod;
@@ -345,5 +413,10 @@ public final class dev/nucleusframework/iap/WindowsPurchaseOptions {
 	public final fun getSkuStoreId ()Ljava/lang/String;
 	public final fun setOwnerWindowHandle (Ljava/lang/Long;)V
 	public final fun setSkuStoreId (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/iap/WindowsStoreUpdateOptions {
+	public final fun getOwnerWindowHandle ()Ljava/lang/Long;
+	public final fun setOwnerWindowHandle (Ljava/lang/Long;)V
 }
 

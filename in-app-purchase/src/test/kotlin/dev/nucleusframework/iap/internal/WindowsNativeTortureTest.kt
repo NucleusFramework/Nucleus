@@ -10,11 +10,13 @@ import dev.nucleusframework.iap.PurchaseState
 import dev.nucleusframework.iap.StoreAvailability
 import dev.nucleusframework.iap.StoreErrorCode
 import dev.nucleusframework.iap.StoreException
+import dev.nucleusframework.iap.StoreUpdateOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -87,6 +89,9 @@ class WindowsNativeTortureTest {
                     { backend.restorePurchases() },
                     { backend.entitlement("pro") },
                     { backend.appLicense() },
+                    { backend.checkUpdates() },
+                    { backend.openStorePage() },
+                    { backend.installUpdates(StoreUpdateOptions()).toList() },
                 )
             for (call in calls) {
                 val e = assertFailsWith<StoreException> { call() }
@@ -119,6 +124,10 @@ class WindowsNativeTortureTest {
             assertTrue(license.isActive && !license.isTrial)
             assertNull(license.skuStoreId)
             assertFalse(license.isFullLicense)
+            // Update checks are not local: an app without a listing gets 0x803F6101 from the Store.
+            val updates = assertFailsWith<StoreException> { backend.checkUpdates() }
+            assertEquals(StoreErrorCode.Platform, updates.code)
+            assertEquals(0x803F6101.toInt(), updates.platformCode)
             val coins =
                 Purchase(
                     "coins",

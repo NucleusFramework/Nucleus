@@ -8,6 +8,7 @@ import dev.nucleusframework.iap.PurchaseState
 import dev.nucleusframework.iap.StoreAvailability
 import dev.nucleusframework.iap.StoreErrorCode
 import dev.nucleusframework.iap.StoreException
+import dev.nucleusframework.iap.StoreUpdateState
 
 // Wire strings to model enums; an unknown value degrades, it never fails.
 
@@ -30,9 +31,22 @@ internal fun storeErrorCode(code: String): StoreErrorCode =
         "insufficientQuantity" -> StoreErrorCode.InsufficientQuantity
         "verificationFailed" -> StoreErrorCode.VerificationFailed
         "invalidArgument" -> StoreErrorCode.InvalidArgument
+        "updateBlocked" -> StoreErrorCode.UpdateBlocked
         // A cancellation the app did not ask for: the OS aborted the operation.
         "platform", "cancelled" -> StoreErrorCode.Platform
         else -> StoreErrorCode.Internal
+    }
+
+internal fun updateState(value: String?): StoreUpdateState? =
+    when (value) {
+        "pending" -> StoreUpdateState.Pending
+        "downloading" -> StoreUpdateState.Downloading
+        "installing" -> StoreUpdateState.Installing
+        "completed" -> StoreUpdateState.Completed
+        "upToDate" -> StoreUpdateState.UpToDate
+        "cancelled" -> StoreUpdateState.Cancelled
+        // "failed" and unknown states: the operation's own result says what went wrong.
+        else -> null
     }
 
 internal fun productType(value: String): ProductType =

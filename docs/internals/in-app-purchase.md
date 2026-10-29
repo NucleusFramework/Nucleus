@@ -61,6 +61,18 @@ describe usage-limited trials.
 `purchaseApp` buys `GetStoreProductForCurrentAppAsync`'s product and shares `purchase_outcome`
 with add-on purchases, so both map Store statuses the same way.
 
+## App updates
+
+`StoreUpdates` rides the same bridge (`updates.check`, `updates.install`,
+`updates.openStorePage`). `GetAppAndOptionalStorePackageUpdatesAsync` gives the version
+(`Package.Id.Version`) and the mandatory flag; the app and its optional packages may update
+together, so Kotlin reports the newest version. Installing is an
+`IAsyncOperationWithProgress`: `wait_with_progress` shares `wait`'s cancellation, and each
+`StorePackageUpdateStatus` goes out as an `updateProgress` event carrying the request id, which
+`NativeStoreBackend` routes to the flow of that request (`progressListeners`). Unlike licenses,
+update checks need the Store service: an unlisted app gets `0x803F6101` (pinned by
+`WindowsNativeTortureTest`, reported as `Platform`). Only a real listing can show an update.
+
 ## Failure modes
 
 - No package identity: fails fast with `NotPackaged`, before touching WinRT.

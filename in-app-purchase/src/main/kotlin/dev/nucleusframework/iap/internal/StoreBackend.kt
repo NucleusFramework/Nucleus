@@ -12,12 +12,20 @@ import dev.nucleusframework.iap.StoreAvailability
 import dev.nucleusframework.iap.StoreErrorCode
 import dev.nucleusframework.iap.StoreException
 import dev.nucleusframework.iap.StoreProduct
+import dev.nucleusframework.iap.StoreUpdateCheck
+import dev.nucleusframework.iap.StoreUpdateOptions
+import dev.nucleusframework.iap.StoreUpdateProgress
+import dev.nucleusframework.iap.StoreUpdateState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -33,7 +41,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /** What [dev.nucleusframework.iap.InAppPurchase] delegates to. */
-internal interface StoreBackend {
+internal interface StoreBackend : StoreUpdatesBackend {
     val isSupported: Boolean
     val updates: Flow<PurchaseUpdate>
     val appLicenseUpdates: Flow<AppLicense>
@@ -61,6 +69,15 @@ internal interface StoreBackend {
     suspend fun appLicense(): AppLicense
 
     suspend fun purchaseApp(options: PurchaseOptions): PurchaseResult
+}
+
+/** What [dev.nucleusframework.iap.StoreUpdates] delegates to: the same Store bridge. */
+internal interface StoreUpdatesBackend {
+    suspend fun checkUpdates(): StoreUpdateCheck
+
+    fun installUpdates(options: StoreUpdateOptions): Flow<StoreUpdateProgress>
+
+    suspend fun openStorePage()
 }
 
 /** Linux, or a platform whose native bridge did not load. */
@@ -97,6 +114,12 @@ internal class UnsupportedStoreBackend(
 
     override suspend fun purchaseApp(options: PurchaseOptions): PurchaseResult =
         PurchaseResult.Failed(StoreException(StoreErrorCode.Unsupported, reason))
+
+    override suspend fun checkUpdates(): StoreUpdateCheck = unsupported()
+
+    override fun installUpdates(options: StoreUpdateOptions): Flow<StoreUpdateProgress> = flow { unsupported() }
+
+    override suspend fun openStorePage(): Unit = unsupported()
 }
 
 /** A native answer: the `ok` payload, or the `error` the backend reported. */
@@ -123,6 +146,9 @@ internal class NativeStoreBackend(
     private val logger = Logger.getLogger(NativeStoreBackend::class.java.name)
     private val nextId = AtomicLong()
     private val pending = ConcurrentHashMap<Long, kotlinx.coroutines.CancellableContinuation<String>>()
+
+    // Requests that report progress (app updates), by request id.
+    private val progressListeners = ConcurrentHashMap<Long, (WireEvent) -> Unit>()
     private val listening = AtomicBoolean()
 
     // Unbounded: events come from native threads that cannot suspend, and an update must not
@@ -184,11 +210,25 @@ internal class NativeStoreBackend(
     private suspend fun call(
         method: String,
         args: String,
+        onProgress: ((WireEvent) -> Unit)? = null,
     ): Answer {
         if (!transport.isAvailable) {
             throw StoreException(StoreErrorCode.Unsupported, "The in-app purchase bridge is not available")
         }
         val id = nextId.incrementAndGet()
+        onProgress?.let { progressListeners[id] = it }
+        try {
+            return exchange(id, method, args)
+        } finally {
+            progressListeners.remove(id)
+        }
+    }
+
+    private suspend fun exchange(
+        id: Long,
+        method: String,
+        args: String,
+    ): Answer {
         val envelope =
             suspendCancellableCoroutine { continuation ->
                 pending[id] = continuation
@@ -259,6 +299,7 @@ internal class NativeStoreBackend(
                     if (revoked) PurchaseUpdate.Revoked(purchase) else PurchaseUpdate.Purchased(purchase),
                 )
             }
+            "updateProgress" -> event.request?.let(progressListeners::get)?.invoke(event)
             "licensesChanged" -> {
                 logger.fine {
                     "Microsoft Store licenses changed: app ${event.appLicense?.skuStoreId ?: "unread"}, " +
@@ -340,6 +381,52 @@ internal class NativeStoreBackend(
     override suspend fun purchaseApp(options: PurchaseOptions): PurchaseResult =
         callPurchase("purchaseApp", jsonArgs("ownerWindow" to options.windows.ownerWindowHandle))
 
+    override suspend fun checkUpdates(): StoreUpdateCheck {
+        val updates = decode("updates.check", "{}", WireUpdates.serializer()).updates
+        if (updates.isEmpty()) return StoreUpdateCheck.UpToDate
+        return StoreUpdateCheck.Available(
+            // The app and its optional packages may update together: report the newest.
+            version = updates.mapNotNull { it.version }.maxWithOrNull(PackageVersionOrder),
+            isMandatory = updates.any { it.mandatory },
+        )
+    }
+
+    override fun installUpdates(options: StoreUpdateOptions): Flow<StoreUpdateProgress> =
+        channelFlow {
+            val args =
+                jsonArgs(
+                    "silent" to options.silent,
+                    "ownerWindow" to options.windows.ownerWindowHandle,
+                )
+            val answer =
+                call("updates.install", args) { event ->
+                    updateState(event.state)?.let { state ->
+                        trySend(StoreUpdateProgress(state, event.progress, event.bytesDownloaded, event.bytesTotal))
+                    }
+                }
+            val last =
+                when (answer) {
+                    // The user declined the Store's dialog.
+                    is Answer.Err ->
+                        if (answer.error.code == "cancelled") {
+                            StoreUpdateState.Cancelled
+                        } else {
+                            throw answer.error.toException()
+                        }
+                    is Answer.Ok ->
+                        parse("updates.install payload") {
+                            WireJson.decodeFromJsonElement(WireUpdateOutcome.serializer(), answer.payload)
+                        }.let { updateState(it.state) ?: throw internalError("Unknown update state '${it.state}'") }
+                }
+            send(StoreUpdateProgress(last, if (last == StoreUpdateState.Completed) 1.0 else 0.0, 0, 0))
+        }.buffer(Channel.UNLIMITED) // progress arrives on native threads, which cannot suspend
+
+    override suspend fun openStorePage() {
+        if (!decode("updates.openStorePage", "{}", WireOpened.serializer()).opened) {
+            throw StoreException(StoreErrorCode.Platform, "Windows did not open the Store")
+        }
+    }
+
     private fun purchaseResult(payload: JsonElement): PurchaseResult {
         val outcome =
             parse("purchase payload") { WireJson.decodeFromJsonElement(WirePurchaseOutcome.serializer(), payload) }
@@ -383,6 +470,15 @@ internal class NativeStoreBackend(
         decode("consume", jsonArgs("token" to token, "quantity" to quantity), WireConsumeResult.serializer())
     }
 }
+
+/** Package versions (`1.0.10.0`) in numeric order, so 1.0.10 sorts after 1.0.9. */
+private val PackageVersionOrder: Comparator<String> =
+    Comparator { a, b ->
+        val (x, y) = a.split('.').map { it.toIntOrNull() ?: 0 } to b.split('.').map { it.toIntOrNull() ?: 0 }
+        (0 until maxOf(x.size, y.size)).firstNotNullOfOrNull { i ->
+            x.getOrElse(i) { 0 }.compareTo(y.getOrElse(i) { 0 }).takeIf { it != 0 }
+        } ?: 0
+    }
 
 private fun internalError(
     message: String,

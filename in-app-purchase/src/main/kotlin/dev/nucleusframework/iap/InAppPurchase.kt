@@ -48,7 +48,7 @@ public object InAppPurchase {
         }
     }
 
-    private val backend: StoreBackend
+    internal val backend: StoreBackend
         get() = override ?: default
 
     internal fun setBackendForTesting(backend: StoreBackend?) {

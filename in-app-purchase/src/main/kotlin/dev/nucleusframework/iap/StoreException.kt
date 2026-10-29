@@ -38,6 +38,9 @@ public enum class StoreErrorCode {
     /** Any other error of the store API; [StoreException.platformCode] carries the detail. */
     Platform,
 
+    /** The Store holds an app update until the device is charging or on Wi-Fi. */
+    UpdateBlocked,
+
     /** A bug in this module or its native bridge. */
     Internal,
 }
