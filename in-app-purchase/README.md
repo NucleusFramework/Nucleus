@@ -110,7 +110,9 @@ when (val check = StoreUpdates.check()) {
 
 - `install()` shows the Store's dialog over the app; `install { silent = true }` shows nothing, and
   Windows may refuse it (policy, metered connection) — the flow then fails instead of asking.
-  Windows closes the app to install the new version.
+  Windows closes the app to install the new version; `install()` registers it for restart first
+  (`RegisterApplicationRestart`, updates only), which is how Microsoft documents relaunching it
+  afterwards. Windows only relaunches an app that has run for at least 60 seconds.
 - The flow ends with `Completed`, `UpToDate` (nothing to install) or `Cancelled` (the user declined
   the dialog); it fails with `StoreErrorCode.UpdateBlocked` while the Store waits for a charger or
   Wi-Fi. Cancelling the collection cancels the download.

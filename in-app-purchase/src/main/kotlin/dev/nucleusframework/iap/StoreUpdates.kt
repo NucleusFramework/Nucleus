@@ -37,8 +37,12 @@ public object StoreUpdates {
      * Downloads and installs the pending update, reporting its progress; the flow completes after
      * [StoreUpdateState.Completed], [StoreUpdateState.UpToDate] or [StoreUpdateState.Cancelled].
      * By default the Store shows its dialog over the app's window; [StoreUpdateOptions.silent]
-     * installs without any. Windows closes the app to install the new version. Cancelling the
-     * collection cancels the download.
+     * installs without any. Cancelling the collection cancels the download.
+     *
+     * Windows closes the app to install the new version. Before installing, this registers the
+     * app for restart (`RegisterApplicationRestart`, for updates only), which is how Microsoft
+     * documents getting it relaunched afterwards — and Windows only does so for an app that has
+     * run for at least 60 seconds. The relaunch gets no command-line arguments.
      *
      * The flow fails with a [StoreException] when the Store gives up, among them
      * [StoreErrorCode.UpdateBlocked] while it waits for a charger or Wi-Fi.
@@ -106,7 +110,7 @@ public enum class StoreUpdateState {
     Pending,
     Downloading,
 
-    /** Being installed; Windows closes the app during this step. */
+    /** Being installed; Windows closes the app during this step, then relaunches it. */
     Installing,
     Completed,
 

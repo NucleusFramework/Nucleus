@@ -29,6 +29,10 @@ use windows::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
 use windows::Win32::System::Com::{
     CoGetApartmentType, CoIncrementMTAUsage, APTTYPE, APTTYPEQUALIFIER,
 };
+use windows::Win32::System::Recovery::{
+    RegisterApplicationRestart, UnregisterApplicationRestart, RESTART_NO_CRASH, RESTART_NO_HANG,
+    RESTART_NO_REBOOT,
+};
 use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED};
 use windows::Win32::UI::Shell::IInitializeWithWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -1120,7 +1124,8 @@ fn update_outcome(result: &StorePackageUpdateResult) -> StoreResult<Value> {
 
 /// Downloads and installs this app's pending updates, with the Store's dialog parented on the
 /// app's window, or silently. Progress goes out as `updateProgress` events carrying the request
-/// id. Windows closes the app to install it.
+/// id. Windows closes the app to install it, and relaunches it because `RestartAfterUpdate`
+/// registered it.
 fn install_updates(request: &Request, args: &Value) -> StoreResult<Value> {
     let silent = args["silent"].as_bool().unwrap_or(false);
     let store = store_context()?;
@@ -1133,6 +1138,8 @@ fn install_updates(request: &Request, args: &Value) -> StoreResult<Value> {
     }
     let updates: IIterable<StorePackageUpdate> =
         updates.into_iter().map(Some).collect::<Vec<_>>().into();
+    // Windows closes the app to install its update; it only brings it back if the app asked.
+    let _restart = RestartAfterUpdate::register();
     let (what, operation) = if silent {
         (
             "TrySilentDownloadAndInstallStorePackageUpdatesAsync",
@@ -1155,6 +1162,30 @@ fn install_updates(request: &Request, args: &Value) -> StoreResult<Value> {
         .ctx("SetProgress")?;
     let result = wait_with_progress(request, what, &operation)?;
     update_outcome(&result)
+}
+
+/// Asks Windows to relaunch the app once the update it is about to install replaces it.
+///
+/// Microsoft documents that a desktop app the Store updates is closed, and restarted afterwards
+/// only if it called `RegisterApplicationRestart` first (never with `RESTART_NO_PATCH`, and only
+/// when it has run for 60 s). Crash, hang and reboot restarts stay off: this is about updates.
+/// Dropped without the process being replaced — a declined dialog, a failed update — it
+/// unregisters again, so nothing lingers. On an installed update the process is gone before.
+struct RestartAfterUpdate(bool);
+
+impl RestartAfterUpdate {
+    fn register() -> Self {
+        let flags = RESTART_NO_CRASH | RESTART_NO_HANG | RESTART_NO_REBOOT;
+        Self(unsafe { RegisterApplicationRestart(None, flags) }.is_ok())
+    }
+}
+
+impl Drop for RestartAfterUpdate {
+    fn drop(&mut self) {
+        if self.0 {
+            let _ = unsafe { UnregisterApplicationRestart() };
+        }
+    }
 }
 
 /// Opens this app's page in the Store app, for an update the user starts there.
@@ -1338,6 +1369,7 @@ mod tests {
     use windows::Win32::System::Com::{
         CoInitializeEx, APTTYPE_MAINSTA, APTTYPE_MTA, APTTYPE_STA, COINIT_APARTMENTTHREADED,
     };
+    use windows::Win32::System::Recovery::RESTART_NO_PATCH;
 
     #[test]
     fn consume_token_round_trips() {
@@ -1384,6 +1416,34 @@ mod tests {
         assert_eq!(classify(0x803F_6107), "notAssociated");
         assert_eq!(classify(0x803F_6100), "platform");
         assert_eq!(classify(0x8007_0005), "platform");
+    }
+
+    #[test]
+    fn an_update_registers_the_app_for_restart_and_unregisters_when_dropped() {
+        use windows::Win32::System::Recovery::GetApplicationRestartSettings;
+        // GetCurrentProcess's pseudo-handle, without pulling in Win32_System_Threading.
+        let current_process = windows::Win32::Foundation::HANDLE(-1isize as *mut core::ffi::c_void);
+        let settings = || {
+            let mut size = 0u32;
+            let mut flags = 0u32;
+            unsafe {
+                GetApplicationRestartSettings(current_process, None, &mut size, Some(&mut flags))
+            }
+            .ok()
+            .map(|()| flags)
+        };
+        {
+            let guard = RestartAfterUpdate::register();
+            assert!(guard.0);
+            // Restarted for updates only: crash, hang and reboot stay off, patch stays on.
+            let flags = settings().expect("registered");
+            assert_eq!(flags & RESTART_NO_PATCH.0, 0);
+            assert_eq!(
+                flags,
+                (RESTART_NO_CRASH | RESTART_NO_HANG | RESTART_NO_REBOOT).0
+            );
+        }
+        assert_eq!(settings(), None, "a dropped guard leaves no registration");
     }
 
     #[test]

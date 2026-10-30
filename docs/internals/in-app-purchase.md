@@ -82,6 +82,13 @@ together, so Kotlin reports the newest version. Installing is an
 update checks need the Store service: an unlisted app gets `0x803F6101` (pinned by
 `WindowsNativeTortureTest`, reported as `Platform`). Only a real listing can show an update.
 
+Windows closes the app to install its own update and does not bring it back by itself: the first
+in-app update of the Lab (1.0.4 → 1.0.5) installed and left it closed. Microsoft documents the
+relaunch as opt-in through `RegisterApplicationRestart` ("Restart automatically after receiving an
+update from the Microsoft Store"): `RestartAfterUpdate` registers right before the install, with
+crash, hang and reboot restarts off, and unregisters when the install returns without replacing
+the process (declined, failed). Windows skips the restart for an app that ran under 60 s.
+
 ## Failure modes
 
 - No package identity: fails fast with `NotPackaged`, before touching WinRT.
