@@ -2246,6 +2246,11 @@ private fun JvmApplicationContext.registerCopyGraalvmAwtDlls(
                 "mlib_image.dll",
                 "splashscreen.dll",
                 "javaaccessbridge.dll",
+                // javaaccessbridge.dll imports jawt.dll, which Windows resolves from the
+                // executable's directory, not bin/: without this copy, AWT dies at startup
+                // under Java Access Bridge (screen readers, `jabswitch -enable`) unless some
+                // JDK on PATH happens to provide it — never the case in an MSIX install.
+                "jawt.dll",
             )
         }
         into(outputDir)

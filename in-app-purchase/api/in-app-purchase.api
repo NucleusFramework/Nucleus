@@ -1,0 +1,422 @@
+public final class dev/nucleusframework/iap/AppLicense {
+	public fun <init> (ZZLjava/time/Instant;Ljava/time/Duration;ZLjava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/time/Instant;
+	public final fun component4 ()Ljava/time/Duration;
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (ZZLjava/time/Instant;Ljava/time/Duration;ZLjava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/iap/AppLicense;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/AppLicense;ZZLjava/time/Instant;Ljava/time/Duration;ZLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/iap/AppLicense;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpirationTime ()Ljava/time/Instant;
+	public final fun getSkuStoreId ()Ljava/lang/String;
+	public final fun getTrialTimeRemaining ()Ljava/time/Duration;
+	public final fun getTrialUniqueId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isActive ()Z
+	public final fun isFullLicense ()Z
+	public final fun isTrial ()Z
+	public final fun isTrialOwnedByThisUser ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/EntitlementState : java/lang/Enum {
+	public static final field Active Ldev/nucleusframework/iap/EntitlementState;
+	public static final field Expired Ldev/nucleusframework/iap/EntitlementState;
+	public static final field InBillingRetry Ldev/nucleusframework/iap/EntitlementState;
+	public static final field InGracePeriod Ldev/nucleusframework/iap/EntitlementState;
+	public static final field NotOwned Ldev/nucleusframework/iap/EntitlementState;
+	public static final field Revoked Ldev/nucleusframework/iap/EntitlementState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/EntitlementState;
+	public static fun values ()[Ldev/nucleusframework/iap/EntitlementState;
+}
+
+public final class dev/nucleusframework/iap/EntitlementStatus {
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/iap/EntitlementState;Ljava/time/Instant;Ljava/lang/Boolean;Ldev/nucleusframework/iap/Purchase;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/iap/EntitlementState;
+	public final fun component3 ()Ljava/time/Instant;
+	public final fun component4 ()Ljava/lang/Boolean;
+	public final fun component5 ()Ldev/nucleusframework/iap/Purchase;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/iap/EntitlementState;Ljava/time/Instant;Ljava/lang/Boolean;Ldev/nucleusframework/iap/Purchase;)Ldev/nucleusframework/iap/EntitlementStatus;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/EntitlementStatus;Ljava/lang/String;Ldev/nucleusframework/iap/EntitlementState;Ljava/time/Instant;Ljava/lang/Boolean;Ldev/nucleusframework/iap/Purchase;ILjava/lang/Object;)Ldev/nucleusframework/iap/EntitlementStatus;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpirationTime ()Ljava/time/Instant;
+	public final fun getProductId ()Ljava/lang/String;
+	public final fun getPurchase ()Ldev/nucleusframework/iap/Purchase;
+	public final fun getState ()Ldev/nucleusframework/iap/EntitlementState;
+	public final fun getWillAutoRenew ()Ljava/lang/Boolean;
+	public fun hashCode ()I
+	public final fun isActive ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/InAppPurchase {
+	public static final field INSTANCE Ldev/nucleusframework/iap/InAppPurchase;
+	public final fun appLicense (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun availability (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun consume (Ldev/nucleusframework/iap/Purchase;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun consume$default (Ldev/nucleusframework/iap/InAppPurchase;Ldev/nucleusframework/iap/Purchase;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun entitlement (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getAppLicenseUpdates ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getPurchaseUpdates ()Lkotlinx/coroutines/flow/Flow;
+	public final fun isSupported ()Z
+	public final fun product (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun products (Ljava/util/Collection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun products ([Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun purchase (Ldev/nucleusframework/iap/StoreProduct;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun purchase (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun purchase$default (Ldev/nucleusframework/iap/InAppPurchase;Ldev/nucleusframework/iap/StoreProduct;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun purchase$default (Ldev/nucleusframework/iap/InAppPurchase;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun purchaseApp (Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun purchaseApp$default (Ldev/nucleusframework/iap/InAppPurchase;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun purchases (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun restorePurchases (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/iap/IntroductoryOffer {
+	public fun <init> (Ljava/lang/String;Ljava/math/BigDecimal;Ldev/nucleusframework/iap/SubscriptionPeriod;ILdev/nucleusframework/iap/OfferPaymentMode;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/math/BigDecimal;
+	public final fun component3 ()Ldev/nucleusframework/iap/SubscriptionPeriod;
+	public final fun component4 ()I
+	public final fun component5 ()Ldev/nucleusframework/iap/OfferPaymentMode;
+	public final fun copy (Ljava/lang/String;Ljava/math/BigDecimal;Ldev/nucleusframework/iap/SubscriptionPeriod;ILdev/nucleusframework/iap/OfferPaymentMode;)Ldev/nucleusframework/iap/IntroductoryOffer;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/IntroductoryOffer;Ljava/lang/String;Ljava/math/BigDecimal;Ldev/nucleusframework/iap/SubscriptionPeriod;ILdev/nucleusframework/iap/OfferPaymentMode;ILjava/lang/Object;)Ldev/nucleusframework/iap/IntroductoryOffer;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDisplayPrice ()Ljava/lang/String;
+	public final fun getPaymentMode ()Ldev/nucleusframework/iap/OfferPaymentMode;
+	public final fun getPeriod ()Ldev/nucleusframework/iap/SubscriptionPeriod;
+	public final fun getPeriodCount ()I
+	public final fun getPrice ()Ljava/math/BigDecimal;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/OfferPaymentMode : java/lang/Enum {
+	public static final field FreeTrial Ldev/nucleusframework/iap/OfferPaymentMode;
+	public static final field PayAsYouGo Ldev/nucleusframework/iap/OfferPaymentMode;
+	public static final field PayUpFront Ldev/nucleusframework/iap/OfferPaymentMode;
+	public static final field Unknown Ldev/nucleusframework/iap/OfferPaymentMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/OfferPaymentMode;
+	public static fun values ()[Ldev/nucleusframework/iap/OfferPaymentMode;
+}
+
+public final class dev/nucleusframework/iap/PeriodUnit : java/lang/Enum {
+	public static final field Day Ldev/nucleusframework/iap/PeriodUnit;
+	public static final field Hour Ldev/nucleusframework/iap/PeriodUnit;
+	public static final field Minute Ldev/nucleusframework/iap/PeriodUnit;
+	public static final field Month Ldev/nucleusframework/iap/PeriodUnit;
+	public static final field Unknown Ldev/nucleusframework/iap/PeriodUnit;
+	public static final field Week Ldev/nucleusframework/iap/PeriodUnit;
+	public static final field Year Ldev/nucleusframework/iap/PeriodUnit;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/PeriodUnit;
+	public static fun values ()[Ldev/nucleusframework/iap/PeriodUnit;
+}
+
+public final class dev/nucleusframework/iap/ProductType : java/lang/Enum {
+	public static final field AutoRenewableSubscription Ldev/nucleusframework/iap/ProductType;
+	public static final field Consumable Ldev/nucleusframework/iap/ProductType;
+	public static final field NonConsumable Ldev/nucleusframework/iap/ProductType;
+	public static final field NonRenewingSubscription Ldev/nucleusframework/iap/ProductType;
+	public static final field Unknown Ldev/nucleusframework/iap/ProductType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/ProductType;
+	public static fun values ()[Ldev/nucleusframework/iap/ProductType;
+}
+
+public final class dev/nucleusframework/iap/Purchase {
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/iap/ProductType;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;Ljava/time/Instant;Ljava/time/Instant;ILjava/lang/Boolean;Ldev/nucleusframework/iap/PurchaseState;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ldev/nucleusframework/iap/PurchaseState;
+	public final fun component11 ()Ljava/lang/String;
+	public final fun component12 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/iap/ProductType;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/time/Instant;
+	public final fun component6 ()Ljava/time/Instant;
+	public final fun component7 ()Ljava/time/Instant;
+	public final fun component8 ()I
+	public final fun component9 ()Ljava/lang/Boolean;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/iap/ProductType;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;Ljava/time/Instant;Ljava/time/Instant;ILjava/lang/Boolean;Ldev/nucleusframework/iap/PurchaseState;Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/iap/Purchase;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/Purchase;Ljava/lang/String;Ldev/nucleusframework/iap/ProductType;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;Ljava/time/Instant;Ljava/time/Instant;ILjava/lang/Boolean;Ldev/nucleusframework/iap/PurchaseState;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/iap/Purchase;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConsumeToken ()Ljava/lang/String;
+	public final fun getExpirationTime ()Ljava/time/Instant;
+	public final fun getOriginalTransactionId ()Ljava/lang/String;
+	public final fun getProductId ()Ljava/lang/String;
+	public final fun getProductType ()Ldev/nucleusframework/iap/ProductType;
+	public final fun getPurchaseTime ()Ljava/time/Instant;
+	public final fun getQuantity ()I
+	public final fun getRevocationTime ()Ljava/time/Instant;
+	public final fun getSignedTransaction ()Ljava/lang/String;
+	public final fun getState ()Ldev/nucleusframework/iap/PurchaseState;
+	public final fun getTransactionId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isAutoRenewing ()Ljava/lang/Boolean;
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface annotation class dev/nucleusframework/iap/PurchaseDsl : java/lang/annotation/Annotation {
+}
+
+public final class dev/nucleusframework/iap/PurchaseOptions {
+	public final fun windows (Lkotlin/jvm/functions/Function1;)V
+}
+
+public abstract interface class dev/nucleusframework/iap/PurchaseResult {
+}
+
+public final class dev/nucleusframework/iap/PurchaseResult$Cancelled : dev/nucleusframework/iap/PurchaseResult {
+	public static final field INSTANCE Ldev/nucleusframework/iap/PurchaseResult$Cancelled;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/PurchaseResult$Failed : dev/nucleusframework/iap/PurchaseResult {
+	public fun <init> (Ldev/nucleusframework/iap/StoreException;)V
+	public final fun component1 ()Ldev/nucleusframework/iap/StoreException;
+	public final fun copy (Ldev/nucleusframework/iap/StoreException;)Ldev/nucleusframework/iap/PurchaseResult$Failed;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/PurchaseResult$Failed;Ldev/nucleusframework/iap/StoreException;ILjava/lang/Object;)Ldev/nucleusframework/iap/PurchaseResult$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getError ()Ldev/nucleusframework/iap/StoreException;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/PurchaseResult$Pending : dev/nucleusframework/iap/PurchaseResult {
+	public static final field INSTANCE Ldev/nucleusframework/iap/PurchaseResult$Pending;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/PurchaseResult$Success : dev/nucleusframework/iap/PurchaseResult {
+	public fun <init> (Ldev/nucleusframework/iap/Purchase;Z)V
+	public synthetic fun <init> (Ldev/nucleusframework/iap/Purchase;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/iap/Purchase;
+	public final fun component2 ()Z
+	public final fun copy (Ldev/nucleusframework/iap/Purchase;Z)Ldev/nucleusframework/iap/PurchaseResult$Success;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/PurchaseResult$Success;Ldev/nucleusframework/iap/Purchase;ZILjava/lang/Object;)Ldev/nucleusframework/iap/PurchaseResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAlreadyOwned ()Z
+	public final fun getPurchase ()Ldev/nucleusframework/iap/Purchase;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/PurchaseState : java/lang/Enum {
+	public static final field Expired Ldev/nucleusframework/iap/PurchaseState;
+	public static final field Pending Ldev/nucleusframework/iap/PurchaseState;
+	public static final field Purchased Ldev/nucleusframework/iap/PurchaseState;
+	public static final field Revoked Ldev/nucleusframework/iap/PurchaseState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/PurchaseState;
+	public static fun values ()[Ldev/nucleusframework/iap/PurchaseState;
+}
+
+public abstract interface class dev/nucleusframework/iap/PurchaseUpdate {
+	public abstract fun getPurchase ()Ldev/nucleusframework/iap/Purchase;
+}
+
+public final class dev/nucleusframework/iap/PurchaseUpdate$Purchased : dev/nucleusframework/iap/PurchaseUpdate {
+	public fun <init> (Ldev/nucleusframework/iap/Purchase;)V
+	public final fun component1 ()Ldev/nucleusframework/iap/Purchase;
+	public final fun copy (Ldev/nucleusframework/iap/Purchase;)Ldev/nucleusframework/iap/PurchaseUpdate$Purchased;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/PurchaseUpdate$Purchased;Ldev/nucleusframework/iap/Purchase;ILjava/lang/Object;)Ldev/nucleusframework/iap/PurchaseUpdate$Purchased;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getPurchase ()Ldev/nucleusframework/iap/Purchase;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/PurchaseUpdate$Revoked : dev/nucleusframework/iap/PurchaseUpdate {
+	public fun <init> (Ldev/nucleusframework/iap/Purchase;)V
+	public final fun component1 ()Ldev/nucleusframework/iap/Purchase;
+	public final fun copy (Ldev/nucleusframework/iap/Purchase;)Ldev/nucleusframework/iap/PurchaseUpdate$Revoked;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/PurchaseUpdate$Revoked;Ldev/nucleusframework/iap/Purchase;ILjava/lang/Object;)Ldev/nucleusframework/iap/PurchaseUpdate$Revoked;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getPurchase ()Ldev/nucleusframework/iap/Purchase;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/StoreAvailability : java/lang/Enum {
+	public static final field Available Ldev/nucleusframework/iap/StoreAvailability;
+	public static final field NotPackaged Ldev/nucleusframework/iap/StoreAvailability;
+	public static final field PaymentsRestricted Ldev/nucleusframework/iap/StoreAvailability;
+	public static final field Unsupported Ldev/nucleusframework/iap/StoreAvailability;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/StoreAvailability;
+	public static fun values ()[Ldev/nucleusframework/iap/StoreAvailability;
+}
+
+public final class dev/nucleusframework/iap/StoreErrorCode : java/lang/Enum {
+	public static final field InsufficientQuantity Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field Internal Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field InvalidArgument Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field Network Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field NoOwnerWindow Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field NotAssociated Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field NotPackaged Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field Platform Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field ProductNotFound Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field Server Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field Unsupported Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field UpdateBlocked Ldev/nucleusframework/iap/StoreErrorCode;
+	public static final field VerificationFailed Ldev/nucleusframework/iap/StoreErrorCode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/StoreErrorCode;
+	public static fun values ()[Ldev/nucleusframework/iap/StoreErrorCode;
+}
+
+public final class dev/nucleusframework/iap/StoreException : java/lang/Exception {
+	public fun <init> (Ldev/nucleusframework/iap/StoreErrorCode;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ldev/nucleusframework/iap/StoreErrorCode;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getCode ()Ldev/nucleusframework/iap/StoreErrorCode;
+	public final fun getPlatformCode ()Ljava/lang/Integer;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/StoreProduct {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/iap/ProductType;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/lang/String;Ldev/nucleusframework/iap/SubscriptionInfo;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ldev/nucleusframework/iap/ProductType;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/math/BigDecimal;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ldev/nucleusframework/iap/SubscriptionInfo;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/iap/ProductType;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/lang/String;Ldev/nucleusframework/iap/SubscriptionInfo;Ljava/lang/String;)Ldev/nucleusframework/iap/StoreProduct;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/StoreProduct;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/iap/ProductType;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/lang/String;Ldev/nucleusframework/iap/SubscriptionInfo;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/iap/StoreProduct;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCurrencyCode ()Ljava/lang/String;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getDisplayPrice ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getPlatformId ()Ljava/lang/String;
+	public final fun getPrice ()Ljava/math/BigDecimal;
+	public final fun getSubscription ()Ldev/nucleusframework/iap/SubscriptionInfo;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getType ()Ldev/nucleusframework/iap/ProductType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/iap/StoreUpdateCheck {
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateCheck$Available : dev/nucleusframework/iap/StoreUpdateCheck {
+	public fun <init> (Ljava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Ldev/nucleusframework/iap/StoreUpdateCheck$Available;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/StoreUpdateCheck$Available;Ljava/lang/String;ZILjava/lang/Object;)Ldev/nucleusframework/iap/StoreUpdateCheck$Available;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isMandatory ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateCheck$UpToDate : dev/nucleusframework/iap/StoreUpdateCheck {
+	public static final field INSTANCE Ldev/nucleusframework/iap/StoreUpdateCheck$UpToDate;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateOptions {
+	public final fun getSilent ()Z
+	public final fun setSilent (Z)V
+	public final fun windows (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateProgress {
+	public fun <init> (Ldev/nucleusframework/iap/StoreUpdateState;DJJ)V
+	public final fun component1 ()Ldev/nucleusframework/iap/StoreUpdateState;
+	public final fun component2 ()D
+	public final fun component3 ()J
+	public final fun component4 ()J
+	public final fun copy (Ldev/nucleusframework/iap/StoreUpdateState;DJJ)Ldev/nucleusframework/iap/StoreUpdateProgress;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/StoreUpdateProgress;Ldev/nucleusframework/iap/StoreUpdateState;DJJILjava/lang/Object;)Ldev/nucleusframework/iap/StoreUpdateProgress;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBytesDownloaded ()J
+	public final fun getBytesTotal ()J
+	public final fun getProgress ()D
+	public final fun getState ()Ldev/nucleusframework/iap/StoreUpdateState;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/StoreUpdateState : java/lang/Enum {
+	public static final field Cancelled Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field Completed Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field Downloading Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field Installing Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field Pending Ldev/nucleusframework/iap/StoreUpdateState;
+	public static final field UpToDate Ldev/nucleusframework/iap/StoreUpdateState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/iap/StoreUpdateState;
+	public static fun values ()[Ldev/nucleusframework/iap/StoreUpdateState;
+}
+
+public final class dev/nucleusframework/iap/StoreUpdates {
+	public static final field INSTANCE Ldev/nucleusframework/iap/StoreUpdates;
+	public final fun check (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun install (Lkotlin/jvm/functions/Function1;)Lkotlinx/coroutines/flow/Flow;
+	public static synthetic fun install$default (Ldev/nucleusframework/iap/StoreUpdates;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
+	public final fun isSupported ()Z
+	public final fun openStorePage (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/iap/SubscriptionInfo {
+	public fun <init> (Ldev/nucleusframework/iap/SubscriptionPeriod;Ljava/lang/String;Ldev/nucleusframework/iap/IntroductoryOffer;)V
+	public final fun component1 ()Ldev/nucleusframework/iap/SubscriptionPeriod;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/nucleusframework/iap/IntroductoryOffer;
+	public final fun copy (Ldev/nucleusframework/iap/SubscriptionPeriod;Ljava/lang/String;Ldev/nucleusframework/iap/IntroductoryOffer;)Ldev/nucleusframework/iap/SubscriptionInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/SubscriptionInfo;Ldev/nucleusframework/iap/SubscriptionPeriod;Ljava/lang/String;Ldev/nucleusframework/iap/IntroductoryOffer;ILjava/lang/Object;)Ldev/nucleusframework/iap/SubscriptionInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGroupId ()Ljava/lang/String;
+	public final fun getIntroductoryOffer ()Ldev/nucleusframework/iap/IntroductoryOffer;
+	public final fun getPeriod ()Ldev/nucleusframework/iap/SubscriptionPeriod;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/SubscriptionPeriod {
+	public fun <init> (ILdev/nucleusframework/iap/PeriodUnit;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ldev/nucleusframework/iap/PeriodUnit;
+	public final fun copy (ILdev/nucleusframework/iap/PeriodUnit;)Ldev/nucleusframework/iap/SubscriptionPeriod;
+	public static synthetic fun copy$default (Ldev/nucleusframework/iap/SubscriptionPeriod;ILdev/nucleusframework/iap/PeriodUnit;ILjava/lang/Object;)Ldev/nucleusframework/iap/SubscriptionPeriod;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUnit ()Ldev/nucleusframework/iap/PeriodUnit;
+	public final fun getValue ()I
+	public fun hashCode ()I
+	public final fun toIso8601 ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/iap/WindowsPurchaseOptions {
+	public final fun getOwnerWindowHandle ()Ljava/lang/Long;
+	public final fun getSkuStoreId ()Ljava/lang/String;
+	public final fun setOwnerWindowHandle (Ljava/lang/Long;)V
+	public final fun setSkuStoreId (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/iap/WindowsStoreUpdateOptions {
+	public final fun getOwnerWindowHandle ()Ljava/lang/Long;
+	public final fun setOwnerWindowHandle (Ljava/lang/Long;)V
+}
+

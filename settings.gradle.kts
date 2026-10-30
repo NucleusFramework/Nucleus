@@ -77,6 +77,7 @@ include(":share")
 include(":authentication")
 include(":speech-recognition")
 include(":location")
+include(":in-app-purchase")
 
 // Nucleus Lab: the single test bench app (examples/lab). One module per probe domain;
 // each contributes its probes to the Metro graph assembled by :examples:lab:app.
