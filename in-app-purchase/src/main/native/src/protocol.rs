@@ -152,6 +152,11 @@ pub fn span_ticks_to_millis(ticks: i64) -> Option<i64> {
     (millis < UNLIMITED_SPAN_MILLIS).then_some(millis)
 }
 
+/// Whether an add-on license still entitles: one that never expires, or one that ends later.
+pub fn license_still_valid(expiration_millis: Option<i64>, now_millis: i64) -> bool {
+    expiration_millis.is_none_or(|end| end > now_millis)
+}
+
 /// What is left of a trial, in milliseconds; `None` outside a trial and for an unlimited one.
 ///
 /// A time-limited trial ends at the license's `ExpirationDate`: `TrialTimeRemaining` only
@@ -291,6 +296,14 @@ pub fn normalize_price(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_license_entitles_until_it_expires() {
+        assert!(license_still_valid(None, 1_000));
+        assert!(license_still_valid(Some(2_000), 1_000));
+        assert!(!license_still_valid(Some(1_000), 1_000));
+        assert!(!license_still_valid(Some(500), 1_000));
+    }
 
     #[test]
     fn a_timed_trial_counts_down_to_its_expiration() {

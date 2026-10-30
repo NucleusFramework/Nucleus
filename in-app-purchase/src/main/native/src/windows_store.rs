@@ -42,11 +42,11 @@ use windows_future::{
 };
 
 use crate::protocol::{
-    normalize_price, period_unit, store_id_from_sku_store_id, store_ticks_to_unix_millis, to_value,
-    trial_time_left, AppLicenseDto, EntitlementDto, OfferDto, PeriodDto, ProductDto, PurchaseDto,
-    StoreError, StoreResult, SubscriptionDto, ENTITLEMENT_ACTIVE, ENTITLEMENT_EXPIRED,
-    ENTITLEMENT_NOT_OWNED, PRODUCT_AUTO_RENEWABLE, PRODUCT_CONSUMABLE, PRODUCT_NON_CONSUMABLE,
-    PRODUCT_UNKNOWN, STATE_EXPIRED, STATE_PURCHASED,
+    license_still_valid, normalize_price, period_unit, store_id_from_sku_store_id,
+    store_ticks_to_unix_millis, to_value, trial_time_left, AppLicenseDto, EntitlementDto, OfferDto,
+    PeriodDto, ProductDto, PurchaseDto, StoreError, StoreResult, SubscriptionDto,
+    ENTITLEMENT_ACTIVE, ENTITLEMENT_EXPIRED, ENTITLEMENT_NOT_OWNED, PRODUCT_AUTO_RENEWABLE,
+    PRODUCT_CONSUMABLE, PRODUCT_NON_CONSUMABLE, PRODUCT_UNKNOWN, STATE_EXPIRED, STATE_PURCHASED,
 };
 use crate::requests::{cancelled_error, Request};
 use crate::Sink;
@@ -638,6 +638,31 @@ fn license_purchase(license: &StoreLicense, product_type: &'static str) -> Optio
     })
 }
 
+/// The purchase behind a valid license of [product_id] on this device, if any.
+///
+/// Microsoft's guidance is to check the license before offering a purchase, and the Store was
+/// seen offering an owned durable — and the owned app itself — for sale again, asking to pay a
+/// second time. A license this device holds therefore answers at once, with no Store window; one
+/// not synced here yet still falls through to the Store, which is no worse than without it.
+fn owned_add_on(
+    request: &Request,
+    store: &StoreContext,
+    product_id: &str,
+    kind: &'static str,
+) -> Option<PurchaseDto> {
+    let license = app_license(request, store).ok()?;
+    add_on_licenses(&license)
+        .ok()?
+        .into_iter()
+        .find(|l| license_product_id(l).as_deref() == Some(product_id))
+        .filter(|l| license_still_valid(license_expiration(l), now_millis()))
+        .and_then(|l| license_purchase(&l, kind))
+        .map(|mut purchase| {
+            purchase.state = STATE_PURCHASED;
+            purchase
+        })
+}
+
 /// `"<product StoreId>|<tracking GUID>"`: the GUID is minted once per purchase, so retrying
 /// `consume` with the same purchase is deduplicated by the Store instead of fulfilling twice.
 fn consume_token(store_id: &str) -> StoreResult<String> {
@@ -812,6 +837,12 @@ fn purchase(request: &Request, args: &Value) -> StoreResult<Value> {
     attach_owner(&store, owner)?;
     let product = find_product(request, &store, product_id)?;
     let kind = product_kind(&product);
+    // See `owned_add_on`: what this device already licenses is never put up for sale again.
+    if kind != PRODUCT_CONSUMABLE {
+        if let Some(owned) = owned_add_on(request, &store, product_id, kind) {
+            return Ok(json!({ "status": "alreadyOwned", "purchase": to_value(&owned)? }));
+        }
+    }
 
     let operation = match sku_id {
         Some(sku_id) => {
@@ -879,6 +910,10 @@ fn purchase(request: &Request, args: &Value) -> StoreResult<Value> {
 fn purchase_app(request: &Request, args: &Value) -> StoreResult<Value> {
     let owner = resolve_owner(args["ownerWindow"].as_i64())?;
     let store = store_context()?;
+    // Same rule as `owned_add_on`: a full Store license on this device is never sold again.
+    if let Some(owned) = owned_app(request, &store) {
+        return Ok(json!({ "status": "alreadyOwned", "purchase": to_value(&owned)? }));
+    }
     attach_owner(&store, owner)?;
     let found = wait(
         request,
@@ -917,6 +952,31 @@ fn purchase_app(request: &Request, args: &Value) -> StoreResult<Value> {
         consume_token: None,
     };
     Ok(json!({ "status": outcome, "purchase": to_value(&purchase)? }))
+}
+
+/// The app's own purchase when this device holds its full license: active, not a trial, and
+/// granted by the Store (an unlicensed install has no SKU and must not read as bought).
+fn owned_app(request: &Request, store: &StoreContext) -> Option<PurchaseDto> {
+    let license = app_license(request, store).ok()?;
+    let dto = app_license_dto(&license);
+    if !dto.is_active || dto.is_trial {
+        return None;
+    }
+    let sku = dto.sku_store_id?;
+    Some(PurchaseDto {
+        product_id: store_id_from_sku_store_id(&sku).to_owned(),
+        product_type: PRODUCT_NON_CONSUMABLE,
+        transaction_id: None,
+        original_transaction_id: None,
+        purchase_time: None,
+        expiration_time: None,
+        revocation_time: None,
+        quantity: 1,
+        is_auto_renewing: None,
+        state: STATE_PURCHASED,
+        jws: None,
+        consume_token: None,
+    })
 }
 
 fn consume(request: &Request, args: &Value) -> StoreResult<Value> {

@@ -61,6 +61,15 @@ describe usage-limited trials.
 `purchaseApp` buys `GetStoreProductForCurrentAppAsync`'s product and shares `purchase_outcome`
 with add-on purchases, so both map Store statuses the same way.
 
+## Owned products are not offered again
+
+On the real Store install the purchase dialog offered both an owned durable add-on and the
+owned app (full license, SKU `0010`) for sale again, asking to pay a second time; Microsoft only
+documents that a non-expiring durable "can only be purchased once", and no other library checks
+first (tauri-plugin-iap calls `RequestPurchaseAsync` directly). `owned_add_on` / `owned_app`
+read the local licenses before any window: a valid one answers `alreadyOwned`. A device not
+synced yet falls through to the Store, as before.
+
 ## App updates
 
 `StoreUpdates` rides the same bridge (`updates.check`, `updates.install`,

@@ -82,6 +82,11 @@ public object InAppPurchase {
      * Store failures come back as [PurchaseResult.Failed], never as an exception. Non-consumables
      * and subscriptions are finished by the store at once; a consumable stays pending in
      * [purchases] until [consume] reports it delivered.
+     *
+     * A non-consumable or subscription this device already licenses returns
+     * `Success(alreadyOwned = true)` without showing anything: the Microsoft Store was seen
+     * offering an owned product for sale again. On a device whose licenses have not synced yet
+     * the Store still decides, so hide the buy button while [entitlement] is active.
      */
     public suspend fun purchase(
         product: StoreProduct,
@@ -149,7 +154,10 @@ public object InAppPurchase {
     /**
      * Shows the Store's purchase dialog for the app itself — the "Buy the full version" of a
      * trial. On success the [PurchaseResult.Success] purchase's `productId` is the app's
-     * `StoreId`, and [appLicenseUpdates] reports the new license.
+     * `StoreId`; read [appLicense] again for the new license.
+     *
+     * When this device already holds the full license, returns `Success(alreadyOwned = true)`
+     * without showing anything, as [purchase] does for an owned add-on.
      *
      * Store failures come back as [PurchaseResult.Failed], never as an exception.
      */

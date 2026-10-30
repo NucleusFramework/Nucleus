@@ -69,6 +69,11 @@ scope.launch {
   `isTrialOwnedByThisUser` only describe usage-limited trials and stay `null` / `false` for it.
 - `purchaseApp()` shows the Store's dialog for the app itself; its result works like
   `purchase()`, with the app's `StoreId` as `productId`.
+- **Never sold twice from here**: the Microsoft Store was seen offering an owned durable add-on,
+  and the owned app itself, for sale again. `purchase()` and `purchaseApp()` therefore check this
+  device's licenses first and return `Success(alreadyOwned = true)` without any window. A device
+  whose licenses have not synced yet still gets the Store's dialog: hide the buy button while
+  `entitlement()` is active (or `appLicense().isFullLicense`), as Microsoft recommends.
 
 ### Add-ons
 
