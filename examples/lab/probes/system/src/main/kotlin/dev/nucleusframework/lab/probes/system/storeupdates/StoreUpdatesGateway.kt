@@ -1,15 +1,15 @@
 package dev.nucleusframework.lab.probes.system.storeupdates
 
-import dev.nucleusframework.iap.StoreUpdateCheck
-import dev.nucleusframework.iap.StoreUpdateProgress
-import dev.nucleusframework.iap.StoreUpdates
 import dev.nucleusframework.lab.core.Availability
+import dev.nucleusframework.store.microsoft.MicrosoftStore
+import dev.nucleusframework.store.microsoft.StoreUpdateCheck
+import dev.nucleusframework.store.microsoft.StoreUpdateProgress
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.flow.Flow
 
-/** Port over `in-app-purchase`'s [StoreUpdates]. Store failures surface as `StoreException`. */
+/** Port over `microsoft-store`'s [StoreUpdates]. Store failures surface as `StoreException`. */
 interface StoreUpdatesGateway {
     fun supported(): Availability
 
@@ -26,22 +26,22 @@ interface StoreUpdatesGateway {
 @ContributesBinding(AppScope::class)
 @Inject
 class NucleusStoreUpdatesGateway : StoreUpdatesGateway {
-    // A broken nucleus_iap throws a LinkageError from here: it must make the probe report it,
+    // A broken nucleus_msstore throws a LinkageError from here: it must make the probe report it,
     // not take the Lab down.
-    override fun supported(): Availability = Availability.catching { StoreUpdates.isSupported }
+    override fun supported(): Availability = Availability.catching { MicrosoftStore.isSupported }
 
-    override suspend fun check(): StoreUpdateCheck = StoreUpdates.check()
+    override suspend fun check(): StoreUpdateCheck = MicrosoftStore.updates.check()
 
     override fun install(
         silent: Boolean,
         hwnd: Long,
     ): Flow<StoreUpdateProgress> =
-        StoreUpdates.install {
+        MicrosoftStore.updates.install {
             this.silent = silent
             windows { ownerWindowHandle = hwnd.takeIf { it != 0L } }
         }
 
     override suspend fun openStorePage() {
-        StoreUpdates.openStorePage()
+        MicrosoftStore.updates.openStorePage()
     }
 }

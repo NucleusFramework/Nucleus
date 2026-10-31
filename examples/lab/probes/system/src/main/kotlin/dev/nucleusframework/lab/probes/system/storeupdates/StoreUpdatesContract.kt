@@ -1,14 +1,14 @@
 package dev.nucleusframework.lab.probes.system.storeupdates
 
 import androidx.compose.runtime.Immutable
-import dev.nucleusframework.iap.StoreUpdateCheck
-import dev.nucleusframework.iap.StoreUpdateProgress
 import dev.nucleusframework.lab.core.Availability
 import dev.nucleusframework.lab.core.mvi.CallOutcome
 import dev.nucleusframework.lab.core.mvi.CallRecord
 import dev.nucleusframework.lab.core.mvi.Reducer
 import dev.nucleusframework.lab.core.mvi.append
 import dev.nucleusframework.lab.core.mvi.plusCall
+import dev.nucleusframework.store.microsoft.StoreUpdateCheck
+import dev.nucleusframework.store.microsoft.StoreUpdateProgress
 
 @Immutable
 data class StoreUpdatesState(

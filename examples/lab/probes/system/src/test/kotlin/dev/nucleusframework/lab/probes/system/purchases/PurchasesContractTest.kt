@@ -1,7 +1,7 @@
 package dev.nucleusframework.lab.probes.system.purchases
 
-import dev.nucleusframework.iap.AppLicense
 import dev.nucleusframework.lab.core.mvi.CallOutcome
+import dev.nucleusframework.store.microsoft.AppLicense
 import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals

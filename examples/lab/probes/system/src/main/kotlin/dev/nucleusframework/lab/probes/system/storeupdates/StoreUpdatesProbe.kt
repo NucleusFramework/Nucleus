@@ -5,7 +5,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import dev.nucleusframework.application.LocalNucleusWindow
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.iap.StoreUpdateCheck
 import dev.nucleusframework.lab.core.Capability
 import dev.nucleusframework.lab.core.Check
 import dev.nucleusframework.lab.core.Domain
@@ -22,6 +21,7 @@ import dev.nucleusframework.lab.designsystem.Readout
 import dev.nucleusframework.lab.designsystem.SecondaryAction
 import dev.nucleusframework.lab.designsystem.SubSection
 import dev.nucleusframework.lab.designsystem.Tone
+import dev.nucleusframework.store.microsoft.StoreUpdateCheck
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
@@ -38,7 +38,7 @@ class StoreUpdatesProbe : Probe {
             summary =
                 "Does the Microsoft Store tell the Lab a newer version exists, and install it from " +
                     "inside the app with its progress?",
-            modules = listOf("in-app-purchase"),
+            modules = listOf("microsoft-store"),
             platforms = setOf(Platform.Windows),
             checks =
                 listOf(

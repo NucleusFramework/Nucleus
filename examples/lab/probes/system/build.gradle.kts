@@ -23,7 +23,7 @@ dependencies {
     implementation(project(":share"))
     implementation(project(":authentication"))
     implementation(project(":location"))
-    implementation(project(":in-app-purchase"))
+    implementation(project(":microsoft-store"))
     // Extract-and-load JNI library (#317): the call site the sandboxed pipeline rewrites.
     implementation(libs.zstd.kmp.jvm)
 

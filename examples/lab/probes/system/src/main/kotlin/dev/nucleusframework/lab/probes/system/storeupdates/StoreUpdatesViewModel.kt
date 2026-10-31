@@ -1,12 +1,12 @@
 package dev.nucleusframework.lab.probes.system.storeupdates
 
 import androidx.lifecycle.ViewModel
-import dev.nucleusframework.iap.StoreException
 import dev.nucleusframework.lab.core.format.summary
 import dev.nucleusframework.lab.core.mvi.CallOutcome
 import dev.nucleusframework.lab.core.mvi.MviViewModel
 import dev.nucleusframework.lab.core.timeline.Severity
 import dev.nucleusframework.lab.core.timeline.Timeline
+import dev.nucleusframework.store.microsoft.StoreException
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject

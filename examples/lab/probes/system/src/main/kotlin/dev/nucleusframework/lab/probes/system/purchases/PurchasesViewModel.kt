@@ -1,8 +1,6 @@
 package dev.nucleusframework.lab.probes.system.purchases
 
 import androidx.lifecycle.ViewModel
-import dev.nucleusframework.iap.PurchaseResult
-import dev.nucleusframework.iap.StoreException
 import dev.nucleusframework.lab.core.commands.LabCommands
 import dev.nucleusframework.lab.core.format.summary
 import dev.nucleusframework.lab.core.mvi.CallOutcome
@@ -10,6 +8,8 @@ import dev.nucleusframework.lab.core.mvi.MviViewModel
 import dev.nucleusframework.lab.core.mvi.unjudgedDelivery
 import dev.nucleusframework.lab.core.timeline.Severity
 import dev.nucleusframework.lab.core.timeline.Timeline
+import dev.nucleusframework.store.microsoft.PurchaseResult
+import dev.nucleusframework.store.microsoft.StoreException
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
@@ -80,16 +80,16 @@ class PurchasesViewModel(
                     }
             }
             PurchasesIntent.ListPurchases ->
-                call("purchases()") { gateway.purchases() }?.let { dispatch(PurchasesEvent.PurchasesListed(it)) }
+                call("list()") { gateway.purchases() }?.let { dispatch(PurchasesEvent.PurchasesListed(it)) }
             PurchasesIntent.Restore ->
-                call("restorePurchases()") { gateway.restorePurchases() }?.let {
+                call("restore()") { gateway.restorePurchases() }?.let {
                     dispatch(PurchasesEvent.PurchasesListed(it))
                 }
             is PurchasesIntent.Entitlement ->
                 call("entitlement(${intent.productId})") { gateway.entitlement(intent.productId) }
             is PurchasesIntent.Consume -> {
                 call("consume(${intent.purchase.productId})") { gateway.consume(intent.purchase) } ?: return
-                call("purchases()") { gateway.purchases() }?.let { dispatch(PurchasesEvent.PurchasesListed(it)) }
+                call("list()") { gateway.purchases() }?.let { dispatch(PurchasesEvent.PurchasesListed(it)) }
             }
             is PurchasesIntent.BuyApp -> {
                 purchaseCall("purchaseApp()") { gateway.purchaseApp(intent.hwnd) }

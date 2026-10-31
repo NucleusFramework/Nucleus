@@ -1,14 +1,14 @@
 package dev.nucleusframework.lab.probes.system.purchases
 
-import dev.nucleusframework.iap.AppLicense
-import dev.nucleusframework.iap.EntitlementStatus
-import dev.nucleusframework.iap.InAppPurchase
-import dev.nucleusframework.iap.Purchase
-import dev.nucleusframework.iap.PurchaseResult
-import dev.nucleusframework.iap.PurchaseUpdate
-import dev.nucleusframework.iap.StoreAvailability
-import dev.nucleusframework.iap.StoreProduct
 import dev.nucleusframework.lab.core.Availability
+import dev.nucleusframework.store.microsoft.AppLicense
+import dev.nucleusframework.store.microsoft.EntitlementStatus
+import dev.nucleusframework.store.microsoft.MicrosoftStore
+import dev.nucleusframework.store.microsoft.Purchase
+import dev.nucleusframework.store.microsoft.PurchaseResult
+import dev.nucleusframework.store.microsoft.PurchaseUpdate
+import dev.nucleusframework.store.microsoft.StoreAvailability
+import dev.nucleusframework.store.microsoft.StoreProduct
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -20,7 +20,7 @@ import java.util.logging.Level
 import java.util.logging.LogRecord
 import java.util.logging.Logger
 
-/** Port over `in-app-purchase`. Store failures surface as `StoreException`, as the module throws them. */
+/** Port over `microsoft-store`. Store failures surface as `StoreException`, as the module throws them. */
 interface PurchasesGateway {
     fun supported(): Availability
 
@@ -59,37 +59,44 @@ interface PurchasesGateway {
 @ContributesBinding(AppScope::class)
 @Inject
 class NucleusPurchasesGateway : PurchasesGateway {
-    // A broken nucleus_iap throws a LinkageError from here: it must make the probe report it,
+    // A broken nucleus_msstore throws a LinkageError from here: it must make the probe report it,
     // not take the Lab down.
-    override fun supported(): Availability = Availability.catching { InAppPurchase.isSupported }
+    override fun supported(): Availability = Availability.catching { MicrosoftStore.isSupported }
 
-    override suspend fun availability(): StoreAvailability = InAppPurchase.availability()
+    override suspend fun availability(): StoreAvailability = MicrosoftStore.availability()
 
-    override suspend fun appLicense(): AppLicense = InAppPurchase.appLicense()
+    override suspend fun appLicense(): AppLicense = MicrosoftStore.purchases.appLicense()
 
     override suspend fun purchaseApp(hwnd: Long): PurchaseResult =
-        InAppPurchase.purchaseApp { windows { ownerWindowHandle = hwnd.takeIf { it != 0L } } }
+        MicrosoftStore.purchases.purchaseApp { windows { ownerWindowHandle = hwnd.takeIf { it != 0L } } }
 
-    override suspend fun products(ids: List<String>): List<StoreProduct> = InAppPurchase.products(ids)
+    override suspend fun products(ids: List<String>): List<StoreProduct> = MicrosoftStore.purchases.products(ids)
 
     override suspend fun purchase(
         productId: String,
         hwnd: Long,
-    ): PurchaseResult = InAppPurchase.purchase(productId) { windows { ownerWindowHandle = hwnd.takeIf { it != 0L } } }
+    ): PurchaseResult =
+        MicrosoftStore.purchases.purchase(productId) {
+            windows {
+                ownerWindowHandle =
+                    hwnd.takeIf { it != 0L }
+            }
+        }
 
-    override suspend fun purchases(): List<Purchase> = InAppPurchase.purchases()
+    override suspend fun purchases(): List<Purchase> = MicrosoftStore.purchases.list()
 
-    override suspend fun restorePurchases(): List<Purchase> = InAppPurchase.restorePurchases()
+    override suspend fun restorePurchases(): List<Purchase> = MicrosoftStore.purchases.restore()
 
-    override suspend fun entitlement(productId: String): EntitlementStatus = InAppPurchase.entitlement(productId)
+    override suspend fun entitlement(productId: String): EntitlementStatus =
+        MicrosoftStore.purchases.entitlement(productId)
 
     override suspend fun consume(purchase: Purchase) {
-        InAppPurchase.consume(purchase)
+        MicrosoftStore.purchases.consume(purchase)
     }
 
-    override fun appLicenseUpdates(): Flow<AppLicense> = InAppPurchase.appLicenseUpdates
+    override fun appLicenseUpdates(): Flow<AppLicense> = MicrosoftStore.purchases.appLicenseUpdates
 
-    override fun purchaseUpdates(): Flow<PurchaseUpdate> = InAppPurchase.purchaseUpdates
+    override fun purchaseUpdates(): Flow<PurchaseUpdate> = MicrosoftStore.purchases.purchaseUpdates
 
     override fun diagnostics(): Flow<String> =
         callbackFlow {
@@ -110,6 +117,6 @@ class NucleusPurchasesGateway : PurchasesGateway {
 
     private companion object {
         // Held strongly: JUL keeps loggers weakly, and a collected one loses its level and handler.
-        val iapLogger: Logger = Logger.getLogger("dev.nucleusframework.iap")
+        val iapLogger: Logger = Logger.getLogger("dev.nucleusframework.store.microsoft")
     }
 }

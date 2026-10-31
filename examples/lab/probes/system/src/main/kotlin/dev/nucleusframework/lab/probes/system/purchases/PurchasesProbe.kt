@@ -5,10 +5,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import dev.nucleusframework.application.LocalNucleusWindow
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.iap.AppLicense
-import dev.nucleusframework.iap.ProductType
-import dev.nucleusframework.iap.StoreAvailability
-import dev.nucleusframework.iap.StoreProduct
 import dev.nucleusframework.lab.core.Availability
 import dev.nucleusframework.lab.core.Capability
 import dev.nucleusframework.lab.core.Check
@@ -28,6 +24,10 @@ import dev.nucleusframework.lab.designsystem.SecondaryAction
 import dev.nucleusframework.lab.designsystem.SubSection
 import dev.nucleusframework.lab.designsystem.TextFieldRow
 import dev.nucleusframework.lab.designsystem.Tone
+import dev.nucleusframework.store.microsoft.AppLicense
+import dev.nucleusframework.store.microsoft.ProductType
+import dev.nucleusframework.store.microsoft.StoreAvailability
+import dev.nucleusframework.store.microsoft.StoreProduct
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoSet
 import dev.zacsweers.metro.Inject
@@ -44,7 +44,7 @@ class PurchasesProbe : Probe {
             summary =
                 "Does the Microsoft Store report the Lab's own license and trial, sell its add-ons, " +
                     "and tell the app about every purchase, consumption and refund?",
-            modules = listOf("in-app-purchase"),
+            modules = listOf("microsoft-store"),
             platforms = setOf(Platform.Windows),
             checks =
                 listOf(

@@ -1,10 +1,6 @@
 package dev.nucleusframework.lab.probes.system.purchases
 
 import androidx.compose.runtime.Immutable
-import dev.nucleusframework.iap.AppLicense
-import dev.nucleusframework.iap.Purchase
-import dev.nucleusframework.iap.StoreAvailability
-import dev.nucleusframework.iap.StoreProduct
 import dev.nucleusframework.lab.core.Availability
 import dev.nucleusframework.lab.core.mvi.CallOutcome
 import dev.nucleusframework.lab.core.mvi.CallRecord
@@ -12,6 +8,10 @@ import dev.nucleusframework.lab.core.mvi.Delivery
 import dev.nucleusframework.lab.core.mvi.Reducer
 import dev.nucleusframework.lab.core.mvi.plusCall
 import dev.nucleusframework.lab.core.mvi.plusDelivery
+import dev.nucleusframework.store.microsoft.AppLicense
+import dev.nucleusframework.store.microsoft.Purchase
+import dev.nucleusframework.store.microsoft.StoreAvailability
+import dev.nucleusframework.store.microsoft.StoreProduct
 
 @Immutable
 data class PurchasesState(

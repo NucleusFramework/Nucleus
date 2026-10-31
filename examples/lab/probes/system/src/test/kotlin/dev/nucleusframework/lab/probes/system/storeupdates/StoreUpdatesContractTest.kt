@@ -1,8 +1,8 @@
 package dev.nucleusframework.lab.probes.system.storeupdates
 
-import dev.nucleusframework.iap.StoreUpdateCheck
-import dev.nucleusframework.iap.StoreUpdateProgress
-import dev.nucleusframework.iap.StoreUpdateState
+import dev.nucleusframework.store.microsoft.StoreUpdateCheck
+import dev.nucleusframework.store.microsoft.StoreUpdateProgress
+import dev.nucleusframework.store.microsoft.StoreUpdateState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
