@@ -67,15 +67,20 @@ abstract class AppXSettings {
     /** AppX capabilities (e.g. "runFullTrust"). Default: null */
     var capabilities: List<String>? = null
 
-    /** Store tile logo (mapped as `StoreLogo.png`) */
+    // Each logo is an image of any size, fitted and centered on a transparent canvas at every
+    // scale (100 to 400 %) and, for the app icon, every target size (16 to 256 px, plated and
+    // unplated) Windows asks for: give it at least 4x its size for a sharp logo. A logo left unset
+    // is made from the Windows icon (`.ico` included), else the Linux one.
+
+    /** Store logo, `StoreLogo` (50 x 50 at 100 %). */
     val storeLogo: RegularFileProperty = objects.fileProperty()
 
-    /** Small tile logo (mapped as `Square44x44Logo.png`) */
+    /** App icon, `Square44x44Logo` (44 x 44 at 100 %): taskbar, Start list, Explorer. */
     val square44x44Logo: RegularFileProperty = objects.fileProperty()
 
-    /** Medium tile logo (mapped as `Square150x150Logo.png`) */
+    /** Medium tile, `Square150x150Logo` (150 x 150 at 100 %). */
     val square150x150Logo: RegularFileProperty = objects.fileProperty()
 
-    /** Wide tile logo (mapped as `Wide310x150Logo.png`) */
+    /** Wide tile, `Wide310x150Logo` (310 x 150 at 100 %). */
     val wide310x150Logo: RegularFileProperty = objects.fileProperty()
 }

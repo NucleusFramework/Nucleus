@@ -2613,6 +2613,18 @@ private fun JvmApplicationContext.configureGraalvmPlatformPackageSettings(
                 app.nativeDistributions.windows.iconFile
                     .orElse(unpackDefaultResources.flatMap { it.resources.windowsIcon }),
             )
+            if (targetFormat == TargetFormat.AppX) {
+                val appx = app.nativeDistributions.windows.appx
+                task.appxStoreLogo.set(appx.storeLogo)
+                task.appxSquare44x44Logo.set(appx.square44x44Logo)
+                task.appxSquare150x150Logo.set(appx.square150x150Logo)
+                task.appxWide310x150Logo.set(appx.wide310x150Logo)
+                // A PNG fallback for the logos left unset, as on the JVM pipeline
+                task.linuxIconFile.set(
+                    app.nativeDistributions.linux.iconFile
+                        .orElse(unpackDefaultResources.flatMap { it.resources.linuxIcon }),
+                )
+            }
         }
         OS.MacOS -> {
             val mac = app.nativeDistributions.macOS
