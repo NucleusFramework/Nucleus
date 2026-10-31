@@ -204,6 +204,11 @@ jobs:
         shell: cmd
         run: call location\src\main\native\windows\build.bat
 
+      - name: Build microsoft-store Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call microsoft-store\src\main\native\windows\build.bat
+
       - name: Build decorated-window-tao Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -234,6 +239,7 @@ jobs:
             "authentication/nucleus_authentication.dll"
             "speech-recognition/nucleus_speech.dll"
             "location/nucleus_location.dll"
+            "microsoft-store/nucleus_msstore.dll"
             "decorated-window-tao/nucleus_tao.dll"
             "decorated-window-tao/nucleus_tao_windows_deco.dll"
             "decorated-window-tao/nucleus_tao_gl.dll"

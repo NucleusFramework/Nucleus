@@ -114,6 +114,8 @@ jobs:
             "speech-recognition/src/main/resources/nucleus/native/win32-aarch64/nucleus_speech.dll"
             "speech-recognition/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_speech.dylib"
             "speech-recognition/src/main/resources/nucleus/native/darwin-x64/libnucleus_speech.dylib"
+            "microsoft-store/src/main/resources/nucleus/native/win32-x64/nucleus_msstore.dll"
+            "microsoft-store/src/main/resources/nucleus/native/win32-aarch64/nucleus_msstore.dll"
             "location/src/main/resources/nucleus/native/win32-x64/nucleus_location.dll"
             "location/src/main/resources/nucleus/native/win32-aarch64/nucleus_location.dll"
             "location/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_location.dylib"
