@@ -458,6 +458,13 @@ internal class TaoComposeSceneHostWindows(
         // The swap after a show() must always happen, clean scene or not —
         // see [forcePresentOnce].
         window.showHook = { forcePresentOnce = true }
+        // Same for the show Win32 does on its own when this window's owner is
+        // restored (a satellite or dialog of a minimized window): DWM dropped
+        // the frame, and the clean scene would otherwise present nothing.
+        NativeTaoWindowsDecoBridge.setOwnerShowHook(hwnd) {
+            forcePresentOnce = true
+            window.requestRedraw()
+        }
 
         installChrome()
 
@@ -2965,6 +2972,7 @@ internal class TaoComposeSceneHostWindows(
         for (layer in liveNativePopupLayers.toList()) layer.close()
         liveNativePopupLayers.clear()
         window.showHook = null
+        NativeTaoWindowsDecoBridge.setOwnerShowHook(hwnd, null)
         window.inboundDragAndDropNode = null
         window.imePreedit = null
         window.imeCommit = null
