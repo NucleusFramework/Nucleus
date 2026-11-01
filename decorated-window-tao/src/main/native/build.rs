@@ -5,6 +5,7 @@ fn main() {
             .file("macos/a11y.m")
             .file("macos/window_drag.m")
             .file("macos/touchpad_gestures.m")
+            .file("macos/direct_touch.m")
             .file("macos/dialog_parent.m")
             .file("macos/error_dialog.m")
             .file("macos/kotoeri.m")
@@ -19,6 +20,7 @@ fn main() {
         println!("cargo:rerun-if-changed=macos/a11y.m");
         println!("cargo:rerun-if-changed=macos/window_drag.m");
         println!("cargo:rerun-if-changed=macos/touchpad_gestures.m");
+        println!("cargo:rerun-if-changed=macos/direct_touch.m");
         println!("cargo:rerun-if-changed=macos/dialog_parent.m");
         println!("cargo:rerun-if-changed=macos/error_dialog.m");
         println!("cargo:rerun-if-changed=macos/kotoeri.m");

@@ -40,6 +40,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadScaleTest
 import dev.nucleusframework.window.tao.scene.TaoSceneWindowsTouchpadTest
+import dev.nucleusframework.window.tao.scene.TaoTouchContactsTest
 import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import dev.nucleusframework.window.tao.workspace.DragControllerTest
 import dev.nucleusframework.window.tao.workspace.HostGeometryTest
@@ -75,6 +76,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoKeyRepeatTest::class.java,
             TaoSyntheticMouseWheelEventTest::class.java,
             TaoTouchEventTimeTest::class.java,
+            TaoTouchContactsTest::class.java,
             FullscreenOverlayVisibilityTest::class.java,
             Win32WheelDeltaTest::class.java,
             LinuxWheelDeltaTest::class.java,
