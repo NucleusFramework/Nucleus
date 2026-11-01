@@ -122,6 +122,8 @@ jobs:
             "location/src/main/resources/nucleus/native/darwin-x64/libnucleus_location.dylib"
             "location/src/main/resources/nucleus/native/linux-x64/libnucleus_location.so"
             "location/src/main/resources/nucleus/native/linux-aarch64/libnucleus_location.so"
+            "flatpak/src/main/resources/nucleus/native/linux-x64/libnucleus_flatpak.so"
+            "flatpak/src/main/resources/nucleus/native/linux-aarch64/libnucleus_flatpak.so"
             "notification-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_notification.dylib"
             "notification-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_notification.dylib"
             "service-management-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_service_management.dylib"

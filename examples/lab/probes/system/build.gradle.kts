@@ -1,4 +1,4 @@
-// System probes: appearance, system info, energy, filesystem watcher, share sheet, authentication, location, Store purchases, native library extraction.
+// System probes: appearance, system info, energy, filesystem watcher, share sheet, authentication, location, Store purchases, Flatpak updates, native library extraction.
 plugins {
     alias(libs.plugins.kotlin)
     alias(libs.plugins.kotlinComposePlugin)
@@ -24,6 +24,7 @@ dependencies {
     implementation(project(":authentication"))
     implementation(project(":location"))
     implementation(project(":microsoft-store"))
+    implementation(project(":flatpak"))
     // Extract-and-load JNI library (#317): the call site the sandboxed pipeline rewrites.
     implementation(libs.zstd.kmp.jvm)
 
