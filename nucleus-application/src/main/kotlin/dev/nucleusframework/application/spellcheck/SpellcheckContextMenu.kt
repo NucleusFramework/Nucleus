@@ -27,12 +27,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onLayoutRectChanged
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.unit.toOffset
 import dev.nucleusframework.application.contextmenu.LocalContextMenuDivider
 import dev.nucleusframework.spellcheck.SpellChecker
 import dev.nucleusframework.spellcheck.SpellcheckMenuModel
@@ -263,8 +263,10 @@ private fun SpellcheckImeUnderlineBox(
     val latestClick = rememberUpdatedState(onSecondaryClickInRoot)
     Box(
         Modifier
-            .onGloballyPositioned { boxOriginInRoot = it.positionInRoot() }
-            .detectSecondaryClickInRoot(
+            // First in the chain, so the layout node's rect is this box's (#560).
+            .onLayoutRectChanged(throttleMillis = 0, debounceMillis = 0) {
+                boxOriginInRoot = it.positionInRoot.toOffset()
+            }.detectSecondaryClickInRoot(
                 originInRoot = { boxOriginInRoot },
                 onClick = { latestClick.value(it) },
             ).drawWithContent {

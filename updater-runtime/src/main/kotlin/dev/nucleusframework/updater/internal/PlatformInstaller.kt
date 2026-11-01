@@ -1,6 +1,7 @@
 package dev.nucleusframework.updater.internal
 
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.core.runtime.UpdateHandoff
 import java.io.File
 import java.nio.file.Files
 import java.util.logging.Logger
@@ -55,12 +56,13 @@ internal object PlatformInstaller {
         file: File,
         platform: Platform,
         restart: Boolean = true,
+        relaunchArguments: List<String> = emptyList(),
     ) {
         val extension = file.name.substringAfterLast('.').lowercase()
 
         when {
             platform == Platform.MacOS && extension == "zip" -> installMacZip(file, restart)
-            platform == Platform.Windows -> installWindows(file, extension, restart)
+            platform == Platform.Windows -> installWindows(file, extension, restart, relaunchArguments)
             platform == Platform.Linux && extension == "appimage" -> installLinuxAppImage(file, restart)
             platform == Platform.Linux && (extension == "deb" || extension == "rpm") ->
                 installLinuxPackage(file, extension, restart)
@@ -179,59 +181,19 @@ internal object PlatformInstaller {
         // to a password-prompting install and log why (no silent fallback without a reason).
         val helper = resolveUpdateHelper(launcher)
         val signatureFile = File("${packageFile.absolutePath}.asc")
-        val installCmd =
-            when {
-                helper != null && signatureFile.isFile ->
-                    "pkexec \"${helper.absolutePath}\" \"\$PKG_FILE\""
-                extension == "deb" -> {
-                    logLinuxInstallFallback(helper, signatureFile)
-                    "pkexec dpkg -i \"\$PKG_FILE\""
-                }
-                extension == "rpm" -> {
-                    logLinuxInstallFallback(helper, signatureFile)
-                    "pkexec rpm -U \"\$PKG_FILE\""
-                }
-                else -> error("Unsupported package format: $extension")
-            }
-
-        val relaunchCmd =
-            if (restart) {
-                "\n# Relaunch the application\nnohup \"\$APP_LAUNCHER\" > /dev/null 2>&1 &\n"
-            } else {
-                ""
-            }
+        val silentHelper = helper?.takeIf { signatureFile.isFile }
+        if (silentHelper == null) logLinuxInstallFallback(helper, signatureFile)
 
         val script = File(createUpdateWorkDir(), "nucleus-update.sh")
         script.writeText(
-            """
-            |#!/usr/bin/env bash
-            |
-            |# Ignore SIGHUP to survive parent process exit
-            |trap '' HUP
-            |
-            |PKG_FILE="${packageFile.absolutePath}"
-            |APP_PID=$pid
-            |APP_LAUNCHER="$launcher"
-            |
-            |# Wait for the app process to fully exit
-            |while kill -0 "${'$'}APP_PID" 2>/dev/null; do
-            |    sleep 0.5
-            |done
-            |
-            |sleep 1
-            |
-            |# Install the package. Silent path uses the signature-verifying helper;
-            |# otherwise pkexec dpkg/rpm shows an authentication dialog.
-            |# Do not use set -e: dpkg/rpm may return non-zero on warnings,
-            |# which would prevent the application from relaunching.
-            |$installCmd
-            |
-            |# Clean up the package file and its detached signature
-            |rm -f "${'$'}PKG_FILE" "${'$'}PKG_FILE.asc"
-            |$relaunchCmd
-            |# Clean up this script
-            |rm -f "${'$'}{0}"
-            """.trimMargin(),
+            buildLinuxPackageUpdateScript(
+                packageFile = packageFile.absolutePath,
+                extension = extension,
+                launcher = launcher,
+                helper = silentHelper?.absolutePath,
+                appPid = pid,
+                restart = restart,
+            ),
         )
         script.setExecutable(true)
 
@@ -331,15 +293,17 @@ internal object PlatformInstaller {
         file: File,
         extension: String,
         restart: Boolean,
+        relaunchArguments: List<String>,
     ) {
         val pid = ProcessHandle.current().pid()
         val launcher = currentExecutablePath()
         val script = File(createUpdateWorkDir(), "nucleus-update.ps1")
-        script.writeText(
+        writePowerShellScript(
+            script,
             buildWindowsUpdateScript(
                 pid = pid,
                 installerCommand = windowsInstallerCommand(file, extension),
-                relaunchCommand = windowsRelaunchCommand(restart, launcher),
+                relaunchCommand = windowsRelaunchCommand(restart, launcher, relaunchArguments),
                 artifactPath = file.absolutePath,
                 scriptPath = script.absolutePath,
             ),
@@ -355,6 +319,8 @@ internal object PlatformInstaller {
             script.absolutePath,
         ).redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
+            // A classic update closes the app first: never let the installer think otherwise.
+            .apply { environment().remove(UpdateHandoff.ENV_HOT_INSTALL) }
             .start()
     }
 }

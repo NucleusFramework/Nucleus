@@ -27,6 +27,8 @@ internal class ExternalToolRunner(
         OnlyWhenVerbose,
     }
 
+    // Every option is a defaulted named argument at the call sites; a parameter object would only add noise.
+    @Suppress("LongParameterList")
     operator fun invoke(
         tool: File,
         args: Collection<String>,
@@ -50,7 +52,7 @@ internal class ExternalToolRunner(
                 errFile.outputStream().buffered().use { errFileStream ->
                     execOperations.exec { spec ->
                         spec.executable = tool.absolutePath
-                        spec.args(*args.toTypedArray())
+                        spec.args(args)
                         workingDir?.let { wd -> spec.workingDir(wd) }
                         spec.environment(environment)
                         // check exit value later
@@ -60,14 +62,13 @@ internal class ExternalToolRunner(
                             spec.standardInput = ByteArrayInputStream(stdinStr.toByteArray())
                         }
 
-                        @Suppress("NAME_SHADOWING")
-                        val logToConsole =
+                        val echoToConsole =
                             when (logToConsole) {
                                 LogToConsole.Always -> true
                                 LogToConsole.Never -> false
                                 LogToConsole.OnlyWhenVerbose -> verbose.get()
                             }
-                        if (logToConsole) {
+                        if (echoToConsole) {
                             spec.standardOutput = spec.standardOutput.alsoOutputTo(outFileStream)
                             spec.errorOutput = spec.errorOutput.alsoOutputTo(errFileStream)
                         } else {

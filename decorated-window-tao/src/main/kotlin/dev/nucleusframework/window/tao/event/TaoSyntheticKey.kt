@@ -36,16 +36,17 @@ internal fun taoKeyEvent(
     isAlt: Boolean,
     isMeta: Boolean,
     codePoint: Int,
+    isRepeat: Boolean = false,
 ): KeyEvent {
     val awtEvent =
-        java.awt.event.KeyEvent(
-            SyntheticAwtKeyEventSource,
+        TaoAwtKeyEvent(
             if (keyDown) java.awt.event.KeyEvent.KEY_PRESSED else java.awt.event.KeyEvent.KEY_RELEASED,
-            System.currentTimeMillis(),
             awtModifierMask(isShift, isCtrl, isAlt, isMeta),
             vkCode,
             java.awt.event.KeyEvent.CHAR_UNDEFINED,
             keyLocation,
+            // A release is never a repeat, whatever the caller passed.
+            isRepeat = keyDown && isRepeat,
         )
     return KeyEvent(
         key = Key(nativeKeyCode = vkCode, nativeKeyLocation = keyLocation),
@@ -76,14 +77,13 @@ internal fun taoTypedKeyEvent(
     isMeta: Boolean,
 ): KeyEvent {
     val awtEvent =
-        java.awt.event.KeyEvent(
-            SyntheticAwtKeyEventSource,
+        TaoAwtKeyEvent(
             java.awt.event.KeyEvent.KEY_TYPED,
-            System.currentTimeMillis(),
             awtModifierMask(isShift, isCtrl, isAlt, isMeta),
             java.awt.event.KeyEvent.VK_UNDEFINED,
             codePoint.toChar(),
             java.awt.event.KeyEvent.KEY_LOCATION_UNKNOWN,
+            isRepeat = false,
         )
     return KeyEvent(
         key = Key(nativeKeyCode = 0, nativeKeyLocation = keyLocation),
@@ -147,6 +147,7 @@ internal fun ComposeScene.dispatchNativeKeyEvent(
     vkCode: Int,
     codePoint: Int,
     modifiers: Int,
+    isRepeat: Boolean = false,
     onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null,
     onKeyEvent: ((KeyEvent) -> Boolean)? = null,
 ) {
@@ -170,6 +171,7 @@ internal fun ComposeScene.dispatchNativeKeyEvent(
             isAlt = isAlt,
             isMeta = isMeta,
             codePoint = codePoint,
+            isRepeat = isRepeat,
         )
     if (onPreviewKeyEvent?.invoke(ev) == true) return
     val consumed = sendKeyEvent(ev)
@@ -190,6 +192,30 @@ internal fun Int.isPrintableTextInput(
     isCtrl: Boolean,
     isMeta: Boolean,
 ): Boolean = this >= 0x20 && this != 0x7F && this !in 0xF700..0xF8FF && !isCtrl && !isMeta
+
+/**
+ * The AWT event every Nucleus key event carries as its `nativeEvent`, tagged
+ * with whether it is an auto-repeat of a held key — which AWT's `KeyEvent`
+ * has no field for. Read back by [dev.nucleusframework.window.tao.isRepeat].
+ * Only a key-down is ever tagged: on macOS and Linux the typed text reaches
+ * Nucleus before the key-down that produced it, so it cannot be matched.
+ */
+internal class TaoAwtKeyEvent(
+    id: Int,
+    modifiers: Int,
+    keyCode: Int,
+    keyChar: Char,
+    keyLocation: Int,
+    val isRepeat: Boolean,
+) : java.awt.event.KeyEvent(
+        SyntheticAwtKeyEventSource,
+        id,
+        System.currentTimeMillis(),
+        modifiers,
+        keyCode,
+        keyChar,
+        keyLocation,
+    )
 
 /**
  * AWT requires a non-null `Component` as the source of every key event.

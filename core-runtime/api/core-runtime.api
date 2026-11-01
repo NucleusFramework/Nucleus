@@ -1,3 +1,95 @@
+public final class dev/nucleusframework/core/runtime/ActivationToken {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/ActivationToken;
+	public static final fun offer (Ljava/lang/String;)V
+	public static final fun take ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/AppImageIntegration {
+	public static final field MARKER_KEY Ljava/lang/String;
+	public static final field VERSION_KEY Ljava/lang/String;
+	public fun <init> ()V
+	public final fun integrate ()Ldev/nucleusframework/core/runtime/AppImageIntegrationResult;
+	public final fun status ()Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus;
+}
+
+public abstract class dev/nucleusframework/core/runtime/AppImageIntegrationResult {
+}
+
+public final class dev/nucleusframework/core/runtime/AppImageIntegrationResult$Failed : dev/nucleusframework/core/runtime/AppImageIntegrationResult {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Throwable;)Ldev/nucleusframework/core/runtime/AppImageIntegrationResult$Failed;
+	public static synthetic fun copy$default (Ldev/nucleusframework/core/runtime/AppImageIntegrationResult$Failed;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Ldev/nucleusframework/core/runtime/AppImageIntegrationResult$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/lang/Throwable;
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/AppImageIntegrationResult$Integrated : dev/nucleusframework/core/runtime/AppImageIntegrationResult {
+	public fun <init> (Ljava/io/File;)V
+	public final fun component1 ()Ljava/io/File;
+	public final fun copy (Ljava/io/File;)Ldev/nucleusframework/core/runtime/AppImageIntegrationResult$Integrated;
+	public static synthetic fun copy$default (Ldev/nucleusframework/core/runtime/AppImageIntegrationResult$Integrated;Ljava/io/File;ILjava/lang/Object;)Ldev/nucleusframework/core/runtime/AppImageIntegrationResult$Integrated;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDesktopFile ()Ljava/io/File;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class dev/nucleusframework/core/runtime/AppImageIntegrationStatus {
+}
+
+public final class dev/nucleusframework/core/runtime/AppImageIntegrationStatus$ExternallyManaged : dev/nucleusframework/core/runtime/AppImageIntegrationStatus {
+	public fun <init> (Ljava/io/File;)V
+	public final fun component1 ()Ljava/io/File;
+	public final fun copy (Ljava/io/File;)Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$ExternallyManaged;
+	public static synthetic fun copy$default (Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$ExternallyManaged;Ljava/io/File;ILjava/lang/Object;)Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$ExternallyManaged;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDesktopFile ()Ljava/io/File;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/AppImageIntegrationStatus$Integrated : dev/nucleusframework/core/runtime/AppImageIntegrationStatus {
+	public fun <init> (Ljava/io/File;)V
+	public final fun component1 ()Ljava/io/File;
+	public final fun copy (Ljava/io/File;)Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$Integrated;
+	public static synthetic fun copy$default (Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$Integrated;Ljava/io/File;ILjava/lang/Object;)Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$Integrated;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDesktopFile ()Ljava/io/File;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/AppImageIntegrationStatus$NotAppImage : dev/nucleusframework/core/runtime/AppImageIntegrationStatus {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$NotAppImage;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/AppImageIntegrationStatus$NotIntegrated : dev/nucleusframework/core/runtime/AppImageIntegrationStatus {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$NotIntegrated;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/AppImageIntegrationStatus$Stale : dev/nucleusframework/core/runtime/AppImageIntegrationStatus {
+	public fun <init> (Ljava/io/File;)V
+	public final fun component1 ()Ljava/io/File;
+	public final fun copy (Ljava/io/File;)Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$Stale;
+	public static synthetic fun copy$default (Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$Stale;Ljava/io/File;ILjava/lang/Object;)Ldev/nucleusframework/core/runtime/AppImageIntegrationStatus$Stale;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDesktopFile ()Ljava/io/File;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class dev/nucleusframework/core/runtime/AppRestarter {
 	public static final field INSTANCE Ldev/nucleusframework/core/runtime/AppRestarter;
 	public static final fun getApplicationExecutablePath ()Ljava/lang/String;
@@ -34,6 +126,7 @@ public final class dev/nucleusframework/core/runtime/ExecutableRuntime {
 	public static final fun isPkg ()Z
 	public static final fun isPortable ()Z
 	public static final fun isRpm ()Z
+	public static final fun isSandboxed ()Z
 	public static final fun isSevenZ ()Z
 	public static final fun isSnap ()Z
 	public static final fun isTar ()Z
@@ -99,9 +192,12 @@ public final class dev/nucleusframework/core/runtime/LinuxUiToolkit$Companion {
 }
 
 public final class dev/nucleusframework/core/runtime/NativeLibraryLoader {
+	public static final field CACHE_DIR_PROPERTY Ljava/lang/String;
 	public static final field INSTANCE Ldev/nucleusframework/core/runtime/NativeLibraryLoader;
+	public final fun getCacheDirectory ()Ljava/nio/file/Path;
 	public final fun load (Ljava/lang/String;Ljava/lang/Class;Ljava/lang/String;Ljava/util/List;)Z
 	public static synthetic fun load$default (Ldev/nucleusframework/core/runtime/NativeLibraryLoader;Ljava/lang/String;Ljava/lang/Class;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Z
+	public final fun setCacheDirectory (Ljava/nio/file/Path;)V
 }
 
 public final class dev/nucleusframework/core/runtime/NucleusApp {
@@ -114,6 +210,13 @@ public final class dev/nucleusframework/core/runtime/NucleusApp {
 	public static final fun getVendor ()Ljava/lang/String;
 	public static final fun getVersion ()Ljava/lang/String;
 	public static final fun isConfigured ()Z
+}
+
+public final class dev/nucleusframework/core/runtime/NucleusUiThread {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/NucleusUiThread;
+	public static final fun isRegistered ()Z
+	public static final fun post (Lkotlin/jvm/functions/Function0;)V
+	public static final fun setExecutor (Ljava/util/concurrent/Executor;)V
 }
 
 public final class dev/nucleusframework/core/runtime/Platform : java/lang/Enum {
@@ -135,9 +238,12 @@ public final class dev/nucleusframework/core/runtime/Platform$Companion {
 public final class dev/nucleusframework/core/runtime/SingleInstanceManager {
 	public static final field INSTANCE Ldev/nucleusframework/core/runtime/SingleInstanceManager;
 	public final fun getConfiguration ()Ldev/nucleusframework/core/runtime/SingleInstanceManager$Configuration;
+	public final fun getDirectoryWatcher ()Lkotlin/jvm/functions/Function2;
 	public final fun isSingleInstance (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Z
 	public static synthetic fun isSingleInstance$default (Ldev/nucleusframework/core/runtime/SingleInstanceManager;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Z
+	public final fun releaseForHandoff ()V
 	public final fun setConfiguration (Ldev/nucleusframework/core/runtime/SingleInstanceManager$Configuration;)V
+	public final fun setDirectoryWatcher (Lkotlin/jvm/functions/Function2;)V
 }
 
 public final class dev/nucleusframework/core/runtime/SingleInstanceManager$Configuration {
@@ -157,6 +263,27 @@ public final class dev/nucleusframework/core/runtime/SingleInstanceManager$Confi
 	public final fun getRestoreRequestFilePath ()Ljava/nio/file/Path;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/UpdateHandoff {
+	public static final field ENV_HOT_INSTALL Ljava/lang/String;
+	public static final field ENV_PREVIOUS_PID Ljava/lang/String;
+	public static final field ENV_READY_FILE Ljava/lang/String;
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/UpdateHandoff;
+	public static final field RETIRED_LAUNCHER_SUFFIX Ljava/lang/String;
+	public static final field VERSIONS_DIR_NAME Ljava/lang/String;
+	public static final fun cleanupRetiredVersions ()V
+	public static final fun getVersionedInstall ()Ldev/nucleusframework/core/runtime/VersionedInstall;
+	public static final fun isHandoffLaunch ()Z
+	public static final fun signalReady ()V
+}
+
+public final class dev/nucleusframework/core/runtime/VersionedInstall {
+	public fun <init> (Ljava/io/File;Ljava/io/File;Ljava/io/File;)V
+	public final fun getLauncher ()Ljava/io/File;
+	public final fun getRoot ()Ljava/io/File;
+	public final fun getVersionDir ()Ljava/io/File;
+	public final fun getVersionsDir ()Ljava/io/File;
 }
 
 public final class dev/nucleusframework/core/runtime/WindowBackend : java/lang/Enum {

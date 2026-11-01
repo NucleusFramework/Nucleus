@@ -14,7 +14,12 @@ public object MacOsDockMenu {
     public val isAvailable: Boolean
         get() = NativeMacOsDockMenuBridge.isLoaded
 
-    /** Listener for dock menu item clicks. Callbacks are dispatched on the Swing EDT. */
+    /**
+     * Listener for dock menu item clicks.
+     *
+     * Callbacks are dispatched on the host's UI thread (the Tao main thread
+     * under Nucleus, the AWT EDT in a plain Swing / Compose Desktop host).
+     */
     public var listener: DockMenuListener? = null
 
     /**
@@ -23,7 +28,7 @@ public object MacOsDockMenu {
      * On first call, installs a method swizzle on the existing
      * `NSApplicationDelegate` to intercept `applicationDockMenu:`.
      *
-     * Item clicks are reported via [listener] on the Swing EDT.
+     * Item clicks are reported via [listener] on the host's UI thread.
      *
      * @param items The menu items to display. Supports hierarchical menus via [DockMenuItem.children].
      */

@@ -64,8 +64,8 @@ internal object SandboxBytecodeRewriter {
             object : ClassVisitor(Opcodes.ASM9) {
                 override fun visitMethod(
                     access: Int,
-                    name: String?,
-                    descriptor: String?,
+                    methodName: String?,
+                    methodDescriptor: String?,
                     signature: String?,
                     exceptions: Array<out String>?,
                 ): MethodVisitor {
@@ -80,7 +80,9 @@ internal object SandboxBytecodeRewriter {
                             if (!isInterface && descriptor == SandboxMarkers.LOAD_DESC) {
                                 if (opcode == Opcodes.INVOKESTATIC && owner == "java/lang/System" && name == "load") {
                                     found = true
-                                } else if (opcode == Opcodes.INVOKEVIRTUAL && owner == "java/lang/Runtime" && name == "load") {
+                                } else if (
+                                    opcode == Opcodes.INVOKEVIRTUAL && owner == "java/lang/Runtime" && name == "load"
+                                ) {
                                     found = true
                                 }
                             }

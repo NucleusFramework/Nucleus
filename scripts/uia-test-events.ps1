@@ -1,4 +1,4 @@
-# All-in-one UIA event test for tao-demo A11y tab.
+# All-in-one UIA event test for the Lab a11y-surface fixture (A11y tab).
 #
 # IMPORTANT: Legacy System.Windows.Automation.AutomationPropertyChangedEventHandler
 # does NOT reliably receive events from AccessKit / ServerSideProvider fragment
@@ -8,8 +8,8 @@
 # This script delegates to scripts/ci/verify-uia-events.ps1 (COM client gate).
 #
 # Usage:
-#   # demo already running with NUCLEUS_DEMO_TAB=A11y
-#   pwsh scripts/uia-test-events.ps1 -Title "Tao Backend Demo"
+#   # fixture already running: ./gradlew :examples:lab:app:run -Dlab.fixture=a11y-surface
+#   pwsh scripts/uia-test-events.ps1 -Title "Nucleus A11y Surface"
 
 param(
     [Parameter(Mandatory)] [string]$Title

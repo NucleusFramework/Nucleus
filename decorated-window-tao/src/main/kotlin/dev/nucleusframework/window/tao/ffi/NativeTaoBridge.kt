@@ -4,6 +4,7 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.window.tao.TaoAccessibilityRegistry
 import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
+import dev.nucleusframework.window.tao.scene.TaoA11yActivation
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -79,6 +80,8 @@ internal object NativeTaoBridge {
          * conventions so Compose's `Key(nativeKeyCode, nativeKeyLocation)`
          * works unchanged. [modifiers] is a bitmask: 1=Shift, 2=Ctrl, 4=Alt,
          * 8=Meta. [codePoint] is the UTF-32 code-point produced by the key, or 0.
+         * [isRepeat] is tao's `KeyEvent.repeat`: a key-down sent again because the
+         * key is held. Always `false` for a key-up and for [TaoEventCode.KEY_TYPED].
          */
         @Suppress("LongParameterList", "FunctionParameterNaming")
         fun onKeyEvent(
@@ -88,6 +91,7 @@ internal object NativeTaoBridge {
             keyLocation: Int,
             modifiers: Int,
             codePoint: Int,
+            isRepeat: Boolean,
         )
 
         /**
@@ -146,6 +150,8 @@ internal object NativeTaoBridge {
          * [TaoEventCode.CURSOR_MOVED]).
          * [forceFixed] is the touch pressure × 10 000 in `[0, 10000]`, or
          * `-1` when the digitizer doesn't report pressure.
+         * [kind] is the [TaoPointerKind] of the contact: a finger, or a pen
+         * (and its eraser end), which WM_POINTER reports the same way (#827).
          *
          * Default no-op so non-Windows callers can ignore it.
          */
@@ -157,6 +163,36 @@ internal object NativeTaoBridge {
             xFixed: Int,
             yFixed: Int,
             forceFixed: Int,
+            kind: Int,
+        ) {
+        }
+
+        /**
+         * Windows precision-touchpad manipulation (#706): the raw stream of
+         * the window's DirectManipulation viewport, turned into pan and pinch
+         * phases by [dev.nucleusframework.window.tao.event.TaoDirectManipulationGesture].
+         *
+         * [kind] is [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.STATUS]
+         * (the viewport moved from [previousStatus] to [status]) or
+         * [dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent.CONTENT]
+         * (a new content transform while in [status]). Statuses are
+         * `DIRECTMANIPULATION_STATUS` values. [scale] / [offsetX] / [offsetY]
+         * are the content transform at that moment, [focalX] / [focalY] where
+         * the gesture is — both in client-area physical pixels.
+         *
+         * Default no-op so non-Windows callers can ignore it.
+         */
+        @Suppress("LongParameterList")
+        fun onDirectManipulation(
+            handle: Long,
+            kind: Int,
+            status: Int,
+            previousStatus: Int,
+            scale: Float,
+            offsetX: Float,
+            offsetY: Float,
+            focalX: Float,
+            focalY: Float,
         ) {
         }
 
@@ -199,7 +235,44 @@ internal object NativeTaoBridge {
             text: String,
         ) {
         }
+
+        /**
+         * Windows `WM_QUERYENDSESSION` — logoff, restart, shutdown or a Restart
+         * Manager close (#751). Runs the windows' close requests synchronously
+         * and answers `TaoApplication.END_SESSION_*`; [flags] are
+         * `TaoApplication.END_SESSION_FLAG_*`. Default: agree.
+         */
+        fun onQueryEndSession(flags: Int): Int = 0
+
+        /**
+         * Windows `WM_ENDSESSION` (#751): [ending] `true` when the session ends
+         * (the process may be terminated once this returns), `false` when it
+         * was cancelled. [nested] `true` when it arrived inside a nested pump
+         * (a native modal), with app code further up this thread's stack.
+         * Default no-op.
+         */
+        fun onEndSession(
+            ending: Boolean,
+            nested: Boolean,
+        ) {
+        }
     }
+
+    /**
+     * Drops the Windows shutdown block reason a session-end query set, once a
+     * window stayed open and cancelled the quit (#751). No-op elsewhere.
+     * Event-loop thread only.
+     */
+    @JvmStatic
+    external fun nativeReleaseShutdownBlock()
+
+    /**
+     * The JVM exit has begun (#751): a Windows session end that reached AWT's
+     * toolkit thread lets AWT take its own shutdown path from now on. Called
+     * from a shutdown hook. No-op elsewhere.
+     */
+    @JvmStatic
+    external fun nativeMarkJvmExiting()
 
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */
     @JvmStatic
@@ -245,6 +318,11 @@ internal object NativeTaoBridge {
         // when no X server is reachable — callers check the surface kind
         // (`nativeLinuxHandles`) rather than a return value.
         forceX11: Boolean,
+        // The platform decorates the window (#841). Linux: no custom Wayland
+        // header bar, so GTK negotiates KWin server-side decorations or draws
+        // its own default title bar. Needs `decorations`. Windows and macOS
+        // read only `decorations` here; their chrome is configured later.
+        systemDecorations: Boolean,
     )
 
     @JvmStatic
@@ -405,6 +483,19 @@ internal object NativeTaoBridge {
     ): String
 
     /**
+     * macOS only, headful e2e: the rect TaoView answers
+     * `firstRectForCharacterRange:` with, filled into [rectOut] (length ≥ 4)
+     * as `[x, y, width, height]` in Cocoa screen coordinates. An all-zero rect
+     * is the client reporting no insertion point — what AppKit needs to hear
+     * once the focused field is gone.
+     */
+    @JvmStatic
+    external fun nativeMacOsQueryImeRect(
+        handle: Long,
+        rectOut: DoubleArray,
+    ): Boolean
+
+    /**
      * macOS only, headful e2e: invoke `setMarkedText:selectedRange:replacementRange:`
      * on TaoView (the same entry IMKit uses).
      */
@@ -438,6 +529,21 @@ internal object NativeTaoBridge {
      */
     @JvmStatic
     external fun nativeHwndHandle(handle: Long): Long
+
+    /**
+     * Windows only (#643): `true` when the OS considers [hwnd]'s owning thread
+     * to have stopped pumping messages — the very state the shell reads to
+     * ghost a window as "(Not Responding)". `IsHungAppWindow` is a pure query:
+     * it sends nothing to the event loop, so the watchdog that calls it every
+     * few seconds costs the loop nothing and cannot inject the inline sent
+     * message that deadlocked #640.
+     *
+     * Takes the HWND by value and touches no crate state, so it is safe to
+     * call from a thread other than the event loop — which is the whole point,
+     * the event loop being the thread under suspicion.
+     */
+    @JvmStatic
+    external fun nativeIsWindowHung(hwnd: Long): Boolean
 
     /**
      * Linux counterpart: returns `[kind, display, nativeWindow]` so the JVM can
@@ -513,6 +619,30 @@ internal object NativeTaoBridge {
     ): Boolean
 
     /**
+     * Linux only, headful e2e: delivers a synthetic `GdkEventTouchpadPinch`
+     * through the GtkWindow's `event` signal — the handler a real touchpad
+     * pinch reaches (`touch.rs`), so GDK's absolute scale and radian angle
+     * are converted exactly as for a real gesture.
+     *
+     * [phase] is a `GdkTouchpadGesturePhase` (`0=BEGIN`, `1=UPDATE`, `2=END`,
+     * `3=CANCEL`), [scaleMicro] GDK's absolute scale × 1 000 000 (1 000 000 at
+     * BEGIN), [angleDeltaMicro] the per-event angle in micro-radians.
+     * Coordinates are widget-local logical px.
+     *
+     * Must run on the Tao / GTK main thread. Returns `false` when the handle
+     * is unknown, the window is not realized, or [phase] is out of range.
+     */
+    @JvmStatic
+    external fun nativeLinuxInjectGdkTouchpadPinch(
+        handle: Long,
+        phase: Int,
+        x: Int,
+        y: Int,
+        scaleMicro: Int,
+        angleDeltaMicro: Int,
+    ): Boolean
+
+    /**
      * Linux only: origin of the content area (the child GTK allocated inside
      * any client-side decorations) in logical toplevel coordinates, packed as
      * `(x shl 32) or (y and 0xffffffff)`. `(0, 0)` for plain undecorated
@@ -539,6 +669,15 @@ internal object NativeTaoBridge {
     external fun nativeScaleFactor(handle: Long): Int
 
     /**
+     * Takes the screen position, in physical px, of the last mouse button
+     * release, packed as `(x shl 32) or (y and 0xffffffff)`, and clears it;
+     * [Long.MIN_VALUE] when there was none since the last take and outside
+     * Windows, which is the only platform that tracks it (#837).
+     */
+    @JvmStatic
+    external fun nativeTakeMouseReleaseScreenPosition(): Long
+
+    /**
      * Linux only: returns `[x, y, width, height]` of the primary monitor's
      * work area (full screen minus panels / docks) in physical pixels with a
      * top-left origin. Falls back to the full monitor geometry when GDK can't
@@ -558,16 +697,34 @@ internal object NativeTaoBridge {
     external fun nativeLinuxPrimaryMonitorScaleMilli(handle: Long): Int
 
     /**
+     * Linux only: returns one descriptor per GDK monitor, encoded as documented
+     * in [dev.nucleusframework.window.tao.TaoMonitor].
+     *
+     * [handle] may be `0` — monitors are a display-wide property, so the
+     * default GDK display is used when no window is available. `null` when GDK
+     * has no display.
+     */
+    @JvmStatic
+    external fun nativeLinuxMonitors(handle: Long): Array<String>?
+
+    /**
      * Linux only: wires [childHandle] as a GTK transient of [ownerHandle] via
-     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint` and
-     * `destroy_with_parent`). Mirrors the Win32 `GWLP_HWNDPARENT` and AppKit
-     * `addChildWindow:` paths used by `DecoratedDialog`. Pass `0` for
-     * [ownerHandle] to clear the relationship.
+     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint`). Mirrors the Win32
+     * `GWLP_HWNDPARENT` and AppKit `addChildWindow:` paths used by
+     * `DecoratedDialog`. Pass `0` for [ownerHandle] to clear the relationship.
+     *
+     * [destroyWithOwner] adds `gtk_window_set_destroy_with_parent`, which is
+     * the JDialog behaviour a dialog wants and the opposite of what a
+     * satellite wants: a satellite outlives the window it is anchored to (the
+     * workspace hands it to another one). GTK destroying it behind tao's back
+     * leaves a live `TaoWindow` whose toplevel is gone — a window that reports
+     * no geometry and can never be shown again.
      */
     @JvmStatic
     external fun nativeLinuxSetDialogOwner(
         childHandle: Long,
         ownerHandle: Long,
+        destroyWithOwner: Boolean,
     )
 
     /**
@@ -621,6 +778,18 @@ internal object NativeTaoBridge {
     )
 
     @JvmStatic
+    external fun nativeSetMinimizable(
+        handle: Long,
+        minimizable: Boolean,
+    )
+
+    @JvmStatic
+    external fun nativeSetMaximizable(
+        handle: Long,
+        maximizable: Boolean,
+    )
+
+    @JvmStatic
     external fun nativeSetMinimized(
         handle: Long,
         minimized: Boolean,
@@ -665,9 +834,27 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeFocus(handle: Long)
 
+    /**
+     * [nativeFocus] with an xdg-activation token from the compositor. Wayland only: hands the
+     * token to `xdg_activation_v1.activate` through GDK; ignored elsewhere.
+     */
+    @JvmStatic
+    external fun nativeFocusWithActivationToken(
+        handle: Long,
+        activationToken: String,
+    )
+
     /** [width]/[height] in logical pixels; pass negative values to clear. */
     @JvmStatic
     external fun nativeSetMinInnerSize(
+        handle: Long,
+        width: Double,
+        height: Double,
+    )
+
+    /** [width]/[height] in logical pixels; pass negative values to clear. */
+    @JvmStatic
+    external fun nativeSetMaxInnerSize(
         handle: Long,
         width: Double,
         height: Double,
@@ -698,6 +885,24 @@ internal object NativeTaoBridge {
         y: Double,
     )
 
+    /**
+     * Linux only: anchors a popup overlay (`popupOf`) at a logical point of
+     * its parent window through GDK's `move_to_rect`, so GDK maps it as a
+     * compositor-positioned `xdg_popup` — see [TaoWindow.anchorPopupInParent].
+     */
+    @JvmStatic
+    external fun nativeLinuxPopupAnchor(
+        handle: Long,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        shadowLeft: Int,
+        shadowTop: Int,
+        shadowRight: Int,
+        shadowBottom: Int,
+    )
+
     @JvmStatic
     external fun nativeIsFullscreen(handle: Long): Boolean
 
@@ -707,12 +912,42 @@ internal object NativeTaoBridge {
         fullscreen: Boolean,
     )
 
-    /** Sets the OS cursor for the window. [code] follows [TaoCursorIcon]. */
+    /**
+     * Sets the OS cursor for the window. [code] follows [TaoCursorIcon].
+     * Callers go through [setCursorIcon], which records the request first.
+     */
     @JvmStatic
     external fun nativeSetCursorIcon(
         handle: Long,
         code: Int,
     )
+
+    /**
+     * Headful-suite diagnostic (macOS): what the cursor for [code] looks like —
+     * hotspot, size and a pixel hash — or `[NSCursor currentCursor]` when
+     * [code] is negative. Equal signatures draw the same shape. `null` elsewhere.
+     */
+    @JvmStatic
+    external fun nativeDiagCursorSignature(code: Int): String?
+
+    /**
+     * The last cursor code requested per window handle, exactly as it was
+     * handed to [nativeSetCursorIcon]. The platform cursor itself cannot be
+     * read back portably (and never under Xvfb), so this is what the headful
+     * suite asserts against: a `BasicTextField` under a still pointer must
+     * have left a `TEXT` here, and a native view under it must not have
+     * flipped it back.
+     */
+    val lastCursorIcon: java.util.concurrent.ConcurrentHashMap<Long, Int> = java.util.concurrent.ConcurrentHashMap()
+
+    /** Records the request in [lastCursorIcon] and applies it. */
+    fun setCursorIcon(
+        handle: Long,
+        code: Int,
+    ) {
+        lastCursorIcon[handle] = code
+        nativeSetCursorIcon(handle, code)
+    }
 
     /**
      * Anchors the platform IME UI at the given window-local rect in *physical
@@ -731,6 +966,18 @@ internal object NativeTaoBridge {
         y: Int,
         width: Int,
         height: Int,
+    )
+
+    /**
+     * Linux only (#842): whether a text field owns the input of [handle]. The
+     * GTK input context is focused only while it does — on Wayland, focusing
+     * it sends text-input `enable`, which compositors answer by raising the
+     * on-screen keyboard. Off until the first `true`.
+     */
+    @JvmStatic
+    external fun nativeSetImeAllowed(
+        handle: Long,
+        allowed: Boolean,
     )
 
     /**
@@ -753,9 +1000,29 @@ internal object NativeTaoBridge {
         selectionEnd: Long,
     )
 
-    /** Calls `[view.inputContext activate]` for TaoView's NSTextInputClient. */
+    /**
+     * Calls `[view.inputContext activate]` for TaoView's NSTextInputClient and
+     * returns the token identifying the text-input session it opens (0 when the
+     * window is gone). Hand it back to [nativeDeactivateInputContext].
+     */
     @JvmStatic
-    external fun nativeActivateInputContext(handle: Long)
+    external fun nativeActivateInputContext(handle: Long): Long
+
+    /**
+     * Ends the session [token] opened: `[view.inputContext deactivate]` plus
+     * the drop of the cached caret rect. Both matter — an input context left
+     * active over a caret rect that outlived its field keeps AppKit anchoring
+     * the input-source indicator (the badge Caps Lock raises when it is bound
+     * to keyboard-layout switching) to a field that no longer exists.
+     *
+     * A [token] the newest activation superseded is ignored, so the teardown of
+     * an outgoing session cannot undo the incoming one.
+     */
+    @JvmStatic
+    external fun nativeDeactivateInputContext(
+        handle: Long,
+        token: Long,
+    )
 
     // ── Accessibility (macOS) ──────────────────────────────────────────────
     //
@@ -924,6 +1191,13 @@ internal object NativeTaoBridge {
         action: Int,
     ) {
         fatalUpcall { TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action) }
+    }
+
+    /** An accessibility client started listening: run the semantics walks parked while none was. */
+    @JvmStatic
+    @Suppress("unused") // called from JNI (a11y/jvm.rs → notify_a11y_activated)
+    fun onA11yActivated() {
+        fatalUpcall { TaoA11yActivation.onActivated() }
     }
 
     @JvmStatic

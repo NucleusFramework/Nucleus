@@ -13,6 +13,7 @@ import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -22,56 +23,60 @@ import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoModifierMask
+import dev.nucleusframework.window.tao.TaoMonitors
 import dev.nucleusframework.window.tao.TaoNonFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.clearContentMeasurer
+import dev.nucleusframework.window.tao.dispatch.DelayScheduler
 import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
-import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
+import dev.nucleusframework.window.tao.event.TaoDirectManipulationEvent
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
+import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDirectManipulationBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge
 import dev.nucleusframework.window.tao.hasWindowsTextureImports
+import dev.nucleusframework.window.tao.installContentMeasurer
+import dev.nucleusframework.window.tao.popup.PopupScreenGeometry
+import dev.nucleusframework.window.tao.popup.PopupScrimRegistry
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import dev.nucleusframework.window.tao.releaseWindowsTextureImports
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
-import org.jetbrains.skia.ColorSpace
+import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.FramebufferFormat
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.PathBuilder
 import org.jetbrains.skia.Rect
-import org.jetbrains.skia.Surface
-import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skia.makeGLWithInterface
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
 /**
  * Windows variant of [TaoComposeSceneHost]. Drives a Compose scene onto the
@@ -191,9 +196,15 @@ internal class TaoComposeSceneHostWindows(
     private var sceneBundle: TaoSceneBundle? = null
     private val scene: ComposeScene? get() = sceneBundle?.scene
 
+    init {
+        // Reads `scene` lazily, so it is valid before the bundle exists (null)
+        // and across bundle swaps; cleared in dispose().
+        window.installContentMeasurer { constraints -> scene?.measureContent(constraints) }
+    }
+
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
-    private val flushingDispatcher = FlushingMainDispatcher()
+    private val flushingDispatcher = SceneMainDispatcher()
 
     /**
      * Scope for host-owned gesture work (trackpad-pinch idle-end debounce).
@@ -219,6 +230,9 @@ internal class TaoComposeSceneHostWindows(
 
     /** Monotonic ns of the last in-drag GPU cache purge (see [onResized]). */
     private var lastResizePurgeNs: Long = 0L
+
+    /** Reclaims the cache an animation filled once the window is at rest (#638). */
+    private val restReclaimer = GpuCacheRestReclaimer { purgeGpuResourceCacheAtRest() }
 
     /** A size change awaits push into the GL surface + ComposeScene at the next paint. */
     private var pendingResizeApply: Boolean = false
@@ -247,6 +261,40 @@ internal class TaoComposeSceneHostWindows(
      * re-binds its window surface before presenting.
      */
     private val popupRenderers: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /**
+     * Dialog scrims of the native popup layers, painted over the main scene at
+     * the end of every frame — see [PopupScrimRegistry].
+     */
+    private val popupScrims =
+        PopupScrimRegistry {
+            sceneBundle?.visualDirty?.set(true)
+            window.requestRedraw()
+        }
+
+    /**
+     * Dialog scrims of native popup layers land on the owner window's surface,
+     * after its content — Compose Desktop's `onRenderOverlay`.
+     */
+    private fun paintPopupScrims(canvas: Canvas) {
+        popupScrims.paintAll(
+            canvas,
+            Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()),
+            transparent = fullyTransparent,
+        )
+    }
+
+    /**
+     * Hooks every main-scene bundle gets: frame failures (recomposition /
+     * layout / draw) go to the window's exception handler — the single seam
+     * all three platforms render through — and popup scrims paint after the
+     * content.
+     */
+    private fun configureSceneBundle() {
+        val bundle = sceneBundle ?: return
+        bundle.exceptionHandler = exceptionHandler
+        bundle.renderOverlay = ::paintPopupScrims
+    }
 
     /**
      * Key handlers consulted before the main scene's key dispatch
@@ -299,6 +347,33 @@ internal class TaoComposeSceneHostWindows(
      */
     private var nativePointerRedispatchInFlight: Boolean = false
 
+    /** Whether the press being dispatched was handed to a native view — reset at every press. */
+    private var nativePointerDispatchedThisEvent: Boolean = false
+
+    /**
+     * Buttons whose press was forwarded to an embedded child HWND and whose
+     * release Compose has not seen. A child that `SetCapture`s on the press
+     * (every EDIT does, so does WebView2) gets the release alone; Compose
+     * would keep the button down and every later click would have no down
+     * transition. Healed from Win32's own button state on the next move and
+     * released before a new press — see [healStaleNativePresses].
+     */
+    private val forwardedNativeButtons = mutableSetOf<PointerButton>()
+
+    /** Buttons the scene currently holds down, so a release Compose never saw the press of is dropped. */
+    private val pressedButtons = mutableSetOf<PointerButton>()
+
+    /** Live `NativeView` embeds; the keyboard reclaim only runs while there is one. */
+    private var attachedNativeViewCount: Int = 0
+
+    /**
+     * Captured at the first composition via [setContent]. Exposes the
+     * standard `FocusManager.clearFocus(force = true)` the scene-level
+     * focus manager doesn't, so a press that hands the keyboard to an embed
+     * also drops the Compose text field's caret.
+     */
+    private var capturedFocusManager: androidx.compose.ui.focus.FocusManager? = null
+
     // Frame pacing is delegated to VSync — `eglSwapInterval(1)` makes
     // eglSwapBuffers pace off the display refresh, which keeps Compose
     // animations (smooth scroll, etc.) aligned on the display cadence at the
@@ -312,17 +387,35 @@ internal class TaoComposeSceneHostWindows(
     // ANGLE's eglSwapBuffers paces fine inline — the input starvation that
     // motivated the old WGL swap thread never applied to this backend.
 
-    fun attach() {
-        check(NativeTaoBridge.isLoaded && NativeTaoGlBridge.isLoaded && NativeTaoWindowsDecoBridge.isLoaded) {
-            "Tao Windows native libraries not loaded"
-        }
-        hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
-        require(hwnd != 0L) { "HWND unavailable; window not yet realised" }
+    // A clean frame (a frame-clock tick that draws nothing: an FPS readout, a `withFrameNanos` loop) skips the present
+    // below, and with it the VSync pacing, so a scene asking for its next frame right away ticked as fast as the event
+    // loop turns: hundreds of frames a second for nothing, a core kept busy. The frame after a clean one is requested
+    // at the next refresh instead, from a timer rather than by blocking this thread (which every window shares).
+    // Frames that draw are unchanged: the paced swap keeps them on the refresh, and the next one is asked at once.
+    @Volatile private var lastFrameClean = false
 
-        // The swap after a show() must always happen, clean scene or not —
-        // see [forcePresentOnce].
-        window.showHook = { forcePresentOnce = true }
+    @Volatile private var lastFrameStartNanos = 0L
 
+    private val pacedFrameScheduled = AtomicBoolean(false)
+
+    /** The scene's frame request: at once, or at the next refresh after a clean frame (see [lastFrameClean]). */
+    private fun requestFrame() {
+        if (!lastFrameClean) return window.requestRedraw()
+        val delay = lastFrameStartNanos + presentPeriodNs - System.nanoTime()
+        if (delay <= 0) return window.requestRedraw()
+        if (!pacedFrameScheduled.compareAndSet(false, true)) return
+        DelayScheduler.schedule({
+            pacedFrameScheduled.set(false)
+            window.requestRedraw()
+        }, delay, TimeUnit.NANOSECONDS)
+    }
+
+    /**
+     * Installs the window's frame: the Nucleus custom decoration (WndProc subclass +
+     * DwmExtendFrameIntoClientArea), or the Win32 caption and frame for system
+     * decorations (#841).
+     */
+    private fun installChrome() {
         // Install custom decoration (WndProc subclass + DwmExtendFrameIntoClientArea).
         // Title-bar height is set later — the value the TitleBar composable publishes
         // via SideEffect arrives after first composition.
@@ -336,8 +429,16 @@ internal class TaoComposeSceneHostWindows(
             } else {
                 (titleBarHeightDpState.value * scale).toInt().coerceAtLeast(28)
             }
-        NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
-        if (borderlessChrome || fullyTransparent) {
+        if (window.hasSystemDecorations) {
+            // #841: keep the Win32 caption and frame; the subclass still
+            // serves fullscreen, the startup erase and dark mode.
+            NativeTaoWindowsDecoBridge.nativeInstallSystemFrame(hwnd)
+        } else {
+            NativeTaoWindowsDecoBridge.nativeInstallDecoration(hwnd, initialTitleBarPx)
+        }
+        // A system frame (#841) stays the system's even when the content is
+        // transparent: it is real non-client area, not a contour to hide.
+        if (!window.hasSystemDecorations && (borderlessChrome || fullyTransparent)) {
             // Kill DWM 1px contour + shadow margin (Compose border is already
             // skipped by the openDecoratedWindowWindows undecorated path).
             // Fully transparent windows (#416) need the same treatment even
@@ -345,6 +446,27 @@ internal class TaoComposeSceneHostWindows(
             // trace the rectangular HWND, betraying the content-defined shape.
             NativeTaoWindowsDecoBridge.nativeSetBorderlessChrome(hwnd, true)
         }
+    }
+
+    fun attach() {
+        check(NativeTaoBridge.isLoaded && NativeTaoGlBridge.isLoaded && NativeTaoWindowsDecoBridge.isLoaded) {
+            "Tao Windows native libraries not loaded"
+        }
+        hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
+        require(hwnd != 0L) { "HWND unavailable; window not yet realised" }
+
+        // The swap after a show() must always happen, clean scene or not —
+        // see [forcePresentOnce].
+        window.showHook = { forcePresentOnce = true }
+        // Same for the show Win32 does on its own when this window's owner is
+        // restored (a satellite or dialog of a minimized window): DWM dropped
+        // the frame, and the clean scene would otherwise present nothing.
+        NativeTaoWindowsDecoBridge.setOwnerShowHook(hwnd) {
+            forcePresentOnce = true
+            window.requestRedraw()
+        }
+
+        installChrome()
 
         // ANGLE/D3D11 (WARP-capable on RDP/VMs) is the only Windows backend.
         // Skia needs an EGL-assembled GL interface — the default makeGL()
@@ -354,6 +476,10 @@ internal class TaoComposeSceneHostWindows(
             "Failed to create ANGLE render context for HWND " +
                 "(libEGL/libGLESv2 missing or Direct3D 11 unavailable)"
         }
+        NativeTaoWindowsDirectManipulationBridge.nativeBindInputWindow(
+            window.handle,
+            NativeTaoGlBridge.nativeRenderSurfaceHandle(handle),
+        )
         val ctx =
             try {
                 val intf = GLAssembledInterface.createFromNativePointers(0L, NativeTaoGlBridge.nativeEglGetProcFn())
@@ -362,17 +488,24 @@ internal class TaoComposeSceneHostWindows(
                 null
             }
         attachmentHandle = handle
+        syncMirror()
         directContext =
             (ctx ?: error("Failed to create Skia DirectContext on the ANGLE ES context")).also {
-                // Bound the GPU resource cache. Each frame wraps the default
-                // framebuffer in a fresh BackendRenderTarget + Surface, and Skia
-                // allocates a stencil/scratch attachment sized to the current
-                // window for it. During a border drag every new window size mints
-                // new scratch resources; even with VSync pacing the present (see
-                // onResizeLoopChanged) an explicit budget forces purgeAsNeeded on
-                // each flush so the cache stays bounded, and onResizeLoopChanged
-                // additionally purges the scratch accumulated across the drag.
-                it.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
+                // Anchor the GPU resource cache budget. Each frame wraps the
+                // default framebuffer in a fresh BackendRenderTarget + Surface,
+                // and Skia allocates a stencil/scratch attachment sized to the
+                // current window for it; during a border drag every new window
+                // size mints scratch no later frame reuses.
+                //
+                // This write is a no-op at the current value — Ganesh's own
+                // default is the same 256 MiB (measured) — and it does NOT, as
+                // this comment used to claim, "force purgeAsNeeded on each
+                // flush": Skia purges to fit its budget whether or not we set
+                // one. What actually reclaims the drag's scratch is the purge,
+                // in onResized and onResizeLoopChanged. Keep the write anyway:
+                // it is the value the limit-toggle restores and the one place
+                // to change if the hosts ever run below Skia's default.
+                it.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
             }
         attachedHostCount.incrementAndGet()
 
@@ -424,25 +557,15 @@ internal class TaoComposeSceneHostWindows(
                 // Opt-in path (e.g. tray popups): every Popup becomes a
                 // transparent WS_POPUP HWND owned by this window, so popup
                 // content can extend beyond — and float independently of —
-                // the window bounds. popupHost() is non-null here: hwnd and
+                // the window bounds. The factory is non-null here: hwnd and
                 // directContext were both set above.
                 platformLayersSceneBundle(
                     coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
                     composeSceneContext =
-                        TaoComposeSceneContext(
-                            platformContext = platformContext,
-                        ) { density, layoutDirection, focusable, consumeOutside ->
-                            TaoPopupSceneLayerWindows(
-                                host = requireNotNull(popupHost()),
-                                initialDensity = density,
-                                initialLayoutDirection = layoutDirection,
-                                initialFocusable = focusable,
-                                initialConsumePointerInputOutside = consumeOutside,
-                            )
-                        },
-                    requestFrame = { window.requestRedraw() },
+                        TaoComposeSceneContext(platformContext, requireNotNull(nativePopupLayerFactory())),
+                    requestFrame = { requestFrame() },
                 )
             } else {
                 canvasLayersSceneBundle(
@@ -450,28 +573,37 @@ internal class TaoComposeSceneHostWindows(
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
                     platformContext = platformContext,
-                    requestFrame = { window.requestRedraw() },
+                    requestFrame = { requestFrame() },
                 )
             }
         scene?.compositionLocalContext = pendingCompositionLocalContext
-        // Frame failures (recomposition / layout / draw) are caught inside the
-        // bundle, the single seam all three platforms render through.
-        sceneBundle?.exceptionHandler = exceptionHandler
+        configureSceneBundle()
 
         publishWindowsTextureHost()
+        // One source of truth for the scene's drop target: the callback below
+        // resolves it through here, and so does an in-process driver.
+        window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
         registerTouchInput()
 
         // Notify overlay/popup layers when the host window moves on screen
         // — top-level WS_POPUP children of the owner don't auto-track.
-        // Also re-present a frame: the ANGLE child-HWND swapchain presents
-        // through the GDI redirection surface, clipped to the visible region,
-        // so a window created partly off-screen has uninitialized (white)
-        // pixels there — each move re-presents and fills the newly exposed
-        // area. Free while the window is stationary (no WM_MOVE, no frame).
+        // Re-present a frame when the frame mirror does not cover the move
+        // (NativeTaoGlBridge.nativeNeedsRepaintOnMove): without a working
+        // mirror — per-pixel-alpha windows, a driver without DirectComposition —
+        // the ANGLE child-HWND swapchain presents through the GDI redirection
+        // surface clipped to the visible region, leaving a window presented
+        // partly off-screen with unpainted (white) pixels there until the next
+        // frame; and a mirror allocated while the window overhung the desktop
+        // is released by the first frame swapped fully on-screen.
         window.onMoved { _, _ ->
             onOwnerMoved()
-            window.requestRedraw()
+            if (NativeTaoGlBridge.nativeNeedsRepaintOnMove(attachmentHandle)) {
+                // The frame is the point, not its content: a clean frame would
+                // otherwise be skipped (mustPresent) and nothing reach DWM.
+                forcePresentOnce = true
+                window.requestRedraw()
+            }
         }
 
         // Notify overlay/popup layers when the host window loses keyboard
@@ -512,6 +644,12 @@ internal class TaoComposeSceneHostWindows(
     // the active set here and issue a single `sendPointerEvent` with the
     // full pointer list every time, since Compose treats absence as a
     // release.
+    //
+    // A pen comes through the same WM_POINTER path (#827), tagged Stylus or
+    // Eraser. Unlike a finger it hovers: a Move without a contact is an
+    // unpressed pointer, a lift keeps it as one, and only leaving (CANCEL
+    // while unpressed) takes it out, as an Exit. Compose Desktop tracks hover
+    // for the mouse only, so no Enter / Exit reaches a modifier for now.
 
     private data class ActiveTouch(
         val id: Long,
@@ -519,6 +657,7 @@ internal class TaoComposeSceneHostWindows(
         var yPx: Float,
         var pressed: Boolean,
         var pressure: Float,
+        var type: PointerType,
     )
 
     /** Insertion order matters for stable pointer ordering across events. */
@@ -545,6 +684,8 @@ internal class TaoComposeSceneHostWindows(
         val sc = scene ?: return
         val xPx = xFixed / TOUCH_POSITION_SCALE
         val yPx = yFixed / TOUCH_POSITION_SCALE
+        val type = window.touchPointerType
+        val pen = type != PointerType.Touch
         window.updateWindowsTitleBarTouchDrag(phase, id, xPx, yPx)
         val pressure =
             if (forceFixed == TaoTouchEvent.FORCE_UNKNOWN) {
@@ -555,42 +696,7 @@ internal class TaoComposeSceneHostWindows(
                 forceFixed / TOUCH_FORCE_SCALE
             }
 
-        val composeType =
-            when (phase) {
-                TaoTouchEvent.PRESS -> {
-                    markOwnerFocusedFromPointerInput()
-                    activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure = pressure)
-                    PointerEventType.Press
-                }
-                TaoTouchEvent.MOVE -> {
-                    val existing = activeTouches[id]
-                    if (existing != null) {
-                        existing.xPx = xPx
-                        existing.yPx = yPx
-                        existing.pressure = pressure
-                        PointerEventType.Move
-                    } else {
-                        // Synthetic Press for an unknown id - defensive in case Tao
-                        // ever forwards a Move without a prior Started (palm-reject
-                        // race observed on some Surface drivers).
-                        markOwnerFocusedFromPointerInput()
-                        activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure = pressure)
-                        PointerEventType.Press
-                    }
-                }
-                TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> {
-                    val existing = activeTouches[id]
-                    if (existing != null) {
-                        existing.xPx = xPx
-                        existing.yPx = yPx
-                        existing.pressed = false
-                    } else {
-                        return
-                    }
-                    PointerEventType.Release
-                }
-                else -> return
-            }
+        val composeType = updateActiveTouch(phase, id, xPx, yPx, pressure, type) ?: return
 
         val pointers =
             activeTouches.values.map { t ->
@@ -598,7 +704,7 @@ internal class TaoComposeSceneHostWindows(
                     id = PointerId(t.id),
                     position = Offset(t.xPx, t.yPx),
                     pressed = t.pressed,
-                    type = PointerType.Touch,
+                    type = t.type,
                     pressure = t.pressure,
                 )
             }
@@ -607,49 +713,129 @@ internal class TaoComposeSceneHostWindows(
         // event-level button and an empty button mask. Skiko's primary
         // matcher treats Touch itself as primary; synthesising BUTTON1 here
         // prevents touch long-press/onClick matchers from recognizing it.
+        // A pen does press the primary button, as on Linux and macOS where it
+        // comes through the mouse path.
+        val penButtonChanged =
+            pen && (composeType == PointerEventType.Press || composeType == PointerEventType.Release)
+        val penPressed = activeTouches.values.any { it.pressed && it.type != PointerType.Touch }
         sc.sendPointerEvent(
             eventType = composeType,
             pointers = pointers,
+            buttons = PointerButtons(isPrimaryPressed = penPressed),
             keyboardModifiers = currentKeyboardModifiers,
+            button = if (penButtonChanged) PointerButton.Primary else null,
         )
 
         // Purge after the dispatch so the JVM saw the released finger one
-        // last time with `pressed=false` — same convention as Linux.
-        if (phase == TaoTouchEvent.RELEASE || phase == TaoTouchEvent.CANCEL) {
+        // last time with `pressed=false` — same convention as Linux. A lifted
+        // pen stays, hovering, until it leaves range.
+        if (phase == TaoTouchEvent.CANCEL || (phase == TaoTouchEvent.RELEASE && !pen)) {
             activeTouches.remove(id)
-            if (phase == TaoTouchEvent.CANCEL) {
+            if (phase == TaoTouchEvent.CANCEL && composeType == PointerEventType.Release) {
                 sc.cancelPointerInput()
             }
         }
     }
 
-    // ── Trackpad pinch-to-zoom (Ctrl-flagged WM_MOUSEWHEEL) ───────────────
-    //
-    // Windows delivers a precision-touchpad pinch (and a real Ctrl+wheel) as a
-    // WM_MOUSEWHEEL carrying the Ctrl flag; the vendored Tao patch routes those
-    // to the magnify hook (instead of a scroll, which would drive the
-    // scrollable — the bug we're fixing). Each notch/tick is a discrete delta,
-    // but pinch detection (`detectTransformGestures`) only crosses its touch
-    // slop once distance has changed enough, so per-tick Press→Release bursts
-    // would swallow fine touchpad zooms. We instead keep ONE continuous
-    // two-finger Touch gesture: the first tick presses, every tick moves
-    // (accumulating scale), and an idle debounce releases it — the same
-    // continuous model the macOS path uses, so zoom is smooth and the gesture
-    // never reaches the scrollable.
+    /**
+     * Applies one touch or pen update to [activeTouches] and returns the
+     * Compose event it makes, or null when it makes none.
+     */
+    private fun updateActiveTouch(
+        phase: Int,
+        id: Long,
+        xPx: Float,
+        yPx: Float,
+        pressure: Float,
+        type: PointerType,
+    ): PointerEventType? =
+        when (phase) {
+            TaoTouchEvent.PRESS -> {
+                markOwnerFocusedFromPointerInput()
+                activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure, type)
+                PointerEventType.Press
+            }
+            TaoTouchEvent.MOVE -> {
+                val existing = activeTouches[id]
+                if (existing != null) {
+                    existing.xPx = xPx
+                    existing.yPx = yPx
+                    existing.pressure = pressure
+                    existing.type = type
+                    PointerEventType.Move
+                } else if (type != PointerType.Touch) {
+                    // A pen coming into hover range.
+                    activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = false, pressure, type)
+                    PointerEventType.Move
+                } else {
+                    // Synthetic Press for an unknown id - defensive in case Tao
+                    // ever forwards a Move without a prior Started (palm-reject
+                    // race observed on some Surface drivers).
+                    markOwnerFocusedFromPointerInput()
+                    activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure, type)
+                    PointerEventType.Press
+                }
+            }
+            TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> {
+                activeTouches[id]?.let { existing ->
+                    val wasPressed = existing.pressed
+                    existing.xPx = xPx
+                    existing.yPx = yPx
+                    existing.pressed = false
+                    existing.type = type
+                    when {
+                        wasPressed -> PointerEventType.Release
+                        // A hovering pen leaving; a lifted one sends no second release.
+                        phase == TaoTouchEvent.CANCEL -> PointerEventType.Exit
+                        else -> null
+                    }
+                }
+            }
+            else -> null
+        }
 
-    private var pinchActive = false
-    private var pinchScale = 1f
-    private var pinchCenterX = 0f
-    private var pinchCenterY = 0f
-    private var pinchEndJob: Job? = null
+    // ── Precision touchpad: pan and pinch ─────────────────────────────────
+    //
+    // DirectManipulation (#706) and the legacy Ctrl+wheel emulation — see
+    // [TaoWindowsTouchpadInput].
+
+    private val touchpad =
+        TaoWindowsTouchpadInput(
+            object : TaoWindowsTouchpadInput.Target {
+                override val scene: ComposeScene? get() = this@TaoComposeSceneHostWindows.scene
+                override val scale: Float get() = this@TaoComposeSceneHostWindows.scale
+                override val keyboardModifiers: PointerKeyboardModifiers get() = currentKeyboardModifiers
+
+                // The raw position, not the deadband's: the zoom centre.
+                override val pointerPosition: Offset get() = Offset(lastPointerX, lastPointerY)
+
+                override fun guard(block: () -> Unit) = exceptionHandler.catchExceptions(block)
+            },
+            gestureScope,
+        )
 
     /**
-     * Synthesises a two-finger pinch from one Ctrl+wheel tick. [valueFixed] is
-     * the normalized wheel delta × [TRACKPAD_VALUE_SCALE] (positive = zoom in).
-     * Only magnify gestures are produced on Windows, so kind/phase/x/y from the
-     * shared `onTrackpadGesture` wire are ignored.
+     * One step of the window's DirectManipulation viewport (#706). Delivered
+     * while the window takes no input too ([inputEnabled] false), so a gesture
+     * a modal child interrupts still closes.
      */
-    @OptIn(ExperimentalComposeUiApi::class)
+    fun onDirectManipulation(
+        event: TaoDirectManipulationEvent,
+        inputEnabled: Boolean,
+    ) {
+        if (scene == null) return
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
+        touchpad.onDirectManipulation(event, inputEnabled)
+    }
+
+    /**
+     * Forwards one Ctrl+wheel pinch tick (the legacy emulation, or a mouse)
+     * as a Compose scale step. [valueFixed] is the normalized wheel delta ×
+     * [TRACKPAD_VALUE_SCALE] (positive = zoom in). Only magnify gestures are
+     * produced on Windows, so kind/phase/x/y from the shared
+     * `onTrackpadGesture` wire are ignored.
+     */
     fun onTrackpadGesture(
         @Suppress("UNUSED_PARAMETER") kind: Int,
         @Suppress("UNUSED_PARAMETER") phase: Int,
@@ -660,70 +846,7 @@ internal class TaoComposeSceneHostWindows(
         if (scene == null) return
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
-
-        val value = valueFixed / TRACKPAD_VALUE_SCALE
-        // Precision touchpads can deliver many fractional deltas; map the
-        // WHEEL_DELTA-normalized value through a multiplicative curve so small
-        // ticks accumulate smoothly without each message behaving like a large
-        // zoom step.
-        val step = TaoWheelPinchZoom.stepFromWheelDelta(value)
-
-        if (!pinchActive) {
-            pinchActive = true
-            pinchScale = 1f
-            // Centre on the cursor = zoom focal point (the pinch doesn't move it).
-            pinchCenterX = lastPointerX
-            pinchCenterY = lastPointerY
-            sendPinchPointers(PointerEventType.Press)
-        }
-        pinchScale *= step
-        sendPinchPointers(PointerEventType.Move)
-        schedulePinchEnd()
-    }
-
-    @OptIn(ExperimentalComposeUiApi::class)
-    private fun sendPinchPointers(eventType: PointerEventType) {
-        val sc = scene ?: return
-        val radius = PINCH_BASE_RADIUS_PX * pinchScale
-        val pressed = eventType != PointerEventType.Release
-        val pointers =
-            listOf(
-                ComposeScenePointer(
-                    id = PointerId(PINCH_POINTER_ID_A),
-                    position = Offset(pinchCenterX - radius, pinchCenterY),
-                    pressed = pressed,
-                    type = PointerType.Touch,
-                ),
-                ComposeScenePointer(
-                    id = PointerId(PINCH_POINTER_ID_B),
-                    position = Offset(pinchCenterX + radius, pinchCenterY),
-                    pressed = pressed,
-                    type = PointerType.Touch,
-                ),
-            )
-        sc.sendPointerEvent(
-            eventType = eventType,
-            pointers = pointers,
-            keyboardModifiers = currentKeyboardModifiers,
-        )
-    }
-
-    /** Re-arms the idle timer that releases the synthetic pinch once ticks stop. */
-    private fun schedulePinchEnd() {
-        pinchEndJob?.cancel()
-        pinchEndJob =
-            gestureScope.launch {
-                delay(PINCH_IDLE_END_MS.milliseconds)
-                endPinchGesture()
-            }
-    }
-
-    private fun endPinchGesture() {
-        pinchEndJob = null
-        if (!pinchActive) return
-        sendPinchPointers(PointerEventType.Release)
-        pinchActive = false
-        pinchScale = 1f
+        touchpad.onCtrlWheel(valueFixed / TRACKPAD_VALUE_SCALE)
     }
 
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
@@ -775,7 +898,7 @@ internal class TaoComposeSceneHostWindows(
             // replaces the queued frame rather than lining up behind it, so
             // what the user sees during the drag stays current.
             val pacedByVSync = attachmentHandle != 0L
-            if (pacedByVSync) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+            if (pacedByVSync) setVSyncEnabled(false)
             try {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.nativeStartDrag(
                     hwnd = hwnd,
@@ -785,7 +908,7 @@ internal class TaoComposeSceneHostWindows(
                     pump = OutboundDragPump(),
                 )
             } finally {
-                if (pacedByVSync) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+                if (pacedByVSync) setVSyncEnabled(true)
                 // Unwedge rendering: an invalidation raised during the drag
                 // latched `redrawPending` while DoDragDrop's pump ate the
                 // matching REDRAW_REQUESTED, which suppresses every later
@@ -862,7 +985,18 @@ internal class TaoComposeSceneHostWindows(
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
     private inner class InboundDnDCallback :
         dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.Callback {
-        private fun node() = scene?.rootDragAndDropNode
+        private fun node() = window.inboundDragAndDropNode?.invoke()
+
+        private val dnd =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                .InboundState()
+
+        override fun onDragFiles(
+            hwnd: Long,
+            files: Array<String>?,
+        ) {
+            dnd.onDragFiles(files = files)
+        }
 
         override fun onDragEnter(
             hwnd: Long,
@@ -877,8 +1011,8 @@ internal class TaoComposeSceneHostWindows(
             if (!hasFiles) {
                 return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             }
-            return if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragEnter(node(), x, y)
+            return if (dnd
+                    .onDragEnter(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
@@ -893,8 +1027,8 @@ internal class TaoComposeSceneHostWindows(
             keyState: Int,
             hasFiles: Boolean,
         ): Int =
-            if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-                    .onDragOver(node(), x, y)
+            if (dnd
+                    .onDragOver(node = node(), x = x, y = y)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
@@ -904,7 +1038,7 @@ internal class TaoComposeSceneHostWindows(
         override fun onDragLeave(hwnd: Long) {
             dev.nucleusframework.window.tao.TaoDnDDiagnostics
                 .log("onDragLeave")
-            dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            dnd
                 .onDragLeave(node())
         }
 
@@ -918,7 +1052,7 @@ internal class TaoComposeSceneHostWindows(
             dev.nucleusframework.window.tao.TaoDnDDiagnostics.log(
                 "onDrop x=$x y=$y files=${files?.size ?: 0}",
             )
-            return if (dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+            return if (dnd
                     .onDrop(node(), x, y, files)
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
@@ -934,6 +1068,8 @@ internal class TaoComposeSceneHostWindows(
     fun setContent(content: @Composable () -> Unit) =
         exceptionHandler.catchExceptions {
             scene?.setContent {
+                val fm = androidx.compose.ui.platform.LocalFocusManager.current
+                androidx.compose.runtime.SideEffect { capturedFocusManager = fm }
                 // Stock Compose Desktop Windows wheel behavior; only the
                 // lines-per-notch factor is reapplied (see TaoWindowsScrollConfig).
                 ProvideTaoWindowsScrollConfig {
@@ -998,7 +1134,7 @@ internal class TaoComposeSceneHostWindows(
             onResized(widthPxNew, heightPxNew)
             return
         }
-        NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+        setVSyncEnabled(false)
         try {
             if (widthPxNew != widthPx || heightPxNew != heightPx) {
                 // Resize the child + immediately present a themed clear:
@@ -1009,14 +1145,31 @@ internal class TaoComposeSceneHostWindows(
                 // The sub-ms clear shrinks the gap and colours it.
                 NativeTaoGlBridge.nativeResize(attachmentHandle, widthPxNew, heightPxNew, scale)
                 NativeTaoGlBridge.nativeClearPresent(attachmentHandle, resolveClientClearArgb())
+                // The buffer no longer holds the last frame (#755).
+                fullRepaintPending = true
+                pendingPresentDamage = null
                 // Raw GL clear-color/scissor calls happened behind Skia's
                 // state cache; resync before the Skia render below.
                 directContext?.resetGLAll()
             }
             onResized(widthPxNew, heightPxNew)
         } finally {
-            NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+            setVSyncEnabled(true)
         }
+    }
+
+    /**
+     * Swap interval as this host last set it — `true` = 1 (pace on the
+     * display refresh), `false` = 0 (present immediately, replacing a queued
+     * frame). Starts at ANGLE's default of 1; the modal resize/move loop, the
+     * outbound drag session and the fullscreen transition drop it for their
+     * duration.
+     */
+    private var vsyncEnabled = true
+
+    private fun setVSyncEnabled(enabled: Boolean) {
+        vsyncEnabled = enabled
+        NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, enabled)
     }
 
     fun onResized(
@@ -1036,27 +1189,33 @@ internal class TaoComposeSceneHostWindows(
         // the surface resize + present atomic (no black edge).
         pendingResizeApply = true
 
-        // Every WM_SIZE of the OS modal resize/move loop renders + presents
-        // inline, at swap interval 0 (see onResizeLoopChanged) — NEVER skip or
-        // coalesce a frame here. A skipped frame leaves the parent HWND at its
-        // new size while the child surface + content stay stale until the
-        // async redraw lands, and DWM composites that mismatch as the window
-        // trembling — the Windows twin of the macOS live-resize tremble
-        // (#476). Rendering inline is atomic instead: the modal loop is
-        // parked on this very call, so the geometry cannot advance while we
-        // paint, and each presented frame matches the window bounds exactly.
-        // The memory cost of the unpaced render loop (the #347 native-image
-        // leak) is bounded by the per-flush 256 MiB cache budget plus a
-        // periodic purge of the per-size GPU scratch accumulated by the drag;
-        // the drag-end path in onResizeLoopChanged reclaims the rest.
+        // Every size change renders + presents inline, in the dispatch that
+        // carried it — NEVER skip or coalesce a frame here. DWM registers the
+        // HWND resize at once and, until the next present, composites the
+        // previous frame over the new client area. In the OS modal
+        // resize/move loop (swap interval 0, see onResizeLoopChanged) a frame
+        // left to the async redraw shows as the window trembling — the
+        // Windows twin of the macOS live-resize tremble (#476); for a
+        // programmatic resize it is one stale step of a `WindowState.size`
+        // animation or of a maximize (#576). Rendering inline is atomic
+        // instead: the geometry cannot advance while we paint (the modal loop
+        // is parked on this very call; a programmatic SetWindowPos has
+        // returned), so each presented frame matches the window bounds
+        // exactly. The memory cost of the unpaced modal-loop render (the #347
+        // native-image leak) is bounded by the per-flush 256 MiB cache budget
+        // plus a periodic purge of the per-size GPU scratch accumulated by the
+        // drag; the drag-end path in onResizeLoopChanged reclaims the rest.
         if (resizeLoopActive) {
             val now = System.nanoTime()
-            if (now - lastResizePurgeNs >= RESIZE_PURGE_INTERVAL_NS) {
+            if (now - lastResizePurgeNs >= GPU_RESIZE_PURGE_INTERVAL_NS) {
                 lastResizePurgeNs = now
                 purgeGpuResourceCache()
             }
         }
-        onRedrawRequested()
+        // Outside the modal loop the resize is programmatic and the render
+        // loop is running alongside — see [renderFrame] for why this frame
+        // must neither park on VSync nor advance the frame clock.
+        renderFrame(sameTurnResize = !resizeLoopActive)
     }
 
     /**
@@ -1083,7 +1242,7 @@ internal class TaoComposeSceneHostWindows(
         val ctx = directContext ?: return
         if (attachmentHandle != 0L) NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
         ctx.resourceCacheLimit = 0
-        ctx.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
+        ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
     }
 
     /**
@@ -1128,10 +1287,10 @@ internal class TaoComposeSceneHostWindows(
                             .isActive(it)
                 } == true
             if (!framePacedContent) {
-                NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+                setVSyncEnabled(false)
             }
         } else {
-            NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+            setVSyncEnabled(true)
             // Paint the settled size once more so the first steady-state frame
             // is already vsync-paced and current.
             pendingResizeApply = true
@@ -1168,8 +1327,53 @@ internal class TaoComposeSceneHostWindows(
         window.requestRedraw()
     }
 
+    /**
+     * Reclaims the GPU resource cache when the window is minimized (#638) —
+     * the at-rest moment: nothing is visible, and the re-mint is paid by the
+     * restore frame, which redraws everything anyway. The resize purges above
+     * only ever run on the drag path, so a cache an animation filled would
+     * otherwise stay at its high-water mark for the life of the process.
+     *
+     * Rendering is inline on this thread, so making this host's context
+     * current is all the context discipline needed. Skipped under a live
+     * [dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers] consumer
+     * (#478), whose renderer must not lose its cache mid-frame.
+     */
+    fun onMinimizedChanged(minimized: Boolean) {
+        if (minimized) purgeGpuResourceCacheAtRest()
+    }
+
+    /** [onMinimizedChanged]'s purge, also [restReclaimer]'s. Always `true`: nothing to retry. */
+    private fun purgeGpuResourceCacheAtRest(): Boolean {
+        val ctx = directContext ?: return true
+        if (dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
+                .isActive(ctx)
+        ) {
+            return true
+        }
+        // Same foreign-context hazard as [purgeGpuResourceCache] (#514).
+        if (attachmentHandle != 0L) NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+        ctx.purgeAtRest()
+        return true
+    }
+
     fun onFocusChanged(focused: Boolean) {
-        windowInfo.isWindowFocused = focused
+        // Win32 focus moving to an embedded child (a `NativeView`, WebView2)
+        // reaches Tao as the main HWND losing it, but the window is still the
+        // one the user is working in. Telling the scene otherwise puts its
+        // focus system to sleep: carets stop, `clearFocus` stops taking, and
+        // anything reading `LocalWindowInfo.isWindowFocused` goes inactive
+        // under the user's hands. `DecoratedWindow` keeps its chrome active
+        // through the same question.
+        windowInfo.isWindowFocused = focused || isFocusInsideWindowTree()
+    }
+
+    /** Whether Win32 keyboard focus is on this window or on something it contains. */
+    private fun isFocusInsideWindowTree(): Boolean {
+        if (hwnd == 0L) return false
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge.isLoaded) return false
+        return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+            .nativeIsFocusInTree(hwnd)
     }
 
     private fun updateWindowInfoSize() {
@@ -1197,7 +1401,484 @@ internal class TaoComposeSceneHostWindows(
      */
     private var lastPresentedClearArgb: Int? = null
 
-    fun onRedrawRequested() {
+    /** Timestamp the frame clock last advanced to — see [renderFrame]. */
+    private var lastFrameClockNanos = 0L
+
+    /**
+     * The frame clock's timestamp for this frame: frozen for a same-turn
+     * resize frame, and in the OS modal size/move loop until its next advance
+     * is due (see [renderFrame] and [heldInModalLoop]).
+     */
+    private fun frameClockNanos(sameTurnResize: Boolean): Long {
+        val now = System.nanoTime()
+        val frozen =
+            lastFrameClockNanos != 0L &&
+                (sameTurnResize || resizeLoopActive && now < modalLoopClockDueNanos())
+        if (frozen) return lastFrameClockNanos
+        lastFrameClockNanos = now
+        return now
+    }
+
+    /**
+     * When the frame clock may advance again inside the OS modal size/move
+     * loop: three quarters of a display period after its last advance, so a
+     * frame woken at the next composition always advances it, while frames at
+     * the pump's or the mouse's rate are held to about the display's.
+     */
+    private fun modalLoopClockDueNanos(): Long = lastFrameClockNanos + presentPeriodNs * 3 / 4
+
+    /** A wake-up for the end of a modal-loop hold is already pending ([heldInModalLoop]). */
+    private val modalLoopWakePending = AtomicBoolean(false)
+
+    /**
+     * Inside the OS modal size/move loop, holds a frame that carries no size
+     * until the frame clock may advance again, and asks for the next frame at
+     * the next DWM composition (#484). Returns true when held.
+     *
+     * The loop presents at swap interval 0 (see [onResizeLoopChanged]), and an
+     * interval-1 present does not block from inside it either, so nothing else
+     * paces a frame the scene asks for itself: an animation's `withFrameNanos`
+     * resumed, invalidated and asked for the next frame as fast as the modal
+     * pump turned — over 2000 frames a second on a 90 Hz display, through a
+     * move as much as a resize. A WM_SIZE frame is never held (it must paint
+     * inline, #477); it advances the clock only when that is due
+     * ([frameClockNanos]), so an animation moves on at the display's rate
+     * whatever the mouse's.
+     */
+    private fun heldInModalLoop(): Boolean {
+        if (!resizeLoopActive || pendingResizeApply || forcePresentOnce || lastFrameClockNanos == 0L) return false
+        val due = modalLoopClockDueNanos()
+        if (System.nanoTime() >= due) return false
+        if (modalLoopWakePending.compareAndSet(false, true)) {
+            WindowsCompositionWaker.wake(due) {
+                modalLoopWakePending.set(false)
+                window.requestRedraw()
+            }
+        }
+        return true
+    }
+
+    /** The present decision of [renderFrame] — see the comment block above its call site. */
+    private fun mustPresent(
+        visualFrame: Boolean,
+        resizeApplied: Boolean,
+        clearArgb: Int,
+    ): Boolean =
+        visualFrame ||
+            resizeApplied ||
+            resizeLoopActive ||
+            forcePresentOnce ||
+            lastPresentedClearArgb != clearArgb
+
+    /**
+     * Swaps the host surface; [unpaced] presents at interval 0 for this one
+     * swap (see [renderFrame]). A [damage] presents only that rectangle
+     * (#755); `null` presents everything.
+     */
+    private fun present(
+        unpaced: Boolean,
+        damage: IntRect?,
+    ) {
+        if (unpaced) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+        try {
+            if (damage != null) {
+                val rect = PartialRedraw.eglRects(damage.orAPixel(), heightPx)
+                NativeTaoGlBridge.nativePresentWithDamage(attachmentHandle, rect[0], rect[1], rect[2], rect[3])
+            } else {
+                NativeTaoGlBridge.nativePresent(attachmentHandle)
+            }
+        } finally {
+            if (unpaced) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+        }
+        pendingPresentDamage = IntRect.Zero
+        notePresented(paced = vsyncEnabled && !unpaced)
+        TaoPresentDiagnostics.record(window.handle, IntSize(widthPx, heightPx))
+        if (mirrorEnabled) {
+            TaoPresentDiagnostics.recordMirror(
+                window.handle,
+                NativeTaoGlBridge.nativeHasMirror(attachmentHandle),
+            )
+        }
+    }
+
+    /** Partial redraw (#755): one frame's buffer age and damage — on a preserved surface, what it repaints. */
+    private class PartialFrame(
+        /** See [partialRedrawBufferAge]. */
+        val bufferAge: Int,
+    ) {
+        /** What changed since the previous frame; `null` = unknown, the frame repaints in full. */
+        var frameDamage: IntRect? = null
+
+        /** What [PartialRedraw.drawDebugTint] flashes: what changed, `null` for everything. */
+        var tintDamage: IntRect? = null
+    }
+
+    /** The surface presents no sub-rectangle or keeps no previous frame: the tracker is not walked. */
+    private var partialSurfaceUnsupported = false
+
+    /** The next frame repaints in full whatever its damage: the buffer was drawn behind our back. */
+    private var fullRepaintPending = false
+
+    /**
+     * What the buffer gained since the last present (#755) — the rectangle the
+     * next one must copy; `null` for the whole buffer.
+     */
+    private var pendingPresentDamage: IntRect? = null
+
+    /** [partialRedrawFrameKey] of the previous frame. */
+    private var lastPartialFrameKey = 0L
+
+    /** `nucleus.tao.partialRedraw.debug`: what [lastPartialFrameKey] was made of. */
+    private var lastFrameKeyParts = ""
+
+    /**
+     * When the previous frame presented nothing (#755), the earliest time the
+     * next may render — the pacing its VSync-paced swap would otherwise have
+     * given. 0 = none.
+     */
+    private var idleFrameDeadlineNs = 0L
+
+    /** A wake-up for the end of the idle hold is already scheduled. */
+    private var idleWakeScheduled = false
+
+    /** The display's frame period, as measured between back-to-back paced presents (read by [requestFrame] too). */
+    @Volatile private var presentPeriodNs = DEFAULT_PRESENT_PERIOD_NS
+
+    /** When the last present returned. */
+    private var lastPresentDoneNs = 0L
+
+    /** An idle frame went unpresented since the last present: the next interval is no period. */
+    private var idleSincePresent = false
+
+    /** Alternates the `nucleus.tao.partialRedraw.tint` colour. */
+    private var partialDebugFrame = 0
+
+    /** `nucleus.tao.partialRedraw.debug`: repaint statistics, logged every few seconds. */
+    private val partialStats = PartialRedrawStats()
+
+    /** Last reason logged by [logFullFrameReason]. */
+    private var lastFullFrameReason: String? = ""
+
+    /**
+     * Age of the back buffer for a partial frame (#755): 1 — ANGLE's
+     * preserved surface always holds the previous frame — or -1 when this
+     * frame repaints in full: partial redraw off or unsupported, or a frame
+     * at a new size (a resize apply, a same-turn resize, the modal size/move
+     * loop).
+     */
+    private fun partialRedrawBufferAge(
+        resizeApplied: Boolean,
+        sameTurnResize: Boolean,
+    ): Int {
+        if (!PartialRedraw.enabled || partialSurfaceUnsupported) return -1
+        if (resizeApplied || sameTurnResize || resizeLoopActive) return -1
+        val age = NativeTaoGlBridge.nativeBufferAge(attachmentHandle)
+        if (age < 0) partialSurfaceUnsupported = true
+        return age
+    }
+
+    /**
+     * Clears, draws the scene into [surface] — only [PartialFrame.frameDamage]
+     * of it when the frame can be partial (#755) — and fills in [partial].
+     */
+    @Suppress("LongParameterList")
+    private fun drawFrame(
+        ctx: DirectContext,
+        bundle: TaoSceneBundle,
+        surface: org.jetbrains.skia.Surface,
+        partial: PartialFrame,
+        clearArgb: Int,
+        now: Long,
+    ) {
+        val canvas = surface.canvas
+        var cleared = false
+        // Verifying, the scene is recorded once and that recording is drawn
+        // both here and into the full reference — the same frame, by
+        // construction (see the Linux host).
+        val verifyRecorder = if (PartialRedraw.verify) org.jetbrains.skia.PictureRecorder() else null
+        val sceneCanvas =
+            verifyRecorder?.beginRecording(Rect.makeWH(widthPx.toFloat(), heightPx.toFloat())) ?: canvas
+        bundle.render(sceneCanvas, now) { _ ->
+            resolvePartialFrame(bundle, partial, clearArgb)
+            canvas.save()
+            partial.frameDamage?.let { canvas.clipRect(it.toSkiaRect()) }
+            // Clear to the resolved title-bar background (pushed by `TitleBar`
+            // via [LocalRequestedClearColor]) so a Compose region without an
+            // explicit background matches the chrome color — aligned with the
+            // macOS / Linux Tao hosts and the AWT backends.
+            // Backdrop mode: tint over the DWM material (0 = raw material).
+            // Fully transparent without a backdrop: use the resolved clear
+            // colour (alpha-0 by default, or a semi-transparent WindowBackground).
+            // Opaque windows: themed clear as usual.
+            canvas.clear(clearArgb)
+            cleared = true
+        }
+        if (!cleared) {
+            // The frame failed before drawing: present it cleared, as before.
+            canvas.save()
+            canvas.clear(clearArgb)
+            partial.frameDamage = null
+        }
+        val verifyPicture = verifyRecorder?.finishRecordingAsPicture()
+        verifyRecorder?.close()
+        verifyPicture?.let { canvas.drawPicture(it) }
+        if (PartialRedraw.debugTint && partial.tintDamage?.isEmpty != true) {
+            PartialRedraw.drawDebugTint(canvas, partial.tintDamage, widthPx, heightPx, partialDebugFrame++)
+        }
+        canvas.restore()
+        verifyPicture?.let {
+            verifyPartialFrame(ctx, it, surface, partial.frameDamage, clearArgb)
+            it.close()
+        }
+    }
+
+    /**
+     * [drawFrame]'s `beforeDraw`: asks the tracker for the frame's damage —
+     * on every frame while the surface supports partial redraw, since the
+     * tracker compares each frame with the one before — and keeps it only
+     * when nothing outside the scene changed the frame's pixels.
+     */
+    private fun resolvePartialFrame(
+        bundle: TaoSceneBundle,
+        partial: PartialFrame,
+        clearArgb: Int,
+    ) {
+        val damage =
+            if (PartialRedraw.enabled && !partialSurfaceUnsupported) bundle.frameDamage(widthPx, heightPx) else null
+        // Read once the scene has composed: the TitleBar sets the clear
+        // colour and a dialog its scrim during composition.
+        val frameKey = partialRedrawFrameKey(clearArgb)
+        // A repaint covering most of the window costs more than a full one.
+        partial.frameDamage =
+            if (partial.bufferAge >= 0 && frameKey == lastPartialFrameKey && !fullRepaintPending) {
+                damage?.takeUnless { it.coversMostOf(widthPx, heightPx) }
+            } else {
+                null
+            }
+        if (PartialRedraw.debug) {
+            logFullFrameReason(bundle, partial.bufferAge, damage, frameKey, clearArgb)
+            partialStats
+                .frame(partial.frameDamage, widthPx * heightPx, bundle.damageSources, partial.bufferAge)
+                ?.let { windowsHostLogger.info(it) }
+        }
+        partial.tintDamage = partial.frameDamage
+        partial.frameDamage = PartialRedraw.debugRepaint(partial.frameDamage)
+        lastPartialFrameKey = frameKey
+        fullRepaintPending = false
+    }
+
+    /**
+     * Everything outside the scene that shapes a frame's pixels (#755): size,
+     * clear colour, the surface's transparency (it decides LCD text) and the
+     * popup scrims painted over the content (uniform, so a partial frame
+     * re-dims exactly what it repaints). A frame whose key differs from the
+     * previous one repaints in full.
+     */
+    private fun partialRedrawFrameKey(clearArgb: Int): Long {
+        var key = widthPx.toLong() shl 32 or (heightPx.toLong() and 0xFFFFFFFFL)
+        key = key * 31 + clearArgb
+        key = key * 31 + if (fullyTransparent || transparentBackgroundState.value) 1 else 0
+        key = key * 31 + popupScrims.all().hashCode()
+        return key
+    }
+
+    /**
+     * A frame following one that presented nothing waits for the display's
+     * rhythm (#755) — unless it carries a size, or must present.
+     */
+    private fun heldAfterIdleFrame(sameTurnResize: Boolean): Boolean =
+        !sameTurnResize && !pendingResizeApply && !resizeLoopActive && !forcePresentOnce && heldByIdleFramePacing()
+
+    /**
+     * [renderFrame]'s present decision with partial redraw (#755): calls
+     * [present] with the rectangle to present — `null` for everything — or
+     * presents nothing when nothing changed on screen. A [forced] present
+     * (first after show, resize, clear change) is whole: DWM may hold nothing
+     * of the window to patch. Returns whether it presented.
+     */
+    private inline fun presentFrame(
+        partial: PartialFrame,
+        visualFrame: Boolean,
+        forced: Boolean,
+        present: (damage: IntRect?) -> Unit,
+    ): Boolean {
+        // What the buffer gained since the last present, `null` for anything
+        // unknown — a full frame, even one left unpresented, may have changed
+        // every pixel.
+        val unpresented = pendingPresentDamage?.let { pending -> partial.frameDamage?.let(pending::union) }
+        pendingPresentDamage = unpresented
+        if (!forced && unpresented?.isIdle() == true) {
+            // Nothing changed on screen since the last present — an animation
+            // clipped away, a recomposition that drew nothing new. Presenting
+            // would only wake DWM for an identical picture; the next frame is
+            // held to the display's rhythm instead.
+            if (visualFrame) {
+                idleFrameDeadlineNs = System.nanoTime() + presentPeriodNs
+                idleSincePresent = true
+            }
+            return false
+        }
+        if (!forced && !visualFrame && unpresented == null) return false
+        forcePresentOnce = false
+        present(if (forced) null else unpresented)
+        return true
+    }
+
+    /**
+     * The previous frame changed nothing on screen and presented nothing
+     * (#755), so no VSync-paced swap paces this one: holds it to the display's
+     * rhythm, re-arming the redraw for when it is due. Returns true when held.
+     */
+    private fun heldByIdleFramePacing(): Boolean {
+        if (idleFrameDeadlineNs != 0L) {
+            val wait = idleFrameDeadlineNs - System.nanoTime()
+            if (wait > 0L) {
+                // One wake-up per hold, cleared below once the deadline passed.
+                if (!idleWakeScheduled) {
+                    idleWakeScheduled = true
+                    DelayScheduler.schedule({ window.requestRedraw() }, wait, TimeUnit.NANOSECONDS)
+                }
+                return true
+            }
+        }
+        idleFrameDeadlineNs = 0L
+        idleWakeScheduled = false
+        return false
+    }
+
+    /**
+     * After a present: back-to-back VSync-paced presents are one display
+     * frame apart, which is what an idle frame waits (#755).
+     */
+    private fun notePresented(paced: Boolean) {
+        val now = System.nanoTime()
+        val interval = now - lastPresentDoneNs
+        lastPresentDoneNs = now
+        // An idle frame in between makes the interval several periods long:
+        // averaging it would stretch every later idle hold.
+        val consecutive = paced && !idleSincePresent
+        idleSincePresent = false
+        if (consecutive && interval in MIN_PRESENT_PERIOD_NS..presentPeriodNs * 3 / 2) {
+            presentPeriodNs = (presentPeriodNs * (PERIOD_SMOOTHING - 1) + interval) / PERIOD_SMOOTHING
+        }
+    }
+
+    /** `-Dnucleus.tao.partialRedraw.debug=true`: logs why frames repaint in full, when that changes. */
+    private fun logFullFrameReason(
+        bundle: TaoSceneBundle,
+        bufferAge: Int,
+        damage: IntRect?,
+        frameKey: Long,
+        clearArgb: Int,
+    ) {
+        val keyParts =
+            "${widthPx}x$heightPx, clear #${Integer.toHexString(clearArgb)}, " +
+                "transparent ${fullyTransparent || transparentBackgroundState.value}, scrims ${popupScrims.all()}"
+        val keyChange = "size, clear colour, transparency or scrims changed ($lastFrameKeyParts -> $keyParts)"
+        lastFrameKeyParts = keyParts
+        val reason =
+            when {
+                !PartialRedraw.enabled -> "partial redraw disabled"
+                partialSurfaceUnsupported -> "the surface presents no sub-rectangle (no EGL_NV_post_sub_buffer)"
+                bufferAge < 0 -> "resizing"
+                damage == null -> bundle.fullFrameReason
+                frameKey != lastPartialFrameKey -> keyChange
+                fullRepaintPending -> "the buffer was drawn outside the scene"
+                damage.coversMostOf(widthPx, heightPx) -> "the damage covers most of the window"
+                else -> null
+            }
+        if (reason != lastFullFrameReason) {
+            lastFullFrameReason = reason
+            windowsHostLogger.info("Partial redraw: ${reason?.let { "full frames — $it" } ?: "partial frames"}")
+        }
+    }
+
+    /**
+     * `-Dnucleus.tao.partialRedraw.verify=true`: draws the frame's recording
+     * again, in full, into an offscreen surface and compares it with the
+     * partial frame pixel for pixel. The window surface is ANGLE's offscreen
+     * texture, which holds the previous frame plus [repaint]: any damage the
+     * tracker missed shows up as a difference.
+     */
+    private fun verifyPartialFrame(
+        ctx: DirectContext,
+        scene: org.jetbrains.skia.Picture,
+        surface: org.jetbrains.skia.Surface,
+        repaint: IntRect?,
+        clearArgb: Int,
+    ) {
+        val width = surface.width
+        val height = surface.height
+        val info =
+            org.jetbrains.skia.ImageInfo
+                .makeN32Premul(width, height)
+        // Same surface props as the window's: LCD text renders differently.
+        val reference =
+            org.jetbrains.skia.Surface.makeRenderTarget(
+                ctx,
+                false,
+                info,
+                0,
+                SurfaceOrigin.BOTTOM_LEFT,
+                lcdSurfaceProps(fullyTransparent || transparentBackgroundState.value),
+            ) ?: return
+        try {
+            reference.canvas.clear(clearArgb)
+            reference.canvas.drawPicture(scene)
+            val partialPixels =
+                org.jetbrains.skia
+                    .Bitmap()
+                    .apply { allocPixels(info) }
+            val fullPixels =
+                org.jetbrains.skia
+                    .Bitmap()
+                    .apply { allocPixels(info) }
+            if (surface.readPixels(partialPixels, 0, 0) && reference.readPixels(fullPixels, 0, 0)) {
+                PartialRedrawVerifier.compare(partialPixels, fullPixels, repaint)
+            }
+            partialPixels.close()
+            fullPixels.close()
+        } finally {
+            reference.close()
+        }
+    }
+
+    /** A render-loop frame: WM_PAINT (`RedrawRequested`) or one of the in-loop pumps. */
+    fun onRedrawRequested() = renderFrame(sameTurnResize = false)
+
+    /**
+     * Records, presents and paces one frame.
+     *
+     * [sameTurnResize] marks the frame [onResized] paints inside a
+     * programmatic resize's own dispatch (#576, Windows half). Two things
+     * set it apart from a render-loop frame:
+     *
+     * - **It presents at swap interval 0.** `setInnerSize` is a tao user
+     *   event, so the animation step the loop frame ticked lands *after* that
+     *   frame's VSync-paced swap returned — the refresh slot is taken. A
+     *   paced present here would queue behind it and DWM would composite the
+     *   new bounds with the previous frame for a whole refresh: the content
+     *   trailing the window edge, one step in two (the other step finds the
+     *   slot free). Interval 0 puts this frame on screen at the next refresh
+     *   regardless — flip-model DXGI replaces a queued frame rather than
+     *   lining up behind it — and does not park the event-loop thread.
+     * - **It does not advance the frame clock.** With no VSync park left to
+     *   pace it, ticking here would run the next animation step from this
+     *   very frame: its `setInnerSize` user event is delivered before the
+     *   pending WM_PAINT, whose `Resized` paints another same-turn frame,
+     *   and so on — a chain of unpaced frames the render loop never gets a
+     *   word in (#484 pacing). Re-using the last loop frame's timestamp keeps
+     *   `withFrameNanos` animations exactly where that frame left them: the
+     *   pending recompositions still run, the layout is at the new size, and
+     *   time moves on in the paced loop frame that follows.
+     *
+     * The modal resize/move loop is not a same-turn resize: its WM_SIZE is
+     * delivered synchronously, the interval is already 0 (or deliberately 1,
+     * #484), and its inline frames are the only frames that run while the
+     * user drags, so they must keep ticking — at the display's rate
+     * ([frameClockNanos], [heldInModalLoop]).
+     */
+    private fun renderFrame(sameTurnResize: Boolean) {
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
         val sc = bundle.scene
@@ -1209,8 +1890,13 @@ internal class TaoComposeSceneHostWindows(
         // flip-model swapchain never reports occlusion), so without this the
         // loop would spin recording + presenting into a hidden surface whenever
         // an animation keeps invalidating. Parks animations; restored via
-        // TaoWindow.requestRedraw on the MINIMIZED-off event.
+        // TaoWindow.requestRedraw on the MINIMIZED-off event. The scene's
+        // coroutines keep running meanwhile, between frames (#754).
         if (window.isMinimized) return
+        restReclaimer.onFrame()
+        val frameStartNanos = System.nanoTime()
+
+        if (heldAfterIdleFrame(sameTurnResize) || heldInModalLoop()) return
 
         // Push a pending size into the ComposeScene + GL surface before the
         // frame-clock drain, so the size-change-driven recomposition (and any
@@ -1228,7 +1914,7 @@ internal class TaoComposeSceneHostWindows(
             pendingResizeApply = false
         }
 
-        val now = System.nanoTime()
+        val now = frameClockNanos(sameTurnResize)
 
         // ── Frame pump ────────────────────────────────────────────────────
         // Drain queued main-thread work (scroll dispatch, a11y, etc.) before
@@ -1237,6 +1923,8 @@ internal class TaoComposeSceneHostWindows(
         // animation state is resumed and applied atomically with this frame's
         // recompose → layout → draw — no one-frame lag.
         flushingDispatcher.drain()
+
+        syncMirror()
 
         // Make sure the ES context + host window surface are current on this
         // thread (defensive — they already were since `attach`, but overlay/
@@ -1274,14 +1962,13 @@ internal class TaoComposeSceneHostWindows(
                 fbId = 0,
                 fbFormat = FramebufferFormat.GR_GL_RGBA8,
             )
+        // Mica/Acrylic backdrops arm transparentBackgroundState at runtime and
+        // the clear becomes a translucent tint over the DWM material — the
+        // surface must drop LCD SurfaceProps then too, not only for
+        // creation-time transparent windows. Re-evaluated every frame since
+        // the surface is recreated per frame.
         val surface =
-            Surface.makeFromBackendRenderTarget(
-                context = ctx,
-                rt = rt,
-                origin = SurfaceOrigin.BOTTOM_LEFT,
-                colorFormat = SurfaceColorFormat.RGBA_8888,
-                colorSpace = ColorSpace.sRGB,
-            ) ?: run {
+            makeTaoGlSurface(ctx, rt, fullyTransparent || transparentBackgroundState.value) ?: run {
                 rt.close()
                 return
             }
@@ -1293,20 +1980,9 @@ internal class TaoComposeSceneHostWindows(
         // flag untouched. See [TaoSceneBundle.visualDirty].
         val dirtyBeforeRender = bundle.visualDirty.getAndSet(false)
         val clearArgb = resolveClientClearArgb()
+        val partial = PartialFrame(bufferAge = partialRedrawBufferAge(resizeApplied, sameTurnResize))
         try {
-            // Clear to the resolved title-bar background (pushed by `TitleBar`
-            // via [LocalRequestedClearColor]) so a Compose region without an
-            // explicit background matches the chrome color — aligned with the
-            // macOS / Linux Tao hosts and the AWT backends.
-            // While a system backdrop is active the clear is the app's tint
-            // layer over the DWM material (0 = raw material); otherwise the
-            // opaque themed background.
-            // Backdrop mode: tint over the DWM material (0 = raw material).
-            // Fully transparent without a backdrop: use the resolved clear
-            // colour (alpha-0 by default, or a semi-transparent WindowBackground).
-            // Opaque windows: themed clear as usual.
-            surface.canvas.clear(clearArgb)
-            bundle.render(surface.canvas, now)
+            drawFrame(ctx, bundle, surface, partial, clearArgb, now)
 
             // `flushAndSubmit` issues the glFlush that commits the frame to
             // the back buffer; the present happens below, after the overlay/
@@ -1341,8 +2017,8 @@ internal class TaoComposeSceneHostWindows(
         // threshold, and the cadence stays flat.
         //
         // Bounded by the queue snapshot, so a self-redispatching continuation
-        // cannot spin this thread — it just keeps requesting redraws, which
-        // `dispatch` already did before this drain existed.
+        // cannot spin this thread — what it re-queues runs on the next
+        // off-frame drain (see SceneMainDispatcher).
         flushingDispatcher.drain()
 
         // Drain overlay/popup renderers. Cross-surface sync:
@@ -1376,19 +2052,16 @@ internal class TaoComposeSceneHostWindows(
         //    so it never raises a scene invalidation).
         // nativePresent defensively re-binds the host's window surface first
         // (a popup renderer may have left its pbuffer current) and
-        // eglSwapBuffers paces on the display refresh.
+        // eglSwapBuffers paces on the display refresh — except for the
+        // same-turn resize frame, presented at interval 0 (see above).
         val visualFrame = dirtyBeforeRender || bundle.visualDirty.get()
-        val mustPresent =
-            visualFrame ||
-                resizeApplied ||
-                resizeLoopActive ||
-                forcePresentOnce ||
-                lastPresentedClearArgb != clearArgb
-        if (mustPresent) {
-            forcePresentOnce = false
-            lastPresentedClearArgb = clearArgb
-            NativeTaoGlBridge.nativePresent(attachmentHandle)
-        }
+        val presented =
+            presentFrame(partial, visualFrame, mustPresent(visualFrame = false, resizeApplied, clearArgb)) {
+                lastPresentedClearArgb = clearArgb
+                present(unpaced = sameTurnResize && vsyncEnabled, damage = it)
+            }
+        lastFrameStartNanos = frameStartNanos
+        lastFrameClean = !presented
 
         // Backstop for a continuation that landed after the post-record drain
         // (a worker slower than the record). Costs it the jitter threshold
@@ -1407,6 +2080,9 @@ internal class TaoComposeSceneHostWindows(
         lastPointerY = yPx
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        healStaleNativePresses()
+        // Tao saw this move, so its own idea of the position is current again.
+        pointerPositionSetByOverlay = false
         if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
@@ -1439,19 +2115,212 @@ internal class TaoComposeSceneHostWindows(
         pressed: Boolean,
     ) {
         if (nativePointerRedispatchInFlight) return
+        syncPointerPositionFromWin32()
+        if (consumeOverlayEcho(mapButton(buttonCode), pressed)) return
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        // A click ends the pan gesture for Compose too (macOS host: same).
+        if (pressed) touchpad.finishPan()
+        sendButtonToScene(mapButton(buttonCode), pressed)
+    }
+
+    /**
+     * The one button path of the scene, for the HWND's own messages and the
+     * blending overlay's alike. Around the dispatch it keeps Compose's idea
+     * of the buttons honest against the embeds (see [forwardedNativeButtons])
+     * and gives the keyboard to whichever side the press went to.
+     */
+    private fun sendButtonToScene(
+        button: PointerButton,
+        pressed: Boolean,
+    ) {
+        if (pressed) {
+            // A button an embed swallowed the release of must not still be
+            // "down" when this press is hit-tested: Compose would see no
+            // down transition and the click would be dead.
+            for (stale in forwardedNativeButtons.toList()) releaseStaleNativePress(stale)
+            nativePointerDispatchedThisEvent = false
+            pressedButtons.add(button)
+        } else {
+            if (forwardedNativeButtons.remove(button)) releaseChildCapture()
+            // A release whose press the scene never saw (it went to an
+            // embed, a popup layer, or the frame) means nothing to it.
+            if (!pressedButtons.remove(button)) return
+        }
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
-            button = mapButton(buttonCode),
+            button = button,
+        )
+        if (pressed && !nativePointerDispatchedThisEvent) claimKeyboardForCompose()
+    }
+
+    /**
+     * Takes Win32 keyboard focus back from an embed after a press Compose
+     * kept. Without it an embed clicked into earlier keeps the keyboard while
+     * Compose shows a focused text field — the macOS host does the same with
+     * `makeFirstResponder`.
+     */
+    private fun claimKeyboardForCompose() {
+        if (attachedNativeViewCount == 0 || hwnd == 0L) return
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge.isLoaded) return
+        dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+            .nativeClaimKeyboardForCompose(hwnd)
+    }
+
+    /**
+     * Whether the scene's pointer position came from the blending overlay,
+     * which Tao knows nothing about — see [syncPointerPositionFromWin32].
+     */
+    private var pointerPositionSetByOverlay: Boolean = false
+
+    /**
+     * Puts the scene's pointer back where Win32 says it is, moving it there
+     * first when it has drifted.
+     *
+     * Tao reports a button press without a position, so the scene places it
+     * where the last move left the pointer — and Tao drops a `WM_MOUSEMOVE`
+     * whose coordinate equals the last one *it* saw. Every move over a
+     * `NativeView` is delivered to the blending overlay instead, which never
+     * reaches Tao, so its idea of the position goes stale: a pointer that
+     * leaves the embed and comes back to a point Tao saw before gets no move
+     * at all, and the click that follows is dispatched onto the embed the
+     * user just left. It is dead, and so is every click after it.
+     */
+    private fun syncPointerPositionFromWin32() {
+        if (!pointerPositionSetByOverlay) return
+        pointerPositionSetByOverlay = false
+        if (hwnd == 0L) return
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge.isLoaded) return
+        val packed =
+            dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+                .nativeCursorPosInClient(hwnd)
+        if (packed == Long.MIN_VALUE) return
+        val xPx = (packed shr 32).toInt().toFloat()
+        val yPx = packed.toInt().toFloat()
+        if (kotlin.math.abs(xPx - pointerDeadband.x) < 1f && kotlin.math.abs(yPx - pointerDeadband.y) < 1f) return
+        lastPointerX = xPx
+        lastPointerY = yPx
+        pointerDeadband.shouldDispatchMove(xPx, yPx, scale)
+        // The scene has to *travel* there: a press on a node the pointer was
+        // never seen entering leaves hover and cursor state on the old one.
+        scene?.sendPointerEvent(
+            eventType = PointerEventType.Move,
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
+            type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
+        )
+    }
+
+    /**
+     * The last button event the blending overlay fed to the scene, kept until
+     * the main HWND replays it — see [consumeOverlayEcho].
+     */
+    private var echoButton: PointerButton? = null
+    private var echoPressed: Boolean = false
+    private var echoXPx: Float = 0f
+    private var echoYPx: Float = 0f
+    private var echoAtNanos: Long = 0L
+
+    private fun noteOverlayButton(
+        button: PointerButton,
+        pressed: Boolean,
+        xPx: Float,
+        yPx: Float,
+    ) {
+        echoButton = button
+        echoPressed = pressed
+        echoXPx = xPx
+        echoYPx = yPx
+        echoAtNanos = System.nanoTime()
+    }
+
+    /**
+     * Whether this main-HWND button event is Windows replaying one the
+     * blending overlay already gave the scene, and must be dropped.
+     *
+     * Pixels a `NativeView` owns are the overlay's: it is the window under
+     * them and hit-tests them first. Forwarding the press it reports to the
+     * embedded child moves Win32 focus, and the queue then replays the very
+     * same message to the owner HWND. Dispatched a second time it leaves
+     * Compose holding a press with no release, and every later click on the
+     * window is dead. Matched on button, position and recency, and consumed
+     * once, so a genuine second click — a double click on the embed, or a
+     * programmatic dispatch straight into the window — still gets through.
+     */
+    private fun consumeOverlayEcho(
+        button: PointerButton,
+        pressed: Boolean,
+    ): Boolean {
+        val pending = echoButton ?: return false
+        if (pending != button || echoPressed != pressed) return false
+        if (System.nanoTime() - echoAtNanos > OVERLAY_ECHO_WINDOW_NANOS) return false
+        if (kotlin.math.abs(lastPointerX - echoXPx) > OVERLAY_ECHO_SLACK_PX ||
+            kotlin.math.abs(lastPointerY - echoYPx) > OVERLAY_ECHO_SLACK_PX
+        ) {
+            return false
+        }
+        echoButton = null
+        return true
+    }
+
+    /**
+     * Hands the mouse capture back when an embed took it on a forwarded
+     * press. Without this the child HWND keeps every later mouse message and
+     * the Compose window — its own HWND and the blending overlay alike —
+     * never sees the pointer again.
+     */
+    private fun releaseChildCapture() {
+        if (hwnd == 0L) return
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge.isLoaded) return
+        dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+            .nativeReleaseChildCapture(hwnd)
+    }
+
+    /**
+     * Releases every [forwardedNativeButtons] entry Win32 reports as up. Only
+     * pays the query while there is one, so a window without embeds never
+     * does.
+     */
+    private fun healStaleNativePresses() {
+        if (forwardedNativeButtons.isEmpty()) return
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge.isLoaded) return
+        val mask =
+            dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+                .nativeQueryPointerButtons()
+        for (button in forwardedNativeButtons.toList()) {
+            val bit =
+                when (button) {
+                    PointerButton.Primary -> WIN32_LBUTTON_BIT
+                    PointerButton.Secondary -> WIN32_RBUTTON_BIT
+                    PointerButton.Tertiary -> WIN32_MBUTTON_BIT
+                    else -> 0
+                }
+            if (mask and bit == 0) releaseStaleNativePress(button)
+        }
+    }
+
+    /** The release the embed kept, synthesized where the scene last saw the pointer. */
+    private fun releaseStaleNativePress(button: PointerButton) {
+        forwardedNativeButtons.remove(button)
+        releaseChildCapture()
+        if (!pressedButtons.remove(button)) return
+        scene?.sendPointerEvent(
+            eventType = PointerEventType.Release,
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
+            type = PointerType.Mouse,
+            keyboardModifiers = currentKeyboardModifiers,
+            button = button,
         )
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
         if (nativePointerRedispatchInFlight) return
+        // A wheel notch is another device taking over: close a trackpad pan
+        // where it was, so its PanEnd reaches the node that got its moves.
+        touchpad.finishPan()
         // Stock Compose Desktop wheel path: the event goes straight into the
         // scene and MouseWheelScrollingLogic animates it (smooth-scroll
         // tween) — the same pipeline as upstream Compose on Windows and
@@ -1488,6 +2357,7 @@ internal class TaoComposeSceneHostWindows(
         keyLocation: Int,
         modifiers: Int,
         codePoint: Int,
+        isRepeat: Boolean = false,
     ): Boolean {
         val sc = scene ?: return false
         currentKeyboardModifiers = taoKeyboardModifiers(modifiers)
@@ -1508,6 +2378,7 @@ internal class TaoComposeSceneHostWindows(
                         isAlt = isAlt,
                         isMeta = isMeta,
                         codePoint = codePoint,
+                        isRepeat = isRepeat,
                     )
                 TaoEventCode.KEY_TYPED ->
                     taoTypedKeyEvent(codePoint, keyLocation, isShift, isCtrl, isAlt, isMeta)
@@ -1562,6 +2433,57 @@ internal class TaoComposeSceneHostWindows(
             }
     }
 
+    /**
+     * #569: the client origin `nativeSetFrameInWindow` adds via
+     * `ClientToScreen`, paired with every display's work area — so a popup
+     * layer can clamp against the display it actually lands on instead of the
+     * work-area-sized virtual screen Compose positions it in.
+     *
+     * Both halves are live reads rather than a cached snapshot: the layers
+     * re-clamp on every owner move, so a window dragged to another monitor
+     * re-resolves the display too.
+     */
+    private fun resolvePopupScreenGeometry(): PopupScreenGeometry? {
+        if (!NativeTaoWindowsDecoBridge.isLoaded) return null
+        val origin =
+            NativeTaoWindowsDecoBridge
+                .nativeClientToScreen(hwnd, 0, 0)
+                ?.takeIf { it.size >= 2 }
+                ?: return null
+        // `reported`, not `all`: `all` invents a monitor when the platform
+        // names none, and clamping a popup into an invented work area moves it
+        // somewhere no display is. No geometry means no clamp.
+        val areas = TaoMonitors.reported(window).map { it.workAreaPx }.ifEmpty { return null }
+        return PopupScreenGeometry(
+            parentContentOriginPx = IntOffset(origin[0], origin[1]),
+            workAreasPx = areas,
+        )
+    }
+
+    /** Native popup layers handed out by [nativePopupLayerFactory] and not yet closed — swept by [detach]. */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    private val liveNativePopupLayers = linkedSetOf<androidx.compose.ui.scene.ComposeSceneLayer>()
+
+    /**
+     * Builds this window's native popup layers ([TaoPopupSceneLayerWindows]).
+     * The factory behind [nativePopupLayers], and the one `NativePopupLayers { }`
+     * hands to a subtree that wants native surfaces while the window's own
+     * popups stay in-scene. `null` until the HWND and its Skia context exist.
+     */
+
+    fun nativePopupLayerFactory(): TaoPopupLayerFactory? {
+        val popupHost = popupHost() ?: return null
+        return { density, layoutDirection, focusable, consumeOutside ->
+            TaoPopupSceneLayerWindows(
+                host = popupHost,
+                initialDensity = density,
+                initialLayoutDirection = layoutDirection,
+                initialFocusable = focusable,
+                initialConsumePointerInputOutside = consumeOutside,
+            ).also { liveNativePopupLayers += it }
+        }
+    }
+
     fun popupHost(): TaoPopupHostWindows? {
         if (hwnd == 0L) return null
         val ctx = directContext ?: return null
@@ -1571,6 +2493,7 @@ internal class TaoComposeSceneHostWindows(
             override val scale: Float get() = outer.scale
             override val isOwnerWindowTransparent: Boolean get() = outer.fullyTransparent
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
+            override val parentWindowInfo: androidx.compose.ui.platform.WindowInfo get() = outer.windowInfo
             override val workAreaSize: IntSize get() {
                 if (!NativeTaoWindowsDecoBridge.isLoaded) return parentWindowSize
                 val area =
@@ -1582,12 +2505,17 @@ internal class TaoComposeSceneHostWindows(
                 val h = area[3].toInt().coerceAtLeast(1)
                 return IntSize(w, h)
             }
+
+            override val popupScreenGeometry: PopupScreenGeometry?
+                get() = outer.resolvePopupScreenGeometry()
             override val sceneCoroutineContext: kotlin.coroutines.CoroutineContext
                 get() = outer.coroutineContext + outer.flushingDispatcher
             override val hostDirectContext: DirectContext get() = ctx
 
             override val exceptionHandler: WindowExceptionHandler?
                 get() = outer.exceptionHandler
+
+            override val popupScrims: PopupScrimRegistry get() = outer.popupScrims
 
             override fun requestRedraw() = outer.window.requestRedraw()
 
@@ -1605,6 +2533,11 @@ internal class TaoComposeSceneHostWindows(
             override fun unregisterRenderer(token: Any) {
                 outer.popupRenderers.remove(token)
                 outer.hostContextDirtied = true
+            }
+
+            @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+            override fun onLayerClosed(layer: androidx.compose.ui.scene.ComposeSceneLayer) {
+                outer.liveNativePopupLayers.remove(layer)
             }
 
             override fun registerKeyHandler(
@@ -1675,7 +2608,17 @@ internal class TaoComposeSceneHostWindows(
         for (cb in ownerMoveListeners.values.toList()) cb()
     }
 
-    fun nativeViewHost(): dev.nucleusframework.window.tao.TaoNativeViewHost? {
+    /**
+     * One host instance per scene. The composition local built from it keys
+     * `NativeView`'s attach effect: a fresh object on every recomposition of
+     * the window root would detach and re-attach every embed each time.
+     */
+    private var nativeViewHostInstance: dev.nucleusframework.window.tao.TaoNativeViewHost? = null
+
+    fun nativeViewHost(): dev.nucleusframework.window.tao.TaoNativeViewHost? =
+        nativeViewHostInstance ?: createNativeViewHost()?.also { nativeViewHostInstance = it }
+
+    private fun createNativeViewHost(): dev.nucleusframework.window.tao.TaoNativeViewHost? {
         if (hwnd == 0L) return null
         if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge.isLoaded) return null
         val parent = hwnd
@@ -1688,6 +2631,7 @@ internal class TaoComposeSceneHostWindows(
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeAttach(parent, childHandle)
                 outer.nativeViewBlending.retain()
+                outer.attachedNativeViewCount++
             }
 
             override fun detach(
@@ -1698,6 +2642,7 @@ internal class TaoComposeSceneHostWindows(
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeDetach(childHandle)
                 outer.nativeViewBlending.release()
+                outer.attachedNativeViewCount = (outer.attachedNativeViewCount - 1).coerceAtLeast(0)
             }
 
             override fun setFrame(
@@ -1730,13 +2675,42 @@ internal class TaoComposeSceneHostWindows(
                 pressed: Boolean,
             ) {
                 if (parent == 0L) return
+                if (type == NATIVE_POINTER_PRESS) {
+                    // The child SetCaptures on this press and keeps the
+                    // release; Compose hears of it through the heal.
+                    outer.forwardedNativeButtons +=
+                        when (button) {
+                            NATIVE_SECONDARY_BUTTON -> PointerButton.Secondary
+                            NATIVE_MIDDLE_BUTTON -> PointerButton.Tertiary
+                            else -> PointerButton.Primary
+                        }
+                    // The embed takes the keyboard with this press (the bridge
+                    // SetFocuses it before forwarding): a Compose text field
+                    // must not keep showing a caret beside the embed's.
+                    //
+                    // Deferred, because this runs inside the Press dispatch —
+                    // but on the main dispatcher, not the frame queue: the
+                    // press may be the one that opens the embed's own context
+                    // menu, whose modal loop stops the window painting, and a
+                    // focus clear waiting for a frame would never run while
+                    // the menu the user is looking at is up.
+                    dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+                        .dispatch(kotlin.coroutines.EmptyCoroutineContext) {
+                            outer.capturedFocusManager?.clearFocus(force = true)
+                        }
+                }
                 outer.nativePointerRedispatchInFlight = true
                 try {
                     dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                         .nativeDispatchPointer(parent, handle, type, xPx, yPx, button, pressed)
                 } finally {
                     outer.nativePointerRedispatchInFlight = false
+                    outer.window.resetRedrawLatch()
                 }
+            }
+
+            override fun noteNativePointerDispatch() {
+                outer.nativePointerDispatchedThisEvent = true
             }
 
             override fun dispatchScrollToNative(
@@ -1753,6 +2727,12 @@ internal class TaoComposeSceneHostWindows(
                         .nativeDispatchScroll(parent, handle, xPx, yPx, dx, dy)
                 } finally {
                     outer.nativePointerRedispatchInFlight = false
+                    // Handing an event to a child HWND runs its handler on this
+                    // thread, and anything it pumps swallows the redraw this
+                    // window had pending — the coalescing latch then suppresses
+                    // every later request and the window silently stops
+                    // painting. See TaoWindow.resetRedrawLatch.
+                    outer.window.resetRedrawLatch()
                 }
             }
         }
@@ -1804,6 +2784,10 @@ internal class TaoComposeSceneHostWindows(
                 heightPx = this@TaoComposeSceneHostWindows.heightPx,
                 directContext = ctx,
                 clearColorArgb = 0,
+                // The blending overlay is unconditionally a per-pixel-alpha
+                // DComp swapchain (DXGI_ALPHA_MODE_PREMULTIPLIED) regardless of
+                // the window's own transparency — no LCD SurfaceProps.
+                windowTransparent = true,
                 present = { NativeTaoWindowsOverlayBridge.nativeSwapBuffers(overlayHandle) },
             ) { canvas, nanoTime ->
                 // Clip to the union of NativeView rects — SetWindowRgn
@@ -1848,6 +2832,7 @@ internal class TaoComposeSceneHostWindows(
         ) {
             lastPointerX = x
             lastPointerY = y
+            pointerPositionSetByOverlay = true
             currentKeyboardModifiers = taoKeyboardModifiers(modifiers)
             windowInfo.keyboardModifiers = currentKeyboardModifiers
             val pointerButton =
@@ -1863,18 +2848,21 @@ internal class TaoComposeSceneHostWindows(
                     2 -> PointerEventType.Release
                     else -> PointerEventType.Move
                 }
-            // Same sub-pixel deadband as the main stream (#615) — the
-            // overlay WndProc shares the scene's single mouse pointer.
-            if (eventType == PointerEventType.Move &&
-                !pointerDeadband.shouldDispatchMove(x, y, scale)
-            ) {
+            if (eventType != PointerEventType.Move) {
+                noteOverlayButton(pointerButton ?: PointerButton.Primary, eventType == PointerEventType.Press, x, y)
+                // The overlay reports in owner-client px, like the HWND.
+                pointerDeadband.shouldDispatchMove(x, y, scale)
+                sendButtonToScene(pointerButton ?: PointerButton.Primary, eventType == PointerEventType.Press)
                 return
             }
+            healStaleNativePresses()
+            // Same sub-pixel deadband as the main stream (#615) — the
+            // overlay WndProc shares the scene's single mouse pointer.
+            if (!pointerDeadband.shouldDispatchMove(x, y, scale)) return
             scene?.sendPointerEvent(
                 eventType = eventType,
                 position = Offset(pointerDeadband.x, pointerDeadband.y),
                 type = PointerType.Mouse,
-                button = pointerButton,
                 keyboardModifiers = currentKeyboardModifiers,
             )
         }
@@ -1902,10 +2890,30 @@ internal class TaoComposeSceneHostWindows(
     }
 
     // Hop the debounced semantics walk onto the render thread (it touches
-    // Compose state) and request a redraw. See AbstractTaoComposeSceneHost.
+    // Compose state); it runs between frames. See AbstractTaoComposeSceneHost.
     override fun dispatchA11yWalk(block: () -> Unit) {
         flushingDispatcher.enqueue(Runnable { block() })
-        window.requestRedraw()
+    }
+
+    /** Whether this window asked for the frame mirror (opaque) — see [syncMirror]. */
+    private var mirrorWanted = false
+
+    /** Whether the frame mirror is on for this window, as the native side answered — see [syncMirror]. */
+    private var mirrorEnabled = false
+
+    /**
+     * Allows mirroring frames into DirectComposition for an opaque window, so
+     * DWM gets them whole even where the window lies off-screen
+     * (`NativeTaoGlBridge.nativeSetMirrorEnabled`). Off for per-pixel alpha
+     * (a transparent window, an armed backdrop): the mirror would lay a
+     * translucent frame over the same frame below it.
+     */
+    private fun syncMirror() {
+        val wanted = frameMirrorEnabled && !fullyTransparent && !transparentBackgroundState.value
+        if (wanted == mirrorWanted) return
+        mirrorWanted = wanted
+        // What the driver allows, not what was asked for.
+        mirrorEnabled = NativeTaoGlBridge.nativeSetMirrorEnabled(attachmentHandle, wanted)
     }
 
     /**
@@ -1957,18 +2965,26 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun detach() {
+        // Layers whose dismiss animation was still running: Compose closes a
+        // native popup layer only when its own disappearance finishes, so an
+        // owner destroyed mid-animation left the layer's popup window mapped
+        // for good — an invisible rectangle eating every click under it.
+        for (layer in liveNativePopupLayers.toList()) layer.close()
+        liveNativePopupLayers.clear()
         window.showHook = null
+        NativeTaoWindowsDecoBridge.setOwnerShowHook(hwnd, null)
+        window.inboundDragAndDropNode = null
         window.imePreedit = null
         window.imeCommit = null
         imeSession.onInputSession(null)
         nativeViewBlending.destroyOverlay()
         shutdownA11yScheduler()
         textToolbar.hide()
-        // Stop the pinch idle timer; the scene is going away so no Release needed.
-        pinchEndJob?.cancel()
-        pinchEndJob = null
-        pinchActive = false
+        // Stop the pinch idle timer and the pan's end timer; the scene is going
+        // away so no ScaleEnd / PanEnd is needed.
+        touchpad.cancel()
         gestureScope.cancel()
+        restReclaimer.close()
         // Make THIS host's ES context current before tearing down Skia
         // resources. A sibling host (e.g. the main window opened while this
         // one — the onboarding window — closes) may have left its own
@@ -1981,6 +2997,7 @@ internal class TaoComposeSceneHostWindows(
             NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
         }
         sceneBundle?.close()
+        window.clearContentMeasurer()
         sceneBundle = null
         if (directContext != null) {
             // Belt for TextureView imports a leaked composition may still hold:
@@ -2008,12 +3025,34 @@ internal class TaoComposeSceneHostWindows(
 
     internal companion object {
         /**
+         * `-Dnucleus.tao.windowsFrameMirror=false` never mirrors frames into
+         * DirectComposition, for a driver that shows the mirror black over a
+         * fine window. Moves are then answered with a repaint, as on a GPU
+         * without mirror support. Read once.
+         */
+        private val frameMirrorEnabled: Boolean =
+            System.getProperty("nucleus.tao.windowsFrameMirror", "true").toBoolean()
+
+        /**
          * Floor between two frames painted from inside `DoDragDrop`'s modal
          * loop — see [OutboundDragPump]. ~8 ms leaves headroom above 120 Hz
          * while still collapsing the burst of mouse-move callbacks Windows
          * fires between two VBlanks.
          */
         private const val MIN_DRAG_FRAME_INTERVAL_NANOS: Long = 8_000_000L
+
+        /** Frame period assumed until two back-to-back presents measured one (#755). */
+        private const val DEFAULT_PRESENT_PERIOD_NS = 16_666_667L
+
+        /**
+         * Shortest interval taken for one display frame (a 480 Hz panel is ~2.1 ms).
+         * The longest is 1.5x the current period: two refreshes (a slow frame,
+         * 30 fps content on a 60 Hz panel) would drift it otherwise.
+         */
+        private const val MIN_PRESENT_PERIOD_NS = 2_000_000L
+
+        /** Weight of the running average of the present period. */
+        private const val PERIOD_SMOOTHING = 8L
 
         // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
         // `TOUCH_FORCE_FIXED_SCALE` in `events.rs`.
@@ -2025,37 +3064,6 @@ internal class TaoComposeSceneHostWindows(
          * `TRACKPAD_VALUE_FIXED_SCALE` in `events.rs`.
          */
         private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
-
-        /** Half-distance of the synthetic two-finger pair at scale 1.0. */
-        private const val PINCH_BASE_RADIUS_PX: Float = 120f
-
-        /**
-         * GPU resource cache budget for the host DirectContext. Bounds the
-         * per-frame scratch (wrapped-framebuffer stencil/attachments) so an
-         * uncapped resize flood — VSync is dropped during the OS modal
-         * resize/move loop — can't grow the process unbounded. Sized to cover
-         * a HiDPI window's render target plus Compose's layer/glyph caches
-         * with headroom, while still far below the >1 GB the leak reached.
-         */
-        private const val RESOURCE_CACHE_LIMIT_BYTES: Long = 256L * 1024 * 1024
-
-        /**
-         * Gap between in-drag GPU cache purges during the OS modal
-         * resize/move loop. Every frame of the drag mints render-target
-         * scratch (stencil/attachments) at a size no later frame reuses;
-         * the periodic limit-toggle purge in [onResized] releases that
-         * accumulation mid-drag so the peak stays bounded even for long
-         * drags, without skipping any resize frame (a skipped frame is
-         * composited by DWM as a geometry/content mismatch — trembling).
-         */
-        private const val RESIZE_PURGE_INTERVAL_NS: Long = 250_000_000L
-
-        // Stable ids well clear of real touch ids (raw WM_POINTER finger ids).
-        private const val PINCH_POINTER_ID_A: Long = 0xA001L
-        private const val PINCH_POINTER_ID_B: Long = 0xA002L
-
-        /** Idle gap after the last tick before the synthetic pinch releases. */
-        private const val PINCH_IDLE_END_MS: Long = 120L
 
         /**
          * Live attached-host count across the JVM. When > 1, every host
@@ -2077,30 +3085,6 @@ internal class TaoComposeSceneHostWindows(
                 .concurrent
                 .atomic
                 .AtomicInteger(0)
-    }
-
-    private inner class FlushingMainDispatcher : CoroutineDispatcher() {
-        private val queue = ConcurrentLinkedQueue<Runnable>()
-
-        override fun dispatch(
-            context: KCoroutineContext,
-            block: Runnable,
-        ) {
-            queue.add(block)
-            window.requestRedraw()
-        }
-
-        fun enqueue(block: Runnable) {
-            queue.add(block)
-        }
-
-        fun drain() {
-            var remaining = queue.size
-            while (remaining-- > 0) {
-                val runnable = queue.poll() ?: break
-                runnable.run()
-            }
-        }
     }
 }
 
@@ -2172,41 +3156,31 @@ private class WindowsTaoPlatformContext(
     }
 
     override fun setPointerIcon(pointerIcon: androidx.compose.ui.input.pointer.PointerIcon) {
-        NativeTaoBridge.nativeSetCursorIcon(
+        NativeTaoBridge.setCursorIcon(
             windowHandle,
             mapPointerIcon(pointerIcon),
         )
     }
 
-    private fun mapPointerIcon(icon: androidx.compose.ui.input.pointer.PointerIcon): Int {
-        when {
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Default ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Text ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.TEXT
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Hand ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.HAND
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Crosshair ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.CROSSHAIR
-        }
-        return runCatching {
-            val cursor = icon.javaClass.getMethod("getCursor").invoke(icon) as? java.awt.Cursor
-            when (cursor?.type) {
-                java.awt.Cursor.TEXT_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.TEXT
-                java.awt.Cursor.HAND_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.HAND
-                java.awt.Cursor.CROSSHAIR_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.CROSSHAIR
-                java.awt.Cursor.WAIT_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.WAIT
-                java.awt.Cursor.MOVE_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.MOVE
-                java.awt.Cursor.E_RESIZE_CURSOR, java.awt.Cursor.W_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.EW_RESIZE
-                java.awt.Cursor.N_RESIZE_CURSOR, java.awt.Cursor.S_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.NS_RESIZE
-                java.awt.Cursor.NE_RESIZE_CURSOR, java.awt.Cursor.SW_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.NESW_RESIZE
-                java.awt.Cursor.NW_RESIZE_CURSOR, java.awt.Cursor.SE_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.NWSE_RESIZE
-                else -> dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT
-            }
-        }.getOrDefault(dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT)
-    }
+    private fun mapPointerIcon(icon: androidx.compose.ui.input.pointer.PointerIcon): Int = icon.toTaoCursorIconCode()
 }
+
+/** `NativeView` pointer type / button codes (see `TaoNativeViewHost.dispatchPointerToNative`). */
+private const val NATIVE_POINTER_PRESS = 1
+private const val NATIVE_SECONDARY_BUTTON = 2
+private const val NATIVE_MIDDLE_BUTTON = 3
+
+/** Bits of `NativeTaoWindowsNativeViewBridge.nativeQueryPointerButtons`. */
+private const val WIN32_LBUTTON_BIT = 1
+private const val WIN32_RBUTTON_BIT = 2
+private const val WIN32_MBUTTON_BIT = 4
+
+/** How long after an overlay button event its main-HWND replay may arrive. */
+private const val OVERLAY_ECHO_WINDOW_NANOS = 500_000_000L
+
+/** How far the replayed position may sit from the overlay's, in px. */
+private const val OVERLAY_ECHO_SLACK_PX = 2f
+
+private val windowsHostLogger: java.util.logging.Logger =
+    java.util.logging.Logger
+        .getLogger(TaoComposeSceneHostWindows::class.java.name)

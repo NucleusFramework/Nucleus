@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "windowTitle": "Tao Backend Demo",
+  "windowTitle": "Nucleus A11y Surface",
   "tab": "A11y",
-  "sourceOfTruth": "examples/shared/.../A11yTab.kt",
+  "sourceOfTruth": "examples/lab/probes/input/.../a11y/surface/A11ySurface.kt",
   "description": "Exact expected UIA nodes for the A11y tab. Measured via RawViewWalker; compared field-by-field against live tree.",
   "notes": [
     "Dynamic names use nameMatch=regex (click counter, notification clicks, textfield status).",
@@ -12,16 +12,8 @@
     "OS chrome (title bar Minimize/Maximize) is not asserted — only app-owned tree."
   ],
   "tabs": [
-    { "name": "Demo", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Scroll", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Zoom", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Window actions", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
     { "name": "A11y", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true, "selected": true },
-    { "name": "Complex", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Events", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "WebView", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "SwiftUI", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Texture", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true }
+    { "name": "Complex", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true }
   ],
   "nodes": [
     {

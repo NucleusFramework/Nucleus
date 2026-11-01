@@ -22,6 +22,10 @@ import org.gradle.process.ExecOperations
 import org.gradle.work.DisableCachingByDefault
 import javax.inject.Inject
 
+/**
+ * Base class of the Nucleus tasks: injects the Gradle services they use, owns the per-task logs directory and
+ * the [verbose] switch, and provides the external tool runner.
+ */
 @DisableCachingByDefault(because = "Abstract base task, subclasses opt in to caching individually")
 abstract class AbstractNucleusTask : DefaultTask() {
     @get:Inject

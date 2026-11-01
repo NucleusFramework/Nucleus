@@ -25,9 +25,9 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
  *   single `Release` carrying the final position.
  * - **Trackpad gesture**: matches [NativeTaoBridge.EventCallback.onTrackpadGesture]
  *   exactly — same kind / phase / fixed-point scaling. The Rust side has
- *   already converted GDK's absolute pinch scale into per-event ratio
- *   deltas and GDK's radian angle deltas into degrees, so the JVM-side
- *   synth math is platform-independent.
+ *   already converted GDK's absolute pinch scale into a per-event ratio
+ *   (forwarded as Compose Scale events, #660) and GDK's radian angle
+ *   deltas into degrees, so the JVM-side math is platform-independent.
  *
  * Coordinates passed to [Callback.onTouchEvent] are physical pixels in the
  * GtkWindow's bin-child coordinate space, encoded as fixed-point ×1024
@@ -56,6 +56,8 @@ internal object NativeTaoLinuxTouchBridge {
          * @param pressedMask Bit `i` set iff `ids[i]` is currently pressed. The
          *                 finger being released this event has its bit cleared
          *                 even though it is still present in the arrays.
+         * @param timestampMillis Original unsigned GDK event timestamp in milliseconds;
+         *                 zero means no timestamp is available.
          */
         @Suppress("LongParameterList", "FunctionParameterNaming")
         fun onTouchEvent(
@@ -66,13 +68,14 @@ internal object NativeTaoLinuxTouchBridge {
             xsFixed: LongArray,
             ysFixed: LongArray,
             pressedMask: Long,
+            timestampMillis: Long,
         )
 
         /**
          * Trackpad pinch / rotate. Same wire format as
          * [NativeTaoBridge.EventCallback.onTrackpadGesture] so the JVM-side
-         * synth math (`TaoComposeSceneHost.onTrackpadGesture`) is reused
-         * verbatim across macOS and Linux. Wayland-only on Linux.
+         * scale / rotate dispatch is reused across macOS and Linux.
+         * Wayland-only on Linux.
          */
         @Suppress("LongParameterList", "FunctionParameterNaming")
         fun onTrackpadGesture(

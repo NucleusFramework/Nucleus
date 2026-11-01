@@ -31,4 +31,5 @@ internal class MultiOutputStream(
     }
 }
 
-internal fun OutputStream.alsoOutputTo(secondaryStream: OutputStream): OutputStream = MultiOutputStream(this, secondaryStream)
+internal fun OutputStream.alsoOutputTo(secondaryStream: OutputStream): OutputStream =
+    MultiOutputStream(this, secondaryStream)

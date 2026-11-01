@@ -65,6 +65,8 @@ typedef struct {
     char *(*XResourceManagerString)(Display *);
     int (*XLookupString)(XKeyEvent *, char *, int, KeySym *, XComposeStatus *);
     KeySym (*XkbKeycodeToKeysym)(Display *, KeyCode, unsigned, unsigned);
+    /* Optional: without it, a held key arrives as release + press pairs. */
+    Bool (*XkbSetDetectableAutoRepeat)(Display *, Bool, Bool *);
     Bool (*XQueryExtension)(Display *, const char *, int *, int *, int *);
     Bool (*XGetEventData)(Display *, XGenericEventCookie *);
     void (*XFreeEventData)(Display *, XGenericEventCookie *);

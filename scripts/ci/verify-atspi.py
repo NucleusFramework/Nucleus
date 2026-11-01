@@ -2,7 +2,7 @@
 """CI probe: verifies the Tao Linux AT-SPI projection (AccessKit) end-to-end.
 
 Walks the AT-SPI desktop through pyatspi (the same bus Orca uses), locates the
-tao-demo window (launched with NUCLEUS_DEMO_TAB=A11y), and asserts:
+Lab a11y-surface fixture window (opens on the A11y tab), and asserts:
   1. the expected named elements are projected,
   2. performing the Increment action updates the click counter.
 

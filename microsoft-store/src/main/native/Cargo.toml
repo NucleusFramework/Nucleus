@@ -1,0 +1,43 @@
+[package]
+name = "nucleus_msstore"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[lib]
+name = "nucleus_msstore"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni = "0.21"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[target.'cfg(windows)'.dependencies]
+windows-core = "0.62"
+windows-future = "0.3"
+windows-collections = "0.3"
+windows = { version = "0.62", features = [
+    "Foundation",
+    "ApplicationModel",
+    "Foundation_Collections",
+    "Services_Store",
+    "System",
+    "Win32_Foundation",
+    "Win32_Storage_Packaging_Appx",
+    "Win32_System_Com",
+    "Win32_System_Recovery",
+    "Win32_System_WinRT",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+# Unwinding, not abort: every request runs under catch_unwind so a bug in one
+# Store call answers that request with an error instead of taking the JVM down.
+panic = "unwind"
+strip = "symbols"

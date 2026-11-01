@@ -80,6 +80,7 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
                 dir.file(mangledName)
             }
 
+    /** Rewrites every input JAR into [outputDir] and writes the marker manifest into [manifestOutputDir]. */
     @Suppress("CyclomaticComplexMethod", "NestedBlockDepth", "LoopWithTooManyJumpStatements")
     @TaskAction
     fun strip() {
@@ -100,6 +101,8 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
 
         // Inject the runtime shim JAR onto the app classpath (fixed name, not mangled).
         SandboxJarRewriter.injectShimJar(outDir)
+        // The output is a directory, which loses the input order: record it for the package task.
+        val classpathOrder = mutableListOf(SandboxMarkers.SHIM_JAR_NAME)
         logger.lifecycle("Sandboxing: injected runtime shim JAR '{}'", SandboxMarkers.SHIM_JAR_NAME)
 
         for (file in inputJars.files) {
@@ -107,6 +110,7 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
 
             val outputFileName = file.mangledName()
             val outputFile = outDir.resolve(outputFileName)
+            classpathOrder += outputFileName
 
             // Track the mangled name of the main JAR for downstream tasks
             if (file.name == expectedMainJarName) {
@@ -139,6 +143,8 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
             rewrittenClassCount += result.rewrittenClasses
         }
 
+        outDir.resolve(CLASSPATH_ORDER_FILE).writeText(classpathOrder.joinToString("\n", postfix = "\n"))
+
         // Emit the manifest next to the extracted native libs (packaged into app resources).
         val manifestFile = manifestDir.resolve(SandboxMarkers.MANIFEST_FILENAME)
         manifest.store(
@@ -158,5 +164,6 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
 
     private companion object {
         const val MAIN_JAR_META_FILE = ".main-jar-name"
+        const val CLASSPATH_ORDER_FILE = ".classpath-order"
     }
 }

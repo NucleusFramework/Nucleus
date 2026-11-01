@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-  cell::RefCell,
+  cell::{Cell, RefCell},
   collections::{HashSet, VecDeque},
   error::Error,
   process,
@@ -36,7 +36,7 @@ use crate::{
   event_loop::{ControlFlow, EventLoopClosed, EventLoopWindowTarget as RootELW},
   keyboard::ModifiersState,
   monitor::MonitorHandle as RootMonitorHandle,
-  platform_impl::platform::DEVICE_ID,
+  platform_impl::platform::{pointer_device_id, DEVICE_ID},
   window::{
     CursorIcon, Fullscreen, ProgressBarState, ResizeDirection, Theme, WindowId as RootWindowId,
   },
@@ -47,11 +47,32 @@ use super::{
   monitor::{self, MonitorHandle},
   taskbar, util,
   window::{
-    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, WindowId, WindowRequest,
+    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, is_on_system_decorations,
+    reports_content_space, WindowId, WindowRequest,
   },
 };
 
 use taskbar::TaskbarIndicator;
+
+// Arbitrary batch limit to balance draining GTK work with Tao event and redraw progress.
+const MAX_GTK_ITERATIONS_PER_TAO_STEP: usize = 32;
+
+/// Whether GTK focus sits on a widget Nucleus did not create — an embedded
+/// native view (`NativeView`), which the widget bridge never marks with
+/// `nucleus_tao_input_box` the way it marks its own capture boxes. Keys then
+/// belong to the embed: no IME filtering on its behalf, no delivery to
+/// Compose, plain GTK propagation to the focus widget. Without this the
+/// toplevel's `GtkIMContext` consumed every printable key and the handler
+/// stopped propagation, so a `WebKitWebView` or a `GtkEntry` the user had
+/// clicked into never received a single character.
+fn embed_owns_keyboard(window: &gtk::Window) -> bool {
+  let Some(focus) = window.focused_widget() else {
+    return false;
+  };
+  // SAFETY: only the presence of the key is read; the pointer stored under it
+  // (a non-null marker set by the widget bridge) is never dereferenced.
+  unsafe { glib::prelude::ObjectExt::data::<()>(&focus, "nucleus_tao_input_box").is_none() }
+}
 
 #[derive(Clone)]
 pub struct EventLoopWindowTarget<T> {
@@ -309,9 +330,11 @@ impl<T: 'static> EventLoop<T> {
     // Nucleus patch (nucleusframework#558): input contexts keyed by window id.
     // The context is created in the `WireUpEvents` arm and read back by the
     // `SetImePosition` arm, both of which live inside this closure — so it
-    // needs no home on `EventLoopWindowTarget`.
-    let ime_contexts: Rc<RefCell<std::collections::HashMap<u32, gtk::IMMulticontext>>> =
-      Rc::new(RefCell::new(std::collections::HashMap::new()));
+    // needs no home on `EventLoopWindowTarget`. Each context travels with its
+    // `SetImeAllowed` flag (nucleusframework#842).
+    let ime_contexts: Rc<
+      RefCell<std::collections::HashMap<u32, (gtk::IMMulticontext, Rc<Cell<bool>>)>>,
+    > = Rc::new(RefCell::new(std::collections::HashMap::new()));
     window_requests_rx.attach(Some(&context), move |(id, request)| {
       // Nucleus patch: popup overlay windows are plain gtk::Windows with
       // synthesized ids — resolve them from the popup map when the
@@ -325,14 +348,21 @@ impl<T: 'static> EventLoop<T> {
         match request {
           WindowRequest::Title(title) => window.set_title(&title),
           WindowRequest::Position((x, y)) => window.move_(x, y),
+          WindowRequest::PopupAnchor {
+            x,
+            y,
+            width,
+            height,
+            shadow,
+          } => popup_anchor(&window, x, y, width, height, shadow),
           WindowRequest::Size((w, h)) => {
             // Nucleus patch: `gtk_window_resize` is a no-op on non-resizable
             // windows (GTK follows the content's natural size instead); route
-            // the request through the widget size request in that case.
+            // the request through the content's size request in that case.
             if window.is_resizable() {
               window.resize(w, h);
             } else {
-              window.set_size_request(w, h);
+              util::set_content_size_request(&window, w, h);
             }
           }
           WindowRequest::SizeConstraints(constraints) => {
@@ -526,8 +556,25 @@ impl<T: 'static> EventLoop<T> {
                 }
               })
               .unwrap_or((0, 0));
-            if let Some(ime) = ime_contexts.borrow().get(&id.0) {
+            if let Some((ime, _)) = ime_contexts.borrow().get(&id.0) {
               ime.set_cursor_location(&gdk::Rectangle::new(x + dx, y + dy, w, h));
+            }
+          }
+          // Nucleus patch (nucleusframework#842): a text field took or gave
+          // up the input. The context is focused only while one owns it *and*
+          // the window is active, so the on-screen keyboard that Wayland
+          // compositors raise on text-input `enable` stays down otherwise.
+          WindowRequest::SetImeAllowed(allowed) => {
+            if let Some((ime, ime_allowed)) = ime_contexts.borrow().get(&id.0) {
+              if ime_allowed.replace(allowed) != allowed {
+                if !allowed {
+                  // Drop any composition left open by the field going away.
+                  ime.reset();
+                  ime.focus_out();
+                } else if window.is_active() {
+                  ime.focus_in();
+                }
+              }
             }
           }
           WindowRequest::CursorIgnoreEvents(ignore) => {
@@ -792,6 +839,15 @@ impl<T: 'static> EventLoop<T> {
 
             let tx_clone = event_tx.clone();
             window.connect_enter_notify_event(move |window, crossing| {
+              // GDK emits crossing events for the first touchscreen contact too.
+              // Nucleus delivers that contact through its touch bridge; it is
+              // not mouse hover and must not become a mouse-only CursorMoved.
+              if crossing
+                .source_device()
+                .is_some_and(|device| device.source() == gdk::InputSource::Touchscreen)
+              {
+                return glib::Propagation::Proceed;
+              }
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::CursorEntered {
@@ -815,7 +871,7 @@ impl<T: 'static> EventLoop<T> {
               // GdkWindow coordinates to the toplevel, then shift into
               // content-area coordinates so the embedder's (0,0) stays the
               // visible window corner.
-              let (x, y) = if is_csd_hidden_titlebar(window) {
+              let (x, y) = if reports_content_space(window) {
                 let (x, y) = event_coords_to_toplevel(window, crossing.window(), x, y);
                 let (cx, cy, _, _) = content_geometry(window);
                 (x - cx as f64, y - cy as f64)
@@ -826,7 +882,7 @@ impl<T: 'static> EventLoop<T> {
                 window_id: RootWindowId(id),
                 event: WindowEvent::CursorMoved {
                   position: LogicalPosition::new(x, y).to_physical(scale_factor as f64),
-                  device_id: DEVICE_ID,
+                  device_id: pointer_device_id(crossing.source_device()),
                   modifiers: ModifiersState::empty(),
                 },
               }) {
@@ -851,7 +907,7 @@ impl<T: 'static> EventLoop<T> {
                 // PATCH(nucleus): hidden-titlebar CSD — translate from
                 // decorated-surface to content-area coordinates (see the
                 // crossing handler above).
-                let (x, y) = if is_csd_hidden_titlebar(window) {
+                let (x, y) = if reports_content_space(window) {
                   let (x, y) = event_coords_to_toplevel(window, motion.window(), x, y);
                   let (cx, cy, _, _) = content_geometry(window);
                   (x - cx as f64, y - cy as f64)
@@ -862,7 +918,7 @@ impl<T: 'static> EventLoop<T> {
                   window_id: RootWindowId(id),
                   event: WindowEvent::CursorMoved {
                     position: LogicalPosition::new(x, y).to_physical(scale_factor as f64),
-                    device_id: DEVICE_ID,
+                    device_id: pointer_device_id(motion.source_device()),
                     // this field is depracted so it is fine to pass empty state
                     modifiers: ModifiersState::empty(),
                   },
@@ -870,11 +926,23 @@ impl<T: 'static> EventLoop<T> {
                   log::warn!("Failed to send cursor moved event to event channel: {}", e);
                 }
               }
+              // PATCH(nucleus): GTK's own title bar and frame (system
+              // decorations, GNOME Wayland) track the pointer for their move /
+              // resize gestures; stopping the event here froze them.
+              if is_on_system_decorations(window, motion) {
+                return glib::Propagation::Proceed;
+              }
               glib::Propagation::Stop
             });
 
             let tx_clone = event_tx.clone();
-            window.connect_leave_notify_event(move |_, _| {
+            window.connect_leave_notify_event(move |_, crossing| {
+              if crossing
+                .source_device()
+                .is_some_and(|device| device.source() == gdk::InputSource::Touchscreen)
+              {
+                return glib::Propagation::Proceed;
+              }
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::CursorLeft {
@@ -887,7 +955,16 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
-            window.connect_button_press_event(move |_, event| {
+            window.connect_button_press_event(move |window, event| {
+              // PATCH(nucleus): a press on GTK's own title bar or frame (system
+              // decorations, GNOME Wayland) belongs to GtkWindow's class handler,
+              // which runs after this one and starts the move, the double-click
+              // maximize or the edge resize. It is not forwarded either: the
+              // compositor keeps the release of a move / resize grab, so the
+              // embedder would be left with a button it believes held.
+              if is_on_system_decorations(window, event) {
+                return glib::Propagation::Proceed;
+              }
               let button = event.button();
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
@@ -899,7 +976,7 @@ impl<T: 'static> EventLoop<T> {
                     _ => MouseButton::Other(button as u16),
                   },
                   state: ElementState::Pressed,
-                  device_id: DEVICE_ID,
+                  device_id: pointer_device_id(event.source_device()),
                   // this field is depracted so it is fine to pass empty state
                   modifiers: ModifiersState::empty(),
                 },
@@ -913,7 +990,7 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
-            window.connect_button_release_event(move |_, event| {
+            window.connect_button_release_event(move |window, event| {
               let button = event.button();
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
@@ -925,7 +1002,7 @@ impl<T: 'static> EventLoop<T> {
                     _ => MouseButton::Other(button as u16),
                   },
                   state: ElementState::Released,
-                  device_id: DEVICE_ID,
+                  device_id: pointer_device_id(event.source_device()),
                   // this field is depracted so it is fine to pass empty state
                   modifiers: ModifiersState::empty(),
                 },
@@ -934,6 +1011,11 @@ impl<T: 'static> EventLoop<T> {
                   "Failed to send mouse input released event to event channel: {}",
                   e
                 );
+              }
+              // PATCH(nucleus): forwarded above (it may end a press that began in
+              // the content), and seen by GTK's title bar and frame too.
+              if is_on_system_decorations(window, event) {
+                return glib::Propagation::Proceed;
               }
               glib::Propagation::Stop
             });
@@ -974,7 +1056,7 @@ impl<T: 'static> EventLoop<T> {
 
             let tx_clone = event_tx.clone();
             let modifier_state = Rc::new(RefCell::new(ImeState::new()));
-            let keyboard_handler = Rc::new(move |event_key: EventKey, element_state| {
+            let keyboard_handler = Rc::new(move |event_key: EventKey, element_state, is_repeat| {
               // Nucleus patch: emit the FULL modifier state, not just the
               // pressed key's own bit — upstream sent `{SHIFT}` when Shift
               // was pressed while Ctrl was held, dropping Ctrl from the
@@ -1013,8 +1095,9 @@ impl<T: 'static> EventLoop<T> {
               // Upstream tao stops here, which makes those handlers dead on
               // the Linux backend.
 
-              // todo: implement repeat?
-              let event = keyboard::make_key_event(&event_key, false, None, element_state);
+              // Nucleus patch: report auto-repeat (`ImeState::press_is_repeat`);
+              // upstream always passed `false`.
+              let event = keyboard::make_key_event(&event_key, is_repeat, None, element_state);
 
               if let Some(event) = event {
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
@@ -1105,22 +1188,33 @@ impl<T: 'static> EventLoop<T> {
             // Follow the window's focus instead of latching `focus_in` once at
             // construction: an input context that still believes it is focused
             // keeps receiving key events meant for another window.
+            //
+            // Only while a text field owns the input, though
+            // (nucleusframework#842): on Wayland `focus_in` sends text-input
+            // `enable`, and the compositor answers it with the on-screen
+            // keyboard — on every activation of a window with no field at
+            // all. `WindowRequest::SetImeAllowed` flips the flag; keys still
+            // go through `filter_keypress`, whose unfocused fallback keeps
+            // dead keys and Compose sequences working.
+            let ime_allowed = Rc::new(Cell::new(false));
             {
               let ime = ime.clone();
+              let ime_allowed = ime_allowed.clone();
               window.connect_focus_in_event(move |_, _| {
-                ime.focus_in();
+                if ime_allowed.get() {
+                  ime.focus_in();
+                }
                 glib::Propagation::Proceed
               });
             }
             {
               let ime = ime.clone();
+              let ime_state = ime_state.clone();
               window.connect_focus_out_event(move |_, _| {
                 ime.focus_out();
+                ime_state.borrow_mut().focus_lost();
                 glib::Propagation::Proceed
               });
-            }
-            if window.is_active() {
-              ime.focus_in();
             }
 
             // Published so `WindowRequest::SetImePosition` can move the
@@ -1131,12 +1225,22 @@ impl<T: 'static> EventLoop<T> {
                 ime_contexts.borrow_mut().remove(&id.0);
               });
             }
-            ime_contexts.borrow_mut().insert(id.0, ime.clone());
+            ime_contexts
+              .borrow_mut()
+              .insert(id.0, (ime.clone(), ime_allowed));
 
             let handler = keyboard_handler.clone();
             let ime_ = ime.clone();
             let ime_state_press = ime_state.clone();
-            window.connect_key_press_event(move |_, event_key| {
+            window.connect_key_press_event(move |window, event_key| {
+              // Tracked before the embed check, so a key pressed or released
+              // while an embedded view owns the keyboard is not left stale.
+              let is_repeat = ime_state_press
+                .borrow_mut()
+                .press_is_repeat(event_key.hardware_keycode());
+              if embed_owns_keyboard(window) {
+                return glib::Propagation::Proceed;
+              }
               // The IME gets first refusal, and a key it consumed must not also
               // reach Compose — otherwise the Enter that confirms a conversion
               // also inserts a newline, and the BackSpace that edits the
@@ -1149,14 +1253,24 @@ impl<T: 'static> EventLoop<T> {
               {
                 return glib::Propagation::Stop;
               }
-              handler(event_key.to_owned(), ElementState::Pressed);
+              handler(event_key.to_owned(), ElementState::Pressed, is_repeat);
 
-              glib::Propagation::Proceed
+              // Compose owns the keyboard and has the key: stop here so GtkWindow's
+              // own bindings do not run on it too — an arrow or a Tab would
+              // otherwise `move-focus` into an embedded native view, which then
+              // steals every following keystroke from the Compose text field.
+              glib::Propagation::Stop
             });
 
             let handler = keyboard_handler.clone();
             let ime_state_release = ime_state;
-            window.connect_key_release_event(move |_, event_key| {
+            window.connect_key_release_event(move |window, event_key| {
+              ime_state_release
+                .borrow_mut()
+                .release_held(event_key.hardware_keycode());
+              if embed_owns_keyboard(window) {
+                return glib::Propagation::Proceed;
+              }
               let filtered = ime.filter_keypress(event_key);
               if !ime_state_release
                 .borrow_mut()
@@ -1164,8 +1278,8 @@ impl<T: 'static> EventLoop<T> {
               {
                 return glib::Propagation::Stop;
               }
-              handler(event_key.to_owned(), ElementState::Released);
-              glib::Propagation::Proceed
+              handler(event_key.to_owned(), ElementState::Released, false);
+              glib::Propagation::Stop
             });
 
             let tx_clone = event_tx.clone();
@@ -1456,6 +1570,16 @@ impl<T: 'static> EventLoop<T> {
             },
           }
           gtk::main_iteration_do(blocking);
+          // Touch is delivered directly by GTK callbacks, outside `events`.
+          // Drain pending GTK work before the next Tao step can render a frame
+          // for stale input. Bound the batch so continuous GTK work still gives
+          // Tao's event and redraw queues a turn.
+          for _ in 0..MAX_GTK_ITERATIONS_PER_TAO_STEP {
+            if !gtk::events_pending() {
+              break;
+            }
+            gtk::main_iteration_do(false);
+          }
         };
         if let Some(run_device_thread) = run_device_thread {
           run_device_thread.store(false, Ordering::Relaxed);
@@ -1612,5 +1736,79 @@ impl ResizeDirection {
       ResizeDirection::SouthWest => WindowEdge::SouthWest,
       ResizeDirection::West => WindowEdge::West,
     }
+  }
+}
+
+/// Nucleus patch: the compositor-positioned popup behind
+/// `Window::popup_anchor`. `gdk_window_move_to_rect` arrived in GDK 3.24; it
+/// is resolved at run time so the library still loads against 3.22, where the
+/// request degrades to the plain move a subsurface popup gets.
+fn popup_anchor(
+  window: &gtk::Window,
+  x: i32,
+  y: i32,
+  width: i32,
+  height: i32,
+  shadow: (i32, i32, i32, i32),
+) {
+  use glib::translate::ToGlibPtr;
+  type MoveToRect = unsafe extern "C" fn(
+    *mut gdk::ffi::GdkWindow,
+    *const gdk::ffi::GdkRectangle,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+  );
+  extern "C" {
+    fn dlsym(handle: *mut std::ffi::c_void, symbol: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
+  }
+  const GDK_GRAVITY_NORTH_WEST: i32 = 1;
+  const GDK_ANCHOR_FLIP_X: i32 = 1 << 0;
+  const GDK_ANCHOR_FLIP_Y: i32 = 1 << 1;
+  const GDK_ANCHOR_SLIDE_X: i32 = 1 << 2;
+  const GDK_ANCHOR_SLIDE_Y: i32 = 1 << 3;
+  let (left, right, top, bottom) = shadow;
+  // RTLD_DEFAULT: GDK is already loaded into the process.
+  let symbol = unsafe { dlsym(std::ptr::null_mut(), b"gdk_window_move_to_rect\0".as_ptr() as *const _) };
+  if symbol.is_null() {
+    window.move_(x - left, y - top);
+    return;
+  }
+  let move_to_rect: MoveToRect = unsafe { std::mem::transmute(symbol) };
+  // A popup menu maps as an xdg_popup on Wayland even where GDK would ignore
+  // the positioner; harmless on X11 (a menu-typed override-redirect window).
+  window.set_type_hint(gdk::WindowTypeHint::PopupMenu);
+  // The positioner GDK builds at map time takes the window's geometry as it
+  // stands, so the real size must be in place *before* `move_to_rect` — hence
+  // the size request, the realize and the resize pass here rather than a
+  // separate `WindowRequest::Size`. Popup overlays are non-resizable, where
+  // `gtk_window_resize` is a no-op and the size request is what counts.
+  if width > 0 && height > 0 {
+    window.set_size_request(width, height);
+    window.resize(width, height);
+  }
+  if !window.is_realized() {
+    window.realize();
+  }
+  window.check_resize();
+  let Some(gdk_window) = window.window() else {
+    return;
+  };
+  // GTK only manages the shadow width of client-decorated windows, so this
+  // sticks: the xdg window geometry becomes the content, margins excluded.
+  gdk_window.set_shadow_width(left, right, top, bottom);
+  let rect = gdk::Rectangle::new(x, y, 1, 1);
+  unsafe {
+    move_to_rect(
+      gdk_window.to_glib_none().0,
+      rect.to_glib_none().0,
+      GDK_GRAVITY_NORTH_WEST,
+      GDK_GRAVITY_NORTH_WEST,
+      GDK_ANCHOR_FLIP_X | GDK_ANCHOR_FLIP_Y | GDK_ANCHOR_SLIDE_X | GDK_ANCHOR_SLIDE_Y,
+      0,
+      0,
+    );
   }
 }

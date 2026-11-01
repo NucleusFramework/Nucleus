@@ -12,15 +12,10 @@ import org.gradle.api.provider.Property
 import org.gradle.api.provider.ValueSource
 import org.gradle.api.provider.ValueSourceParameters
 import org.gradle.process.ExecOperations
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
-import java.net.HttpURLConnection
-import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
 import javax.inject.Inject
 
 /**
@@ -40,10 +35,28 @@ internal fun isOracleGraalvmInstallation(javaHome: File): Boolean =
         }
 
 /**
+ * The GraalVM version of [javaHome] (`GRAALVM_VERSION="25.4.4.1.1"` → `"25.4.4.1.1"`), or `null`
+ * when the `release` file is missing or carries no such entry — the case for a plain JDK.
+ *
+ * This is not `JAVA_VERSION`: the same build reports `25.0.4.1.1` there, so the GraalVM release
+ * line (25.3 vs 25.4) is only readable from this entry.
+ */
+internal fun graalvmVersionOf(javaHome: File): String? =
+    javaHome
+        .resolve("release")
+        .takeIf { it.isFile }
+        ?.readLines()
+        .orEmpty()
+        .firstOrNull { it.startsWith("GRAALVM_VERSION=") }
+        ?.substringAfter('=')
+        ?.trim('"')
+        ?.takeIf { it.isNotBlank() }
+
+/**
  * What GraalVM toolchain to provision for the current build machine.
  *
  * @param distribution GraalVM Community Edition (the default) or Oracle GraalVM.
- * @param version GraalVM version: an innovation release (`"25i3"`), a feature
+ * @param version GraalVM version: an innovation release (`"25i4"`), a feature
  *   version tracking the latest CPU (`"25"`), or a pinned patch release (`"25.0.1"`).
  * @param macosIntelFallback use Liberica NIK on macOS x64, which neither distribution
  *   ships any more (dropped after 25.0.1).
@@ -100,8 +113,8 @@ internal abstract class GraalvmToolchainValueSource :
  * - GraalVM Community Edition (the default) from the `graalvm/graalvm-ce-builds` GitHub
  *   releases, resolved through the GitHub API since the innovation asset names embed a
  *   base version that is not derivable from the requested version alone
- *   (`graalvm-community-jdk-25i3-25.0.4.1_macos-aarch64_bin.tar.gz`).
- * - Oracle GraalVM innovation releases (`25i3`) from
+ *   (`graalvm-community-jdk-25i4-25.0.4.1.1_macos-aarch64_bin.tar.gz`).
+ * - Oracle GraalVM innovation releases (`25i4`) from
  *   `https://gds.oracle.com/download/graal/<v>/latest/graalvm-jdk-<v>-<base>_<os>-<arch>_bin.<ext>`
  * - Oracle GraalVM LTS/latest (`25`) and pinned (`25.0.1`) releases from
  *   `https://download.oracle.com/graalvm/<feature>/{latest,archive}/graalvm-jdk-<v>_<os>-<arch>_bin.<ext>`
@@ -119,12 +132,6 @@ internal abstract class GraalvmToolchainValueSource :
 @Suppress("TooManyFunctions")
 internal object GraalvmToolchainProvisioner {
     private const val MARKER_FILE = ".nucleus-provisioned"
-    private const val CONNECT_TIMEOUT_MS = 30_000
-    private const val READ_TIMEOUT_MS = 60_000
-    private const val MAX_REDIRECTS = 5
-    private const val DOWNLOAD_BUFFER_SIZE = 1 shl 16
-    private const val HTTP_FIRST_REDIRECT = 300
-    private const val HTTP_FIRST_ERROR = 400
     private const val BITNESS_64 = 64
     private const val BELLSOFT_NIK_API = "https://api.bell-sw.com/v1/nik/releases?os=macos&output=json"
     private const val GRAALVM_CE_RELEASES_API =
@@ -144,13 +151,9 @@ internal object GraalvmToolchainProvisioner {
         val installDir = File(request.installBaseDir, id)
         readMarker(installDir)?.let { return it }
 
-        request.installBaseDir.mkdirs()
-        // Guard against concurrent Gradle builds provisioning the same toolchain.
-        RandomAccessFile(File(request.installBaseDir, "$id.lock"), "rw").use { lockFile ->
-            lockFile.channel.lock().use {
-                readMarker(installDir)?.let { return it }
-                return downloadAndInstall(request, id, installDir, execOperations, logger)
-            }
+        // Guard against concurrent builds and parallel tasks provisioning the same toolchain.
+        return ToolchainDownloads.withInstallLock(request.installBaseDir, id) {
+            readMarker(installDir) ?: downloadAndInstall(request, id, installDir, execOperations, logger)
         }
     }
 
@@ -308,7 +311,7 @@ internal object GraalvmToolchainProvisioner {
      * A pinned patch release ("25.0.2") maps to a deterministic tag and asset name and is
      * resolved offline. Floating versions need the API: for the LTS line ("25") the newest
      * patch is unknown, and innovation assets embed a base version that is not derivable from
-     * the requested version (`graalvm-community-jdk-25i3-25.0.4.1_…` under tag `graal-25.3.4.1`).
+     * the requested version (`graalvm-community-jdk-25i4-25.0.4.1.1_…` under tag `graal-25.4.4.1.1`).
      */
     private fun resolveCommunityDownload(request: GraalvmToolchainRequest): DownloadSource {
         check(!(request.os == OS.Windows && request.arch == Arch.Arm64)) {
@@ -334,11 +337,11 @@ internal object GraalvmToolchainProvisioner {
 
         val prefix =
             if (version.contains('i')) {
-                // Innovation release ("25i3") — the asset appends the base version.
+                // Innovation release ("25i4") — the asset appends the base version.
                 "$GRAALVM_CE_ASSET_PREFIX$version-"
             } else {
                 // Feature version tracking the latest CPU ("25"); the trailing dot keeps
-                // "25" from also matching the "25i3" innovation assets.
+                // "25" from also matching the "25i4" innovation assets.
                 "$GRAALVM_CE_ASSET_PREFIX$version."
             }
         val chosen =
@@ -421,7 +424,7 @@ internal object GraalvmToolchainProvisioner {
         val ext = if (request.os == OS.Windows) "zip" else "tar.gz"
         val url =
             when {
-                // Innovation releases ("25i3") are distributed through GDS only.
+                // Innovation releases ("25i4") are distributed through GDS only.
                 version.contains('i') -> {
                     val base = version.substringBefore('i')
                     "https://gds.oracle.com/download/graal/$version/latest/" +
@@ -512,7 +515,7 @@ internal object GraalvmToolchainProvisioner {
     private fun javaFeatureVersion(version: String): Int =
         version.takeWhile(Char::isDigit).toIntOrNull()
             ?: error(
-                "Invalid graalvm.toolchain.version '$version' — expected e.g. \"25\", \"25.0.1\" or \"25i3\"",
+                "Invalid graalvm.toolchain.version '$version' — expected e.g. \"25\", \"25.0.1\" or \"25i4\"",
             )
 
     private fun archToken(arch: Arch): String =
@@ -534,38 +537,12 @@ internal object GraalvmToolchainProvisioner {
         val (algorithm, expected) =
             when {
                 source.sha1 != null -> "SHA-1" to source.sha1
-                source.sha256Url != null -> {
-                    val text =
-                        runCatching { fetchText(source.sha256Url) }.getOrElse {
-                            // Some networks filter the checksum side-file while allowing the
-                            // archive itself; integrity failure would still surface in tar.
-                            logger.warn(
-                                "[graalvm] Could not fetch checksum ${source.sha256Url} (${it.message}) — " +
-                                    "skipping verification",
-                            )
-                            return
-                        }
-                    "SHA-256" to text.trim().substringBefore(' ')
-                }
+                source.sha256Url != null ->
+                    "SHA-256" to
+                        (ToolchainDownloads.fetchOptionalChecksum(source.sha256Url, "[graalvm]", logger) ?: return)
                 else -> return
             }
-        val actual = archive.digest(algorithm)
-        check(actual.equals(expected, ignoreCase = true)) {
-            "Checksum mismatch for ${source.url}: expected $expected, got $actual"
-        }
-    }
-
-    private fun File.digest(algorithm: String): String {
-        val digest = MessageDigest.getInstance(algorithm)
-        inputStream().use { input ->
-            val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        ToolchainDownloads.verifyChecksum(archive, source.url, algorithm, expected)
     }
 
     private fun download(
@@ -574,9 +551,7 @@ internal object GraalvmToolchainProvisioner {
         request: GraalvmToolchainRequest,
     ) {
         try {
-            openConnection(url).inputStream.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output, DOWNLOAD_BUFFER_SIZE) }
-            }
+            ToolchainDownloads.download(url, dest)
         } catch (e: IOException) {
             val macIntelHint =
                 if (request.os == OS.MacOS && request.arch == Arch.X64) {
@@ -592,37 +567,7 @@ internal object GraalvmToolchainProvisioner {
     private fun fetchText(
         url: String,
         headers: Map<String, String> = emptyMap(),
-    ): String = openConnection(url, headers).inputStream.use { it.readBytes().decodeToString() }
-
-    /** Opens a connection following redirects across hosts (HttpURLConnection won't by itself). */
-    // Redirect handling has three distinct failure modes worth reporting separately.
-    @Suppress("ThrowsCount")
-    private fun openConnection(
-        url: String,
-        headers: Map<String, String> = emptyMap(),
-    ): HttpURLConnection {
-        var current = url
-        repeat(MAX_REDIRECTS) {
-            val connection = URI(current).toURL().openConnection() as HttpURLConnection
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            connection.instanceFollowRedirects = true
-            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
-            val code = connection.responseCode
-            when {
-                code in HTTP_FIRST_REDIRECT until HTTP_FIRST_ERROR -> {
-                    val location =
-                        connection.getHeaderField("Location")
-                            ?: throw IOException("Redirect without Location header from $current")
-                    connection.disconnect()
-                    current = location
-                }
-                code >= HTTP_FIRST_ERROR -> throw IOException("HTTP $code from $current")
-                else -> return connection
-            }
-        }
-        throw IOException("Too many redirects for $url")
-    }
+    ): String = ToolchainDownloads.fetchText(url, headers)
 
     /**
      * Extracts with the system `tar`, which preserves permissions and symlinks (Gradle's
@@ -634,16 +579,5 @@ internal object GraalvmToolchainProvisioner {
         archive: File,
         destDir: File,
         execOperations: ExecOperations,
-    ) {
-        destDir.mkdirs()
-        val output = ByteArrayOutputStream()
-        val result =
-            execOperations.exec { spec ->
-                spec.commandLine("tar", "-xf", archive.absolutePath, "-C", destDir.absolutePath)
-                spec.standardOutput = output
-                spec.errorOutput = output
-                spec.isIgnoreExitValue = true
-            }
-        check(result.exitValue == 0) { "tar failed extracting ${archive.name}: $output" }
-    }
+    ) = ToolchainDownloads.extract(archive, destDir, execOperations)
 }

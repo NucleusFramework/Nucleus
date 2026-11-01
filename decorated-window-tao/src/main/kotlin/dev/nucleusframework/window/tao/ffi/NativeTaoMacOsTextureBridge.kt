@@ -81,6 +81,19 @@ internal object NativeTaoMacOsTextureBridge {
     @JvmStatic
     external fun nativeDestroy(handle: Long)
 
+    /**
+     * `CFRetain` on a live `IOSurfaceRef`. Used by
+     * [dev.nucleusframework.window.tao.nucleusIOSurfaceTextureSource] so a
+     * producer close cannot free the surface while the source is still
+     * reachable. False when [ioSurfacePtr] is 0 or not an IOSurface.
+     */
+    @JvmStatic
+    external fun nativeRetainIOSurface(ioSurfacePtr: Long): Boolean
+
+    /** `CFRelease` matching a successful [nativeRetainIOSurface]. */
+    @JvmStatic
+    external fun nativeReleaseIOSurface(ioSurfacePtr: Long)
+
     // ---- Metal test producer (demos / smoke tests) --------------------
 
     /**
