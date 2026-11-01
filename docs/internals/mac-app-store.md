@@ -52,6 +52,19 @@ The sheet attaches with `purchase(confirmIn:)` (macOS 15.2+) to the window given
 (`TaoWindow.nativeHandle`) or `NSWindow *` — else the key, main or first visible window; it
 needs the app's main run loop.
 
+### A purchase from the background
+
+Found driving the Lab through accessibility while another app was in front: StoreKit's
+`processPayment` for an app in the background left the `XcodeTest` client context for
+`Sandbox` and asked for an Apple Account (`AccountManager … Sandbox authentication`, the
+system's sign-in window from `storeuid`), while products and the app transaction stayed in
+StoreKit Testing. The same bundle running the E2E bought normally, which ruled out the bundle
+(a first hypothesis — other bundles registered under the same id, 14 of them on the test Mac —
+was disproved: with the fix below the Lab buys under its real id). `purchase` now activates the
+app and orders the sheet's window front first (`activate`). On macOS 14+ activation is
+cooperative and the app may stay behind the active one, but the purchase stays in StoreKit
+Testing and its sheet attaches to the Lab window.
+
 ### The sheet belongs to the customer (measured with `--sheet`)
 
 - StoreKit ignores task cancellation: the sheet stays up and the request stays in flight.
@@ -131,6 +144,17 @@ Xcode 27.1:
   same transaction without a sheet. Nothing distinguishes it, so the API offers no decline.
 - `buyProductWithIdentifier:` (deprecated in favour of a Swift-only API) still makes a purchase
   StoreKit 2 delivers through `Transaction.updates` as made outside the app.
+- The settings persist in `storekitagent` per bundle id across launches (a run that turned the
+  sheets off left them off for the next app under that id), hence `dev.settings` /
+  `testing.settings()`, read through KVC on the same properties.
+
+## Lab
+
+`system.macAppStore` (`examples/lab/probes/system/…/macstore`) drives every call and the store
+side through `MacAppStore.testing`, against `examples/lab/app/packaging/macos/NucleusLab.storekit`
+(`./gradlew :examples:lab:app:runStoreKit`). Its switches are read from the session at start.
+Driving it through accessibility: the Tao window exposes the StoreKit sheet as an `AXSheet`
+child, with Cancel but no Purchase button.
 
 ## `runStoreKit` (plugin)
 

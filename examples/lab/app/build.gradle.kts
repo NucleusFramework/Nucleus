@@ -351,6 +351,8 @@ nucleus.application {
             packageBuildVersion = nativePackageVersion
             // Inherited from the former nucleus-demo: the provisioning profiles are issued for it.
             bundleID = "dev.nucleusframework.demo"
+            // The system.macAppStore probe's products, served by ./gradlew :examples:lab:app:runStoreKit.
+            storeKitConfiguration.set(layout.projectDirectory.file("packaging/macos/NucleusLab.storekit"))
             appCategory = "public.app-category.developer-tools"
             dockName = "Nucleus Lab"
             // WidgetKit widgets (desktop, Notification Center), rendered by widgets { } in main.
