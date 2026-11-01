@@ -64,6 +64,13 @@ identical, the image resource is the marker), `libcompose_webview_macos` (`rende
 `libMacTray` (`shell.tray`). No file access is denied (only `system-info vfs.disk-space`, the
 `system.info` probe's own business). `packageGraalvmPkg` packages this bundle.
 
+The copy taken from the PKG payload (re-signed with the hardened runtime, plus the
+`.nucleus-executable-type` = `pkg` marker) behaves the same. The marker turns single instance on
+(`enableSingleInstance = !isDev()`): the lock lands in the container's `tmp`, a second launch exits
+and brings the first window forward. Its FSEvents watch logs one `file-read-data` denial per
+ancestor of the container (`/Users`, `/Users/<name>`, …, `Containers/<bundle id>`) — harmless, the
+watch works.
+
 **Test-launch trap**: start the sandboxed binary by its absolute path (or `open`). Started as
 `./nucleus-lab`, the image inside the sandbox resolves its executable directory wrong, the font
 configuration is not found, and composition dies with "Fontconfig head is null". Finder, `open` and
