@@ -107,14 +107,32 @@ MacAppStore.openStorePage(appId = 1234567890) // the Apple ID from App Store Con
 ## Developing without App Store Connect
 
 StoreKit Testing serves the products of a `.storekit` file (Xcode: File › New › StoreKit
-Configuration File) in this process, with no Apple account, no certificate and no Xcode run:
+Configuration File) in this process, with no Apple account, no certificate and no Xcode run.
+With the Nucleus plugin, declare the file and use `runStoreKit` instead of `run`:
 
-```
--Dnucleus.macAppStore.storeKitConfiguration=/path/to/Products.storekit
+```kotlin
+nucleus.application {
+    nativeDistributions {
+        macOS {
+            bundleID = "com.example.myapp"
+            storeKitConfiguration.set(file("Products.storekit"))
+        }
+    }
+}
 ```
 
-The app must still be an app bundle, and StoreKit Testing only accepts one that is
-"installed for development":
+```bash
+./gradlew runStoreKit
+```
+
+The first run builds a development `.app` under `build/nucleus/storekit-app` (a jpackage shell
+embedding the JDK, ~250 MB, a dozen seconds); every later run only points it at the current
+classpath and JVM arguments (those of `run`), re-signs it and starts it — a rebuild never
+repackages. Xcode must be installed (StoreKitTest ships with it).
+
+Without the plugin, launch any app bundle with
+`-Dnucleus.macAppStore.storeKitConfiguration=/path/to/Products.storekit`. StoreKit Testing only
+accepts a bundle "installed for development", which `runStoreKit` takes care of:
 
 1. signed with the `com.apple.security.get-task-allow` entitlement — an ad-hoc signature is
    enough (`codesign --force --deep -s - --entitlements dev.entitlements MyApp.app`);

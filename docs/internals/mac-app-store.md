@@ -132,6 +132,21 @@ Xcode 27.1:
 - `buyProductWithIdentifier:` (deprecated in favour of a Swift-only API) still makes a purchase
   StoreKit 2 delivers through `Transaction.updates` as made outside the app.
 
+## `runStoreKit` (plugin)
+
+`AbstractRunStoreKitTask` (macOS only, registered next to `run`) makes the development bundle
+once under `build/nucleus/storekit-app`: a jpackage app image of an empty jar with the app's
+bundle id (`resolvedAppIdProvider`) and `--runtime-image <javaHome>` (the whole JDK, so any
+module the classpath needs is there). `shell.properties` records JDK, bundle id and launcher
+name; any change rebuilds the shell. Each run rewrites `Contents/app/<name>.cfg` — `run`'s
+classpath (runtime jars, or ProGuard's output) and JVM arguments (`devJvmArgs`, shared with
+`run`), `app.args` as `[ArgOptions]`, plus the configuration property — then signs ad hoc with
+`get-task-allow` (`--deep` only when the shell is new: later runs only reseal the rewritten
+`.cfg`), `lsregister -f`, and runs the launcher. Measured on the smoke app: first run ~15 s,
+later runs under a second, code changes picked up without a rebuild of the shell, the
+configuration cache stored and reused. Not covered: the vtool-patched JDK `run` uses for Liquid
+Glass (the shell launcher is jpackage's).
+
 ## E2E
 
 The E2E clears the session's history and turns its sheets off (`dev.clearTransactions`,

@@ -31,6 +31,7 @@ import dev.nucleusframework.desktop.application.tasks.AbstractPatchCaCertificate
 import dev.nucleusframework.desktop.application.tasks.AbstractPatchMacJvmTask
 import dev.nucleusframework.desktop.application.tasks.AbstractProguardTask
 import dev.nucleusframework.desktop.application.tasks.AbstractRunAppXTask
+import dev.nucleusframework.desktop.application.tasks.AbstractRunStoreKitTask
 import dev.nucleusframework.desktop.application.tasks.AbstractRunDistributableTask
 import dev.nucleusframework.desktop.application.tasks.AbstractServeUpdateFeedTask
 import dev.nucleusframework.desktop.application.tasks.AbstractStripNativeLibsFromJarsTask
@@ -574,6 +575,42 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
 
     tasks.register<JavaExec>(taskNameAction = "run") {
         configureRunTask(this, commonTasks.prepareAppResources, runProguard, patchMacJvmTask)
+    }
+
+    // runStoreKit: in-app purchases against a .storekit file (macOS only)
+    if (currentOS == OS.MacOS) {
+        registerRunStoreKit(commonTasks.prepareAppResources, runProguard)
+    }
+}
+
+/** Registers `runStoreKit`: the app as a development bundle served by StoreKit Testing. */
+private fun JvmApplicationContext.registerRunStoreKit(
+    prepareAppResources: TaskProvider<Sync>,
+    runProguard: Provider<AbstractProguardTask>?,
+) {
+    tasks.register<AbstractRunStoreKitTask>(
+        taskNameAction = "run",
+        taskNameObject = "storeKit",
+    ) {
+        dependsOn(prepareAppResources)
+        if (runProguard != null) {
+            dependsOn(runProguard)
+            classpath.from(project.fileTree(runProguard.flatMap { it.destinationDir }))
+        } else {
+            useAppRuntimeFiles { (runtimeJars, _) ->
+                classpath.from(runtimeJars)
+            }
+        }
+        app.mainClass?.let(mainClass::set)
+        // Same arguments as `run`.
+        jvmArgs.set(devJvmArgs(prepareAppResources))
+        appArgs.set(app.args)
+        javaHome.set(app.javaHomeProvider)
+        bundleId.set(resolvedAppIdProvider())
+        launcherName.set(packageNameProvider)
+        storeKitConfiguration.set(app.nativeDistributions.macOS.storeKitConfiguration)
+        shellDir.set(project.layout.buildDirectory.dir("nucleus/storekit-app"))
+        environment.putAll(UpdaterLaunchSettings.environment(project.providers))
     }
 }
 
@@ -1379,69 +1416,7 @@ private fun JvmApplicationContext.configureRunTask(
     } else {
         configureRunJavaHome(exec)
     }
-    exec.jvmArgs =
-        arrayListOf<String>().apply {
-            addAll(defaultJvmArgs)
-            // Same collector in dev as in the packaged app; before app.jvmArgs so an
-            // explicit -XX:+Use…GC there still wins.
-            app.garbageCollector?.let { addAll(it.jvmArgs) }
-            add("-D$APP_EXECUTABLE_TYPE=$EXECUTABLE_TYPE_DEV")
-            add("-D$APP_ID=${resolvedAppIdProvider().get()}")
-            // ./gradlew run -Pnucleus.updater.simulate=update / -Pnucleus.updater.feedUrl=<dir or url>
-            UpdaterLaunchSettings.systemProperties(project.providers).forEach { (key, value) -> add("-D$key=$value") }
-
-            if (currentOS == OS.MacOS) {
-                val dockName =
-                    app.nativeDistributions.appName
-                        ?: app.nativeDistributions.packageName
-                        ?: project.name
-                add("-Dapple.awt.application.name=$dockName")
-                val file = app.nativeDistributions.macOS.iconFile.ioFileOrNull
-                if (file != null) add("-Xdock:icon=$file")
-            }
-
-            addAll(app.jvmArgs)
-            // debug { } and -Pnucleus.debug: the run task only, never a package
-            val debugProperty = project.providers.gradleProperty(NUCLEUS_DEBUG_GRADLE_PROPERTY).orNull
-            addAll(nucleusDebugJvmArgs(app, debugProperty, project.logger))
-            val appResourcesDir = prepareAppResources.get().destinationDir
-            add("-D$APP_RESOURCES_DIR=${appResourcesDir.absolutePath}")
-
-            app.nativeDistributions.splashImage?.let { splash ->
-                val splashFile = appResourcesDir.resolve(splash)
-                if (splashFile.exists()) {
-                    add("-splash:${splashFile.absolutePath}")
-                }
-            }
-
-            // Dev mode AOT: ./gradlew run -Paot=train|on|auto|off
-            val aotCacheDir =
-                project.layout.buildDirectory
-                    .dir("compose/aot-cache")
-                    .get()
-                    .asFile
-            val devAotCache = java.io.File(aotCacheDir, "dev.aot")
-            when (project.findProperty("aot")?.toString()) {
-                "train" -> {
-                    aotCacheDir.mkdirs()
-                    add("-XX:AOTCacheOutput=${devAotCache.absolutePath}")
-                }
-                "on" -> {
-                    if (devAotCache.exists()) {
-                        add("-XX:AOTCache=${devAotCache.absolutePath}")
-                    }
-                }
-                "auto" -> {
-                    if (devAotCache.exists()) {
-                        add("-XX:AOTCache=${devAotCache.absolutePath}")
-                    } else {
-                        aotCacheDir.mkdirs()
-                        add("-XX:AOTCacheOutput=${devAotCache.absolutePath}")
-                    }
-                }
-                // "off" or absent → no-op
-            }
-        }
+    exec.jvmArgs = devJvmArgs(prepareAppResources)
     exec.args = app.args
 
     if (runProguard != null) {
@@ -1453,6 +1428,74 @@ private fun JvmApplicationContext.configureRunTask(
         }
     }
 }
+
+/**
+ * The JVM arguments of a development launch (`run`, `runStoreKit`): app identity, updater test
+ * switches, Dock name and icon, resources directory, splash, debug and dev AOT.
+ */
+private fun JvmApplicationContext.devJvmArgs(prepareAppResources: TaskProvider<Sync>): List<String> =
+    arrayListOf<String>().apply {
+        addAll(defaultJvmArgs)
+        // Same collector in dev as in the packaged app; before app.jvmArgs so an
+        // explicit -XX:+Use…GC there still wins.
+        app.garbageCollector?.let { addAll(it.jvmArgs) }
+        add("-D$APP_EXECUTABLE_TYPE=$EXECUTABLE_TYPE_DEV")
+        add("-D$APP_ID=${resolvedAppIdProvider().get()}")
+        // ./gradlew run -Pnucleus.updater.simulate=update / -Pnucleus.updater.feedUrl=<dir or url>
+        UpdaterLaunchSettings.systemProperties(project.providers).forEach { (key, value) -> add("-D$key=$value") }
+
+        if (currentOS == OS.MacOS) {
+            val dockName =
+                app.nativeDistributions.appName
+                    ?: app.nativeDistributions.packageName
+                    ?: project.name
+            add("-Dapple.awt.application.name=$dockName")
+            val file = app.nativeDistributions.macOS.iconFile.ioFileOrNull
+            if (file != null) add("-Xdock:icon=$file")
+        }
+
+        addAll(app.jvmArgs)
+        // debug { } and -Pnucleus.debug: the run task only, never a package
+        val debugProperty = project.providers.gradleProperty(NUCLEUS_DEBUG_GRADLE_PROPERTY).orNull
+        addAll(nucleusDebugJvmArgs(app, debugProperty, project.logger))
+        val appResourcesDir = prepareAppResources.get().destinationDir
+        add("-D$APP_RESOURCES_DIR=${appResourcesDir.absolutePath}")
+
+        app.nativeDistributions.splashImage?.let { splash ->
+            val splashFile = appResourcesDir.resolve(splash)
+            if (splashFile.exists()) {
+                add("-splash:${splashFile.absolutePath}")
+            }
+        }
+
+        // Dev mode AOT: ./gradlew run -Paot=train|on|auto|off
+        val aotCacheDir =
+            project.layout.buildDirectory
+                .dir("compose/aot-cache")
+                .get()
+                .asFile
+        val devAotCache = java.io.File(aotCacheDir, "dev.aot")
+        when (project.findProperty("aot")?.toString()) {
+            "train" -> {
+                aotCacheDir.mkdirs()
+                add("-XX:AOTCacheOutput=${devAotCache.absolutePath}")
+            }
+            "on" -> {
+                if (devAotCache.exists()) {
+                    add("-XX:AOTCache=${devAotCache.absolutePath}")
+                }
+            }
+            "auto" -> {
+                if (devAotCache.exists()) {
+                    add("-XX:AOTCache=${devAotCache.absolutePath}")
+                } else {
+                    aotCacheDir.mkdirs()
+                    add("-XX:AOTCacheOutput=${devAotCache.absolutePath}")
+                }
+            }
+            // "off" or absent → no-op
+        }
+    }
 
 private fun JvmApplicationContext.configureFlattenJars(
     flattenJars: AbstractJarsFlattenTask,
