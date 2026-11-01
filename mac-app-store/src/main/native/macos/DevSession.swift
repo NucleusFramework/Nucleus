@@ -63,6 +63,31 @@ enum DevSession {
 
     // MARK: Properties
 
+    /// The session's settings. They outlive the process: StoreKit Testing keeps them per bundle id.
+    struct SettingsDto: Encodable {
+        let dialogs: Bool
+        let askToBuy: Bool
+        let billingRetryOnRenewal: Bool
+        let billingGracePeriod: Bool
+        let interruptedPurchases: Bool
+        let timeRate: Int
+        let storefront: String
+    }
+
+    static func settings() throws -> SettingsDto {
+        let session = try require()
+        func flag(_ key: String) -> Bool { session.value(forKey: key) as? Bool ?? false }
+        return SettingsDto(
+            dialogs: !flag("disableDialogs"),
+            askToBuy: flag("askToBuyEnabled"),
+            billingRetryOnRenewal: flag("billingRetryOnRenewalEnabled"),
+            billingGracePeriod: flag("billingGracePeriodEnabled"),
+            interruptedPurchases: flag("interruptedPurchasesEnabled"),
+            timeRate: session.value(forKey: "timeRate") as? Int ?? 0,
+            storefront: session.value(forKey: "storefront") as? String ?? ""
+        )
+    }
+
     static func set(_ args: DevSetArgs) throws {
         let session = try require()
         switch args.key {

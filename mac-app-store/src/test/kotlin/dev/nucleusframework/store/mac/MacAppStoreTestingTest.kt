@@ -60,6 +60,38 @@ class MacAppStoreTestingTest {
         }
 
     @Test
+    fun `settings are read back from the session`() =
+        runBlocking {
+            val transport =
+                FakeTransport { request ->
+                    if (request.method == "dev.settings") {
+                        ok(
+                            """{"dialogs":false,"askToBuy":true,"billingRetryOnRenewal":true,"billingGracePeriod":false,
+                               "interruptedPurchases":false,"timeRate":1004,"storefront":"FRA"}""",
+                        )
+                    } else {
+                        ok("{}")
+                    }
+                }
+            MacAppStore.setBackendForTesting(
+                NativeStoreBackend(transport, DevConfiguration("/p.storekit", "/x/StoreKitTest")),
+            )
+            val settings = MacAppStore.testing.settings()
+            assertEquals(
+                StoreKitTestingSettings(
+                    purchaseSheetsEnabled = false,
+                    askToBuyEnabled = true,
+                    billingRetryOnRenewal = true,
+                    billingGracePeriod = false,
+                    interruptedPurchasesEnabled = false,
+                    renewalRate = RenewalRate.OneRenewalEveryTenSeconds,
+                    storefront = "FRA",
+                ),
+                settings,
+            )
+        }
+
+    @Test
     fun `a blank product id fails before the bridge`() =
         runBlocking {
             val transport = install(DevConfiguration("/p.storekit", "/x/StoreKitTest"))

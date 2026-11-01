@@ -124,6 +124,17 @@ internal data class WireOpened(
     val opened: Boolean = false,
 )
 
+@Serializable
+internal data class WireTestingSettings(
+    val dialogs: Boolean = true,
+    val askToBuy: Boolean = false,
+    val billingRetryOnRenewal: Boolean = false,
+    val billingGracePeriod: Boolean = false,
+    val interruptedPurchases: Boolean = false,
+    val timeRate: Int = 0,
+    val storefront: String = "",
+)
+
 internal fun jsonArgs(vararg pairs: Pair<String, Any?>): String =
     JsonObject(
         pairs

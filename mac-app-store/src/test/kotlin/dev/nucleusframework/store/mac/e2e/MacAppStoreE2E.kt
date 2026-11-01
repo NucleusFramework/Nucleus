@@ -176,6 +176,8 @@ object MacAppStoreE2E {
                 }
 
             testing.setAskToBuyEnabled(true)
+            val settings = testing.settings()
+            check("settings read back", settings.askToBuyEnabled && !settings.purchaseSheetsEnabled) { settings }
             val asked = purchases.purchase("pro")
             check("Ask to Buy makes the purchase pending", asked == PurchaseResult.Pending) { asked }
             testing.approveAskToBuy("pro")

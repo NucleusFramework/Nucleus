@@ -87,6 +87,8 @@ abstract class AbstractRunStoreKitTask : AbstractNucleusTask() {
         val marker = root.resolve("shell.properties")
         val fresh = !app.isDirectory || marker.takeIf { it.isFile }?.readText() != identity
         if (fresh) {
+            // Leave no registration of the deleted bundle behind in LaunchServices.
+            root.listFiles { file -> file.extension == "app" }?.forEach { command(LSREGISTER, "-u", it.absolutePath) }
             root.deleteRecursively()
             createShell(root, name)
             marker.writeText(identity)

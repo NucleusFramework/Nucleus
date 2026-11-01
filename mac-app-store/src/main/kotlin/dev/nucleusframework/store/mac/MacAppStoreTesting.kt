@@ -1,5 +1,7 @@
 package dev.nucleusframework.store.mac
 
+import dev.nucleusframework.store.mac.internal.WireJson
+import dev.nucleusframework.store.mac.internal.WireTestingSettings
 import dev.nucleusframework.store.mac.internal.jsonArgs
 
 /**
@@ -25,6 +27,23 @@ public enum class RenewalRate(
     OneRenewalEveryTenSeconds(1004),
     OneRenewalEveryTwoSeconds(1005),
 }
+
+/**
+ * The settings of the StoreKit Testing session. StoreKit Testing keeps them per bundle id across
+ * launches, so read them rather than assume the defaults.
+ *
+ * @property renewalRate `null` for a rate this version does not know
+ * @property storefront ISO 3166-1 alpha-3 country code of the customer's storefront
+ */
+public data class StoreKitTestingSettings(
+    val purchaseSheetsEnabled: Boolean,
+    val askToBuyEnabled: Boolean,
+    val billingRetryOnRenewal: Boolean,
+    val billingGracePeriod: Boolean,
+    val interruptedPurchasesEnabled: Boolean,
+    val renewalRate: RenewalRate?,
+    val storefront: String,
+)
 
 /**
  * The App Store's side of StoreKit Testing, to exercise an app's purchase code without App Store
@@ -55,6 +74,24 @@ public class MacAppStoreTesting internal constructor() {
     /** `true` when a StoreKit configuration serves the store in this process. */
     public val isActive: Boolean
         get() = backend.isTesting
+
+    /** The session's current settings, as left by this or an earlier launch. */
+    public suspend fun settings(): StoreKitTestingSettings {
+        val wire =
+            WireJson.decodeFromJsonElement(
+                WireTestingSettings.serializer(),
+                backend.devCommand("dev.settings", "{}"),
+            )
+        return StoreKitTestingSettings(
+            purchaseSheetsEnabled = wire.dialogs,
+            askToBuyEnabled = wire.askToBuy,
+            billingRetryOnRenewal = wire.billingRetryOnRenewal,
+            billingGracePeriod = wire.billingGracePeriod,
+            interruptedPurchasesEnabled = wire.interruptedPurchases,
+            renewalRate = RenewalRate.entries.firstOrNull { it.raw == wire.timeRate },
+            storefront = wire.storefront,
+        )
+    }
 
     /** Forgets every transaction: the customer owns nothing and is eligible for every offer again. */
     public suspend fun clearTransactions() {

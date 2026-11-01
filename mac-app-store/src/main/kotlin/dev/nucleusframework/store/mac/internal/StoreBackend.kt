@@ -57,11 +57,11 @@ internal interface StoreBackend {
 
     suspend fun openStorePage(appId: Long?)
 
-    /** Runs a `dev.*` method of the StoreKit Testing session. */
+    /** Runs a `dev.*` method of the StoreKit Testing session; its payload. */
     suspend fun devCommand(
         method: String,
         args: String,
-    )
+    ): JsonElement
 }
 
 /** Windows, Linux, or a Mac whose native bridge did not load. */
@@ -96,7 +96,7 @@ internal class UnsupportedStoreBackend(
     override suspend fun devCommand(
         method: String,
         args: String,
-    ): Unit = unsupported()
+    ): JsonElement = unsupported()
 }
 
 /**
@@ -321,14 +321,14 @@ internal class NativeStoreBackend(
     override suspend fun devCommand(
         method: String,
         args: String,
-    ) {
+    ): JsonElement {
         if (dev == null) {
             throw StoreException(
                 StoreErrorCode.InvalidArgument,
                 "No StoreKit configuration is active: launch with -D$STOREKIT_CONFIGURATION_PROPERTY=<file.storekit>",
             )
         }
-        call(method, args)
+        return call(method, args)
     }
 }
 

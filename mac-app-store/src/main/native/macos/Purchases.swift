@@ -39,6 +39,10 @@ func purchase(_ args: PurchaseArgs) async throws -> PurchaseOutcomeDto {
     // Closing it from here (endSheet on its ViewBridge chain) was tried: StoreKit then never
     // returns, and every later purchase hangs behind it.
     let window = await presentationWindow(args.window)
+    // From an app in the background (a menu bar item, a deep link) StoreKit skips the sheet and
+    // asks for an Apple Account instead, and in StoreKit Testing leaves the test environment for
+    // the sandbox (measured): the purchase sheet is meant to be seen, so bring the app forward.
+    await activate(window)
     let result: Product.PurchaseResult
     do {
         if #available(macOS 15.2, *), let window {
@@ -87,6 +91,17 @@ private func presentationWindow(_ handle: Int64?) -> NSWindow? {
     }
     guard let app = NSApp else { return nil }
     return app.keyWindow ?? app.mainWindow ?? app.windows.first { $0.isVisible }
+}
+
+@MainActor
+private func activate(_ window: NSWindow?) {
+    guard let app = NSApp, !app.isActive else { return }
+    if #available(macOS 14.0, *) {
+        app.activate()
+    } else {
+        app.activate(ignoringOtherApps: true)
+    }
+    window?.makeKeyAndOrderFront(nil)
 }
 
 private func unverified<T>(_ verification: VerificationResult<T>) -> WireError {

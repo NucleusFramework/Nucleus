@@ -54,7 +54,9 @@ MacAppStore.purchases.list().filter { it.productType == ProductType.Consumable }
 ```
 
 - The purchase sheet attaches to `window` (`TaoWindow.nativeHandle`), else to the app's key
-  window. After a purchase macOS shows its own "You're all set" confirmation; `purchase()`
+  window, which is brought forward first: a purchase started while the app is in the background
+  (a menu bar item, a deep link) otherwise gets an Apple Account sign-in instead of the sheet.
+  macOS 14+ may still keep the app behind the active one. After a purchase macOS shows its own "You're all set" confirmation; `purchase()`
   returns once the customer closes it.
 - **Cancelling `purchase()` does not close Apple's sheet** — StoreKit offers no way to, and
   closing it from the app leaves StoreKit stuck. The sheet stays the customer's: a cancel ends
@@ -166,6 +168,8 @@ if (testing.isActive) {
 }
 ```
 
+- The settings outlive the app: StoreKit Testing keeps them per bundle id, so read them with
+  `testing.settings()` rather than assume the defaults.
 - An expiry (`expireSubscription`) reaches `entitlement()` some 15 seconds later.
 - There is no `declineAskToBuy`: StoreKit Testing reports a declined Ask to Buy to StoreKit 2 as
   a completed purchase.
