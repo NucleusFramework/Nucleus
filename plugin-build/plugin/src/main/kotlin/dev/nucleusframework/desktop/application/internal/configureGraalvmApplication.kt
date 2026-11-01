@@ -18,6 +18,9 @@ import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
 import dev.nucleusframework.desktop.application.internal.files.skikoLibraryFileName
 import dev.nucleusframework.desktop.application.internal.files.shipsSkikoBesideExecutable
 import dev.nucleusframework.desktop.application.internal.files.skikoEntriesDroppedFromImage
+import dev.nucleusframework.desktop.application.tasks.AbstractAssembleSandboxedGraalvmMacAppTask
+import dev.nucleusframework.desktop.application.tasks.AbstractExtractNativeLibsTask
+import dev.nucleusframework.desktop.application.tasks.AbstractStripNativeLibsFromJarsTask
 import dev.nucleusframework.desktop.application.tasks.AbstractElectronBuilderPackageTask
 import dev.nucleusframework.desktop.application.tasks.AbstractNotarizationTask
 import dev.nucleusframework.desktop.application.tasks.AbstractUnpackNucleusNativesTask
@@ -37,6 +40,7 @@ import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.FileCollection
+import org.gradle.api.file.RegularFile
 import org.gradle.api.logging.Logger
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
@@ -896,15 +900,28 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         }
 
     // ── nativeImageCompile ──
+    // One registration for the regular image and, with a macOS App Store format, the sandboxed
+    // one: the same arguments and inputs, compiled from other JARs (extra classpath entry) with
+    // extra arguments placed before the user's buildArgs. Both stay unset for the regular image,
+    // whose inputs and command line are therefore unchanged.
 
-    val nativeImageCompile =
+    fun registerNativeImageCompile(
+        taskNameObject: String,
+        taskDescription: String,
+        uberJarFile: Provider<RegularFile>,
+        compileDir: Provider<Directory>,
+        extraClasspath: Provider<RegularFile>? = null,
+        extraArgs: List<String> = emptyList(),
+        extraDependency: TaskProvider<*>? = null,
+    ): TaskProvider<Exec> =
         tasks.register<Exec>(
             taskNameAction = "nativeImage",
-            taskNameObject = "compile",
+            taskNameObject = taskNameObject,
         ) {
-            description = "Compile the application into a GraalVM native image"
+            description = taskDescription
 
             dependsOn(unpackNucleusNatives)
+            extraDependency?.let { dependsOn(it) }
             dependsOn(generatePlatformMetadata)
             dependsOn(resolveReachabilityMetadata)
             dependsOn(analyzeStaticMetadata)
@@ -913,8 +930,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             compileStubs?.let { dependsOn(it) }
             generateWindowsResources?.let { dependsOn(it) }
 
-            val uberJarFile = unpackNucleusNatives.flatMap { it.strippedJar }
-            val outputDir = nativeCompileDir.get().asFile
+            val outputDir = compileDir.get().asFile
             outputs.dir(outputDir)
 
             val nativeImageExe =
@@ -993,6 +1009,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedImageName = imageName.get()
             val resolvedHeadless = graalvm.headless.get()
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
+            val resolvedExtraClasspath = extraClasspath?.get()?.asFile?.absolutePath
             val resolvedMacOsMinVersion =
                 if (currentOS == OS.MacOS) graalvm.macOS.minimumSystemVersion.get() else null
             // Keep File (not path strings) so inputs and -H:NativeLinkerOption share one value.
@@ -1020,6 +1037,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             // fileTree / files() — inputs.dir(...).optional() still fails validation in
             // Gradle 9 when the path is set but missing.
             inputs.file(uberJarFile)
+            extraClasspath?.let { inputs.file(it).withPropertyName("extraClasspath") }
+            if (extraArgs.isNotEmpty()) inputs.property("extraArgs", extraArgs)
             inputs
                 .files(project.fileTree(resolvedConfigDir))
                 .withPropertyName("nativeImageConfigDir")
@@ -1088,6 +1107,10 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 // (static analysis dir, metadata repo dirs file, …) exist on disk.
                 val builtArgs =
                     buildList {
+                        if (resolvedExtraClasspath != null) {
+                            add("-cp")
+                            add(resolvedExtraClasspath)
+                        }
                         add("-jar")
                         add(resolvedUberJar)
                         add("-o")
@@ -1300,6 +1323,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                             }
                         }
 
+                        addAll(extraArgs)
                         addAll(resolvedBuildArgs)
                     }
 
@@ -1323,6 +1347,14 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     }
             }
         }
+
+    val nativeImageCompile =
+        registerNativeImageCompile(
+            taskNameObject = "compile",
+            taskDescription = "Compile the application into a GraalVM native image",
+            uberJarFile = unpackNucleusNatives.flatMap { it.strippedJar },
+            compileDir = nativeCompileDir,
+        )
 
     // ── Platform-specific packaging ──
 
@@ -1359,6 +1391,22 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     packageUberJar,
                     unpackNucleusNatives,
                 )
+        }
+
+    // ── Sandboxed (Mac App Store) variant ──
+
+    val createSandboxedGraalvmApp =
+        if (currentOS == OS.MacOS && hasMacAppStoreFormat()) {
+            registerSandboxedMacGraalvmApp(
+                graalvm,
+                unpackNucleusNatives,
+                unpackDefaultResources,
+                packageGraalvmNative,
+                imageName,
+                ::registerNativeImageCompile,
+            )
+        } else {
+            null
         }
 
     // ── Run the native image ──
@@ -1491,7 +1539,152 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
 
     // ── Electron-builder integration ──
 
-    configureGraalvmElectronBuilderPackaging(packageGraalvmNative, unpackDefaultResources, imageName)
+    configureGraalvmElectronBuilderPackaging(
+        packageGraalvmNative,
+        unpackDefaultResources,
+        imageName,
+        createSandboxedGraalvmApp,
+    )
+}
+
+/** A macOS App Store PKG among the target formats: the one sandboxed format the GraalVM pipeline builds. */
+private fun JvmApplicationContext.hasMacAppStoreFormat(): Boolean =
+    app.nativeDistributions.targetFormats.any {
+        app.nativeDistributions.isSandboxed(it) && it.isCompatibleWith(OS.MacOS)
+    }
+
+/** Registers a native-image compile task; see `registerNativeImageCompile` in [configureGraalvmApplication]. */
+private typealias NativeImageCompileRegistration = (
+    taskNameObject: String,
+    taskDescription: String,
+    uberJarFile: Provider<RegularFile>,
+    compileDir: Provider<Directory>,
+    extraClasspath: Provider<RegularFile>?,
+    extraArgs: List<String>,
+    extraDependency: TaskProvider<*>?,
+) -> TaskProvider<Exec>
+
+private val JvmApplicationContext.sandboxedGraalvmOutputDir: Provider<Directory>
+    get() = app.nativeDistributions.outputBaseDir.map { it.dir("$appDirName/graalvm-app-sandboxed") }
+
+/**
+ * The sandboxed (Mac App Store) GraalVM app, alongside the regular one, as the JVM pipeline
+ * builds `createSandboxedDistributable` alongside `createDistributable`:
+ * - the image's JARs get the sandboxed pipeline's treatment ([AbstractStripNativeLibsFromJarsTask]):
+ *   native libraries replaced by markers, extract-and-load call sites routed to the
+ *   `NucleusSandboxLoader` shim, compiled in with the image;
+ * - the libraries themselves are extracted at build time ([AbstractExtractNativeLibsTask]), to ship
+ *   signed in `Contents/Frameworks`;
+ * - the image is compiled again from those JARs without Substrate's signal handling
+ *   (`-R:-EnableSignalHandling`): it creates a named POSIX semaphore (`/cSunMiscSignal-<pid>`) the
+ *   App Sandbox only allows under an App Group prefix, so the image died at start-up. The cost is
+ *   that SIGINT/SIGTERM no longer run shutdown hooks, which a sandboxed GUI app does not receive
+ *   (it quits through AppKit, and System.exit still runs them);
+ * - [AbstractAssembleSandboxedGraalvmMacAppTask] derives the bundle from the regular one.
+ *
+ * The regular image, bundle and packages are left untouched.
+ */
+@Suppress("LongParameterList")
+private fun JvmApplicationContext.registerSandboxedMacGraalvmApp(
+    graalvm: GraalvmSettings,
+    unpackNucleusNatives: TaskProvider<AbstractUnpackNucleusNativesTask>,
+    unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
+    packageGraalvmNative: TaskProvider<out DefaultTask>,
+    imageName: Provider<String>,
+    registerNativeImageCompile: NativeImageCompileRegistration,
+): TaskProvider<AbstractAssembleSandboxedGraalvmMacAppTask> {
+    val sandboxedJar = unpackNucleusNatives.flatMap { it.strippedJar }
+    val stripNativeLibs =
+        tasks.register<AbstractStripNativeLibsFromJarsTask>(
+            taskNameAction = "strip",
+            taskNameObject = "graalvmNativeLibsForSandboxing",
+        ) {
+            inputJars.from(sandboxedJar)
+            mainJarName.set(sandboxedJar.map { it.asFile.name })
+            outputDir.set(appTmpDir.map { it.dir("graalvm/sandboxed/rewritten-jars") })
+            manifestOutputDir.set(appTmpDir.map { it.dir("graalvm/sandboxed/manifest") })
+            // Matched against JAR names: the image is compiled from one uber JAR, so the escape
+            // hatch can only keep everything (or nothing) verbatim here.
+            keepNativeLibsInJar.set(provider { app.nativeDistributions.sandboxing.keepNativeLibsInJars })
+        }
+    // The rewritten JAR's name is content-mangled and only known once the strip ran: copy it, and
+    // the shim, under fixed names the compile task can declare up front.
+    val compileJarsDir = appTmpDir.map { it.dir("graalvm/sandboxed/compile-jars") }
+    val stageSandboxedJars =
+        tasks.register<Sync>(
+            taskNameAction = "stage",
+            taskNameObject = "graalvmSandboxedJars",
+        ) {
+            from(stripNativeLibs.flatMap { it.outputDir }) {
+                it.include("*.jar")
+                it.exclude(SandboxMarkers.SHIM_JAR_NAME)
+                it.rename { "app.jar" }
+            }
+            from(stripNativeLibs.flatMap { it.outputDir }) {
+                it.include(SandboxMarkers.SHIM_JAR_NAME)
+            }
+            into(compileJarsDir)
+        }
+    val extractNativeLibs =
+        tasks.register<AbstractExtractNativeLibsTask>(
+            taskNameAction = "extract",
+            taskNameObject = "graalvmNativeLibsForSandboxing",
+        ) {
+            inputJars.from(sandboxedJar)
+            targetOs.set("macos")
+            targetArch.set(if (currentArch == Arch.Arm64) "arm64" else "x64")
+            outputDir.set(appTmpDir.map { it.dir("graalvm/sandboxed/native-libs") })
+        }
+
+    val sandboxedCompileDir = appTmpDir.map { it.dir("graalvm/nativeCompileSandboxed") }
+    val compileSandboxed =
+        registerNativeImageCompile(
+            "compileSandboxed",
+            "Compile the sandboxed (Mac App Store) GraalVM native image",
+            compileJarsDir.map { it.file("app.jar") },
+            sandboxedCompileDir,
+            compileJarsDir.map { it.file(SandboxMarkers.SHIM_JAR_NAME) },
+            listOf("-R:-EnableSignalHandling"),
+            stageSandboxedJars,
+        )
+
+    val mac = app.nativeDistributions.macOS
+    val assemble =
+        tasks.register<AbstractAssembleSandboxedGraalvmMacAppTask>(
+            taskNameAction = "create",
+            taskNameObject = "sandboxedGraalvmNativeDistributable",
+        ) {
+            description = "Create the sandboxed (Mac App Store) GraalVM native app distributable"
+            dependsOn(packageGraalvmNative, compileSandboxed, extractNativeLibs, stripNativeLibs)
+            regularAppRoot.set(graalvmOutputDir)
+            bundleName.set(resolvedMacBundleNameProvider().map { "$it.app" })
+            executableName.set(imageName)
+            sandboxedBinary.set(sandboxedCompileDir.zip(imageName) { dir, name -> dir.file(name) })
+            nativeLibsDir.set(extractNativeLibs.flatMap { it.outputDir })
+            sandboxManifest.set(stripNativeLibs.flatMap { it.manifestOutputDir.file(SandboxMarkers.MANIFEST_FILENAME) })
+            entitlementsFile.set(
+                mac.entitlementsFile.orElse(unpackDefaultResources.flatMap { it.resources.defaultSandboxEntitlements }),
+            )
+            provisioningProfile.set(mac.provisioningProfile)
+            minimumSystemVersion.set(graalvm.macOS.minimumSystemVersion)
+            sdkVersion.set(graalvm.macOS.macOsSdkVersion)
+            destinationDir.set(sandboxedGraalvmOutputDir)
+        }
+
+    tasks.register<Exec>(
+        taskNameAction = "run",
+        taskNameObject = "sandboxedGraalvmNativeDistributable",
+    ) {
+        description = "Build and run the sandboxed (Mac App Store) GraalVM native app"
+        dependsOn(assemble)
+        val binary =
+            sandboxedGraalvmOutputDir.map {
+                it.file("${resolvedMacBundleNameProvider().get()}.app/Contents/MacOS/${imageName.get()}")
+            }
+        executable = binary.get().asFile.absolutePath
+        args = app.args
+    }
+    return assemble
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2520,27 +2713,40 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
     packageGraalvmNative: TaskProvider<out DefaultTask>,
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
     imageName: org.gradle.api.provider.Provider<String>,
+    sandboxedMacApp: TaskProvider<AbstractAssembleSandboxedGraalvmMacAppTask>?,
 ) {
+    val formats = app.nativeDistributions.targetFormats
     val ebFormats =
-        app.nativeDistributions.targetFormats
-            .filter { it.backend == PackagingBackend.ELECTRON_BUILDER && !app.nativeDistributions.isSandboxed(it) }
+        formats.filter { it.backend == PackagingBackend.ELECTRON_BUILDER && !app.nativeDistributions.isSandboxed(it) }
+    // The Mac App Store PKG is built from the sandboxed app (registerSandboxedMacGraalvmApp).
+    val macStoreFormats =
+        if (sandboxedMacApp != null) {
+            formats.filter { app.nativeDistributions.isSandboxed(it) && it.isCompatibleWith(OS.MacOS) }
+        } else {
+            emptyList()
+        }
 
     val droppedStoreFormats =
-        app.nativeDistributions.targetFormats
-            .filter { app.nativeDistributions.isSandboxed(it) && it.isCompatibleWithCurrentOS }
+        formats.filter {
+            app.nativeDistributions.isSandboxed(it) && it.isCompatibleWithCurrentOS && it !in macStoreFormats
+        }
     if (droppedStoreFormats.isNotEmpty()) {
         // info, not warn: the configuration is legitimate and nothing is lost overall — the JVM
-        // packagePkg still builds the store package. Only the GraalVM-native variant is skipped,
+        // package task still builds the store package. Only the GraalVM-native variant is skipped,
         // and warning on every configuration would fire on any project combining the two.
         project.logger.info(
-            "GraalVM native image does not support the sandboxed (store) pipeline, so no " +
+            "GraalVM native image builds no sandboxed package but the Mac App Store PKG, so no " +
                 "packageGraalvm task is registered for ${droppedStoreFormats.joinToString { it.name }}; " +
-                "the JVM package task still builds it. For a native PKG use " +
-                "macOS { pkg { appStore = false } } (Developer ID).",
+                "the JVM package task still builds it.",
         )
     }
 
-    for (targetFormat in ebFormats) {
+    fun registerPackage(
+        targetFormat: TargetFormat,
+        appRoot: Provider<Directory>,
+        appTask: TaskProvider<out DefaultTask>,
+        sandboxed: Boolean,
+    ) {
         val packageFormat =
             tasks.register<AbstractElectronBuilderPackageTask>(
                 taskNameAction = "packageGraalvm",
@@ -2548,10 +2754,10 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
                 args = listOf(targetFormat),
             ) {
                 enabled = targetFormat.isCompatibleWithCurrentOS
-                dependsOn(packageGraalvmNative, unpackDefaultResources)
+                dependsOn(appTask, unpackDefaultResources)
 
                 // The app image root is the output directory from the native packaging step
-                appImageRoot.set(graalvmOutputDir)
+                appImageRoot.set(appRoot)
 
                 destinationDir.set(
                     app.nativeDistributions.outputBaseDir.map {
@@ -2565,7 +2771,7 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
 
                 // Only wire platform-specific icons/entitlements for the current OS
                 // to avoid validation errors from missing cross-platform files.
-                configureGraalvmPlatformPackageSettings(this, targetFormat, unpackDefaultResources)
+                configureGraalvmPlatformPackageSettings(this, targetFormat, unpackDefaultResources, sandboxed)
 
                 executableName.set(imageName)
                 runtimeAppId.set(resolvedAppIdProvider())
@@ -2591,6 +2797,15 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
             }
         }
     }
+
+    for (targetFormat in ebFormats) {
+        registerPackage(targetFormat, graalvmOutputDir, packageGraalvmNative, sandboxed = false)
+    }
+    if (sandboxedMacApp != null) {
+        for (targetFormat in macStoreFormats) {
+            registerPackage(targetFormat, sandboxedGraalvmOutputDir, sandboxedMacApp, sandboxed = true)
+        }
+    }
 }
 
 /** Wires the icons, entitlements and signing settings of the current OS into an electron-builder [task]. */
@@ -2598,6 +2813,7 @@ private fun JvmApplicationContext.configureGraalvmPlatformPackageSettings(
     task: AbstractElectronBuilderPackageTask,
     targetFormat: TargetFormat,
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
+    sandboxed: Boolean,
 ) {
     when (currentOS) {
         OS.Linux -> {
@@ -2635,23 +2851,19 @@ private fun JvmApplicationContext.configureGraalvmPlatformPackageSettings(
             val mac = app.nativeDistributions.macOS
             task.nonValidatedMacSigningSettings = mac.signing
             task.nonValidatedMacBundleID.set(mac.bundleID)
-            // Sandboxed formats are filtered out by the caller, so a PKG reaching this point is
-            // always Developer ID — the GraalVM pipeline does not build store packages.
-            task.macAppStore.set(false)
+            // A sandboxed PKG is the Mac App Store one, built from the sandboxed app; any other
+            // PKG is Developer ID.
+            task.macAppStore.set(sandboxed)
             if (targetFormat == TargetFormat.Pkg) {
                 task.macPkgPreInstall.set(mac.pkg.preInstall)
                 task.macPkgPostInstall.set(mac.pkg.postInstall)
             }
-            task.macEntitlementsFile.set(
-                mac.entitlementsFile.orElse(
-                    unpackDefaultResources.flatMap { it.resources.defaultEntitlements },
-                ),
-            )
-            task.macRuntimeEntitlementsFile.set(
-                mac.runtimeEntitlementsFile.orElse(
-                    unpackDefaultResources.flatMap { it.resources.defaultEntitlements },
-                ),
-            )
+            val defaultEntitlements =
+                unpackDefaultResources.flatMap {
+                    if (sandboxed) it.resources.defaultSandboxEntitlements else it.resources.defaultEntitlements
+                }
+            task.macEntitlementsFile.set(mac.entitlementsFile.orElse(defaultEntitlements))
+            task.macRuntimeEntitlementsFile.set(mac.runtimeEntitlementsFile.orElse(defaultEntitlements))
             task.macAppExtensions.set(mac.appExtensions.extensions)
             task.macAppExtensionFiles.from(
                 mac.appExtensions.extensions.flatMap {

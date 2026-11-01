@@ -52,6 +52,45 @@ class GraalVmInitializerTest {
     }
 
     @Test
+    fun `only the sandboxed bundle gets the Frameworks and JNA wiring`() {
+        val bundle = Files.createTempDirectory("nucleus-bundle").toFile()
+        try {
+            val execDir = bundle.resolve("Contents/MacOS")
+            assertTrue(execDir.mkdirs())
+            assertTrue(bundle.resolve("Contents/Resources").mkdirs())
+            // A regular bundle: nothing to wire.
+            assertNull(GraalVmInitializer.macOsSandboxedLayout(execDir))
+
+            val manifest = bundle.resolve("Contents/Resources/nucleus-sandbox-manifest.properties")
+            manifest.writeText("abc=libjnidispatch.jnilib\n")
+            val layout = GraalVmInitializer.macOsSandboxedLayout(File(execDir, "."))
+            val frameworks = bundle.resolve("Contents/Frameworks").absoluteFile.normalize()
+            assertEquals(frameworks, layout?.librariesDir?.absoluteFile?.normalize())
+            val properties = layout!!.properties
+            val manifestProperty = File(properties.getValue("nucleus.sandbox.manifest")).normalize()
+            assertEquals(manifest.absoluteFile.normalize(), manifestProperty)
+            assertEquals("true", properties["jna.nounpack"])
+            assertEquals(frameworks.path, File(properties.getValue("jna.boot.library.path")).normalize().path)
+        } finally {
+            bundle.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `user home follows the container only inside the sandbox`() {
+        val container = Files.createTempDirectory("nucleus-container").toFile()
+        try {
+            val sandboxed = mapOf("APP_SANDBOX_CONTAINER_ID" to "dev.app", "HOME" to container.path)
+            assertEquals(container.path, GraalVmInitializer.sandboxedUserHome(sandboxed::get))
+            assertNull(GraalVmInitializer.sandboxedUserHome(mapOf("HOME" to container.path)::get))
+            val missingHome = mapOf("APP_SANDBOX_CONTAINER_ID" to "dev.app", "HOME" to "/nope")
+            assertNull(GraalVmInitializer.sandboxedUserHome(missingHome::get))
+        } finally {
+            container.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `macos locale bridge reports a language tag when loaded`() {
         if (Platform.Current != Platform.MacOS) return
         assertTrue(NativeLocaleBridge.isLoaded)

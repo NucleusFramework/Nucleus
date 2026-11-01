@@ -52,6 +52,8 @@ public object GraalVmInitializer {
             System.setProperty("java.library.path", "$execDir$sep$execDir${File.separator}bin")
             resetLibraryPathCache()
 
+            applyMacOsAppSandbox(execDir)
+
             // Early charset init
             Charset.defaultCharset()
 
@@ -82,6 +84,83 @@ public object GraalVmInitializer {
             }
         }
     }
+
+    /**
+     * Fit a native image to the macOS App Sandbox, which only lets the app write in its container
+     * and refuses native code extracted at run time (quarantined, then blocked by Gatekeeper).
+     *
+     * The sandboxed (App Store) bundle the plugin builds is recognized by the redirect manifest in
+     * `Contents/Resources`: its third-party native libraries were extracted at build time into
+     * `Contents/Frameworks`, so they join `java.library.path`, the extract-and-load shim
+     * (`NucleusSandboxLoader`) is pointed at the manifest, and JNA loads `jnidispatch` from there
+     * instead of unpacking it — the same properties the sandboxed JVM launcher passes.
+     *
+     * Inside the sandbox `user.home` follows `HOME`, the container: SubstrateVM reads it from the
+     * password database (`/Users/<name>`) where HotSpot follows `HOME`, and every `~/Library/…`
+     * path would land outside the container and be denied.
+     *
+     * Nothing changes for any other bundle or outside the sandbox; an explicit setting wins.
+     */
+    private fun applyMacOsAppSandbox(execDir: String) {
+        if (Platform.Current != Platform.MacOS) return
+        val layout = macOsSandboxedLayout(File(execDir))
+        if (layout != null) {
+            System.setProperty(
+                "java.library.path",
+                System.getProperty("java.library.path") + File.pathSeparator + layout.librariesDir.absolutePath,
+            )
+            resetLibraryPathCache()
+            layout.properties.forEach(::setIfAbsent)
+        }
+        sandboxedUserHome(System::getenv)?.let { System.setProperty("user.home", it) }
+    }
+
+    /** What the sandboxed bundle layout adds to the image's environment; see [applyMacOsAppSandbox]. */
+    internal class SandboxedLayout(
+        val librariesDir: File,
+        val properties: Map<String, String>,
+    )
+
+    /** The sandboxed layout of the bundle [execDir] (`Contents/MacOS`) belongs to, or `null` for any other. */
+    internal fun macOsSandboxedLayout(execDir: File): SandboxedLayout? {
+        val contents = execDir.absoluteFile.normalize().parentFile ?: return null
+        val manifest = File(contents, "Resources/$SANDBOX_MANIFEST_FILE")
+        if (!manifest.isFile) return null
+        val frameworks = File(contents, "Frameworks")
+        return SandboxedLayout(
+            librariesDir = frameworks,
+            properties =
+                mapOf(
+                    SANDBOX_MANIFEST_PROPERTY to manifest.absolutePath,
+                    "jna.nounpack" to "true",
+                    "jna.nosys" to "true",
+                    "jna.boot.library.path" to frameworks.absolutePath,
+                    "jna.library.path" to frameworks.absolutePath,
+                ),
+        )
+    }
+
+    /** The container `HOME` to use as `user.home` when sandboxed, or `null` outside the sandbox. */
+    internal fun sandboxedUserHome(env: (String) -> String?): String? {
+        if (env(APP_SANDBOX_CONTAINER_ID_ENV).isNullOrBlank()) return null
+        return env("HOME")?.takeIf { it.isNotBlank() && File(it).isDirectory }
+    }
+
+    private fun setIfAbsent(
+        key: String,
+        value: String,
+    ) {
+        if (System.getProperty(key).isNullOrBlank()) System.setProperty(key, value)
+    }
+
+    /** Set by macOS in the environment of every sandboxed process. */
+    private const val APP_SANDBOX_CONTAINER_ID_ENV = "APP_SANDBOX_CONTAINER_ID"
+
+    /** Written by the plugin's sandboxed pipeline (`SandboxMarkers.MANIFEST_FILENAME`). */
+    private const val SANDBOX_MANIFEST_FILE = "nucleus-sandbox-manifest.properties"
+
+    /** Read by the shim (`NucleusSandboxLoader.MANIFEST_PATH_PROPERTY`). */
+    private const val SANDBOX_MANIFEST_PROPERTY = "nucleus.sandbox.manifest"
 
     /**
      * Align [Locale.getDefault] with the macOS UI language under native-image.
