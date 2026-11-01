@@ -244,6 +244,34 @@ internal object NativeTaoWindowsDecoBridge {
         fullscreenSizeHooks[hwnd]?.invoke(widthPx, heightPx)
     }
 
+    // ── Re-show by the owner (Windows) ───────────────────────────────────
+    //
+    // Win32 hides the windows a window owns while it is minimized and shows
+    // them again on restore (WM_SHOWWINDOW / SW_PARENTOPENING), without
+    // TaoWindow.show ever running. The deco WndProc forwards that show to
+    // [onShownWithOwner] so the scene host can force its next present.
+
+    private val ownerShowHooks = java.util.concurrent.ConcurrentHashMap<Long, () -> Unit>()
+
+    fun setOwnerShowHook(
+        hwnd: Long,
+        block: (() -> Unit)?,
+    ) {
+        if (hwnd == 0L) return
+        if (block == null) ownerShowHooks.remove(hwnd) else ownerShowHooks[hwnd] = block
+    }
+
+    /**
+     * Called from native on the Tao main thread, from the
+     * `WM_WINDOWPOSCHANGED` that maps [hwnd] again after an owner's restore —
+     * not from the `WM_SHOWWINDOW` that announces it, when the window is
+     * still hidden and DWM would drop a present.
+     */
+    @JvmStatic
+    fun onShownWithOwner(hwnd: Long) {
+        ownerShowHooks[hwnd]?.invoke()
+    }
+
     @JvmStatic
     external fun nativeIsFullscreen(hwnd: Long): Boolean
 

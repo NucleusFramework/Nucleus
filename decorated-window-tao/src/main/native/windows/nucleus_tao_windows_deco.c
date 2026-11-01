@@ -116,6 +116,11 @@ typedef struct {
      * estimate, hence the tolerance at the forward site. */
     int     fsExpectedW;
     int     fsExpectedH;
+    /* Armed by the WM_SHOWWINDOW/SW_PARENTOPENING of an owner's restore,
+     * consumed by the WM_WINDOWPOSCHANGED that actually maps the window:
+     * the JVM is told only once the window is visible, since DWM drops a
+     * present made while it is still hidden. */
+    BOOL    ownerShowPending;
     /* Set when the active backdrop is the Windows 10 accent-policy acrylic
      * rather than a DWM one. DWM tints its own materials from the OS theme,
      * but the accent policy takes an explicit tint colour that has to be
@@ -559,6 +564,7 @@ static BOOL isOwnedTaoPopup(HWND root, HWND owner) {
 static JavaVM   *sDecoJVM = NULL;
 static jclass    sDecoBridgeClass = NULL;   /* global ref */
 static jmethodID sDecoOnFullscreenSize = NULL;
+static jmethodID sDecoOnShownWithOwner = NULL;
 
 static void ensureDecoJVMCached(JNIEnv *env) {
     if (sDecoJVM) return;
@@ -570,6 +576,8 @@ static void ensureDecoJVMCached(JNIEnv *env) {
         (*env)->DeleteLocalRef(env, local);
         sDecoOnFullscreenSize = (*env)->GetStaticMethodID(
             env, sDecoBridgeClass, "onFullscreenSizeChanged", "(JII)V");
+        sDecoOnShownWithOwner = (*env)->GetStaticMethodID(
+            env, sDecoBridgeClass, "onShownWithOwner", "(J)V");
     }
     nucleus_jni_clear_exception(env);
 }
@@ -593,6 +601,26 @@ static void notifyFullscreenSizeChanged(HWND hwnd, int w, int h) {
     if (!env) return;
     (*env)->CallStaticVoidMethod(env, sDecoBridgeClass, sDecoOnFullscreenSize,
         (jlong)(uintptr_t)hwnd, (jint)w, (jint)h);
+    nucleus_jni_clear_exception(env);
+}
+
+/* Calls NativeTaoWindowsDecoBridge.onShownWithOwner(hwnd). Invoked once
+ * Win32 has re-shown an owned window because its owner was restored — a
+ * show the JVM never asked for (TaoWindow.show), so nothing else tells the
+ * scene host that DWM lost the window's last frame. */
+static void notifyShownWithOwner(HWND hwnd) {
+    if (!sDecoJVM || !sDecoBridgeClass || !sDecoOnShownWithOwner) return;
+    JNIEnv *env = NULL;
+    jint status = (*sDecoJVM)->GetEnv(sDecoJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sDecoJVM)->AttachCurrentThreadAsDaemon(sDecoJVM, (void **)&env, NULL) != JNI_OK) {
+            return;
+        }
+    } else if (status != JNI_OK) {
+        return;
+    }
+    if (!env) return;
+    (*env)->CallStaticVoidMethod(env, sDecoBridgeClass, sDecoOnShownWithOwner, (jlong)(uintptr_t)hwnd);
     nucleus_jni_clear_exception(env);
 }
 
@@ -717,6 +745,15 @@ static LRESULT CALLBACK decoWndProc(
         break;
     }
 
+    /* The owner was restored and Win32 is showing its owned windows again
+     * (satellites, dialogs). DWM does not keep a hidden window's last frame,
+     * and the scene has nothing new to draw, so without a forced present the
+     * window comes back blank (white) until something invalidates it. Only
+     * armed here: the window is still hidden, see ownerShowPending. */
+    case WM_SHOWWINDOW:
+        if (wParam && lParam == SW_PARENTOPENING) state->ownerShowPending = TRUE;
+        break;
+
     case WM_STYLECHANGING:
         if (wParam == GWL_STYLE && state->backdropActive && !state->nativeFrame) {
             STYLESTRUCT *ss = (STYLESTRUCT *)lParam;
@@ -779,6 +816,14 @@ static LRESULT CALLBACK decoWndProc(
      * consistent. Only the (near-)final size is forwarded — intermediate
      * frame-recalc geometries live for microseconds inside the win32 call. */
     case WM_WINDOWPOSCHANGED: {
+        /* The owned window re-shown by its owner's restore is now mapped. */
+        const WINDOWPOS *shown = (const WINDOWPOS *)lParam;
+        if (state->ownerShowPending && shown && (shown->flags & SWP_SHOWWINDOW)) {
+            state->ownerShowPending = FALSE;
+            LRESULT result = CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+            notifyShownWithOwner(hwnd);
+            return result;
+        }
         if (state->fsTransitionActive) {
             LRESULT result = CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
             RECT rc;

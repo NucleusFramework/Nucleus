@@ -402,6 +402,7 @@ public object TaoHeadfulTestSuiteMain {
             Issue444HeadfulCases.all() +
             AlwaysOnTopHeadfulCases.all() +
             SatelliteWindowHeadfulCases.all() +
+            SatelliteRestorePaintHeadfulCases.all() +
             SatelliteWorkspaceHeadfulCases.all() +
             SatelliteWorkspaceStressHeadfulCases.all() +
             SatelliteWorkspaceMonkeyHeadfulCases.all() +
