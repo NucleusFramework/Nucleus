@@ -3,11 +3,13 @@ package dev.nucleusframework.graalvm
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.graalvm.encoding.PlatformEncodingInitializer
 import dev.nucleusframework.graalvm.locale.NativeLocaleBridge
+import dev.nucleusframework.graalvm.signal.TerminationSignals
 import dev.nucleusframework.hidpi.applyLinuxHiDpiScale
 import dev.nucleusframework.hidpi.capLinuxMallocArenas
 import java.io.File
 import java.nio.charset.Charset
 import java.util.Locale
+import java.util.logging.Logger
 
 public object GraalVmInitializer {
     public val isNativeImage: Boolean =
@@ -52,6 +54,8 @@ public object GraalVmInitializer {
             System.setProperty("java.library.path", "$execDir$sep$execDir${File.separator}bin")
             resetLibraryPathCache()
 
+            applyMacOsAppSandbox(execDir)
+
             // Early charset init
             Charset.defaultCharset()
 
@@ -82,6 +86,107 @@ public object GraalVmInitializer {
             }
         }
     }
+
+    /**
+     * Fit a native image to the macOS App Sandbox, which only lets the app write in its container
+     * and refuses native code extracted at run time (quarantined, then blocked by Gatekeeper).
+     *
+     * The sandboxed (App Store) bundle the plugin builds is recognized by the redirect manifest in
+     * `Contents/Resources`: its third-party native libraries were extracted at build time into
+     * `Contents/Frameworks`, so they join `java.library.path`, the extract-and-load shim
+     * (`NucleusSandboxLoader`) is pointed at the manifest, and JNA loads `jnidispatch` from there
+     * instead of unpacking it — the same properties the sandboxed JVM launcher passes.
+     *
+     * That image is also compiled without Substrate's signal handling (its named semaphore is denied),
+     * so [TerminationSignals] gives SIGINT / SIGTERM / SIGHUP their shutdown hooks back.
+     *
+     * Inside the sandbox `user.home` follows `HOME`, the container: SubstrateVM reads it from the
+     * password database (`/Users/<name>`) where HotSpot follows `HOME`, and every `~/Library/…`
+     * path would land outside the container and be denied.
+     *
+     * Nothing changes for any other bundle or outside the sandbox; an explicit setting wins.
+     */
+    private fun applyMacOsAppSandbox(execDir: String) {
+        if (Platform.Current != Platform.MacOS) return
+        val layout = macOsSandboxedLayout(File(execDir))
+        if (layout != null) {
+            System.setProperty(
+                "java.library.path",
+                System.getProperty("java.library.path") + File.pathSeparator + layout.librariesDir.absolutePath,
+            )
+            resetLibraryPathCache()
+            layout.properties.forEach(::setIfAbsent)
+            // This image is compiled without Substrate's signal handling: route SIGINT / SIGTERM /
+            // SIGHUP to the shutdown hooks ourselves.
+            if (!TerminationSignals.install()) {
+                Logger.getLogger(GraalVmInitializer::class.java.name).warning(
+                    "Termination signals unavailable: SIGINT/SIGTERM will skip the shutdown hooks",
+                )
+            }
+        }
+        sandboxedUserHome(System::getenv, System.getProperty("user.home"))?.let {
+            System.setProperty("user.home", it)
+        }
+    }
+
+    /** What the sandboxed bundle layout adds to the image's environment; see [applyMacOsAppSandbox]. */
+    internal class SandboxedLayout(
+        val librariesDir: File,
+        val properties: Map<String, String>,
+    )
+
+    /** The sandboxed layout of the bundle [execDir] (`Contents/MacOS`) belongs to, or `null` for any other. */
+    internal fun macOsSandboxedLayout(execDir: File): SandboxedLayout? {
+        val contents = execDir.absoluteFile.normalize().parentFile ?: return null
+        val manifest = File(contents, "Resources/$SANDBOX_MANIFEST_FILE")
+        if (!manifest.isFile) return null
+        val frameworks = File(contents, "Frameworks")
+        return SandboxedLayout(
+            librariesDir = frameworks,
+            properties =
+                mapOf(
+                    SANDBOX_MANIFEST_PROPERTY to manifest.absolutePath,
+                    "jna.nounpack" to "true",
+                    "jna.nosys" to "true",
+                    "jna.boot.library.path" to frameworks.absolutePath,
+                    "jna.library.path" to frameworks.absolutePath,
+                ),
+        )
+    }
+
+    /**
+     * The container `HOME` to use as `user.home` when sandboxed, or `null` to leave [userHome] as is:
+     * outside the sandbox, or when it is not SubstrateVM's default — the account home the container
+     * lives in (`<account>/Library/Containers/<id>/Data`) — so an explicit `-Duser.home` wins.
+     */
+    internal fun sandboxedUserHome(
+        env: (String) -> String?,
+        userHome: String?,
+    ): String? {
+        if (env(APP_SANDBOX_CONTAINER_ID_ENV).isNullOrBlank()) return null
+        val home = env("HOME")?.takeIf { it.isNotBlank() && File(it).isDirectory } ?: return null
+        val accountHome = home.substringBefore(CONTAINERS_SEGMENT, missingDelimiterValue = "")
+        return home.takeIf { userHome.isNullOrBlank() || userHome.trimEnd('/') == accountHome }
+    }
+
+    private fun setIfAbsent(
+        key: String,
+        value: String,
+    ) {
+        if (System.getProperty(key).isNullOrBlank()) System.setProperty(key, value)
+    }
+
+    /** Set by macOS in the environment of every sandboxed process. */
+    private const val APP_SANDBOX_CONTAINER_ID_ENV = "APP_SANDBOX_CONTAINER_ID"
+
+    /** Where a sandboxed app's container sits under the account home. */
+    private const val CONTAINERS_SEGMENT = "/Library/Containers/"
+
+    /** Written by the plugin's sandboxed pipeline (`SandboxMarkers.MANIFEST_FILENAME`). */
+    private const val SANDBOX_MANIFEST_FILE = "nucleus-sandbox-manifest.properties"
+
+    /** Read by the shim (`NucleusSandboxLoader.MANIFEST_PATH_PROPERTY`). */
+    private const val SANDBOX_MANIFEST_PROPERTY = "nucleus.sandbox.manifest"
 
     /**
      * Align [Locale.getDefault] with the macOS UI language under native-image.
@@ -154,13 +259,45 @@ public object GraalVmInitializer {
                 // fall through
             }
         }
-        return File(
+        return execDirOf(
             ProcessHandle
                 .current()
                 .info()
                 .command()
                 .orElse(""),
-        ).parentFile?.absolutePath ?: "."
+            System.getenv("PWD"),
+        )
+    }
+
+    /**
+     * The directory of the executable [command] names. On macOS the command is the path the
+     * process was started with, so it is canonicalized: launched through a symlink (a CLI link in
+     * `/usr/local/bin`) or a relative path (`./app`), its parent would otherwise not be the bundle's
+     * `Contents/MacOS`, and fonts and libraries would be looked up next to the link.
+     *
+     * A relative command is resolved against [workingDir] (the shell's `PWD`) when it is an absolute
+     * path: inside the App Sandbox SubstrateVM's `user.dir` is not the directory the process was
+     * started from.
+     */
+    internal fun execDirOf(
+        command: String,
+        workingDir: String? = null,
+    ): String {
+        if (command.isBlank()) return "."
+        val started = File(command)
+        val file =
+            if (started.isAbsolute || workingDir == null || !File(workingDir).isAbsolute) {
+                started
+            } else {
+                File(workingDir, command)
+            }
+        val resolved =
+            try {
+                file.canonicalFile
+            } catch (_: Exception) {
+                file.absoluteFile
+            }
+        return resolved.parentFile?.absolutePath ?: "."
     }
 
     /**
