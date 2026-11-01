@@ -1,0 +1,41 @@
+# Template of the Flathub manifest: render-manifest.sh fills the @...@ placeholders.
+# Flathub builds nothing from source here: the manifest repackages the Lab's released GraalVM
+# native image (tar.gz), the way a closed-source Nucleus app ships on Flathub.
+id: dev.nucleusframework.Lab
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+command: nucleus-lab
+separate-locales: false
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Updater, network and HTTP probes
+  - --share=network
+  # notification-linux talks to the notification server directly
+  - --talk-name=org.freedesktop.Notifications
+
+modules:
+  - name: nucleus-lab
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib/nucleus-lab /app/bin
+      - cp -a app/. /app/lib/nucleus-lab/
+      - ln -s /app/lib/nucleus-lab/nucleus-lab /app/bin/nucleus-lab
+      - install -Dm644 dev.nucleusframework.Lab.desktop -t /app/share/applications
+      - install -Dm644 dev.nucleusframework.Lab.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 dev.nucleusframework.Lab.png /app/share/icons/hicolor/512x512/apps/dev.nucleusframework.Lab.png
+      - install -Dm644 dev.nucleusframework.Lab.mime.xml /app/share/mime/packages/dev.nucleusframework.Lab.xml
+    sources:
+@ARCHIVES@
+      - type: file
+        path: dev.nucleusframework.Lab.desktop
+      - type: file
+        path: dev.nucleusframework.Lab.metainfo.xml
+      - type: file
+        path: dev.nucleusframework.Lab.png
+      - type: file
+        path: dev.nucleusframework.Lab.mime.xml

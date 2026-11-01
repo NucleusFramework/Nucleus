@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Nucleus Lab
+GenericName=Desktop API Explorer
+Comment=Explore the Nucleus desktop APIs
+Exec=nucleus-lab %U
+Icon=dev.nucleusframework.Lab
+Terminal=false
+Categories=Development;
+Keywords=nucleus;kotlin;compose;desktop;
+MimeType=x-scheme-handler/nucleus-lab;application/x-nucleus-lab;
+StartupNotify=true
