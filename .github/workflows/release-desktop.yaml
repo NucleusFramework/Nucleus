@@ -53,11 +53,11 @@ jobs:
           - os: ubuntu-22.04
             arch: amd64
             native: true
-            tasks: packageGraalvmDeb packageGraalvmRpm packageGraalvmAppImage packageGraalvmPacman packageGraalvmSnap
+            tasks: packageGraalvmDeb packageGraalvmRpm packageGraalvmAppImage packageGraalvmPacman packageGraalvmSnap packageGraalvmTar
           - os: ubuntu-22.04-arm
             arch: arm64
             native: true
-            tasks: packageGraalvmDeb packageGraalvmRpm packageGraalvmAppImage packageGraalvmPacman packageGraalvmSnap
+            tasks: packageGraalvmDeb packageGraalvmRpm packageGraalvmAppImage packageGraalvmPacman packageGraalvmSnap packageGraalvmTar
           - os: windows-latest
             arch: amd64
             native: true
@@ -204,6 +204,8 @@ jobs:
             !examples/lab/app/build/compose/binaries/**/runtime/**
             examples/lab/app/build/compose/binaries/**/*.dmg
             examples/lab/app/build/compose/binaries/**/*.zip
+            # Linux: the archive the Flathub manifest repackages (no source build on Flathub)
+            examples/lab/app/build/compose/binaries/**/graalvm-tar.gz/**/*.tar.gz
             examples/lab/app/build/compose/binaries/**/*.blockmap
             examples/lab/app/build/compose/binaries/**/signing-metadata.json
             examples/lab/app/build/compose/binaries/**/packaging-metadata.json

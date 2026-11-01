@@ -6,8 +6,9 @@
  *
  * Button layout:
  *   Reads and monitors org.gnome.desktop.wm.preferences → button-layout
- *   via GSettings (libgio dlopen). A background thread runs a GMainLoop
- *   to receive change notifications in real-time.
+ *   via GSettings (libgio dlopen), or the Settings portal inside a Flatpak.
+ *   A background thread runs a GMainLoop to receive change notifications
+ *   in real-time.
  *
  * Linked libraries: -ldl -lpthread
  */
@@ -18,6 +19,7 @@
 #include <string.h>
 #include <dlfcn.h>
 #include <pthread.h>
+#include <unistd.h>
 
 /* ================================================================== */
 /*  Pango direction constants (from pango-types.h)                    */
@@ -137,7 +139,117 @@ typedef int          (*fn_g_main_context_iteration)(void*, int);
 typedef void         (*fn_g_main_context_push_thread_default)(void*);
 typedef void         (*fn_g_main_context_pop_thread_default)(void*);
 
+/* ================================================================== */
+/*  Settings portal (Flatpak)                                         */
+/* ================================================================== */
+/*
+ * Inside a Flatpak, GSettings reads the app's own keyfile, not the host's
+ * dconf: button-layout comes back as the schema default ("appmenu:close") and
+ * minimize / maximize disappear. The host value is only reachable through
+ * org.freedesktop.portal.Settings, which is also what GTK reads when sandboxed.
+ */
+#define BL_NAMESPACE "org.gnome.desktop.wm.preferences"
+#define BL_KEY       "button-layout"
+
+typedef void*       (*fn_g_bus_get_sync)(int, void*, void*);
+typedef void*       (*fn_g_dbus_connection_call_sync)(void*, const char*, const char*, const char*,
+                                                      const char*, void*, const void*, int, int,
+                                                      void*, void*);
+typedef unsigned int (*fn_g_dbus_connection_signal_subscribe)(void*, const char*, const char*,
+                                                             const char*, const char*, const char*,
+                                                             int, void*, void*, void*);
+typedef void*       (*fn_g_variant_new)(const char*, ...);
+typedef void*       (*fn_g_variant_get_child_value)(void*, size_t);
+typedef void*       (*fn_g_variant_get_variant)(void*);
+typedef char        (*fn_g_variant_classify)(void*);
+typedef const char* (*fn_g_variant_get_string)(void*, size_t*);
+typedef void        (*fn_g_variant_unref)(void*);
+
+typedef struct {
+    fn_g_bus_get_sync                     bus_get_sync;
+    fn_g_dbus_connection_call_sync        call_sync;
+    fn_g_dbus_connection_signal_subscribe signal_subscribe;
+    fn_g_variant_new                      variant_new;
+    fn_g_variant_get_child_value          get_child_value;
+    fn_g_variant_get_variant              get_variant;
+    fn_g_variant_classify                 classify;
+    fn_g_variant_get_string               get_string;
+    fn_g_variant_unref                    variant_unref;
+} PortalApi;
+
+static int is_inside_flatpak(void) {
+    return access("/.flatpak-info", F_OK) == 0;
+}
+
+static int resolve_portal_api(void *libgio, PortalApi *api) {
+    api->bus_get_sync     = (fn_g_bus_get_sync)dlsym(libgio, "g_bus_get_sync");
+    api->call_sync        = (fn_g_dbus_connection_call_sync)dlsym(libgio, "g_dbus_connection_call_sync");
+    api->signal_subscribe = (fn_g_dbus_connection_signal_subscribe)dlsym(libgio, "g_dbus_connection_signal_subscribe");
+    api->variant_new      = (fn_g_variant_new)dlsym(libgio, "g_variant_new");
+    api->get_child_value  = (fn_g_variant_get_child_value)dlsym(libgio, "g_variant_get_child_value");
+    api->get_variant      = (fn_g_variant_get_variant)dlsym(libgio, "g_variant_get_variant");
+    api->classify         = (fn_g_variant_classify)dlsym(libgio, "g_variant_classify");
+    api->get_string       = (fn_g_variant_get_string)dlsym(libgio, "g_variant_get_string");
+    api->variant_unref    = (fn_g_variant_unref)dlsym(libgio, "g_variant_unref");
+    return api->bus_get_sync && api->call_sync && api->signal_subscribe && api->variant_new &&
+           api->get_child_value && api->get_variant && api->classify && api->get_string &&
+           api->variant_unref;
+}
+
+/* Copies the string inside [value], unwrapping variants (Read wraps it twice, ReadOne once). */
+static char *portal_variant_to_string(const PortalApi *api, void *value) {
+    void *current = value;
+    int owned = 0;
+    while (current && api->classify(current) == 'v') {
+        void *inner = api->get_variant(current);
+        if (owned) api->variant_unref(current);
+        current = inner;
+        owned = 1;
+    }
+    char *result = NULL;
+    if (current && api->classify(current) == 's') {
+        result = strdup(api->get_string(current, NULL));
+    }
+    if (owned && current) api->variant_unref(current);
+    return result;
+}
+
+static char *portal_read_button_layout(const PortalApi *api, void *connection) {
+    static const char *const methods[] = { "ReadOne", "Read" };
+    for (int i = 0; i < 2; i++) {
+        void *reply = api->call_sync(connection, "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop", "org.freedesktop.portal.Settings", methods[i],
+            api->variant_new("(ss)", BL_NAMESPACE, BL_KEY), NULL, 0, 2000, NULL, NULL);
+        if (!reply) continue;
+        void *value = api->get_child_value(reply, 0);
+        char *result = portal_variant_to_string(api, value);
+        api->variant_unref(value);
+        api->variant_unref(reply);
+        if (result) return result;
+    }
+    return NULL;
+}
+
+static char *readPortalButtonLayout(void) {
+    void *libgio = dlopen("libgio-2.0.so.0", RTLD_LAZY | RTLD_LOCAL);
+    if (!libgio) return NULL;
+    char *result = NULL;
+    PortalApi api;
+    fn_object_unref gou = (fn_object_unref)dlsym(libgio, "g_object_unref");
+    if (gou && resolve_portal_api(libgio, &api)) {
+        void *connection = api.bus_get_sync(2 /* G_BUS_TYPE_SESSION */, NULL, NULL);
+        if (connection) {
+            result = portal_read_button_layout(&api, connection);
+            gou(connection);
+        }
+    }
+    dlclose(libgio);
+    return result;
+}
+
 static char *readGnomeButtonLayout(void) {
+    if (is_inside_flatpak()) return readPortalButtonLayout();
+
     void *libgio = dlopen("libgio-2.0.so.0", RTLD_LAZY | RTLD_LOCAL);
     if (!libgio) return NULL;
 
@@ -261,6 +373,29 @@ static void on_button_layout_changed(void *settings, const char *key, void *user
 }
 
 /**
+ * Settings portal "SettingChanged" callback (Flatpak), on the monitoring
+ * thread's GMainContext. Parameters: (namespace, key, value).
+ */
+static PortalApi g_bl_portal;
+
+static void on_portal_setting_changed(void *connection, const char *sender, const char *path,
+                                      const char *iface, const char *signal, void *params,
+                                      void *user_data) {
+    (void)connection; (void)sender; (void)path; (void)iface; (void)signal; (void)user_data;
+    void *key = g_bl_portal.get_child_value(params, 1);
+    int matches = strcmp(g_bl_portal.get_string(key, NULL), BL_KEY) == 0;
+    g_bl_portal.variant_unref(key);
+    if (!matches) return;
+    void *value = g_bl_portal.get_child_value(params, 2);
+    char *layout = portal_variant_to_string(&g_bl_portal, value);
+    g_bl_portal.variant_unref(value);
+    if (layout) {
+        notify_button_layout(layout);
+        free(layout);
+    }
+}
+
+/**
  * Monitoring thread: creates a GSettings object with a private GMainContext
  * and iterates the context to receive change signals.
  */
@@ -307,27 +442,45 @@ static void *button_layout_monitor_thread(void *arg) {
         return NULL;
     }
 
-    /* Verify the schema exists */
-    void *source = gssg();
-    if (!source) goto cleanup;
-    void *schema = gssl(source, "org.gnome.desktop.wm.preferences", 1);
-    if (!schema) goto cleanup;
+    int use_portal = is_inside_flatpak();
+    if (use_portal) {
+        if (!resolve_portal_api(g_bl_libgio, &g_bl_portal)) goto cleanup;
+    } else {
+        /* Verify the schema exists */
+        void *source = gssg();
+        if (!source) goto cleanup;
+        void *schema = gssl(source, BL_NAMESPACE, 1);
+        if (!schema) goto cleanup;
+    }
 
     /* Create a private GMainContext for this thread */
     g_bl_context = ctx_new();
     if (!g_bl_context) goto cleanup;
     ctx_push(g_bl_context);
 
-    /* Create GSettings — it binds to the thread-default context */
-    g_bl_settings = gsn_simple("org.gnome.desktop.wm.preferences");
-    if (!g_bl_settings) {
-        ctx_pop(g_bl_context);
-        goto cleanup;
-    }
+    if (use_portal) {
+        /* Signal subscriptions dispatch on the thread-default context they are made from.
+           g_bl_settings holds the bus connection, released in cleanup like the GSettings. */
+        g_bl_settings = g_bl_portal.bus_get_sync(2 /* G_BUS_TYPE_SESSION */, NULL, NULL);
+        if (!g_bl_settings) {
+            ctx_pop(g_bl_context);
+            goto cleanup;
+        }
+        g_bl_portal.signal_subscribe(g_bl_settings, "org.freedesktop.portal.Desktop",
+            "org.freedesktop.portal.Settings", "SettingChanged", "/org/freedesktop/portal/desktop",
+            BL_NAMESPACE, 0, (void*)on_portal_setting_changed, NULL, NULL);
+    } else {
+        /* Create GSettings — it binds to the thread-default context */
+        g_bl_settings = gsn_simple(BL_NAMESPACE);
+        if (!g_bl_settings) {
+            ctx_pop(g_bl_context);
+            goto cleanup;
+        }
 
-    /* Connect to the "changed::button-layout" signal */
-    g_signal(g_bl_settings, "changed::button-layout",
-             (void*)on_button_layout_changed, NULL, NULL, 0);
+        /* Connect to the "changed::button-layout" signal */
+        g_signal(g_bl_settings, "changed::button-layout",
+                 (void*)on_button_layout_changed, NULL, NULL, 0);
+    }
 
     /* Dispatch loop — blocks until events arrive or timeout */
     while (g_bl_running) {

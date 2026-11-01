@@ -219,6 +219,13 @@ pub(crate) fn run_event_loop_blocking() {
         }
         // Before `builder.build()`, which initialises GTK and opens its X display.
         crate::platform::linux::init_xlib_threads();
+        // Inside a Flatpak, name the program after the Flatpak id: GTK hands the program name to
+        // the compositor as the Wayland app_id (and the X11 WM_CLASS), which desktops match
+        // against the installed `<id>.desktop`. The default, the executable's file name, matches
+        // nothing there.
+        if let Some(id) = std::env::var("FLATPAK_ID").ok().filter(|id| !id.is_empty()) {
+            gtk::glib::set_prgname(Some(id.as_str()));
+        }
     }
 
     let mut builder = EventLoopBuilder::<UserEvent>::with_user_event();
