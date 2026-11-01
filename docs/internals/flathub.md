@@ -88,6 +88,57 @@ WAYLAND_DISPLAY=wayland-lab weston-screenshooter   # GL readback is upside down:
 In `--release` mode the metainfo points at the screenshots of the release tag, so they must be
 committed before the tag is cut.
 
+## In-app updates (`flatpak` module)
+
+`Flatpak.updates` is the Flathub counterpart of `MicrosoftStore.updates`, over
+`org.freedesktop.portal.Flatpak` (version 2+, flatpak 1.6). Read from the portal's source
+(`portal/flatpak-portal.c`), and all of it shaped the API:
+
+- **No "check now".** The portal checks every update monitor of the session on one timer,
+  `--poll-timeout` seconds apart (default 30 min), and a monitor's first `UpdateAvailable` comes on
+  the first tick after it is created. Hence `status` is a `Flow`, not a `check()`. It reports
+  `running-commit` / `local-commit` / `remote-commit`, which gives three states: remote ≠ installed
+  (`Available`), installed ≠ running (`Installed`: updated by us, the store or `flatpak update`,
+  restart needed), or neither.
+- **`Update` asks first.** The first one shows the Access portal's "Update <app>?" dialog over the
+  `parent_window`; the answer is stored in the permission store, table **`flatpak`**, id
+  **`updates`** (`flatpak permission-set flatpak updates <app> yes|no` presets it). A refusal fails
+  every later update with `AccessDenied`.
+- **Progress** carries `op` (0-based), `n_ops`, `progress` (percentage of the current op) and
+  `status` (0 running, 1 nothing to do, 2 done, 3 error). The error messages are translated, so
+  errors are told apart by D-Bus name only; `NotSupported` is both "the new version needs new
+  permissions" (raised while planning: the signal has operations) and "no Access portal" (before
+  it: none).
+- **Closing a monitor cancels its update** (the portal `SIGINT`s the transaction): cancelling the
+  `install` collection interrupts the update.
+- **`Spawn` must be given fds 0–2.** The portal numbers the fd carrying the environment after the
+  highest fd the caller passed; with none it becomes fd 0, `flatpak run --env-fd=0` refuses it
+  ("Cannot use reserved file descriptor 0, 1 or 2") and nothing starts, after the app already
+  quit. `flatpak-spawn` always passes its stdio, which is why nobody hits it; the bridge passes the
+  process' own, `/dev/null` for a closed one.
+- **Restart** releases the single-instance lock first (`SingleInstanceManager.releaseForHandoff`, as
+  the NSIS hot update does), then `Spawn`s the same command line with
+  `FLATPAK_SPAWN_FLAGS_LATEST_VERSION` and exits.
+
+### E2E on the local repository
+
+The Lab's `system.flatpak-updates` probe takes deep-link flags that run the whole update without a
+click: `LAB_PROBE='system.flatpak-updates?watch&install&restart'` (watch → install on `Available` →
+restart once installed). With the local loop above:
+
+```bash
+# Poll every 10 s instead of 30 min (a clean environment: systemd-run, like the real service)
+systemd-run --user --collect --unit=flatpak-portal-e2e --setenv=G_MESSAGES_DEBUG=all \
+  /usr/libexec/flatpak-portal --replace --poll-timeout=10
+flatpak run --env=LAB_PROBE='system.flatpak-updates?watch&install&restart' dev.nucleusframework.Lab &
+# build the next version into $R/repo, then watch the portal and the running commit
+journalctl --user -u flatpak-portal-e2e -f | grep flatpak-INFO
+flatpak ps --columns=pid,application,commit
+```
+
+`systemctl --user stop flatpak-portal-e2e` hands the bus name back to normal activation.
+Background updates (`?watch&restart`, then `flatpak update` from a terminal) exercise `Installed`.
+
 ## App id verification
 
 `dev.nucleusframework.Lab` is verified through the domain: Flathub hands out a token to serve at

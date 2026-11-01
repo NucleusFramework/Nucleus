@@ -1,0 +1,133 @@
+public final class dev/nucleusframework/flatpak/Flatpak {
+	public static final field INSTANCE Ldev/nucleusframework/flatpak/Flatpak;
+	public final fun availability (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getAppId ()Ljava/lang/String;
+	public final fun getUpdates ()Ldev/nucleusframework/flatpak/FlatpakUpdates;
+	public final fun isSupported ()Z
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakAvailability : java/lang/Enum {
+	public static final field Available Ldev/nucleusframework/flatpak/FlatpakAvailability;
+	public static final field NotFlatpak Ldev/nucleusframework/flatpak/FlatpakAvailability;
+	public static final field PortalMissing Ldev/nucleusframework/flatpak/FlatpakAvailability;
+	public static final field Unsupported Ldev/nucleusframework/flatpak/FlatpakAvailability;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/flatpak/FlatpakAvailability;
+	public static fun values ()[Ldev/nucleusframework/flatpak/FlatpakAvailability;
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakErrorCode : java/lang/Enum {
+	public static final field InProgress Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public static final field Internal Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public static final field NewPermissionsRequired Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public static final field NotFlatpak Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public static final field Platform Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public static final field PortalMissing Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public static final field Unsupported Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public static final field UpdateDenied Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public static fun values ()[Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakException : java/lang/Exception {
+	public fun <init> (Ldev/nucleusframework/flatpak/FlatpakErrorCode;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ldev/nucleusframework/flatpak/FlatpakErrorCode;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getCode ()Ldev/nucleusframework/flatpak/FlatpakErrorCode;
+	public final fun getPortalError ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakParentWindow {
+	public fun <init> (Ljava/lang/String;Ljava/lang/AutoCloseable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/AutoCloseable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/AutoCloseable;
+	public final fun copy (Ljava/lang/String;Ljava/lang/AutoCloseable;)Ldev/nucleusframework/flatpak/FlatpakParentWindow;
+	public static synthetic fun copy$default (Ldev/nucleusframework/flatpak/FlatpakParentWindow;Ljava/lang/String;Ljava/lang/AutoCloseable;ILjava/lang/Object;)Ldev/nucleusframework/flatpak/FlatpakParentWindow;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKeepAlive ()Ljava/lang/AutoCloseable;
+	public final fun getPortalParent ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakUpdateProgress {
+	public fun <init> (Ldev/nucleusframework/flatpak/FlatpakUpdateState;DII)V
+	public final fun component1 ()Ldev/nucleusframework/flatpak/FlatpakUpdateState;
+	public final fun component2 ()D
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun copy (Ldev/nucleusframework/flatpak/FlatpakUpdateState;DII)Ldev/nucleusframework/flatpak/FlatpakUpdateProgress;
+	public static synthetic fun copy$default (Ldev/nucleusframework/flatpak/FlatpakUpdateProgress;Ldev/nucleusframework/flatpak/FlatpakUpdateState;DIIILjava/lang/Object;)Ldev/nucleusframework/flatpak/FlatpakUpdateProgress;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOperation ()I
+	public final fun getOperationCount ()I
+	public final fun getProgress ()D
+	public final fun getState ()Ldev/nucleusframework/flatpak/FlatpakUpdateState;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakUpdateState : java/lang/Enum {
+	public static final field Completed Ldev/nucleusframework/flatpak/FlatpakUpdateState;
+	public static final field Installing Ldev/nucleusframework/flatpak/FlatpakUpdateState;
+	public static final field UpToDate Ldev/nucleusframework/flatpak/FlatpakUpdateState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/flatpak/FlatpakUpdateState;
+	public static fun values ()[Ldev/nucleusframework/flatpak/FlatpakUpdateState;
+}
+
+public abstract interface class dev/nucleusframework/flatpak/FlatpakUpdateStatus {
+	public abstract fun getRunningCommit ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakUpdateStatus$Available : dev/nucleusframework/flatpak/FlatpakUpdateStatus {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/flatpak/FlatpakUpdateStatus$Available;
+	public static synthetic fun copy$default (Ldev/nucleusframework/flatpak/FlatpakUpdateStatus$Available;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/flatpak/FlatpakUpdateStatus$Available;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInstalledCommit ()Ljava/lang/String;
+	public final fun getRemoteCommit ()Ljava/lang/String;
+	public fun getRunningCommit ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakUpdateStatus$Installed : dev/nucleusframework/flatpak/FlatpakUpdateStatus {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/flatpak/FlatpakUpdateStatus$Installed;
+	public static synthetic fun copy$default (Ldev/nucleusframework/flatpak/FlatpakUpdateStatus$Installed;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/flatpak/FlatpakUpdateStatus$Installed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInstalledCommit ()Ljava/lang/String;
+	public fun getRunningCommit ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakUpdateStatus$UpToDate : dev/nucleusframework/flatpak/FlatpakUpdateStatus {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/flatpak/FlatpakUpdateStatus$UpToDate;
+	public static synthetic fun copy$default (Ldev/nucleusframework/flatpak/FlatpakUpdateStatus$UpToDate;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/flatpak/FlatpakUpdateStatus$UpToDate;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getRunningCommit ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/flatpak/FlatpakUpdates {
+	public final fun getStatus ()Lkotlinx/coroutines/flow/Flow;
+	public final fun install (Ldev/nucleusframework/flatpak/FlatpakParentWindow;)Lkotlinx/coroutines/flow/Flow;
+	public static synthetic fun install$default (Ldev/nucleusframework/flatpak/FlatpakUpdates;Ldev/nucleusframework/flatpak/FlatpakParentWindow;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
+	public final fun openStorePage (Ldev/nucleusframework/flatpak/FlatpakParentWindow;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun openStorePage$default (Ldev/nucleusframework/flatpak/FlatpakUpdates;Ldev/nucleusframework/flatpak/FlatpakParentWindow;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun restart (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun restart$default (Ldev/nucleusframework/flatpak/FlatpakUpdates;Ljava/util/List;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+

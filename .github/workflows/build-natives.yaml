@@ -607,6 +607,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash location/src/main/native/linux/build.sh
 
+      - name: Build flatpak Linux native libraries
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash flatpak/src/main/native/linux/build.sh
+
       - name: Build decorated-window-tao Linux native libraries
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/linux/build.sh
@@ -633,6 +637,7 @@ jobs:
             "share/libnucleus_share.so"
             "authentication/libnucleus_authentication.so"
             "location/libnucleus_location.so"
+            "flatpak/libnucleus_flatpak.so"
             "decorated-window-tao/libnucleus_tao.so"
             "decorated-window-tao/libnucleus_tao_egl.so"
             "decorated-window-tao/libnucleus_tao_linux_widget.so"

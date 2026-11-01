@@ -250,6 +250,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.authentication` | Device-owner authentication — Touch ID / Face ID, Windows Hello, polkit, BiometricPrompt — Kotlin Multiplatform |
 | `nucleus.speech-recognition` | Streaming speech-to-text, Kotlin Multiplatform (Windows, macOS, Android, iOS) |
 | `nucleus.microsoft-store` | The Microsoft Store (`Windows.Services.Store`): in-app purchases (products, consumables, subscriptions, app license and trial) and in-app Store updates |
+| `nucleus.flatpak` | Flatpak in-app updates through the Flatpak portal: update monitor, install with progress, restart on the new version, store page (Flathub or any remote) |
 | `nucleus.location` | Kotlin Multiplatform geolocation — Rust bridge on desktop (Windows Geolocator, Core Location, XDG portal / GeoClue), `LocationManager` on Android, Core Location on iOS, Geolocation API on the web (JS / Wasm) |
 | `nucleus.service-management-macos` | macOS `SMAppService` — login items, launch agents, daemons |
 | `nucleus.native-ssl` | OS trust store integration |

@@ -76,6 +76,7 @@ include(":fs-watcher")
 include(":share")
 include(":authentication")
 include(":speech-recognition")
+include(":flatpak")
 include(":location")
 include(":microsoft-store")
 
