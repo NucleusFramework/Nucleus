@@ -1477,6 +1477,9 @@ public object TaoSceneTestBattery {
             TaoSceneWindowsTouchpadTest()
                 .`a pan scrolls a column by the content motion and its tail is part of the pan`()
         }
+        run("TaoSceneWindowsTouchpadTest: fingers put down on a fast glide stop the column where it is") {
+            TaoSceneWindowsTouchpadTest().`fingers put down on a fast glide stop the column where it is`()
+        }
         run("TaoSceneWindowsTouchpadTest: a pan without inertia closes after the grace") {
             TaoSceneWindowsTouchpadTest().`a pan without inertia closes after the grace`()
         }

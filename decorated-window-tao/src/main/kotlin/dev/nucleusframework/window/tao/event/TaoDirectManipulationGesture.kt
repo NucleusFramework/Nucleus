@@ -52,7 +52,8 @@ internal object TaoDirectManipulationStatus {
  * — for good, since a slow pinch can open with a little translation, while
  * the translation that goes with a pinch is noise and is dropped. The lift
  * into inertia continues a pan as its momentum tail and ends a pinch (no
- * scaling inertia is configured, so nothing that follows is a zoom).
+ * scaling inertia is configured, so nothing that follows is a zoom). The tail
+ * itself closes with a deferred `ENDED` (see [finish]).
  *
  * Every sequence is rebased on the transform it starts from, so a native
  * reset that did not happen costs nothing but drift. Every open gesture is
@@ -248,7 +249,13 @@ internal class TaoDirectManipulationGesture(
     private fun finish(cancelled: Boolean) {
         when (state) {
             State.PAN -> pan(if (cancelled) TaoScrollGesturePhase.CANCELLED else TaoScrollGesturePhase.ENDED)
-            State.FLING -> pan(if (cancelled) TaoScrollGesturePhase.CANCELLED else TaoScrollGesturePhase.MOMENTUM_ENDED)
+            // A glide ends as a finger ENDED would, never MOMENTUM_ENDED: that
+            // closes the pan at once, and Compose flings at PanEnd with the
+            // velocity of the last steps — fingers put down to stop a fast
+            // glide (RUNNING out of INERTIA) threw the content another
+            // half-glide. The deferred end reaches Compose past its velocity
+            // horizon, and fingers that move again within it continue the pan.
+            State.FLING -> pan(if (cancelled) TaoScrollGesturePhase.CANCELLED else TaoScrollGesturePhase.ENDED)
             State.PINCH ->
                 sink.pinch(if (cancelled) TaoTrackpadPhase.CANCELLED else TaoTrackpadPhase.ENDED, 1f, focalX, focalY)
             State.IDLE, State.SPENT -> Unit

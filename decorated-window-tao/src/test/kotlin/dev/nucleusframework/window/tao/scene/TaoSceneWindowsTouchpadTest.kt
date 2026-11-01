@@ -120,9 +120,59 @@ class TaoSceneWindowsTouchpadTest {
             }
             assertTrue(touchpadPanOpen, "the tail keeps the pan open")
             dm.status(TaoDirectManipulationStatus.READY)
+            elapseTouchpadPanGrace()
             frameUntilIdle()
             assertEquals(listOf(PointerEventType.PanStart, PointerEventType.PanEnd), seen)
             assertEquals(-y, scroll.value.toFloat(), 2f, "the column moves by the viewport's distance")
+        }
+
+    @Test
+    fun `fingers put down on a fast glide stop the column where it is`() =
+        runTaoSceneTest(width = 200, height = 300) {
+            val scroll = mutableStateOf(0)
+            setContent {
+                val state = rememberScrollState()
+                scroll.value = state.value
+                Column(Modifier.fillMaxSize().verticalScroll(state)) {
+                    repeat(1_000) { Box(Modifier.fillMaxWidth().height(20.dp)) }
+                }
+            }
+            val dm = Stream(this, focal = Offset(100f, 150f))
+            dm.status(TaoDirectManipulationStatus.RUNNING)
+            var y = 0f
+            repeat(10) {
+                y -= 30f
+                dm.content(y = y)
+                Thread.sleep(FRAME_MILLIS)
+                frame()
+            }
+            // Lift into a fast glide, then the fingers come back down while it
+            // still runs: DirectManipulation stops the glide (INERTIA → RUNNING).
+            dm.status(TaoDirectManipulationStatus.INERTIA)
+            var glide = 30f
+            repeat(5) {
+                glide *= 0.95f
+                y -= glide
+                dm.content(y = y)
+                Thread.sleep(FRAME_MILLIS)
+                frame()
+            }
+            dm.status(TaoDirectManipulationStatus.RUNNING)
+            frame()
+            val atTouch = scroll.value
+            repeat(40) {
+                Thread.sleep(FRAME_MILLIS)
+                frame()
+            }
+            elapseTouchpadPanGrace()
+            dm.status(TaoDirectManipulationStatus.READY)
+            elapseTouchpadPanGrace()
+            frameUntilIdle()
+            assertFalse(touchpadPanOpen)
+            // Before the fix the pan closed at once with the glide's velocity
+            // and Compose flung the column on by ~200 px under resting fingers.
+            assertEquals(atTouch.toFloat(), scroll.value.toFloat(), 2f, "the column stops under the fingers")
+            assertEquals(-y, scroll.value.toFloat(), 2f, "and moved by the viewport's distance only")
         }
 
     @Test
