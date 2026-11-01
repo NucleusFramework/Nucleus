@@ -1,0 +1,149 @@
+public final class dev/nucleusframework/store/mac/IntroductoryOffer {
+	public fun <init> (Ljava/lang/String;Ljava/math/BigDecimal;Ldev/nucleusframework/store/mac/SubscriptionPeriod;ILdev/nucleusframework/store/mac/OfferPaymentMode;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/math/BigDecimal;
+	public final fun component3 ()Ldev/nucleusframework/store/mac/SubscriptionPeriod;
+	public final fun component4 ()I
+	public final fun component5 ()Ldev/nucleusframework/store/mac/OfferPaymentMode;
+	public final fun copy (Ljava/lang/String;Ljava/math/BigDecimal;Ldev/nucleusframework/store/mac/SubscriptionPeriod;ILdev/nucleusframework/store/mac/OfferPaymentMode;)Ldev/nucleusframework/store/mac/IntroductoryOffer;
+	public static synthetic fun copy$default (Ldev/nucleusframework/store/mac/IntroductoryOffer;Ljava/lang/String;Ljava/math/BigDecimal;Ldev/nucleusframework/store/mac/SubscriptionPeriod;ILdev/nucleusframework/store/mac/OfferPaymentMode;ILjava/lang/Object;)Ldev/nucleusframework/store/mac/IntroductoryOffer;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDisplayPrice ()Ljava/lang/String;
+	public final fun getPaymentMode ()Ldev/nucleusframework/store/mac/OfferPaymentMode;
+	public final fun getPeriod ()Ldev/nucleusframework/store/mac/SubscriptionPeriod;
+	public final fun getPeriodCount ()I
+	public final fun getPrice ()Ljava/math/BigDecimal;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/store/mac/MacAppStore {
+	public static final field INSTANCE Ldev/nucleusframework/store/mac/MacAppStore;
+	public final fun availability (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getPurchases ()Ldev/nucleusframework/store/mac/MacAppStorePurchases;
+	public final fun isSupported ()Z
+}
+
+public final class dev/nucleusframework/store/mac/MacAppStorePurchases {
+	public final fun product (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun products (Ljava/util/Collection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun products ([Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/store/mac/OfferPaymentMode : java/lang/Enum {
+	public static final field FreeTrial Ldev/nucleusframework/store/mac/OfferPaymentMode;
+	public static final field PayAsYouGo Ldev/nucleusframework/store/mac/OfferPaymentMode;
+	public static final field PayUpFront Ldev/nucleusframework/store/mac/OfferPaymentMode;
+	public static final field Unknown Ldev/nucleusframework/store/mac/OfferPaymentMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/store/mac/OfferPaymentMode;
+	public static fun values ()[Ldev/nucleusframework/store/mac/OfferPaymentMode;
+}
+
+public final class dev/nucleusframework/store/mac/PeriodUnit : java/lang/Enum {
+	public static final field Day Ldev/nucleusframework/store/mac/PeriodUnit;
+	public static final field Month Ldev/nucleusframework/store/mac/PeriodUnit;
+	public static final field Unknown Ldev/nucleusframework/store/mac/PeriodUnit;
+	public static final field Week Ldev/nucleusframework/store/mac/PeriodUnit;
+	public static final field Year Ldev/nucleusframework/store/mac/PeriodUnit;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/store/mac/PeriodUnit;
+	public static fun values ()[Ldev/nucleusframework/store/mac/PeriodUnit;
+}
+
+public final class dev/nucleusframework/store/mac/ProductType : java/lang/Enum {
+	public static final field AutoRenewableSubscription Ldev/nucleusframework/store/mac/ProductType;
+	public static final field Consumable Ldev/nucleusframework/store/mac/ProductType;
+	public static final field NonConsumable Ldev/nucleusframework/store/mac/ProductType;
+	public static final field NonRenewingSubscription Ldev/nucleusframework/store/mac/ProductType;
+	public static final field Unknown Ldev/nucleusframework/store/mac/ProductType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/store/mac/ProductType;
+	public static fun values ()[Ldev/nucleusframework/store/mac/ProductType;
+}
+
+public final class dev/nucleusframework/store/mac/StoreAvailability : java/lang/Enum {
+	public static final field Available Ldev/nucleusframework/store/mac/StoreAvailability;
+	public static final field NotBundled Ldev/nucleusframework/store/mac/StoreAvailability;
+	public static final field PaymentsRestricted Ldev/nucleusframework/store/mac/StoreAvailability;
+	public static final field Unsupported Ldev/nucleusframework/store/mac/StoreAvailability;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/store/mac/StoreAvailability;
+	public static fun values ()[Ldev/nucleusframework/store/mac/StoreAvailability;
+}
+
+public final class dev/nucleusframework/store/mac/StoreErrorCode : java/lang/Enum {
+	public static final field Internal Ldev/nucleusframework/store/mac/StoreErrorCode;
+	public static final field InvalidArgument Ldev/nucleusframework/store/mac/StoreErrorCode;
+	public static final field Network Ldev/nucleusframework/store/mac/StoreErrorCode;
+	public static final field NotAvailableInStorefront Ldev/nucleusframework/store/mac/StoreErrorCode;
+	public static final field NotBundled Ldev/nucleusframework/store/mac/StoreErrorCode;
+	public static final field Platform Ldev/nucleusframework/store/mac/StoreErrorCode;
+	public static final field Unsupported Ldev/nucleusframework/store/mac/StoreErrorCode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/store/mac/StoreErrorCode;
+	public static fun values ()[Ldev/nucleusframework/store/mac/StoreErrorCode;
+}
+
+public final class dev/nucleusframework/store/mac/StoreException : java/lang/Exception {
+	public fun <init> (Ldev/nucleusframework/store/mac/StoreErrorCode;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ldev/nucleusframework/store/mac/StoreErrorCode;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getCode ()Ldev/nucleusframework/store/mac/StoreErrorCode;
+	public final fun getPlatformCode ()Ljava/lang/Integer;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/store/mac/StoreProduct {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/store/mac/ProductType;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/lang/String;Ldev/nucleusframework/store/mac/SubscriptionInfo;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ldev/nucleusframework/store/mac/ProductType;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/math/BigDecimal;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ldev/nucleusframework/store/mac/SubscriptionInfo;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/store/mac/ProductType;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/lang/String;Ldev/nucleusframework/store/mac/SubscriptionInfo;)Ldev/nucleusframework/store/mac/StoreProduct;
+	public static synthetic fun copy$default (Ldev/nucleusframework/store/mac/StoreProduct;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/store/mac/ProductType;Ljava/lang/String;Ljava/math/BigDecimal;Ljava/lang/String;Ldev/nucleusframework/store/mac/SubscriptionInfo;ILjava/lang/Object;)Ldev/nucleusframework/store/mac/StoreProduct;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCurrencyCode ()Ljava/lang/String;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getDisplayPrice ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getPrice ()Ljava/math/BigDecimal;
+	public final fun getSubscription ()Ldev/nucleusframework/store/mac/SubscriptionInfo;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getType ()Ldev/nucleusframework/store/mac/ProductType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/store/mac/SubscriptionInfo {
+	public fun <init> (Ldev/nucleusframework/store/mac/SubscriptionPeriod;Ljava/lang/String;Ldev/nucleusframework/store/mac/IntroductoryOffer;)V
+	public final fun component1 ()Ldev/nucleusframework/store/mac/SubscriptionPeriod;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/nucleusframework/store/mac/IntroductoryOffer;
+	public final fun copy (Ldev/nucleusframework/store/mac/SubscriptionPeriod;Ljava/lang/String;Ldev/nucleusframework/store/mac/IntroductoryOffer;)Ldev/nucleusframework/store/mac/SubscriptionInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/store/mac/SubscriptionInfo;Ldev/nucleusframework/store/mac/SubscriptionPeriod;Ljava/lang/String;Ldev/nucleusframework/store/mac/IntroductoryOffer;ILjava/lang/Object;)Ldev/nucleusframework/store/mac/SubscriptionInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGroupId ()Ljava/lang/String;
+	public final fun getIntroductoryOffer ()Ldev/nucleusframework/store/mac/IntroductoryOffer;
+	public final fun getPeriod ()Ldev/nucleusframework/store/mac/SubscriptionPeriod;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/store/mac/SubscriptionPeriod {
+	public fun <init> (ILdev/nucleusframework/store/mac/PeriodUnit;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ldev/nucleusframework/store/mac/PeriodUnit;
+	public final fun copy (ILdev/nucleusframework/store/mac/PeriodUnit;)Ldev/nucleusframework/store/mac/SubscriptionPeriod;
+	public static synthetic fun copy$default (Ldev/nucleusframework/store/mac/SubscriptionPeriod;ILdev/nucleusframework/store/mac/PeriodUnit;ILjava/lang/Object;)Ldev/nucleusframework/store/mac/SubscriptionPeriod;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUnit ()Ldev/nucleusframework/store/mac/PeriodUnit;
+	public final fun getValue ()I
+	public fun hashCode ()I
+	public final fun toIso8601 ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
