@@ -1,5 +1,5 @@
 #!/bin/bash
-# Compiles the StoreKit 2 bridge (MacStore.swift) and its JNI shim (NucleusMacStoreJni.m)
+# Compiles the StoreKit 2 bridge (*.swift) and its JNI shim (NucleusMacStoreJni.m)
 # into per-architecture dylibs (arm64 + x86_64). StoreKit 2 is Swift-only, hence the Swift
 # half; the shim keeps JNI in C like every other Nucleus bridge.
 # Requires macOS 12.0+ at run time (StoreKit 2).
@@ -46,12 +46,13 @@ build_arch() {
     swiftc \
         -parse-as-library \
         -emit-object \
+        -whole-module-optimization \
         -O \
         -swift-version 5 \
         -module-name NucleusMacStore \
         -target "$triple" \
         -import-objc-header "$SCRIPT_DIR/nucleus_macstore.h" \
-        "$SCRIPT_DIR/MacStore.swift" \
+        "$SCRIPT_DIR"/*.swift \
         -o "$WORK_DIR/MacStore-$arch.o"
 
     clang -c \
@@ -69,6 +70,7 @@ build_arch() {
         -target "$triple" \
         "$WORK_DIR/MacStore-$arch.o" \
         "$WORK_DIR/NucleusMacStoreJni-$arch.o" \
+        -framework AppKit \
         -framework Foundation \
         -framework StoreKit \
         -Xlinker -dead_strip \

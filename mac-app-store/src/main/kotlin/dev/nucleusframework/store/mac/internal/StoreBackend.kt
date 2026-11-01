@@ -1,5 +1,10 @@
 package dev.nucleusframework.store.mac.internal
 
+import dev.nucleusframework.store.mac.EntitlementStatus
+import dev.nucleusframework.store.mac.ProductType
+import dev.nucleusframework.store.mac.Purchase
+import dev.nucleusframework.store.mac.PurchaseOptions
+import dev.nucleusframework.store.mac.PurchaseResult
 import dev.nucleusframework.store.mac.StoreAvailability
 import dev.nucleusframework.store.mac.StoreErrorCode
 import dev.nucleusframework.store.mac.StoreException
@@ -24,6 +29,17 @@ internal interface StoreBackend {
     suspend fun availability(): StoreAvailability
 
     suspend fun products(ids: List<String>): List<StoreProduct>
+
+    suspend fun purchase(
+        productId: String,
+        options: PurchaseOptions,
+    ): PurchaseResult
+
+    suspend fun purchases(): List<Purchase>
+
+    suspend fun entitlement(productId: String): EntitlementStatus
+
+    suspend fun consume(purchase: Purchase)
 }
 
 /** Windows, Linux, or a Mac whose native bridge did not load. */
@@ -34,8 +50,20 @@ internal class UnsupportedStoreBackend(
 
     override suspend fun availability(): StoreAvailability = StoreAvailability.Unsupported
 
-    override suspend fun products(ids: List<String>): List<StoreProduct> =
-        throw StoreException(StoreErrorCode.Unsupported, reason)
+    private fun unsupported(): Nothing = throw StoreException(StoreErrorCode.Unsupported, reason)
+
+    override suspend fun products(ids: List<String>): List<StoreProduct> = unsupported()
+
+    override suspend fun purchase(
+        productId: String,
+        options: PurchaseOptions,
+    ): PurchaseResult = PurchaseResult.Failed(StoreException(StoreErrorCode.Unsupported, reason))
+
+    override suspend fun purchases(): List<Purchase> = unsupported()
+
+    override suspend fun entitlement(productId: String): EntitlementStatus = unsupported()
+
+    override suspend fun consume(purchase: Purchase): Unit = unsupported()
 }
 
 /**
@@ -156,7 +184,67 @@ internal class NativeStoreBackend(
         val byId = products.associateBy { it.id }
         return wanted.mapNotNull(byId::get)
     }
+
+    override suspend fun purchase(
+        productId: String,
+        options: PurchaseOptions,
+    ): PurchaseResult {
+        if (productId.isBlank()) return failed(StoreErrorCode.InvalidArgument, "productId must not be blank")
+        if (options.quantity < 1) return failed(StoreErrorCode.InvalidArgument, "quantity must be at least 1")
+        val args =
+            jsonArgs(
+                "productId" to productId,
+                "window" to options.window,
+                "quantity" to options.quantity,
+                "appAccountToken" to options.appAccountToken?.toString(),
+            )
+        val outcome =
+            try {
+                decode("purchase", args, WirePurchaseOutcome.serializer())
+            } catch (e: StoreException) {
+                return PurchaseResult.Failed(e)
+            }
+        return when (outcome.status) {
+            "success" ->
+                outcome.purchase?.let { PurchaseResult.Success(it.toPurchase()) }
+                    ?: failed(StoreErrorCode.Internal, "Purchase succeeded without a transaction")
+            "pending" -> PurchaseResult.Pending
+            "cancelled" -> PurchaseResult.Cancelled
+            else -> failed(StoreErrorCode.Internal, "Unknown purchase status '${outcome.status}'")
+        }
+    }
+
+    override suspend fun purchases(): List<Purchase> =
+        decode("purchases", "{}", ListSerializer(WirePurchase.serializer())).map { it.toPurchase() }
+
+    override suspend fun entitlement(productId: String): EntitlementStatus {
+        if (productId.isBlank()) throw StoreException(StoreErrorCode.InvalidArgument, "productId must not be blank")
+        return decode("entitlement", jsonArgs("productId" to productId), WireEntitlement.serializer()).toStatus()
+    }
+
+    override suspend fun consume(purchase: Purchase) {
+        if (purchase.productType != ProductType.Consumable) {
+            throw StoreException(
+                StoreErrorCode.InvalidArgument,
+                "${purchase.productId} is a ${purchase.productType}, not a consumable",
+            )
+        }
+        call("consume", jsonArgs("transactionId" to purchase.transactionId))
+    }
+
+    /** Runs a `dev.*` method of the StoreKit Testing session; for the E2E. */
+    internal suspend fun devCommand(
+        method: String,
+        args: String = "{}",
+    ) {
+        call(method, args)
+    }
 }
+
+private fun failed(
+    code: StoreErrorCode,
+    message: String,
+) = PurchaseResult.Failed(StoreException(code, message))
 
 private fun internalError(
     message: String,

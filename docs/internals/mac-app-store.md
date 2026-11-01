@@ -37,6 +37,35 @@ there, so the first availability check reported `Available` (caught by the E2E).
 `APPL` bundle counts: anything else is `notBundled`, and store calls fail fast with it before
 touching StoreKit.
 
+## Purchases
+
+`purchase` finishes a non-consumable or subscription at once and leaves a consumable
+unfinished until `consume`, which finishes it by transaction id (absent from
+`Transaction.unfinished`: already done, so a retry is a no-op). `list` is
+`Transaction.currentEntitlements` (minus consumables) plus the verified, unrevoked consumables
+of `Transaction.unfinished`. `entitlement` reads a subscription's group status (a status carried
+by another tier of the group leaves this product not owned) and otherwise
+`currentEntitlement(s)(for:)`, falling back to `Transaction.latest` to say revoked or expired.
+Unverified transactions are never reported.
+
+The sheet attaches with `purchase(confirmIn:)` (macOS 15.2+) to the window given — an `NSView *`
+(`TaoWindow.nativeHandle`) or `NSWindow *` — else the key, main or first visible window; it
+needs the app's main run loop.
+
+### The sheet belongs to the customer (measured with `--sheet`)
+
+- StoreKit ignores task cancellation: the sheet stays up and the request stays in flight.
+- StoreKit nests its remote sheet (`NSWindow.ViewBridge.rendezvous`, 400×356) inside an empty
+  one attached to the app window. Ending that chain from the app (`endSheet`, innermost first)
+  hides it, but `purchase` then **never returns** and every later purchase hangs behind it. So
+  the bridge does nothing on cancel; the customer's Cancel returns the call and the next
+  purchase works.
+- After Purchase, `storeuid` (a system process) shows "You're all set" (OK) and StoreKit
+  returns only once it is closed. If the app quits first that window stays orphaned on screen,
+  like the Apple Account sheet below.
+- A purchase completed after its caller cancelled is finished and owned, but its answer goes to
+  a request Kotlin dropped: it must reach the app through the coming `purchaseUpdates`.
+
 ## StoreKit Testing without Xcode (dev mode)
 
 `-Dnucleus.macAppStore.storeKitConfiguration` makes `NativeStoreBackend` send
@@ -65,7 +94,9 @@ process. Verified on macOS 27 / Xcode 27.1:
 
 ## E2E
 
-`scripts/mac-app-store-e2e.sh` builds a jpackage shell once under `build/e2e`, rewrites its
+The E2E clears the session's history and turns its sheets off (`dev.clearTransactions`,
+`dev.setDialogs`, internal protocol methods) so purchases run unattended; an AWT `Frame` gives
+StoreKit a window. `scripts/mac-app-store-e2e.sh` builds a jpackage shell once under `build/e2e`, rewrites its
 `.cfg` to the test runtime classpath (`e2eClasspath` task), re-signs it ad hoc with
 `get-task-allow`, registers it, and runs `MacAppStoreE2E` inside it against
 `src/test/resources/e2e/Products.storekit`, then as a bare `java` (`NotBundled`).

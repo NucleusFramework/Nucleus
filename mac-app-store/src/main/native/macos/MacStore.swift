@@ -63,9 +63,25 @@ private func handle(_ method: String, args: Data) async throws -> AnyEncodable {
         let request = try decode(ProductsArgs.self, args)
         try requireAppBundle()
         return AnyEncodable(try await products(request.ids))
+    case "purchase":
+        return AnyEncodable(try await purchase(try decode(PurchaseArgs.self, args)))
+    case "purchases":
+        return AnyEncodable(try await ownedPurchases())
+    case "entitlement":
+        return AnyEncodable(try await entitlement(try decode(EntitlementArgs.self, args).productId))
+    case "consume":
+        try await consume(try decode(ConsumeArgs.self, args).transactionId)
+        return AnyEncodable(Empty())
     case "dev.configure":
         let request = try decode(DevConfigureArgs.self, args)
         try DevSession.configure(request)
+        return AnyEncodable(Empty())
+    case "dev.clearTransactions":
+        try DevSession.require().perform(NSSelectorFromString("clearTransactions"))
+        return AnyEncodable(Empty())
+    case "dev.setDialogs":
+        let request = try decode(DevDialogsArgs.self, args)
+        try DevSession.require().setValue(!request.enabled, forKey: "disableDialogs")
         return AnyEncodable(Empty())
     default:
         throw WireError(code: "invalidArgument", message: "Unknown method '\(method)'")
@@ -80,7 +96,7 @@ private var isAppBundle: Bool {
     Bundle.main.bundleIdentifier != nil && Bundle.main.object(forInfoDictionaryKey: "CFBundlePackageType") as? String == "APPL"
 }
 
-private func requireAppBundle() throws {
+func requireAppBundle() throws {
     guard isAppBundle else {
         throw WireError(code: "notBundled", message: "StoreKit needs an app bundle; this process runs from \(Bundle.main.bundlePath)")
     }
@@ -108,6 +124,13 @@ private func products(_ ids: [String]) async throws -> [ProductDto] {
 /// runner and aborts. So the session is allocated, given this app's bundle id, then initialized.
 private enum DevSession {
     static var session: NSObject?
+
+    static func require() throws -> NSObject {
+        guard let session else {
+            throw WireError(code: "invalidArgument", message: "No StoreKit configuration is active")
+        }
+        return session
+    }
 
     static func configure(_ args: DevConfigureArgs) throws {
         guard session == nil else { return }
@@ -149,6 +172,7 @@ private struct ErrorEnvelope: Encodable { let error: WireError }
 private struct Empty: Encodable {}
 private struct AvailabilityDto: Encodable { let state: String }
 private struct ProductsArgs: Decodable { let ids: [String] }
+private struct DevDialogsArgs: Decodable { let enabled: Bool }
 struct DevConfigureArgs: Decodable {
     let configuration: String
     let framework: String
@@ -217,13 +241,7 @@ private struct ProductDto: Encodable {
         id = product.id
         title = product.displayName
         description = product.description
-        switch product.type {
-        case .consumable: type = "consumable"
-        case .nonConsumable: type = "nonConsumable"
-        case .autoRenewable: type = "autoRenewable"
-        case .nonRenewable: type = "nonRenewing"
-        default: type = "unknown"
-        }
+        type = typeName(product.type)
         displayPrice = product.displayPrice
         // Decimal's description is locale-independent ("4.99").
         price = "\(product.price)"
@@ -259,6 +277,18 @@ private func encode<T: Encodable>(_ value: T) -> String {
 
 private func wireError(_ error: Error) -> WireError {
     let nsError = error as NSError
+    if let purchaseError = error as? Product.PurchaseError {
+        switch purchaseError {
+        case .productUnavailable:
+            return WireError(code: "productNotFound", message: "The product is not available")
+        case .purchaseNotAllowed:
+            return WireError(code: "purchaseNotAllowed", message: "This customer cannot make purchases")
+        case .invalidQuantity:
+            return WireError(code: "invalidArgument", message: "Invalid quantity")
+        default:
+            return WireError(code: "platform", message: String(describing: purchaseError))
+        }
+    }
     if let storeKitError = error as? StoreKitError {
         switch storeKitError {
         case .networkError(let underlying):

@@ -8,8 +8,17 @@ public enum class StoreErrorCode {
     /** The process is not an app bundle (see [StoreAvailability.NotBundled]). */
     NotBundled,
 
+    /** The App Store does not sell a product with that id to this app. */
+    ProductNotFound,
+
     /** The product is not sold in the customer's storefront. */
     NotAvailableInStorefront,
+
+    /** This customer may not buy: parental controls, a device management profile. */
+    PurchaseNotAllowed,
+
+    /** StoreKit could not verify the transaction's signature; nothing should be granted. */
+    VerificationFailed,
 
     /** The App Store could not be reached. */
     Network,

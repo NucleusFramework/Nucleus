@@ -9,7 +9,11 @@
 # build outputs, so later runs only recompile, never repackage. Needs Xcode (StoreKitTest ships with it).
 # Exits with the failure count.
 #
-#   scripts/mac-app-store-e2e.sh
+# --sheet also runs the real purchase sheet: it cancels the waiting coroutine, then presses the
+# sheet's Cancel button through accessibility (scripts/axtool.swift), so the terminal needs the
+# Accessibility permission. Leave the Mac alone while it runs.
+#
+#   scripts/mac-app-store-e2e.sh [--sheet]
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODULE="$ROOT/mac-app-store"
@@ -64,6 +68,19 @@ grep -q "DONE failures=" "$OUT/app.log" || { echo "FAIL the app did not finish";
 echo "== bare java"
 "$JAVA_HOME/bin/java" -Dnucleus.macAppStore.storeKitConfiguration="$CONFIG" -cp "$CLASSPATH" "$MAIN" expect=notBundled | tee "$OUT/java.log"
 FAILURES=$((FAILURES + ${PIPESTATUS[0]}))
+
+if [ "${1:-}" = "--sheet" ]; then
+    echo "== real purchase sheet"
+    swiftc -O "$ROOT/scripts/axtool.swift" -o "$OUT/axtool" || exit 1
+    "$APP/Contents/MacOS/MacAppStoreE2E" sheet > "$OUT/sheet.log" 2>&1 &
+    SHEET_PID=$!
+    for _ in $(seq 120); do grep -q "STAGE press-cancel" "$OUT/sheet.log" && break; sleep 0.5; done
+    "$OUT/axtool" "$SHEET_PID" press AXButton Cancel
+    wait $SHEET_PID
+    FAILURES=$((FAILURES + $?))
+    grep -E "^(PASS|FAIL|DONE)" "$OUT/sheet.log"
+    grep -q "DONE failures=" "$OUT/sheet.log" || { echo "FAIL the sheet probe did not finish"; FAILURES=$((FAILURES + 1)); }
+fi
 
 echo "mac-app-store E2E failures: $FAILURES"
 exit $FAILURES

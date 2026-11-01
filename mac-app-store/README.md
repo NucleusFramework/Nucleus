@@ -2,7 +2,7 @@
 
 The Mac App Store (StoreKit 2) for JVM desktop apps it sells, behind one `MacAppStore` object.
 
-- `MacAppStore.purchases` — the app's in-app products
+- `MacAppStore.purchases` — in-app products: buy them, what the customer owns, consumables
 
 macOS 12+ only, and only from an app bundle. Elsewhere every call fails with
 `StoreErrorCode.Unsupported` (Windows, Linux) or `StoreErrorCode.NotBundled` (a bare `java`
@@ -30,11 +30,45 @@ val subscription = MacAppStore.purchases.product("premium.monthly")?.subscriptio
 subscription?.introductoryOffer?.let { showTrial(it.period) } // only when this customer can still redeem it
 ```
 
+### Buying
+
+```kotlin
+// Gate features at launch.
+if (MacAppStore.purchases.entitlement("pro").isActive) unlockPro()
+
+when (val result = MacAppStore.purchases.purchase("pro") { window = taoWindow.nativeHandle }) {
+    is PurchaseResult.Success -> unlockPro()
+    PurchaseResult.Pending -> showAwaitingApproval() // Ask to Buy
+    PurchaseResult.Cancelled -> Unit
+    is PurchaseResult.Failed -> showError(result.error)
+}
+
+// Consumables: grant first, consume second; a crash in between loses nothing.
+MacAppStore.purchases.list().filter { it.productType == ProductType.Consumable }.forEach {
+    grantCoins(it.quantity)
+    MacAppStore.purchases.consume(it)
+}
+```
+
+- The purchase sheet attaches to `window` (`TaoWindow.nativeHandle`), else to the app's key
+  window. After a purchase macOS shows its own "You're all set" confirmation; `purchase()`
+  returns once the customer closes it.
+- **Cancelling `purchase()` does not close Apple's sheet** — StoreKit offers no way to, and
+  closing it from the app leaves StoreKit stuck. The sheet stays the customer's: a cancel ends
+  it, a purchase made there is recorded (it shows up in `entitlement()` and `list()`).
+- `entitlement()` says why a product is not active: `Expired`, `Revoked`, `InBillingRetry`
+  (`InGracePeriod` still counts as active).
+- Only transactions StoreKit verified are reported; `Purchase.signedTransaction` is the JWS to
+  check on a server with the App Store Server API.
+
+### Products
+
 - **Product ids** are the App Store Connect product ids.
 - `products()` keeps the order asked for and leaves out ids the store does not sell.
 - `StoreProduct.price` is a `BigDecimal` in `currencyCode`; `displayPrice` is what to show.
 - **Cancellation**: every call suspends without blocking a thread and may be called from any
-  thread; cancelling the coroutine cancels the StoreKit operation.
+  thread; cancelling the coroutine cancels the StoreKit operation — except the purchase sheet,
+  which stays the customer's (see above).
 
 ## Developing without App Store Connect
 
@@ -71,4 +105,6 @@ products in App Store Connect. A bare `java` launch has the JDK's bundle, not an
 ## Testing
 
 The unit tests drive the protocol with a fake transport; `scripts/mac-app-store-e2e.sh` drives
-the real dylib and real StoreKit (StoreKit Testing) from a development app.
+the real dylib and real StoreKit (StoreKit Testing) from a development app: products, purchases
+of every kind, consumables, entitlements. `--sheet` adds the real purchase sheet, answered
+through accessibility.
