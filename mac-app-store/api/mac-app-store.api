@@ -81,6 +81,7 @@ public final class dev/nucleusframework/store/mac/MacAppStore {
 	public final fun appTransaction (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun availability (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getPurchases ()Ldev/nucleusframework/store/mac/MacAppStorePurchases;
+	public final fun getTesting ()Ldev/nucleusframework/store/mac/MacAppStoreTesting;
 	public final fun isSupported ()Z
 	public final fun openStorePage (Ljava/lang/Long;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun openStorePage$default (Ldev/nucleusframework/store/mac/MacAppStore;Ljava/lang/Long;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
@@ -98,6 +99,25 @@ public final class dev/nucleusframework/store/mac/MacAppStorePurchases {
 	public final fun purchase (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun purchase$default (Ldev/nucleusframework/store/mac/MacAppStorePurchases;Ldev/nucleusframework/store/mac/StoreProduct;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun purchase$default (Ldev/nucleusframework/store/mac/MacAppStorePurchases;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/store/mac/MacAppStoreTesting {
+	public final fun approveAskToBuy (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun buyOutsideApp (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun clearTransactions (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun expireSubscription (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun forceRenewal (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun isActive ()Z
+	public final fun refund (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun resolveBillingIssue (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setAskToBuyEnabled (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setAutoRenew (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setBillingGracePeriod (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setBillingRetryOnRenewal (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setInterruptedPurchasesEnabled (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setPurchaseSheetsEnabled (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setRenewalRate (Ldev/nucleusframework/store/mac/RenewalRate;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setStorefront (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class dev/nucleusframework/store/mac/OfferPaymentMode : java/lang/Enum {
@@ -235,6 +255,24 @@ public final class dev/nucleusframework/store/mac/PurchaseUpdate$Revoked : dev/n
 	public fun getPurchase ()Ldev/nucleusframework/store/mac/Purchase;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/store/mac/RenewalRate : java/lang/Enum {
+	public static final field MonthlyRenewalEveryFifteenMinutes Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field MonthlyRenewalEveryFiveMinutes Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field MonthlyRenewalEveryHour Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field MonthlyRenewalEveryThirtyMinutes Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field MonthlyRenewalEveryThirtySeconds Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field OneRenewalEveryFifteenMinutes Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field OneRenewalEveryFiveMinutes Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field OneRenewalEveryMinute Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field OneRenewalEveryTenSeconds Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field OneRenewalEveryThirtySeconds Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field OneRenewalEveryTwoSeconds Ldev/nucleusframework/store/mac/RenewalRate;
+	public static final field RealTime Ldev/nucleusframework/store/mac/RenewalRate;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/store/mac/RenewalRate;
+	public static fun values ()[Ldev/nucleusframework/store/mac/RenewalRate;
 }
 
 public final class dev/nucleusframework/store/mac/StoreAvailability : java/lang/Enum {

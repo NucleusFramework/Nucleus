@@ -130,6 +130,28 @@ module's end-to-end checks in it.
 StoreKit remembers the configuration per bundle id: later launches see the same products and
 purchase history.
 
+### Playing the App Store's side
+
+`MacAppStore.testing` drives the StoreKit Testing session from the app (a debug menu, an
+automated test) while a configuration is active:
+
+```kotlin
+val testing = MacAppStore.testing
+if (testing.isActive) {
+    testing.setPurchaseSheetsEnabled(false)    // purchases complete at once
+    testing.refund("pro")                      // → PurchaseUpdate.Revoked
+    testing.forceRenewal("premium.monthly")    // → PurchaseUpdate.Purchased
+    testing.setBillingRetryOnRenewal(true)     // next renewal fails: InBillingRetry / InGracePeriod
+    testing.setAskToBuyEnabled(true)           // purchase() → Pending, then approveAskToBuy()
+    testing.buyOutsideApp("coins")             // as if bought on another device
+    testing.setRenewalRate(RenewalRate.OneRenewalEveryTenSeconds)
+}
+```
+
+- An expiry (`expireSubscription`) reaches `entitlement()` some 15 seconds later.
+- There is no `declineAskToBuy`: StoreKit Testing reports a declined Ask to Buy to StoreKit 2 as
+  a completed purchase.
+
 ## Platform requirements
 
 A shipped app reaches the store when it is signed for the Mac App Store and its bundle id has

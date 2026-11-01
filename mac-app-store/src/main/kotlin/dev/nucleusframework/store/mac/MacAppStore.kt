@@ -61,6 +61,9 @@ public object MacAppStore {
     /** The in-app products of this app, and the changes the App Store sends about them. */
     public val purchases: MacAppStorePurchases = MacAppStorePurchases()
 
+    /** The App Store's side of StoreKit Testing, while a StoreKit configuration is active. */
+    public val testing: MacAppStoreTesting = MacAppStoreTesting()
+
     /**
      * The App Store's signed record of this customer getting the app itself (macOS 13+).
      *

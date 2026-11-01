@@ -83,12 +83,11 @@ private func handle(_ method: String, args: Data) async throws -> AnyEncodable {
     case "dev.clearTransactions":
         try DevSession.require().perform(NSSelectorFromString("clearTransactions"))
         return AnyEncodable(Empty())
-    case "dev.refund", "dev.expire", "dev.forceRenewal", "dev.buy":
-        try DevSession.act(method, productId: try decode(EntitlementArgs.self, args).productId)
+    case "dev.set":
+        try DevSession.set(try decode(DevSetArgs.self, args))
         return AnyEncodable(Empty())
-    case "dev.setDialogs":
-        let request = try decode(DevDialogsArgs.self, args)
-        try DevSession.require().setValue(!request.enabled, forKey: "disableDialogs")
+    case "dev.act":
+        try DevSession.act(try decode(DevActArgs.self, args))
         return AnyEncodable(Empty())
     default:
         throw WireError(code: "invalidArgument", message: "Unknown method '\(method)'")
@@ -122,82 +121,6 @@ private func products(_ ids: [String]) async throws -> [ProductDto] {
     return result
 }
 
-// MARK: - Development session
-
-/// A `.storekit` configuration served by StoreKit Testing, in this process, without Xcode.
-///
-/// StoreKitTest is loaded only here, never linked. `-[SKTestSession bundleID]` returns a value
-/// already set; left unset it soft-links XCTest from a path that only exists under Xcode's test
-/// runner and aborts. So the session is allocated, given this app's bundle id, then initialized.
-private enum DevSession {
-    static var session: NSObject?
-
-    static func require() throws -> NSObject {
-        guard let session else {
-            throw WireError(code: "invalidArgument", message: "No StoreKit configuration is active")
-        }
-        return session
-    }
-
-    /// Store-side events of StoreKit Testing, as the App Store would send them.
-    static func act(_ method: String, productId: String) throws {
-        let session = try require()
-        typealias ById = @convention(c) (AnyObject, Selector, UInt, UnsafeMutablePointer<NSError?>) -> Bool
-        typealias ByProduct = @convention(c) (AnyObject, Selector, NSString, UnsafeMutablePointer<NSError?>) -> Bool
-        var error: NSError?
-        let done: Bool
-        switch method {
-        case "dev.refund":
-            // The product's latest transaction in the session.
-            let transactions = session.perform(NSSelectorFromString("allTransactions"))?.takeUnretainedValue() as? [NSObject] ?? []
-            guard let latest = transactions.last(where: { $0.value(forKey: "productIdentifier") as? String == productId }),
-                  let id = latest.value(forKey: "identifier") as? UInt else {
-                throw WireError(code: "invalidArgument", message: "No transaction of '\(productId)' to refund")
-            }
-            let selector = NSSelectorFromString("refundTransactionWithIdentifier:error:")
-            done = unsafeBitCast(session.method(for: selector), to: ById.self)(session, selector, id, &error)
-        default:
-            let name = [
-                "dev.expire": "expireSubscriptionWithProductIdentifier:error:",
-                "dev.forceRenewal": "forceRenewalOfSubscriptionWithProductIdentifier:error:",
-                // A purchase made outside the app (another device, the App Store app).
-                "dev.buy": "buyProductWithIdentifier:error:",
-            ][method]!
-            let selector = NSSelectorFromString(name)
-            done = unsafeBitCast(session.method(for: selector), to: ByProduct.self)(session, selector, productId as NSString, &error)
-        }
-        guard done else {
-            throw WireError(code: "platform", message: "\(method) failed: \(error?.localizedDescription ?? "unknown error")", platformCode: error?.code)
-        }
-    }
-
-    static func configure(_ args: DevConfigureArgs) throws {
-        guard session == nil else { return }
-        // Outside an app there is nothing to configure: every store call reports notBundled.
-        guard isAppBundle, let bundleId = Bundle.main.bundleIdentifier else { return }
-        guard dlopen(args.framework, RTLD_NOW) != nil, let cls = NSClassFromString("SKTestSession") as? NSObject.Type else {
-            let reason = dlerror().map { String(cString: $0) } ?? "SKTestSession not found"
-            throw WireError(code: "platform", message: "Cannot load StoreKitTest from \(args.framework): \(reason)")
-        }
-        guard let raw = cls.perform(NSSelectorFromString("alloc"))?.takeUnretainedValue() as? NSObject else {
-            throw WireError(code: "internal", message: "Cannot allocate SKTestSession")
-        }
-        raw.setValue(bundleId, forKey: "bundleID")
-        typealias Initializer = @convention(c) (AnyObject, Selector, NSURL, UnsafeMutablePointer<NSError?>) -> AnyObject?
-        let selector = NSSelectorFromString("initWithContentsOfURL:error:")
-        let initialize = unsafeBitCast(class_getMethodImplementation(cls, selector), to: Initializer.self)
-        var error: NSError?
-        guard let made = initialize(raw, selector, URL(fileURLWithPath: args.configuration) as NSURL, &error) as? NSObject else {
-            throw WireError(
-                code: "invalidArgument",
-                message: "Cannot read StoreKit configuration \(args.configuration): \(error?.localizedDescription ?? "unknown error")",
-                platformCode: error?.code
-            )
-        }
-        session = made
-    }
-}
-
 // MARK: - Wire format
 
 struct WireError: Error, Encodable {
@@ -208,14 +131,9 @@ struct WireError: Error, Encodable {
 
 private struct OkEnvelope: Encodable { let ok: AnyEncodable }
 private struct ErrorEnvelope: Encodable { let error: WireError }
-private struct Empty: Encodable {}
+struct Empty: Encodable {}
 private struct AvailabilityDto: Encodable { let state: String }
 private struct ProductsArgs: Decodable { let ids: [String] }
-private struct DevDialogsArgs: Decodable { let enabled: Bool }
-struct DevConfigureArgs: Decodable {
-    let configuration: String
-    let framework: String
-}
 
 struct AnyEncodable: Encodable {
     private let value: Encodable

@@ -7,13 +7,13 @@ import dev.nucleusframework.store.mac.PeriodUnit
 import dev.nucleusframework.store.mac.ProductType
 import dev.nucleusframework.store.mac.PurchaseResult
 import dev.nucleusframework.store.mac.PurchaseUpdate
+import dev.nucleusframework.store.mac.RenewalRate
 import dev.nucleusframework.store.mac.StoreAvailability
 import dev.nucleusframework.store.mac.StoreEnvironment
 import dev.nucleusframework.store.mac.StoreErrorCode
 import dev.nucleusframework.store.mac.StoreException
 import dev.nucleusframework.store.mac.SubscriptionPeriod
 import dev.nucleusframework.store.mac.internal.NativeMacStoreBridge
-import dev.nucleusframework.store.mac.internal.NativeStoreBackend
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.toList
 import kotlinx.coroutines.coroutineScope
@@ -81,9 +81,8 @@ object MacAppStoreE2E {
     private suspend fun storeKitConfiguration(availability: StoreAvailability) {
         check("available", availability == StoreAvailability.Available) { availability }
         // A fresh customer every run: the intro offer and NotOwned checks depend on it.
-        val session = MacAppStore.backend as NativeStoreBackend
-        session.devCommand("dev.clearTransactions")
-        session.devCommand("dev.setDialogs", """{"enabled":false}""")
+        MacAppStore.testing.clearTransactions()
+        MacAppStore.testing.setPurchaseSheetsEnabled(false)
 
         val products = MacAppStore.purchases.products("premium.monthly", "nope", "pro", "coins", "pro")
         check(
@@ -137,6 +136,7 @@ object MacAppStoreE2E {
             purchases()
             updates()
             appRecord()
+            storeSide()
         } finally {
             frame.dispose()
         }
@@ -157,11 +157,113 @@ object MacAppStoreE2E {
         check("store page needs an id", (page as? StoreException)?.code == StoreErrorCode.InvalidArgument) { page }
     }
 
+    /** The public StoreKit Testing controls, each seen through the API an app uses. */
+    private suspend fun storeSide() =
+        coroutineScope {
+            val testing = MacAppStore.testing
+            val purchases = MacAppStore.purchases
+            check("testing is active", testing.isActive)
+            testing.clearTransactions()
+
+            val received = Channel<PurchaseUpdate>(Channel.UNLIMITED)
+            val collector = launch { purchases.purchaseUpdates.collect { received.send(it) } }
+
+            suspend fun next(productId: String): PurchaseUpdate? =
+                withTimeoutOrNull(15_000) {
+                    var update = received.receive()
+                    while (update.purchase.productId != productId) update = received.receive()
+                    update
+                }
+
+            testing.setAskToBuyEnabled(true)
+            val asked = purchases.purchase("pro")
+            check("Ask to Buy makes the purchase pending", asked == PurchaseResult.Pending) { asked }
+            testing.approveAskToBuy("pro")
+            val approved = next("pro")
+            check("approval arrives as Purchased", approved is PurchaseUpdate.Purchased) { approved }
+            check("approved product entitled", purchases.entitlement("pro").isActive)
+
+            testing.setAskToBuyEnabled(false)
+
+            val subscribed = purchases.purchase("premium.monthly")
+            check("subscribed for the billing checks", subscribed is PurchaseResult.Success) { subscribed }
+            testing.setBillingRetryOnRenewal(true)
+            testing.setBillingGracePeriod(true)
+            testing.forceRenewal("premium.monthly")
+            val grace = waitForState("premium.monthly", EntitlementState.InGracePeriod)
+            check(
+                "failed renewal with grace period keeps access",
+                grace.state == EntitlementState.InGracePeriod && grace.isActive,
+            ) { grace }
+            testing.resolveBillingIssue("premium.monthly")
+            val resolved = waitForState("premium.monthly", EntitlementState.Active)
+            check("resolved billing issue is active again", resolved.state == EntitlementState.Active) { resolved }
+
+            testing.setBillingGracePeriod(false)
+            testing.forceRenewal("premium.monthly")
+            val retry = waitForState("premium.monthly", EntitlementState.InBillingRetry)
+            check(
+                "failed renewal without grace loses access",
+                retry.state == EntitlementState.InBillingRetry && !retry.isActive,
+            ) { retry }
+            testing.resolveBillingIssue("premium.monthly")
+            testing.setBillingRetryOnRenewal(false)
+            waitForState("premium.monthly", EntitlementState.Active)
+
+            testing.setAutoRenew("premium.monthly", false)
+            val noRenew = waitFor("premium.monthly") { it.willAutoRenew == false }
+            check("auto-renew turned off", noRenew.willAutoRenew == false) { noRenew }
+
+            testing.expireSubscription("premium.monthly")
+            val expired = waitForState("premium.monthly", EntitlementState.Expired)
+            check("expired subscription", expired.state == EntitlementState.Expired) { expired }
+
+            testing.setStorefront("FRA")
+            val french = purchases.product("pro")
+            check("storefront drives the currency", french?.currencyCode == "EUR") {
+                french?.let { "${it.currencyCode} ${it.displayPrice}" }
+            }
+            testing.setStorefront("USA")
+
+            testing.setRenewalRate(RenewalRate.OneRenewalEveryTenSeconds)
+            testing.setRenewalRate(RenewalRate.RealTime)
+            check("renewal rate accepted", true)
+
+            val unknown = runCatching { testing.refund("never.bought") }.exceptionOrNull()
+            check(
+                "acting on nothing fails clearly",
+                (unknown as? StoreException)?.code == StoreErrorCode.Platform ||
+                    (unknown as? StoreException)?.code == StoreErrorCode.InvalidArgument,
+            ) {
+                unknown
+            }
+            collector.cancel()
+        }
+
+    private suspend fun waitForState(
+        productId: String,
+        state: EntitlementState,
+    ) = waitFor(productId) { it.state == state }
+
+    // StoreKit Testing applies store-side changes asynchronously.
+    private suspend fun waitFor(
+        productId: String,
+        condition: (dev.nucleusframework.store.mac.EntitlementStatus) -> Boolean,
+    ): dev.nucleusframework.store.mac.EntitlementStatus {
+        var status = MacAppStore.purchases.entitlement(productId)
+        var waited = 0
+        // Up to 30 s: an expiry takes StoreKit some 15 s to report (measured).
+        while (!condition(status) && waited++ < 150) {
+            delay(200)
+            status = MacAppStore.purchases.entitlement(productId)
+        }
+        return status
+    }
+
     /** First launch of the crash check: pays for coins and quits before delivering them. */
     private suspend fun crashBuy() {
-        val session = MacAppStore.backend as NativeStoreBackend
-        session.devCommand("dev.clearTransactions")
-        session.devCommand("dev.setDialogs", """{"enabled":false}""")
+        MacAppStore.testing.clearTransactions()
+        MacAppStore.testing.setPurchaseSheetsEnabled(false)
         val frame =
             Frame("mac-app-store crash buy").apply {
                 setSize(420, 240)
@@ -197,7 +299,6 @@ object MacAppStoreE2E {
     private suspend fun updates() =
         coroutineScope {
             val purchases = MacAppStore.purchases
-            val session = MacAppStore.backend as NativeStoreBackend
             // Left unconsumed on purpose: StoreKit replays it when the app starts listening.
             val coins = (purchases.purchase("coins") as? PurchaseResult.Success)?.purchase
             check("coins bought for the replay", coins != null)
@@ -218,21 +319,21 @@ object MacAppStoreE2E {
                 replayed is PurchaseUpdate.Purchased,
             ) { replayed }
 
-            session.devCommand("dev.refund", """{"productId":"pro"}""")
+            MacAppStore.testing.refund("pro")
             val refunded = next { it.purchase.productId == "pro" }
             check("refund arrives as Revoked", refunded is PurchaseUpdate.Revoked) { refunded }
             val afterRefund = purchases.entitlement("pro")
             check("refunded product is revoked", afterRefund.state == EntitlementState.Revoked) { afterRefund }
 
             val before = purchases.entitlement("premium.monthly").purchase?.transactionId
-            session.devCommand("dev.forceRenewal", """{"productId":"premium.monthly"}""")
+            MacAppStore.testing.forceRenewal("premium.monthly")
             val renewed = next { it.purchase.productId == "premium.monthly" }
             check(
                 "renewal arrives as Purchased with a new transaction",
                 renewed is PurchaseUpdate.Purchased && renewed.purchase.transactionId != before,
             ) { renewed }
 
-            session.devCommand("dev.buy", """{"productId":"pro"}""")
+            MacAppStore.testing.buyOutsideApp("pro")
             val outside = next { it.purchase.productId == "pro" }
             check(
                 "a purchase made outside the app arrives as Purchased",
@@ -258,9 +359,8 @@ object MacAppStoreE2E {
      */
     private suspend fun sheetCancel() =
         kotlinx.coroutines.coroutineScope {
-            val session = MacAppStore.backend as NativeStoreBackend
-            session.devCommand("dev.clearTransactions")
-            session.devCommand("dev.setDialogs", """{"enabled":true}""")
+            MacAppStore.testing.clearTransactions()
+            MacAppStore.testing.setPurchaseSheetsEnabled(true)
             val frame =
                 Frame("mac-app-store sheet probe").apply {
                     setSize(420, 240)
@@ -282,7 +382,7 @@ object MacAppStoreE2E {
                 check("the customer's cancel ends the StoreKit call", NativeMacStoreBridge.inFlight() == 0) {
                     NativeMacStoreBridge.inFlight()
                 }
-                session.devCommand("dev.setDialogs", """{"enabled":false}""")
+                MacAppStore.testing.setPurchaseSheetsEnabled(false)
                 val again = kotlinx.coroutines.withTimeoutOrNull(20_000) { MacAppStore.purchases.purchase("pro") }
                 check("the next purchase works", again is PurchaseResult.Success) { again }
 
@@ -290,7 +390,7 @@ object MacAppStoreE2E {
                 // app through purchaseUpdates, since nobody waits for purchase() any more.
                 val received = Channel<PurchaseUpdate>(Channel.UNLIMITED)
                 val collector = launch { MacAppStore.purchases.purchaseUpdates.collect { received.send(it) } }
-                session.devCommand("dev.setDialogs", """{"enabled":true}""")
+                MacAppStore.testing.setPurchaseSheetsEnabled(true)
                 val late = launch { MacAppStore.purchases.purchase("coins") }
                 delay(5000)
                 late.cancel()

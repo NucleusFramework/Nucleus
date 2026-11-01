@@ -35,6 +35,9 @@ internal interface StoreBackend {
     val isSupported: Boolean
     val updates: Flow<PurchaseUpdate>
 
+    /** A StoreKit configuration serves the store. */
+    val isTesting: Boolean
+
     suspend fun availability(): StoreAvailability
 
     suspend fun products(ids: List<String>): List<StoreProduct>
@@ -53,6 +56,12 @@ internal interface StoreBackend {
     suspend fun appTransaction(): AppTransactionInfo
 
     suspend fun openStorePage(appId: Long?)
+
+    /** Runs a `dev.*` method of the StoreKit Testing session. */
+    suspend fun devCommand(
+        method: String,
+        args: String,
+    )
 }
 
 /** Windows, Linux, or a Mac whose native bridge did not load. */
@@ -61,6 +70,7 @@ internal class UnsupportedStoreBackend(
 ) : StoreBackend {
     override val isSupported: Boolean = false
     override val updates: Flow<PurchaseUpdate> = emptyFlow()
+    override val isTesting: Boolean = false
 
     override suspend fun availability(): StoreAvailability = StoreAvailability.Unsupported
 
@@ -82,6 +92,11 @@ internal class UnsupportedStoreBackend(
     override suspend fun appTransaction(): AppTransactionInfo = unsupported()
 
     override suspend fun openStorePage(appId: Long?): Unit = unsupported()
+
+    override suspend fun devCommand(
+        method: String,
+        args: String,
+    ): Unit = unsupported()
 }
 
 /**
@@ -117,6 +132,9 @@ internal class NativeStoreBackend(
         get() = transport.isAvailable
 
     override val updates: Flow<PurchaseUpdate> = updateFlow.onSubscription { ensureListening() }
+
+    override val isTesting: Boolean
+        get() = dev != null && transport.isAvailable
 
     // On the first collector, after the development session (a listener started before it would
     // watch the real store). StoreKit replays unfinished transactions to the new listener.
@@ -300,11 +318,16 @@ internal class NativeStoreBackend(
         }
     }
 
-    /** Runs a `dev.*` method of the StoreKit Testing session; for the E2E. */
-    internal suspend fun devCommand(
+    override suspend fun devCommand(
         method: String,
-        args: String = "{}",
+        args: String,
     ) {
+        if (dev == null) {
+            throw StoreException(
+                StoreErrorCode.InvalidArgument,
+                "No StoreKit configuration is active: launch with -D$STOREKIT_CONFIGURATION_PROPERTY=<file.storekit>",
+            )
+        }
         call(method, args)
     }
 }

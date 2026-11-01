@@ -115,11 +115,29 @@ process. Verified on macOS 27 / Xcode 27.1:
   in the Xcode environment; a sheet whose app quits stays on screen unresponsive
   (`AKAuthorizationRemoteViewService` / `storeuid`).
 
+## The App Store's side (`MacAppStore.testing`)
+
+`dev.set` writes the session's properties through KVC (`disableDialogs`, `askToBuyEnabled`,
+`billingRetryOnRenewalEnabled`, `billingGracePeriodEnabled`, `interruptedPurchasesEnabled`,
+`timeRate`, `storefront`); `dev.act` calls its `…WithIdentifier:error:` methods on the product's
+latest matching `SKTestTransaction`, or its `…WithProductIdentifier:error:` ones. Measured with
+Xcode 27.1:
+
+- `expireSubscriptionWithProductIdentifier:` moves the session's expiration date at once, but
+  `subscription.status` and the entitlements keep the old one for 10–15 s.
+- `declineAskToBuyTransactionWithIdentifier:` marks the session's transaction failed, yet
+  StoreKit 2 keeps reporting it in `Transaction.unfinished` with a JWS identical to a real
+  purchase (`inAppOwnershipType PURCHASED`), and the next purchase of the product returns that
+  same transaction without a sheet. Nothing distinguishes it, so the API offers no decline.
+- `buyProductWithIdentifier:` (deprecated in favour of a Swift-only API) still makes a purchase
+  StoreKit 2 delivers through `Transaction.updates` as made outside the app.
+
 ## E2E
 
 The E2E clears the session's history and turns its sheets off (`dev.clearTransactions`,
 `dev.setDialogs`, internal protocol methods) so purchases run unattended, and plays the store's
-side with `dev.refund`, `dev.forceRenewal`, `dev.buy` (a purchase made outside the app); an AWT `Frame` gives
+side through the public `MacAppStore.testing` (refund, renewal, outside purchase, Ask to Buy,
+billing retry with and without grace, auto-renew, expiry, storefront); an AWT `Frame` gives
 StoreKit a window. `scripts/mac-app-store-e2e.sh` builds a jpackage shell once under `build/e2e`, rewrites its
 `.cfg` to the test runtime classpath (`e2eClasspath` task), re-signs it ad hoc with
 `get-task-allow`, registers it, and runs `MacAppStoreE2E` inside it against
