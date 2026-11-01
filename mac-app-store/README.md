@@ -2,7 +2,10 @@
 
 The Mac App Store (StoreKit 2) for JVM desktop apps it sells, behind one `MacAppStore` object.
 
-- `MacAppStore.purchases` — in-app products: buy them, what the customer owns, consumables
+- `MacAppStore.purchases` — in-app products: buy them, what the customer owns, consumables,
+  and the changes the App Store sends (`purchaseUpdates`)
+- `MacAppStore.appTransaction()` — the signed record of the customer getting the app itself
+- `MacAppStore.openStorePage()` — the app's page in the App Store app
 
 macOS 12+ only, and only from an app bundle. Elsewhere every call fails with
 `StoreErrorCode.Unsupported` (Windows, Linux) or `StoreErrorCode.NotBundled` (a bare `java`
@@ -56,6 +59,37 @@ MacAppStore.purchases.list().filter { it.productType == ProductType.Consumable }
 - **Cancelling `purchase()` does not close Apple's sheet** — StoreKit offers no way to, and
   closing it from the app leaves StoreKit stuck. The sheet stays the customer's: a cancel ends
   it, a purchase made there is recorded (it shows up in `entitlement()` and `list()`).
+### Updates
+
+```kotlin
+// Collect for the life of the app, from launch.
+scope.launch {
+    MacAppStore.purchases.purchaseUpdates.collect { update ->
+        when (update) {
+            is PurchaseUpdate.Purchased -> grant(update.purchase)
+            is PurchaseUpdate.Revoked -> revoke(update.purchase)
+        }
+    }
+}
+```
+
+- Renewals, refunds, purchases made on another device or in the App Store app, approved Ask to
+  Buy, and purchases completed after their `purchase()` call was cancelled.
+- When collection starts, every unfinished transaction is replayed first — a consumable not yet
+  consumed, a purchase the app died before delivering — even on a listener started late (StoreKit
+  itself only replays at launch). Each transaction is delivered once per process; a refund of it
+  still comes through.
+- What `purchase()` returns is not repeated. A subscription simply running out is no update:
+  re-read `entitlement()`.
+
+### The app itself
+
+```kotlin
+val app = MacAppStore.appTransaction() // macOS 13+
+if (app.originalAppVersion.toInt() < FREEMIUM_BUILD) unlockEverything() // bought before it went free
+MacAppStore.openStorePage(appId = 1234567890) // the Apple ID from App Store Connect
+```
+
 - `entitlement()` says why a product is not active: `Expired`, `Revoked`, `InBillingRetry`
   (`InGracePeriod` still counts as active).
 - Only transactions StoreKit verified are reported; `Purchase.signedTransaction` is the JWS to

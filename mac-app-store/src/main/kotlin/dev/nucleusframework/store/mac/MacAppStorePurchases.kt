@@ -1,5 +1,7 @@
 package dev.nucleusframework.store.mac
 
+import kotlinx.coroutines.flow.Flow
+
 /**
  * In-app purchases on the Mac App Store. Reached through [MacAppStore.purchases].
  *
@@ -87,4 +89,17 @@ public class MacAppStorePurchases internal constructor() {
     public suspend fun consume(purchase: Purchase) {
         backend.consume(purchase)
     }
+
+    /**
+     * Purchase changes the app did not start: renewals, refunds, purchases made elsewhere or
+     * approved later (Ask to Buy), consumables not yet consumed, and purchases completed after
+     * their [purchase] call was cancelled. Collect it for the life of the app, from launch:
+     * StoreKit replays unfinished transactions when collection starts. Purchases returned by
+     * [purchase] are not repeated here. A subscription simply running out is not an update:
+     * re-read [entitlement].
+     *
+     * Empty on unsupported platforms.
+     */
+    public val purchaseUpdates: Flow<PurchaseUpdate>
+        get() = backend.updates
 }

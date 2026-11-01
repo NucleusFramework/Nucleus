@@ -61,6 +61,26 @@ public sealed interface PurchaseResult {
     ) : PurchaseResult
 }
 
+/** A purchase change the app did not initiate through [MacAppStorePurchases.purchase]. */
+public sealed interface PurchaseUpdate {
+    /** The transaction the update is about. */
+    public val purchase: Purchase
+
+    /**
+     * A new or renewed purchase: a subscription renewal, an approved Ask to Buy, a purchase made
+     * on another device or in the App Store app, a consumable not yet consumed at launch, a
+     * purchase completed after its `purchase()` call was cancelled.
+     */
+    public data class Purchased(
+        override val purchase: Purchase,
+    ) : PurchaseUpdate
+
+    /** Refunded or revoked by Apple: stop granting the product. */
+    public data class Revoked(
+        override val purchase: Purchase,
+    ) : PurchaseUpdate
+}
+
 /** How far an [EntitlementStatus] entitles the customer. */
 public enum class EntitlementState {
     Active,

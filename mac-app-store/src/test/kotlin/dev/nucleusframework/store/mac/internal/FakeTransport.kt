@@ -31,9 +31,21 @@ internal class FakeTransport(
     override val isAvailable: Boolean
         get() = available
 
+    var startUpdatesResult = true
+    val startUpdatesCalls =
+        java.util.concurrent.atomic
+            .AtomicInteger()
+
     override fun attach(receiver: NativeReceiver) {
         this.receiver = receiver
     }
+
+    override fun startUpdates(): Boolean {
+        startUpdatesCalls.incrementAndGet()
+        return startUpdatesResult
+    }
+
+    fun event(json: String) = receiver.onEvent(json)
 
     override fun request(
         id: Long,

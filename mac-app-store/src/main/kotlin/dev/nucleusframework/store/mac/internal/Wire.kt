@@ -100,6 +100,30 @@ internal data class WireEntitlement(
     val purchase: WirePurchase? = null,
 )
 
+@Serializable
+internal data class WireEvent(
+    val type: String = "",
+    val purchase: WirePurchase? = null,
+)
+
+@Serializable
+internal data class WireAppTransaction(
+    val bundleId: String = "",
+    val appId: String? = null,
+    val appVersion: String = "",
+    val originalAppVersion: String = "",
+    val originalPurchaseTime: Long? = null,
+    val preorderTime: Long? = null,
+    val revocationTime: Long? = null,
+    val environment: String = "",
+    val jws: String = "",
+)
+
+@Serializable
+internal data class WireOpened(
+    val opened: Boolean = false,
+)
+
 internal fun jsonArgs(vararg pairs: Pair<String, Any?>): String =
     JsonObject(
         pairs

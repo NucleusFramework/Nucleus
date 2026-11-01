@@ -12,6 +12,9 @@ internal interface NativeTransport {
     /** Routes responses and events to [receiver]; must be called before any [request]. */
     fun attach(receiver: NativeReceiver)
 
+    /** Starts the out-of-band transaction listener; `false` when it cannot run (not an app). */
+    fun startUpdates(): Boolean
+
     /** Starts request [id]; the answer arrives once through [NativeReceiver.onResponse]. */
     fun request(
         id: Long,
@@ -59,6 +62,8 @@ internal object NativeMacStoreBridge : NativeTransport {
         this.receiver = receiver
     }
 
+    override fun startUpdates(): Boolean = loaded && nativeStartUpdates()
+
     override fun request(
         id: Long,
         method: String,
@@ -83,6 +88,9 @@ internal object NativeMacStoreBridge : NativeTransport {
 
     @JvmStatic
     private external fun nativeCancel(id: Long)
+
+    @JvmStatic
+    private external fun nativeStartUpdates(): Boolean
 
     @JvmStatic
     private external fun nativeInFlight(): Int

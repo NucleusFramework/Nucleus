@@ -9,7 +9,8 @@ import dev.nucleusframework.store.mac.internal.UnsupportedStoreBackend
 
 /**
  * The Mac App Store (StoreKit 2) as seen from the app it sells: what the app sells
- * ([purchases]).
+ * ([purchases]), the app's own purchase ([appTransaction]) and its store page
+ * ([openStorePage]).
  *
  * ```kotlin
  * val pro = MacAppStore.purchases.product("pro") ?: return
@@ -57,6 +58,26 @@ public object MacAppStore {
     /** Whether the store can serve this process right now. */
     public suspend fun availability(): StoreAvailability = backend.availability()
 
-    /** The in-app products of this app. */
+    /** The in-app products of this app, and the changes the App Store sends about them. */
     public val purchases: MacAppStorePurchases = MacAppStorePurchases()
+
+    /**
+     * The App Store's signed record of this customer getting the app itself (macOS 13+).
+     *
+     * @throws StoreException when StoreKit cannot provide it (no App Store account signed in,
+     *   [StoreErrorCode.Unsupported] before macOS 13)
+     */
+    public suspend fun appTransaction(): AppTransactionInfo = backend.appTransaction()
+
+    /**
+     * Opens the app's page in the App Store app, for ratings or an update the store has not
+     * installed yet.
+     *
+     * @param appId the app's Apple ID in App Store Connect; `null` takes it from
+     *   [appTransaction], which StoreKit Testing does not have
+     * @throws StoreException with [StoreErrorCode.InvalidArgument] when no id is known
+     */
+    public suspend fun openStorePage(appId: Long? = null) {
+        backend.openStorePage(appId)
+    }
 }

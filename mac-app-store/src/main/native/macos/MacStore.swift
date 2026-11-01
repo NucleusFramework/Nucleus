@@ -10,7 +10,7 @@ private let lock = NSLock()
 private var inFlight: [Int64: Task<Void, Never>] = [:]
 
 // Synchronous, so the lock is never held across a suspension point.
-private func locked<T>(_ body: () -> T) -> T {
+func locked<T>(_ body: () -> T) -> T {
     lock.lock()
     defer { lock.unlock() }
     return body()
@@ -72,12 +72,19 @@ private func handle(_ method: String, args: Data) async throws -> AnyEncodable {
     case "consume":
         try await consume(try decode(ConsumeArgs.self, args).transactionId)
         return AnyEncodable(Empty())
+    case "appTransaction":
+        return AnyEncodable(try await appTransaction())
+    case "openStorePage":
+        return AnyEncodable(try await openStorePage(try decode(StorePageArgs.self, args).appId))
     case "dev.configure":
         let request = try decode(DevConfigureArgs.self, args)
         try DevSession.configure(request)
         return AnyEncodable(Empty())
     case "dev.clearTransactions":
         try DevSession.require().perform(NSSelectorFromString("clearTransactions"))
+        return AnyEncodable(Empty())
+    case "dev.refund", "dev.expire", "dev.forceRenewal", "dev.buy":
+        try DevSession.act(method, productId: try decode(EntitlementArgs.self, args).productId)
         return AnyEncodable(Empty())
     case "dev.setDialogs":
         let request = try decode(DevDialogsArgs.self, args)
@@ -92,7 +99,7 @@ private func handle(_ method: String, args: Data) async throws -> AnyEncodable {
 
 /// StoreKit identifies the app by its main bundle. A bare `java` launch has one too, the JDK's
 /// (`.jdk`, package type `BNDL`), which is no app the store knows: only an `APPL` counts.
-private var isAppBundle: Bool {
+var isAppBundle: Bool {
     Bundle.main.bundleIdentifier != nil && Bundle.main.object(forInfoDictionaryKey: "CFBundlePackageType") as? String == "APPL"
 }
 
@@ -130,6 +137,38 @@ private enum DevSession {
             throw WireError(code: "invalidArgument", message: "No StoreKit configuration is active")
         }
         return session
+    }
+
+    /// Store-side events of StoreKit Testing, as the App Store would send them.
+    static func act(_ method: String, productId: String) throws {
+        let session = try require()
+        typealias ById = @convention(c) (AnyObject, Selector, UInt, UnsafeMutablePointer<NSError?>) -> Bool
+        typealias ByProduct = @convention(c) (AnyObject, Selector, NSString, UnsafeMutablePointer<NSError?>) -> Bool
+        var error: NSError?
+        let done: Bool
+        switch method {
+        case "dev.refund":
+            // The product's latest transaction in the session.
+            let transactions = session.perform(NSSelectorFromString("allTransactions"))?.takeUnretainedValue() as? [NSObject] ?? []
+            guard let latest = transactions.last(where: { $0.value(forKey: "productIdentifier") as? String == productId }),
+                  let id = latest.value(forKey: "identifier") as? UInt else {
+                throw WireError(code: "invalidArgument", message: "No transaction of '\(productId)' to refund")
+            }
+            let selector = NSSelectorFromString("refundTransactionWithIdentifier:error:")
+            done = unsafeBitCast(session.method(for: selector), to: ById.self)(session, selector, id, &error)
+        default:
+            let name = [
+                "dev.expire": "expireSubscriptionWithProductIdentifier:error:",
+                "dev.forceRenewal": "forceRenewalOfSubscriptionWithProductIdentifier:error:",
+                // A purchase made outside the app (another device, the App Store app).
+                "dev.buy": "buyProductWithIdentifier:error:",
+            ][method]!
+            let selector = NSSelectorFromString(name)
+            done = unsafeBitCast(session.method(for: selector), to: ByProduct.self)(session, selector, productId as NSString, &error)
+        }
+        guard done else {
+            throw WireError(code: "platform", message: "\(method) failed: \(error?.localizedDescription ?? "unknown error")", platformCode: error?.code)
+        }
     }
 
     static func configure(_ args: DevConfigureArgs) throws {
@@ -268,7 +307,7 @@ private func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {
     }
 }
 
-private func encode<T: Encodable>(_ value: T) -> String {
+func encode<T: Encodable>(_ value: T) -> String {
     guard let data = try? JSONEncoder().encode(value), let json = String(data: data, encoding: .utf8) else {
         return #"{"error":{"code":"internal","message":"Failed to encode the response"}}"#
     }

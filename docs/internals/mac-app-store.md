@@ -64,7 +64,30 @@ needs the app's main run loop.
   returns only once it is closed. If the app quits first that window stays orphaned on screen,
   like the Apple Account sheet below.
 - A purchase completed after its caller cancelled is finished and owned, but its answer goes to
-  a request Kotlin dropped: it must reach the app through the coming `purchaseUpdates`.
+  a request Kotlin dropped: the bridge sees `Task.isCancelled` and also emits it as a
+  `transaction` event, so it reaches the app through `purchaseUpdates`.
+
+## Updates
+
+`nms_start_updates` (on the first `purchaseUpdates` collector, after the development session —
+a listener started before it would watch the real store) runs, for the life of the process, a
+`Transaction.updates` listener and, first, a walk of `Transaction.unfinished`:
+
+- StoreKit replays unfinished transactions to `Transaction.updates` **only at process launch**,
+  not to a listener started later in the same process (measured: a consumable bought before the
+  first collector never came). The explicit walk makes the replay hold either way.
+- A transaction is delivered once per process whichever path brings it first (an actor keeps the
+  ids); a revoked one always goes through, since a refund keeps the transaction id. The E2E pins
+  "exactly once" across a real relaunch (`crash-buy` / `crash-relaunch`).
+- Delivery finishes everything but a live consumable, which waits for `consume`, as in
+  `purchase`. Unverified transactions are never delivered nor finished.
+- Transactions returned by `purchase()` are not on `Transaction.updates` (pinned by the E2E).
+- Expiry is not a transaction: nothing arrives when a subscription runs out.
+
+`appTransaction` reads `AppTransaction.shared` (macOS 13+; never `refresh()`, which prompts
+for the Apple Account). `openStorePage` opens `macappstore://apps.apple.com/app/id<appId>`
+through `NSWorkspace`, with the id given or the app transaction's (`nil` in StoreKit Testing, so
+it fails instead of opening anything).
 
 ## StoreKit Testing without Xcode (dev mode)
 
@@ -95,7 +118,8 @@ process. Verified on macOS 27 / Xcode 27.1:
 ## E2E
 
 The E2E clears the session's history and turns its sheets off (`dev.clearTransactions`,
-`dev.setDialogs`, internal protocol methods) so purchases run unattended; an AWT `Frame` gives
+`dev.setDialogs`, internal protocol methods) so purchases run unattended, and plays the store's
+side with `dev.refund`, `dev.forceRenewal`, `dev.buy` (a purchase made outside the app); an AWT `Frame` gives
 StoreKit a window. `scripts/mac-app-store-e2e.sh` builds a jpackage shell once under `build/e2e`, rewrites its
 `.cfg` to the test runtime classpath (`e2eClasspath` task), re-signs it ad hoc with
 `get-task-allow`, registers it, and runs `MacAppStoreE2E` inside it against

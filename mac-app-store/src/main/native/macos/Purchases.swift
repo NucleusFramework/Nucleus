@@ -61,6 +61,11 @@ func purchase(_ args: PurchaseArgs) async throws -> PurchaseOutcomeDto {
         if transaction.productType != .consumable {
             await transaction.finish()
         }
+        // The caller gave up while the sheet was up and the customer bought anyway: nobody waits
+        // for this answer, so report it like any transaction the app did not start.
+        if Task.isCancelled {
+            emitTransaction(transaction, jws: verification.jwsRepresentation)
+        }
         return PurchaseOutcomeDto(status: "success", purchase: PurchaseDto(transaction, jws: verification.jwsRepresentation))
     case .pending:
         return PurchaseOutcomeDto(status: "pending")
@@ -236,17 +241,10 @@ struct PurchaseDto: Encodable {
         quantity = transaction.purchasedQuantity
         appAccountToken = transaction.appAccountToken?.uuidString
         self.jws = jws
-        let raw: String
         if #available(macOS 13.0, *) {
-            raw = transaction.environment.rawValue
+            environment = environmentName(transaction.environment.rawValue)
         } else {
-            raw = transaction.environmentStringRepresentation
-        }
-        switch raw {
-        case "Production": environment = "production"
-        case "Sandbox": environment = "sandbox"
-        case "Xcode": environment = "xcode"
-        default: environment = "unknown"
+            environment = environmentName(transaction.environmentStringRepresentation)
         }
     }
 }

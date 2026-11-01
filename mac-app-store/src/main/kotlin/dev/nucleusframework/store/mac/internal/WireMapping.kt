@@ -1,5 +1,6 @@
 package dev.nucleusframework.store.mac.internal
 
+import dev.nucleusframework.store.mac.AppTransactionInfo
 import dev.nucleusframework.store.mac.EntitlementStatus
 import dev.nucleusframework.store.mac.IntroductoryOffer
 import dev.nucleusframework.store.mac.Purchase
@@ -67,4 +68,17 @@ internal fun WireEntitlement.toStatus(): EntitlementStatus =
         expirationTime = instant(expirationTime),
         willAutoRenew = willAutoRenew,
         purchase = purchase?.toPurchase(),
+    )
+
+internal fun WireAppTransaction.toInfo(): AppTransactionInfo =
+    AppTransactionInfo(
+        bundleId = bundleId,
+        appId = appId?.toLongOrNull(),
+        appVersion = appVersion,
+        originalAppVersion = originalAppVersion,
+        originalPurchaseTime = instant(originalPurchaseTime),
+        preorderTime = instant(preorderTime),
+        revocationTime = instant(revocationTime),
+        environment = environment(environment),
+        signedAppTransaction = jws,
     )

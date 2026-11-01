@@ -9,9 +9,10 @@
 # build outputs, so later runs only recompile, never repackage. Needs Xcode (StoreKitTest ships with it).
 # Exits with the failure count.
 #
-# --sheet also runs the real purchase sheet: it cancels the waiting coroutine, then presses the
-# sheet's Cancel button through accessibility (scripts/axtool.swift), so the terminal needs the
-# Accessibility permission. Leave the Mac alone while it runs.
+# --sheet also runs the real purchase sheet: it cancels the waiting coroutine, then answers the
+# sheet through accessibility (scripts/axtool.swift) — Cancel once, then Purchase and the
+# system's "You're all set" OK — so the terminal needs the Accessibility permission. Leave the
+# Mac alone while it runs.
 #
 #   scripts/mac-app-store-e2e.sh [--sheet]
 set -uo pipefail
@@ -65,6 +66,13 @@ echo "== inside the development app"
 FAILURES=$((FAILURES + ${PIPESTATUS[0]}))
 grep -q "DONE failures=" "$OUT/app.log" || { echo "FAIL the app did not finish"; FAILURES=$((FAILURES + 1)); }
 
+echo "== a crash between payment and delivery"
+"$APP/Contents/MacOS/MacAppStoreE2E" crash-buy | tee "$OUT/crash-buy.log"
+FAILURES=$((FAILURES + ${PIPESTATUS[0]}))
+PAID=$(sed -n 's/^TRANSACTION //p' "$OUT/crash-buy.log")
+"$APP/Contents/MacOS/MacAppStoreE2E" crash-relaunch "$PAID" | tee "$OUT/crash-relaunch.log"
+FAILURES=$((FAILURES + ${PIPESTATUS[0]}))
+
 echo "== bare java"
 "$JAVA_HOME/bin/java" -Dnucleus.macAppStore.storeKitConfiguration="$CONFIG" -cp "$CLASSPATH" "$MAIN" expect=notBundled | tee "$OUT/java.log"
 FAILURES=$((FAILURES + ${PIPESTATUS[0]}))
@@ -76,6 +84,15 @@ if [ "${1:-}" = "--sheet" ]; then
     SHEET_PID=$!
     for _ in $(seq 120); do grep -q "STAGE press-cancel" "$OUT/sheet.log" && break; sleep 0.5; done
     "$OUT/axtool" "$SHEET_PID" press AXButton Cancel
+    for _ in $(seq 120); do grep -q "STAGE press-purchase" "$OUT/sheet.log" && break; sleep 0.5; done
+    "$OUT/axtool" "$SHEET_PID" press AXButton Purchase
+    # macOS confirms with "You're all set" from storeuid, a system process; StoreKit returns
+    # once it is closed.
+    for _ in $(seq 40); do
+        STOREUID=$(pgrep -x storeuid | head -1)
+        [ -n "$STOREUID" ] && "$OUT/axtool" "$STOREUID" press AXButton OK 2>/dev/null | grep -q "err=0" && break
+        sleep 0.5
+    done
     wait $SHEET_PID
     FAILURES=$((FAILURES + $?))
     grep -E "^(PASS|FAIL|DONE)" "$OUT/sheet.log"

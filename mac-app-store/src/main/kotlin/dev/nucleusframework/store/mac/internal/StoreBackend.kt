@@ -1,15 +1,21 @@
 package dev.nucleusframework.store.mac.internal
 
+import dev.nucleusframework.store.mac.AppTransactionInfo
 import dev.nucleusframework.store.mac.EntitlementStatus
 import dev.nucleusframework.store.mac.ProductType
 import dev.nucleusframework.store.mac.Purchase
 import dev.nucleusframework.store.mac.PurchaseOptions
 import dev.nucleusframework.store.mac.PurchaseResult
+import dev.nucleusframework.store.mac.PurchaseUpdate
 import dev.nucleusframework.store.mac.StoreAvailability
 import dev.nucleusframework.store.mac.StoreErrorCode
 import dev.nucleusframework.store.mac.StoreException
 import dev.nucleusframework.store.mac.StoreProduct
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -17,7 +23,9 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonElement
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.logging.Level
 import java.util.logging.Logger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -25,6 +33,7 @@ import kotlin.coroutines.resumeWithException
 /** What [dev.nucleusframework.store.mac.MacAppStore] delegates to. */
 internal interface StoreBackend {
     val isSupported: Boolean
+    val updates: Flow<PurchaseUpdate>
 
     suspend fun availability(): StoreAvailability
 
@@ -40,6 +49,10 @@ internal interface StoreBackend {
     suspend fun entitlement(productId: String): EntitlementStatus
 
     suspend fun consume(purchase: Purchase)
+
+    suspend fun appTransaction(): AppTransactionInfo
+
+    suspend fun openStorePage(appId: Long?)
 }
 
 /** Windows, Linux, or a Mac whose native bridge did not load. */
@@ -47,6 +60,7 @@ internal class UnsupportedStoreBackend(
     private val reason: String,
 ) : StoreBackend {
     override val isSupported: Boolean = false
+    override val updates: Flow<PurchaseUpdate> = emptyFlow()
 
     override suspend fun availability(): StoreAvailability = StoreAvailability.Unsupported
 
@@ -64,6 +78,10 @@ internal class UnsupportedStoreBackend(
     override suspend fun entitlement(productId: String): EntitlementStatus = unsupported()
 
     override suspend fun consume(purchase: Purchase): Unit = unsupported()
+
+    override suspend fun appTransaction(): AppTransactionInfo = unsupported()
+
+    override suspend fun openStorePage(appId: Long?): Unit = unsupported()
 }
 
 /**
@@ -82,6 +100,11 @@ internal class NativeStoreBackend(
     private val nextId = AtomicLong()
     private val pending = ConcurrentHashMap<Long, CancellableContinuation<String>>()
     private val devMutex = Mutex()
+    private val listening = AtomicBoolean()
+
+    // Unbounded: events come from native threads that cannot suspend, and an update must not be
+    // dropped because a collector is slow.
+    private val updateFlow = MutableSharedFlow<PurchaseUpdate>(extraBufferCapacity = Int.MAX_VALUE)
 
     @Volatile
     private var devReady = dev == null
@@ -92,6 +115,20 @@ internal class NativeStoreBackend(
 
     override val isSupported: Boolean
         get() = transport.isAvailable
+
+    override val updates: Flow<PurchaseUpdate> = updateFlow.onSubscription { ensureListening() }
+
+    // On the first collector, after the development session (a listener started before it would
+    // watch the real store). StoreKit replays unfinished transactions to the new listener.
+    private suspend fun ensureListening() {
+        if (!transport.isAvailable || !listening.compareAndSet(false, true)) return
+        try {
+            ensureDevSession()
+        } catch (e: StoreException) {
+            logger.log(Level.WARNING, "No StoreKit configuration for purchase updates", e)
+        }
+        if (!transport.startUpdates()) logger.fine { "No transaction updates outside an app bundle" }
+    }
 
     /** Requests still waiting for their answer; for tests. */
     internal val pendingCount: Int
@@ -164,7 +201,28 @@ internal class NativeStoreBackend(
     }
 
     override fun onEvent(json: String) {
-        logger.fine { "Ignoring Mac App Store event $json" }
+        val event =
+            try {
+                parse("event") { WireJson.decodeFromString(WireEvent.serializer(), json) }
+            } catch (e: StoreException) {
+                logger.log(Level.WARNING, "Malformed Mac App Store event", e)
+                return
+            }
+        when (event.type) {
+            "transaction" -> {
+                val purchase = event.purchase?.toPurchase() ?: return
+                updateFlow.tryEmit(
+                    if (purchase.revocationTime !=
+                        null
+                    ) {
+                        PurchaseUpdate.Revoked(purchase)
+                    } else {
+                        PurchaseUpdate.Purchased(purchase)
+                    },
+                )
+            }
+            else -> logger.fine { "Ignoring Mac App Store event '${event.type}'" }
+        }
     }
 
     // -- API --------------------------------------------------------------------------------
@@ -230,6 +288,16 @@ internal class NativeStoreBackend(
             )
         }
         call("consume", jsonArgs("transactionId" to purchase.transactionId))
+    }
+
+    override suspend fun appTransaction(): AppTransactionInfo =
+        decode("appTransaction", "{}", WireAppTransaction.serializer()).toInfo()
+
+    override suspend fun openStorePage(appId: Long?) {
+        if (appId != null && appId <= 0) throw StoreException(StoreErrorCode.InvalidArgument, "appId must be positive")
+        if (!decode("openStorePage", jsonArgs("appId" to appId?.toString()), WireOpened.serializer()).opened) {
+            throw StoreException(StoreErrorCode.Platform, "macOS did not open the App Store")
+        }
     }
 
     /** Runs a `dev.*` method of the StoreKit Testing session; for the E2E. */

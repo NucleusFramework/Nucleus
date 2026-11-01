@@ -6,6 +6,7 @@ import dev.nucleusframework.store.mac.OfferPaymentMode
 import dev.nucleusframework.store.mac.PeriodUnit
 import dev.nucleusframework.store.mac.ProductType
 import dev.nucleusframework.store.mac.PurchaseResult
+import dev.nucleusframework.store.mac.PurchaseUpdate
 import dev.nucleusframework.store.mac.StoreAvailability
 import dev.nucleusframework.store.mac.StoreEnvironment
 import dev.nucleusframework.store.mac.StoreErrorCode
@@ -13,9 +14,13 @@ import dev.nucleusframework.store.mac.StoreException
 import dev.nucleusframework.store.mac.SubscriptionPeriod
 import dev.nucleusframework.store.mac.internal.NativeMacStoreBridge
 import dev.nucleusframework.store.mac.internal.NativeStoreBackend
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.toList
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.awt.Frame
 import java.math.BigDecimal
 import java.time.Instant
@@ -54,6 +59,10 @@ object MacAppStoreE2E {
             val availability = MacAppStore.availability()
             if (args.contains("sheet")) {
                 sheetCancel()
+            } else if (args.contains("crash-buy")) {
+                crashBuy()
+            } else if (args.contains("crash-relaunch")) {
+                crashRelaunch(args.last())
             } else if (args.contains("expect=notBundled")) {
                 check("bare java is NotBundled", availability == StoreAvailability.NotBundled) { availability }
                 val error = runCatching { MacAppStore.purchases.products("pro") }.exceptionOrNull()
@@ -126,10 +135,120 @@ object MacAppStoreE2E {
             }
         try {
             purchases()
+            updates()
+            appRecord()
         } finally {
             frame.dispose()
         }
     }
+
+    private suspend fun appRecord() {
+        val app = runCatching { MacAppStore.appTransaction() }
+        val info = app.getOrNull()
+        check("app transaction", info?.bundleId == "dev.nucleusframework.macappstore.e2e") { app }
+        check("app transaction from StoreKit Testing", info?.environment == StoreEnvironment.Xcode) { info }
+        check(
+            "app transaction is signed",
+            info?.signedAppTransaction?.count { it == '.' } == 2,
+        ) { info?.signedAppTransaction }
+        check("no Apple ID in StoreKit Testing", info?.appId == null) { info?.appId }
+        // Without an id there is nothing to open: it must fail rather than open the App Store.
+        val page = runCatching { MacAppStore.openStorePage() }.exceptionOrNull()
+        check("store page needs an id", (page as? StoreException)?.code == StoreErrorCode.InvalidArgument) { page }
+    }
+
+    /** First launch of the crash check: pays for coins and quits before delivering them. */
+    private suspend fun crashBuy() {
+        val session = MacAppStore.backend as NativeStoreBackend
+        session.devCommand("dev.clearTransactions")
+        session.devCommand("dev.setDialogs", """{"enabled":false}""")
+        val frame =
+            Frame("mac-app-store crash buy").apply {
+                setSize(420, 240)
+                isVisible = true
+            }
+        val coins = (MacAppStore.purchases.purchase("coins") as? PurchaseResult.Success)?.purchase
+        frame.dispose()
+        check("coins paid, then the app dies", coins != null)
+        println("TRANSACTION ${coins?.transactionId}")
+    }
+
+    /** Second launch: the paid coins come back through purchaseUpdates, exactly once. */
+    private suspend fun crashRelaunch(transactionId: String) =
+        coroutineScope {
+            val seen = Channel<PurchaseUpdate>(Channel.UNLIMITED)
+            val collector = launch { MacAppStore.purchases.purchaseUpdates.collect { seen.send(it) } }
+            delay(6000)
+            collector.cancel()
+            seen.close()
+            val copies = seen.toList().filter { it.purchase.transactionId == transactionId }
+            check(
+                "undelivered coins replayed at the next launch, once",
+                copies.size == 1 && copies[0] is PurchaseUpdate.Purchased,
+            ) {
+                copies
+            }
+            copies.firstOrNull()?.let { MacAppStore.purchases.consume(it.purchase) }
+            val left = MacAppStore.purchases.list().filter { it.transactionId == transactionId }
+            check("consumed after the replay", left.isEmpty()) { left }
+        }
+
+    /** Store-side events of StoreKit Testing, the way the App Store sends them. */
+    private suspend fun updates() =
+        coroutineScope {
+            val purchases = MacAppStore.purchases
+            val session = MacAppStore.backend as NativeStoreBackend
+            // Left unconsumed on purpose: StoreKit replays it when the app starts listening.
+            val coins = (purchases.purchase("coins") as? PurchaseResult.Success)?.purchase
+            check("coins bought for the replay", coins != null)
+
+            val received = Channel<PurchaseUpdate>(Channel.UNLIMITED)
+            val collector = launch { purchases.purchaseUpdates.collect { received.send(it) } }
+
+            suspend fun next(what: (PurchaseUpdate) -> Boolean): PurchaseUpdate? =
+                withTimeoutOrNull(15_000) {
+                    var update = received.receive()
+                    while (!what(update)) update = received.receive()
+                    update
+                }
+
+            val replayed = next { it.purchase.transactionId == coins?.transactionId }
+            check(
+                "unconsumed consumable replayed when listening starts",
+                replayed is PurchaseUpdate.Purchased,
+            ) { replayed }
+
+            session.devCommand("dev.refund", """{"productId":"pro"}""")
+            val refunded = next { it.purchase.productId == "pro" }
+            check("refund arrives as Revoked", refunded is PurchaseUpdate.Revoked) { refunded }
+            val afterRefund = purchases.entitlement("pro")
+            check("refunded product is revoked", afterRefund.state == EntitlementState.Revoked) { afterRefund }
+
+            val before = purchases.entitlement("premium.monthly").purchase?.transactionId
+            session.devCommand("dev.forceRenewal", """{"productId":"premium.monthly"}""")
+            val renewed = next { it.purchase.productId == "premium.monthly" }
+            check(
+                "renewal arrives as Purchased with a new transaction",
+                renewed is PurchaseUpdate.Purchased && renewed.purchase.transactionId != before,
+            ) { renewed }
+
+            session.devCommand("dev.buy", """{"productId":"pro"}""")
+            val outside = next { it.purchase.productId == "pro" }
+            check(
+                "a purchase made outside the app arrives as Purchased",
+                outside is PurchaseUpdate.Purchased,
+            ) { outside }
+            val rebought = purchases.entitlement("pro")
+            check("bought again outside the app", rebought.isActive) { rebought }
+
+            // What purchase() returns is not repeated in the flow.
+            val direct = (purchases.purchase("coins") as? PurchaseResult.Success)?.purchase
+            val echo = withTimeoutOrNull(3_000) { next { it.purchase.transactionId == direct?.transactionId } }
+            check("purchase() results are not echoed as updates", direct != null && echo == null) { echo }
+
+            purchases.list().filter { it.productType == ProductType.Consumable }.forEach { purchases.consume(it) }
+            collector.cancel()
+        }
 
     /**
      * `--sheet` mode of the script: shows the real purchase sheet, cancels the coroutine waiting
@@ -166,6 +285,29 @@ object MacAppStoreE2E {
                 session.devCommand("dev.setDialogs", """{"enabled":false}""")
                 val again = kotlinx.coroutines.withTimeoutOrNull(20_000) { MacAppStore.purchases.purchase("pro") }
                 check("the next purchase works", again is PurchaseResult.Success) { again }
+
+                // Cancelled again, but this time the customer buys: the purchase must reach the
+                // app through purchaseUpdates, since nobody waits for purchase() any more.
+                val received = Channel<PurchaseUpdate>(Channel.UNLIMITED)
+                val collector = launch { MacAppStore.purchases.purchaseUpdates.collect { received.send(it) } }
+                session.devCommand("dev.setDialogs", """{"enabled":true}""")
+                val late = launch { MacAppStore.purchases.purchase("coins") }
+                delay(5000)
+                late.cancel()
+                late.join()
+                println("STAGE press-purchase")
+                val update =
+                    withTimeoutOrNull(60_000) {
+                        var next = received.receive()
+                        while (next.purchase.productId != "coins") next = received.receive()
+                        next
+                    }
+                check(
+                    "a purchase made after its caller cancelled arrives as an update",
+                    update is PurchaseUpdate.Purchased,
+                ) { update }
+                update?.let { MacAppStore.purchases.consume(it.purchase) }
+                collector.cancel()
             } finally {
                 frame.dispose()
             }

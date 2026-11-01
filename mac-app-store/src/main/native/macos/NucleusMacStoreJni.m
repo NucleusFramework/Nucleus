@@ -111,6 +111,13 @@ Java_dev_nucleusframework_store_mac_internal_NativeMacStoreBridge_nativeCancel(
     nms_cancel((int64_t)requestId);
 }
 
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_store_mac_internal_NativeMacStoreBridge_nativeStartUpdates(JNIEnv *env, jclass cls) {
+    (void)env;
+    (void)cls;
+    return nms_start_updates() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jint JNICALL
 Java_dev_nucleusframework_store_mac_internal_NativeMacStoreBridge_nativeInFlight(JNIEnv *env, jclass cls) {
     (void)env;
