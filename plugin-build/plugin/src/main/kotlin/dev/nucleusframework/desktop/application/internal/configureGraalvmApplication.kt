@@ -1577,9 +1577,9 @@ private val JvmApplicationContext.sandboxedGraalvmOutputDir: Provider<Directory>
  *   signed in `Contents/Frameworks`;
  * - the image is compiled again from those JARs without Substrate's signal handling
  *   (`-R:-EnableSignalHandling`): it creates a named POSIX semaphore (`/cSunMiscSignal-<pid>`) the
- *   App Sandbox only allows under an App Group prefix, so the image died at start-up. The cost is
- *   that SIGINT/SIGTERM no longer run shutdown hooks, which a sandboxed GUI app does not receive
- *   (it quits through AppKit, and System.exit still runs them);
+ *   App Sandbox only allows under an App Group prefix, so the image died at start-up.
+ *   `GraalVmInitializer` gives SIGINT / SIGTERM / SIGHUP their shutdown hooks back through
+ *   libdispatch (`TerminationSignals`);
  * - [AbstractAssembleSandboxedGraalvmMacAppTask] derives the bundle from the regular one.
  *
  * The regular image, bundle and packages are left untouched.

@@ -3,11 +3,13 @@ package dev.nucleusframework.graalvm
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.graalvm.encoding.PlatformEncodingInitializer
 import dev.nucleusframework.graalvm.locale.NativeLocaleBridge
+import dev.nucleusframework.graalvm.signal.TerminationSignals
 import dev.nucleusframework.hidpi.applyLinuxHiDpiScale
 import dev.nucleusframework.hidpi.capLinuxMallocArenas
 import java.io.File
 import java.nio.charset.Charset
 import java.util.Locale
+import java.util.logging.Logger
 
 public object GraalVmInitializer {
     public val isNativeImage: Boolean =
@@ -95,6 +97,9 @@ public object GraalVmInitializer {
      * (`NucleusSandboxLoader`) is pointed at the manifest, and JNA loads `jnidispatch` from there
      * instead of unpacking it — the same properties the sandboxed JVM launcher passes.
      *
+     * That image is also compiled without Substrate's signal handling (its named semaphore is denied),
+     * so [TerminationSignals] gives SIGINT / SIGTERM / SIGHUP their shutdown hooks back.
+     *
      * Inside the sandbox `user.home` follows `HOME`, the container: SubstrateVM reads it from the
      * password database (`/Users/<name>`) where HotSpot follows `HOME`, and every `~/Library/…`
      * path would land outside the container and be denied.
@@ -111,6 +116,13 @@ public object GraalVmInitializer {
             )
             resetLibraryPathCache()
             layout.properties.forEach(::setIfAbsent)
+            // This image is compiled without Substrate's signal handling: route SIGINT / SIGTERM /
+            // SIGHUP to the shutdown hooks ourselves.
+            if (!TerminationSignals.install()) {
+                Logger.getLogger(GraalVmInitializer::class.java.name).warning(
+                    "Termination signals unavailable: SIGINT/SIGTERM will skip the shutdown hooks",
+                )
+            }
         }
         sandboxedUserHome(System::getenv)?.let { System.setProperty("user.home", it) }
     }

@@ -12,8 +12,16 @@ Three things kill or cripple a regular native image under `com.apple.security.ap
 1. **Signal handling.** At start-up Substrate's `SunMiscSupport` creates the named POSIX semaphore
    `/cSunMiscSignal-<pid>`; the sandbox denies `ipc-posix-sem-create` and the image aborts before
    `main`. The sandboxed image is compiled with `-R:-EnableSignalHandling` (a runtime option baked
-   as the default). Consequence: **SIGINT / SIGTERM do not run shutdown hooks** in the sandboxed
-   image. A store app quits through the app menu / `requestQuit`, which is unaffected.
+   as the default). Left there, SIGINT / SIGTERM / SIGHUP would take their default action and skip
+   the shutdown hooks, so `GraalVmInitializer` installs `TerminationSignals` for that bundle: the
+   `nucleus_locale` library receives the three signals through libdispatch (kqueue, no semaphore)
+   and calls back into Kotlin on a dispatch thread, which exits like HotSpot — shutdown hooks,
+   then status 128 + signal. `TerminationSignalsTest` checks it on a child JVM started with `-Xrs`
+   (HotSpot's handlers off, the same state). The handler is an empty `sigaction`, not `SIG_IGN`:
+   an ignored disposition survives `exec`, so every process the app starts would ignore SIGTERM
+   (`Process.destroy()` included); a handler is reset on `exec`, as HotSpot's are — the test
+   checks that too. What does not come back: `sun.misc.Signal.handle` for the app's own signals
+   (SIGUSR1, …), which needs Substrate's signal handling.
 2. **`user.home`.** SubstrateVM reads it from the password database (`/Users/<name>`), where
    HotSpot follows `HOME` — the container. Every `~/Library/…` path then lands outside the
    container and is denied. `GraalVmInitializer` sets `user.home` from `HOME` when
