@@ -53,6 +53,9 @@ private func deliver(_ verification: VerificationResult<Transaction>) async {
     // Same rule as purchase(): a live consumable waits for consume().
     if transaction.productType != .consumable || transaction.revocationDate != nil {
         await transaction.finish()
+        _ = await pendingConsumables.remove(transaction.id)
+    } else {
+        await pendingConsumables.add(transaction, jws: verification.jwsRepresentation)
     }
     emitTransaction(transaction, jws: verification.jwsRepresentation)
 }

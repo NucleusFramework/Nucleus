@@ -64,6 +64,8 @@ func purchase(_ args: PurchaseArgs) async throws -> PurchaseOutcomeDto {
         // StoreKit hands it back at the next launch if the app dies in between.
         if transaction.productType != .consumable {
             await transaction.finish()
+        } else {
+            await pendingConsumables.add(transaction, jws: verification.jwsRepresentation)
         }
         // The caller gave up while the sheet was up and the customer bought anyway: nobody waits
         // for this answer, so report it like any transaction the app did not start.
@@ -111,6 +113,34 @@ private func unverified<T>(_ verification: VerificationResult<T>) -> WireError {
     return WireError(code: "verificationFailed", message: "StoreKit could not verify the transaction")
 }
 
+// MARK: - Pending consumables
+
+/// Consumables bought or delivered in this process and not consumed yet.
+///
+/// After a store-side event (a renewal, a refund, a purchase made elsewhere) StoreKit stops
+/// listing a pending consumable in `Transaction.unfinished` for the rest of the process, while it
+/// still holds it: the next purchase of the product returns that same transaction, and a relaunch
+/// lists and replays it again (measured with StoreKit Testing). Kept here, the consumable stays in
+/// `list` and `consume` can still finish it; without that, it would be delivered again at the
+/// next launch.
+actor PendingConsumables {
+    private var items: [UInt64: (transaction: Transaction, jws: String)] = [:]
+
+    func add(_ transaction: Transaction, jws: String) {
+        items[transaction.id] = (transaction, jws)
+    }
+
+    func remove(_ id: UInt64) -> Transaction? {
+        items.removeValue(forKey: id)?.transaction
+    }
+
+    func all() -> [(transaction: Transaction, jws: String)] {
+        items.values.sorted { $0.transaction.id < $1.transaction.id }
+    }
+}
+
+let pendingConsumables = PendingConsumables()
+
 // MARK: - Owned
 
 /// Active non-consumables and subscriptions, plus consumables bought but not yet consumed.
@@ -128,6 +158,9 @@ func ownedPurchases() async throws -> [PurchaseDto] {
         guard case .verified(let transaction) = verification, transaction.productType == .consumable,
               transaction.revocationDate == nil, seen.insert(transaction.id).inserted else { continue }
         result.append(PurchaseDto(transaction, jws: verification.jwsRepresentation))
+    }
+    for (transaction, jws) in await pendingConsumables.all() where seen.insert(transaction.id).inserted {
+        result.append(PurchaseDto(transaction, jws: jws))
     }
     return result
 }
@@ -222,8 +255,15 @@ struct ConsumeArgs: Decodable { let transactionId: String }
 /// Finishes the consumable's transaction. Already finished (a retry, another launch): nothing to do.
 func consume(_ transactionId: String) async throws {
     try requireAppBundle()
+    guard let id = UInt64(transactionId) else {
+        throw WireError(code: "invalidArgument", message: "'\(transactionId)' is not a transaction id")
+    }
+    if let kept = await pendingConsumables.remove(id) {
+        await kept.finish()
+        return
+    }
     for await verification in Transaction.unfinished {
-        if case .verified(let transaction) = verification, String(transaction.id) == transactionId {
+        if case .verified(let transaction) = verification, transaction.id == id {
             await transaction.finish()
             return
         }

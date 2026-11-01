@@ -2,6 +2,11 @@
 #define NUCLEUS_MACSTORE_H
 
 #include <stdint.h>
+#ifdef __OBJC__
+#import <Foundation/Foundation.h>
+#endif
+
+#pragma clang assume_nonnull begin
 
 /*
  * The C seam between the Objective-C JNI shim and the Swift StoreKit bridge.
@@ -20,5 +25,15 @@ _Bool nms_start_updates(void);
 /* Implemented by the JNI shim (NucleusMacStoreJni.m). */
 void nms_respond(int64_t id, const char *envelope);
 void nms_event(const char *json);
+
+#ifdef __OBJC__
+/* StoreKit Testing, in Objective-C under ARC (NucleusStoreKitTest.m): SKTestSession's alloc/init
+ * and its NSError ** methods, which raw Swift function-pointer calls get wrong. */
+NSObject *_Nullable nms_test_session_create(NSString *bundleId, NSURL *configuration, NSError *_Nullable *_Nullable error);
+BOOL nms_test_session_act(NSObject *session, NSString *action, NSString *productId, NSError *_Nullable *_Nullable error);
+
+#endif
+
+#pragma clang assume_nonnull end
 
 #endif

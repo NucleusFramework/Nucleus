@@ -231,6 +231,25 @@ object MacAppStoreE2E {
             testing.setRenewalRate(RenewalRate.RealTime)
             check("renewal rate accepted", true)
 
+            // StoreKit itself refusing an action (no subscription to renew) must come back as an
+            // error: its NSError was once over-released and crashed the process.
+            val refused = runCatching { testing.forceRenewal("pro") }.exceptionOrNull()
+            check(
+                "StoreKit refusal is a Platform error",
+                (refused as? StoreException)?.code == StoreErrorCode.Platform,
+            ) { refused }
+            // Twice: the refusal path of buyProductWithIdentifier: is the one that crashed.
+            repeat(2) {
+                val owned = runCatching { testing.buyOutsideApp("pro") }.exceptionOrNull()
+                check(
+                    "buying an owned product outside the app is refused",
+                    (owned as? StoreException)?.code == StoreErrorCode.Platform,
+                ) {
+                    owned
+                }
+            }
+            check("store still answers after a refusal", purchases.product("pro") != null)
+
             val unknown = runCatching { testing.refund("never.bought") }.exceptionOrNull()
             check(
                 "acting on nothing fails clearly",
@@ -349,6 +368,12 @@ object MacAppStoreE2E {
             val echo = withTimeoutOrNull(3_000) { next { it.purchase.transactionId == direct?.transactionId } }
             check("purchase() results are not echoed as updates", direct != null && echo == null) { echo }
 
+            // Store-side events must not swallow consumables the app has not consumed yet.
+            val stillOwed = purchases.list().map { it.transactionId }
+            check(
+                "unconsumed consumables survive store-side events",
+                coins?.transactionId in stillOwed && direct?.transactionId in stillOwed,
+            ) { "owed ${coins?.transactionId}, ${direct?.transactionId}; listed $stillOwed" }
             purchases.list().filter { it.productType == ProductType.Consumable }.forEach { purchases.consume(it) }
             collector.cancel()
         }

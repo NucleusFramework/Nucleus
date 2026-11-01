@@ -174,6 +174,13 @@ if (testing.isActive) {
 - There is no `declineAskToBuy`: StoreKit Testing reports a declined Ask to Buy to StoreKit 2 as
   a completed purchase.
 
+## Distribution
+
+The Mac App Store channel is the plugin's sandboxed JVM pipeline (`createSandboxedDistributable`,
+App Store PKG); the module runs inside the App Sandbox. A GraalVM native image cannot be
+sandboxed (it dies at start-up), so it is for Developer ID distribution, where there is no App
+Store to buy from.
+
 ## Platform requirements
 
 A shipped app reaches the store when it is signed for the Mac App Store and its bundle id has

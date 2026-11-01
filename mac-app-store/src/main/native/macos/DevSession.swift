@@ -39,23 +39,15 @@ enum DevSession {
         guard session == nil else { return }
         // Outside an app there is nothing to configure: every store call reports notBundled.
         guard isAppBundle, let bundleId = Bundle.main.bundleIdentifier else { return }
-        guard dlopen(args.framework, RTLD_NOW) != nil, let cls = NSClassFromString("SKTestSession") as? NSObject.Type else {
+        guard dlopen(args.framework, RTLD_NOW) != nil, NSClassFromString("SKTestSession") != nil else {
             let reason = dlerror().map { String(cString: $0) } ?? "SKTestSession not found"
             throw WireError(code: "platform", message: "Cannot load StoreKitTest from \(args.framework): \(reason)")
         }
-        guard let raw = cls.perform(NSSelectorFromString("alloc"))?.takeUnretainedValue() as? NSObject else {
-            throw WireError(code: "internal", message: "Cannot allocate SKTestSession")
-        }
-        raw.setValue(bundleId, forKey: "bundleID")
-        typealias Initializer = @convention(c) (AnyObject, Selector, NSURL, UnsafeMutablePointer<NSError?>) -> AnyObject?
-        let selector = NSSelectorFromString("initWithContentsOfURL:error:")
-        let initialize = unsafeBitCast(class_getMethodImplementation(cls, selector), to: Initializer.self)
         var error: NSError?
-        guard let made = initialize(raw, selector, URL(fileURLWithPath: args.configuration) as NSURL, &error) as? NSObject else {
+        guard let made = nms_test_session_create(bundleId, URL(fileURLWithPath: args.configuration), &error) else {
             throw WireError(
                 code: "invalidArgument",
-                message: "Cannot read StoreKit configuration \(args.configuration): \(error?.localizedDescription ?? "unknown error")",
-                platformCode: error?.code
+                message: "Cannot read StoreKit configuration \(args.configuration): \(error?.localizedDescription ?? "unknown error")"
             )
         }
         session = made
@@ -118,57 +110,19 @@ enum DevSession {
 
     // MARK: Actions
 
-    private typealias ById = @convention(c) (AnyObject, Selector, UInt, UnsafeMutablePointer<NSError?>) -> Bool
-    private typealias ByProduct = @convention(c) (AnyObject, Selector, NSString, UnsafeMutablePointer<NSError?>) -> Bool
-
-    /// Actions on the product's latest matching transaction of the session.
-    ///
-    /// No `declineAskToBuyTransactionWithIdentifier:`: the session marks the transaction failed,
+    /// Store-side events (refund, renewal, expiry, Ask to Buy, purchases made elsewhere), through
+    /// `NucleusStoreKitTest.m`. No decline of Ask to Buy: the session marks the transaction failed,
     /// but StoreKit 2 keeps reporting it as a verified, purchased transaction (JWS identical to an
     /// approved one, and the next purchase returns it without a new charge; Xcode 27.1).
-    private static let transactionActions: [String: (selector: String, matches: (NSObject) -> Bool)] = [
-        "refund": ("refundTransactionWithIdentifier:error:", { _ in true }),
-        "approveAskToBuy": ("approveAskToBuyTransactionWithIdentifier:error:", pendingAskToBuy),
-        "resolveIssue": ("resolveIssueForTransactionWithIdentifier:error:", { $0.value(forKey: "hasPurchaseIssue") as? Bool == true }),
-        "disableAutoRenew": ("disableAutoRenewForTransactionWithIdentifier:error:", { _ in true }),
-        "enableAutoRenew": ("enableAutoRenewForTransactionWithIdentifier:error:", { _ in true }),
-    ]
-
-    /// Actions on the product itself.
-    private static let productActions: [String: String] = [
-        "expire": "expireSubscriptionWithProductIdentifier:error:",
-        "forceRenewal": "forceRenewalOfSubscriptionWithProductIdentifier:error:",
-        // A purchase made outside the app (another device, the App Store app).
-        "buy": "buyProductWithIdentifier:error:",
-    ]
-
-    private static func pendingAskToBuy(_ transaction: NSObject) -> Bool {
-        transaction.value(forKey: "pendingAskToBuyConfirmation") as? Bool == true
-    }
-
     static func act(_ args: DevActArgs) throws {
         let session = try require()
         var error: NSError?
-        let done: Bool
-        if let action = transactionActions[args.action] {
-            let transactions = session.perform(NSSelectorFromString("allTransactions"))?.takeUnretainedValue() as? [NSObject] ?? []
-            guard let latest = transactions.last(where: { $0.value(forKey: "productIdentifier") as? String == args.productId && action.matches($0) }),
-                  let id = latest.value(forKey: "identifier") as? UInt else {
-                throw WireError(code: "invalidArgument", message: "No transaction of '\(args.productId)' to \(args.action)")
-            }
-            let selector = NSSelectorFromString(action.selector)
-            done = unsafeBitCast(session.method(for: selector), to: ById.self)(session, selector, id, &error)
-        } else if let name = productActions[args.action] {
-            let selector = NSSelectorFromString(name)
-            done = unsafeBitCast(session.method(for: selector), to: ByProduct.self)(session, selector, args.productId as NSString, &error)
-        } else {
-            throw WireError(code: "invalidArgument", message: "Unknown StoreKit Testing action '\(args.action)'")
-        }
-        guard done else {
+        guard nms_test_session_act(session, args.action, args.productId, &error) else {
+            let ours = error?.domain == "NucleusMacStore"
             throw WireError(
-                code: "platform",
+                code: ours ? "invalidArgument" : "platform",
                 message: "\(args.action) of '\(args.productId)' failed: \(error?.localizedDescription ?? "unknown error")",
-                platformCode: error?.code
+                platformCode: ours ? nil : error?.code
             )
         }
     }

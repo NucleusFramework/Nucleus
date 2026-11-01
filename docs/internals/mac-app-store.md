@@ -6,11 +6,13 @@ Kotlin-only `UnsupportedStoreBackend`, with no library.
 
 ## Native layout
 
-StoreKit 2 is Swift-only, so `nucleus_macstore` has two halves linked into one dylib:
+StoreKit 2 is Swift-only, so `nucleus_macstore` links three parts into one dylib:
 
 - `NucleusMacStoreJni.m` — the JNI shim, in C like every other bridge
   (`nucleus_jni_clear_exception`, `native-common/nucleus_jni.h`);
-- `MacStore.swift` — StoreKit, one `Task` per request.
+- `MacStore.swift`, `Purchases.swift`, `Updates.swift`, `DevSession.swift` — StoreKit, one
+  `Task` per request;
+- `NucleusStoreKitTest.m` — `SKTestSession` (StoreKit Testing), in Objective-C under ARC.
 
 They meet at the C functions of `nucleus_macstore.h` (Swift exports with `@_cdecl`, imports the
 shim's through `-import-objc-header`). `build.sh` compiles each half to an object per
@@ -80,6 +82,17 @@ Testing and its sheet attaches to the Lab window.
   a request Kotlin dropped: the bridge sees `Task.isCancelled` and also emits it as a
   `transaction` event, so it reaches the app through `purchaseUpdates`.
 
+### Consumables after a store-side event
+
+After a renewal, a refund or a purchase made elsewhere, StoreKit stops listing a pending
+consumable in `Transaction.unfinished` for the rest of the process, while it still holds it: the
+next purchase of the product returns that same transaction, and a relaunch lists and replays it
+(measured for each of the three events). `consume` looking it up in `Transaction.unfinished` then
+found nothing, left it unfinished, and the next launch delivered it again — a double grant. The
+bridge keeps the consumables it bought or delivered in this process (`PendingConsumables`) until
+they are consumed: `list` adds them, `consume` finishes them from there. Pinned by the E2E
+(`unconsumed consumables survive store-side events`).
+
 ## Updates
 
 `nms_start_updates` (on the first `purchaseUpdates` collector, after the development session —
@@ -144,6 +157,14 @@ Xcode 27.1:
   same transaction without a sheet. Nothing distinguishes it, so the API offers no decline.
 - `buyProductWithIdentifier:` (deprecated in favour of a Swift-only API) still makes a purchase
   StoreKit 2 delivers through `Transaction.updates` as made outside the app.
+- **StoreKitTest's `NSError **` cannot be trusted.** On a refusal (buying a subscription that is
+  already active outside the app) the error it writes is over-released: the process crashed in
+  `objc_autoreleasePoolPop` of the Swift task that made the call (every time in a GraalVM Lab,
+  sporadically on the JVM). The calls first went through raw method implementations from Swift,
+  which mishandled `alloc`/`init` and the out-parameter too; they now live in
+  `NucleusStoreKitTest.m` under ARC, behind a protocol declaring the real signatures, and pass
+  `NULL` for the error: a refusal is reported with our own message, and the crash is gone
+  (`buyOutsideApp` refused twice in a row, pinned by the E2E).
 - The settings persist in `storekitagent` per bundle id across launches (a run that turned the
   sheets off left them off for the next app under that id), hence `dev.settings` /
   `testing.settings()`, read through KVC on the same properties.
@@ -170,6 +191,26 @@ classpath (runtime jars, or ProGuard's output) and JVM arguments (`devJvmArgs`, 
 later runs under a second, code changes picked up without a rebuild of the shell, the
 configuration cache stored and reused. Not covered: the vtool-patched JDK `run` uses for Liquid
 Glass (the shell launcher is jpackage's).
+
+## Sandbox and GraalVM (tested on one Mac, no Apple account)
+
+- **App Sandbox, JVM.** The E2E runs entirely inside the sandbox (its code and `.storekit` in the
+  bundle, ad-hoc signed with `app-sandbox`, `network.client`, `get-task-allow`). So does the Lab
+  built by the plugin's sandboxed pipeline (`createSandboxedDistributable`, the Mac App Store
+  channel), signed with its own sandbox entitlements plus `get-task-allow`. One trap, not
+  specific to this module: a native library **extracted at run time** inside the sandbox
+  container is quarantined, and Gatekeeper blocks `dlopen` behind a prompt ("Apple could not
+  confirm…") — the process hangs. Packaged apps never extract (`nucleus.native.libraryPath`,
+  `java.library.path` on `Contents/Frameworks`), so only an ad-hoc test bundle hits it.
+- **GraalVM native image, no sandbox.** The Lab's native image runs the whole probe: the JNI
+  responses and events (`reachability-metadata.json`) and the loose `libnucleus_macstore.dylib`
+  next to the executable work as on the JVM.
+- **GraalVM + App Sandbox is impossible**, which is why the plugin refuses the combination: the
+  native image dies at start-up with `CSunMiscSignal.open() failed`, the sandbox denying
+  `ipc-posix-sem-create /cSunMiscSignal-<pid>` (Substrate's signal handling uses a named POSIX
+  semaphore; a sandboxed app may only create ones prefixed by its App Group).
+- Not testable without an Apple account: the real App Store sandbox and production (server-side
+  products, account sign-in), a build signed with a real certificate and provisioning profile.
 
 ## E2E
 
