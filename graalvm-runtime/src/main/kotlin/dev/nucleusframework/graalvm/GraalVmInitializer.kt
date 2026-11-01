@@ -124,7 +124,9 @@ public object GraalVmInitializer {
                 )
             }
         }
-        sandboxedUserHome(System::getenv)?.let { System.setProperty("user.home", it) }
+        sandboxedUserHome(System::getenv, System.getProperty("user.home"))?.let {
+            System.setProperty("user.home", it)
+        }
     }
 
     /** What the sandboxed bundle layout adds to the image's environment; see [applyMacOsAppSandbox]. */
@@ -152,10 +154,19 @@ public object GraalVmInitializer {
         )
     }
 
-    /** The container `HOME` to use as `user.home` when sandboxed, or `null` outside the sandbox. */
-    internal fun sandboxedUserHome(env: (String) -> String?): String? {
+    /**
+     * The container `HOME` to use as `user.home` when sandboxed, or `null` to leave [userHome] as is:
+     * outside the sandbox, or when it is not SubstrateVM's default — the account home the container
+     * lives in (`<account>/Library/Containers/<id>/Data`) — so an explicit `-Duser.home` wins.
+     */
+    internal fun sandboxedUserHome(
+        env: (String) -> String?,
+        userHome: String?,
+    ): String? {
         if (env(APP_SANDBOX_CONTAINER_ID_ENV).isNullOrBlank()) return null
-        return env("HOME")?.takeIf { it.isNotBlank() && File(it).isDirectory }
+        val home = env("HOME")?.takeIf { it.isNotBlank() && File(it).isDirectory } ?: return null
+        val accountHome = home.substringBefore(CONTAINERS_SEGMENT, missingDelimiterValue = "")
+        return home.takeIf { userHome.isNullOrBlank() || userHome.trimEnd('/') == accountHome }
     }
 
     private fun setIfAbsent(
@@ -167,6 +178,9 @@ public object GraalVmInitializer {
 
     /** Set by macOS in the environment of every sandboxed process. */
     private const val APP_SANDBOX_CONTAINER_ID_ENV = "APP_SANDBOX_CONTAINER_ID"
+
+    /** Where a sandboxed app's container sits under the account home. */
+    private const val CONTAINERS_SEGMENT = "/Library/Containers/"
 
     /** Written by the plugin's sandboxed pipeline (`SandboxMarkers.MANIFEST_FILENAME`). */
     private const val SANDBOX_MANIFEST_FILE = "nucleus-sandbox-manifest.properties"
@@ -245,13 +259,45 @@ public object GraalVmInitializer {
                 // fall through
             }
         }
-        return File(
+        return execDirOf(
             ProcessHandle
                 .current()
                 .info()
                 .command()
                 .orElse(""),
-        ).parentFile?.absolutePath ?: "."
+            System.getenv("PWD"),
+        )
+    }
+
+    /**
+     * The directory of the executable [command] names. On macOS the command is the path the
+     * process was started with, so it is canonicalized: launched through a symlink (a CLI link in
+     * `/usr/local/bin`) or a relative path (`./app`), its parent would otherwise not be the bundle's
+     * `Contents/MacOS`, and fonts and libraries would be looked up next to the link.
+     *
+     * A relative command is resolved against [workingDir] (the shell's `PWD`) when it is an absolute
+     * path: inside the App Sandbox SubstrateVM's `user.dir` is not the directory the process was
+     * started from.
+     */
+    internal fun execDirOf(
+        command: String,
+        workingDir: String? = null,
+    ): String {
+        if (command.isBlank()) return "."
+        val started = File(command)
+        val file =
+            if (started.isAbsolute || workingDir == null || !File(workingDir).isAbsolute) {
+                started
+            } else {
+                File(workingDir, command)
+            }
+        val resolved =
+            try {
+                file.canonicalFile
+            } catch (_: Exception) {
+                file.absoluteFile
+            }
+        return resolved.parentFile?.absolutePath ?: "."
     }
 
     /**

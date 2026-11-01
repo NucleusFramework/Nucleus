@@ -71,10 +71,21 @@ and brings the first window forward. Its FSEvents watch logs one `file-read-data
 ancestor of the container (`/Users`, `/Users/<name>`, …, `Containers/<bundle id>`) — harmless, the
 watch works.
 
-**Test-launch trap**: start the sandboxed binary by its absolute path (or `open`). Started as
-`./nucleus-lab`, the image inside the sandbox resolves its executable directory wrong, the font
-configuration is not found, and composition dies with "Fontconfig head is null". Finder, `open` and
-the Dock always pass the absolute path.
+**Launch path** (`GraalVmInitializer.execDirOf`): on macOS the executable directory comes from
+`ProcessHandle…command()`, the path the process was started with. It is canonicalized, so a CLI
+symlink (`/usr/local/bin/app` → `…/Contents/MacOS/app`) finds the bundle's fonts and libraries —
+before, every image launched through a symlink died with "Fontconfig head is null". A relative
+path (`./app`) is resolved against `PWD`: inside the sandbox SubstrateVM's `user.dir` is not the
+directory the process started in. A sandboxed image launched through a symlink still dies, in
+AppKit ("NSRemoteView encountered app without bundle"): a sandboxed app must run from its bundle,
+as LaunchServices always does.
+
+**Torture run** (sandboxed Lab): every probe opened (25 from the sidebar, 37 by `LAB_PROBE`) with
+no crash or exception; the only denials are the sandbox's own business and identical on the JVM
+(`AppleSMCClient` for temperatures, `locationd` without the location entitlement, `ps` being
+setuid). 20 × SIGTERM, SIGINT + SIGTERM together, SIGTERM 0.3 s into start-up: same exit codes
+as the regular image, never a hang. Five simultaneous launches leave one instance; a `kill -9`
+leaves no stale lock; a bundle under a path with spaces and accents works.
 
 **Memory**: the sandboxed variant doubles native-image work (two compiles, ~8.5 GiB each, run one
 after the other). To iterate on packaging only, exclude both compiles:

@@ -77,16 +77,45 @@ class GraalVmInitializerTest {
     }
 
     @Test
-    fun `user home follows the container only inside the sandbox`() {
-        val container = Files.createTempDirectory("nucleus-container").toFile()
+    fun `exec dir follows symlinks and relative paths to the real executable`() {
+        val root = Files.createTempDirectory("nucleus-exec").toFile().canonicalFile
         try {
-            val sandboxed = mapOf("APP_SANDBOX_CONTAINER_ID" to "dev.app", "HOME" to container.path)
-            assertEquals(container.path, GraalVmInitializer.sandboxedUserHome(sandboxed::get))
-            assertNull(GraalVmInitializer.sandboxedUserHome(mapOf("HOME" to container.path)::get))
-            val missingHome = mapOf("APP_SANDBOX_CONTAINER_ID" to "dev.app", "HOME" to "/nope")
-            assertNull(GraalVmInitializer.sandboxedUserHome(missingHome::get))
+            val macOs = root.resolve("App.app/Contents/MacOS").apply { mkdirs() }
+            val binary = macOs.resolve("app").apply { writeText("") }
+            val link = root.resolve("bin/app")
+            link.parentFile.mkdirs()
+            Files.createSymbolicLink(link.toPath(), binary.toPath())
+
+            assertEquals(macOs.path, GraalVmInitializer.execDirOf(binary.path))
+            assertEquals(macOs.path, GraalVmInitializer.execDirOf(link.path))
+            assertEquals(".", GraalVmInitializer.execDirOf(""))
+            // ./app started from Contents/MacOS, whatever user.dir says.
+            assertEquals(macOs.path, GraalVmInitializer.execDirOf("./app", macOs.path))
+            // A relative symlink path: both resolutions apply.
+            assertEquals(macOs.path, GraalVmInitializer.execDirOf("bin/app", root.path))
         } finally {
-            container.deleteRecursively()
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `user home follows the container only inside the sandbox`() {
+        val account = Files.createTempDirectory("nucleus-account").toFile()
+        try {
+            val container = account.resolve("Library/Containers/dev.app/Data").apply { mkdirs() }
+            val sandboxed = mapOf("APP_SANDBOX_CONTAINER_ID" to "dev.app", "HOME" to container.path)
+            // SubstrateVM's default (the account home) moves to the container.
+            assertEquals(container.path, GraalVmInitializer.sandboxedUserHome(sandboxed::get, account.path))
+            assertEquals(container.path, GraalVmInitializer.sandboxedUserHome(sandboxed::get, null))
+            // An explicit -Duser.home wins.
+            assertNull(GraalVmInitializer.sandboxedUserHome(sandboxed::get, "/explicit/home"))
+            // Outside the sandbox nothing changes.
+            val unsandboxed = mapOf("HOME" to container.path)
+            assertNull(GraalVmInitializer.sandboxedUserHome(unsandboxed::get, account.path))
+            val missingHome = mapOf("APP_SANDBOX_CONTAINER_ID" to "dev.app", "HOME" to "/nope")
+            assertNull(GraalVmInitializer.sandboxedUserHome(missingHome::get, account.path))
+        } finally {
+            account.deleteRecursively()
         }
     }
 
