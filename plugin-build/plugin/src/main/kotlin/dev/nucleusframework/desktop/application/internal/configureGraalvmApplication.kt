@@ -1603,9 +1603,19 @@ private fun JvmApplicationContext.registerSandboxedMacGraalvmApp(
             mainJarName.set(sandboxedJar.map { it.asFile.name })
             outputDir.set(appTmpDir.map { it.dir("graalvm/sandboxed/rewritten-jars") })
             manifestOutputDir.set(appTmpDir.map { it.dir("graalvm/sandboxed/manifest") })
-            // Matched against JAR names: the image is compiled from one uber JAR, so the escape
-            // hatch can only keep everything (or nothing) verbatim here.
-            keepNativeLibsInJar.set(provider { app.nativeDistributions.sandboxing.keepNativeLibsInJars })
+            // The escape hatch matches dependency JAR names, and the image has one uber JAR: a
+            // substring would either match nothing or keep every library verbatim (all of them then
+            // extracted at run time, which the sandbox refuses). It does not apply here.
+            keepNativeLibsInJar.set(emptySet())
+            val kept = app.nativeDistributions.sandboxing.keepNativeLibsInJars
+            if (kept.isNotEmpty()) {
+                logger.warn(
+                    "sandboxing.keepNativeLibsInJars ({}) does not apply to the GraalVM native image: it is " +
+                        "compiled from a single uber JAR, so every native library is redirected to " +
+                        "Contents/Frameworks.",
+                    kept.joinToString(),
+                )
+            }
         }
     // The rewritten JAR's name is content-mangled and only known once the strip ran: copy it, and
     // the shim, under fixed names the compile task can declare up front.

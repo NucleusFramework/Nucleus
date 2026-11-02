@@ -41,6 +41,10 @@ Three things kill or cripple a regular native image under `com.apple.security.ap
 | `createSandboxedGraalvmNativeDistributable` | `AbstractAssembleSandboxedGraalvmMacAppTask`: `ditto` of the regular `.app`, sandboxed binary swapped in (build-version patch, rpath, `strip -x`), libs signed in `Contents/Frameworks`, manifest in `Contents/Resources`, provisioning profile embedded, ad hoc signature with the sandbox entitlements |
 | `runSandboxedGraalvmNativeDistributable` | runs it |
 
+`sandboxing.keepNativeLibsInJars` does not apply (warning): it matches dependency JAR names, and
+the image is compiled from one uber JAR, so a substring would match nothing or keep every library
+verbatim — all of them then extracted at run time, which the sandbox refuses.
+
 The App Store PKG task packages that bundle and re-signs it with the real identity, like the JVM
 store pipeline. Flatpak (the other sandboxed format) stays unsupported for GraalVM.
 
