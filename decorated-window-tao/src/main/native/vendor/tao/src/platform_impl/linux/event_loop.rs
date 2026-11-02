@@ -1799,6 +1799,19 @@ fn popup_anchor(
   // GTK only manages the shadow width of client-decorated windows, so this
   // sticks: the xdg window geometry becomes the content, margins excluded.
   gdk_window.set_shadow_width(left, right, top, bottom);
+  // PATCH(nucleus): on a hidden window the size request and the resize above
+  // only take effect in GTK's resize pass, an idle that runs below the
+  // priority of tao's window requests. Since the loop drains GTK's queue in
+  // batches (#814), the `Visible` request that follows this anchor runs before
+  // that pass: the popup mapped at its creation size (1x1), then GDK re-created
+  // it — a new `wl_surface` — once the real size landed, orphaning the EGL
+  // subsurface attached to the first one, and the menu never showed. Size the
+  // GdkWindow now, so the map already has it. After the shadow width, never
+  // before: GDK keeps the window geometry when the margins change, growing the
+  // window by them, so a resize ahead of them ends up a shadow too large.
+  if width > 0 && height > 0 && !window.is_mapped() {
+    gdk_window.resize(width, height);
+  }
   let rect = gdk::Rectangle::new(x, y, 1, 1);
   unsafe {
     move_to_rect(
