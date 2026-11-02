@@ -3,8 +3,31 @@
 The Lab ships on Flathub as `dev.nucleusframework.Lab`, the way a closed-source Nucleus app would:
 Flathub compiles nothing, its manifest repackages the GraalVM native image the release already
 publishes (`nucleus-lab-<version>-linux-{x64,arm64}.tar.gz`, built by `packageGraalvmTar` in
-`release-desktop`). Everything lives in `examples/lab/app/packaging/flathub/`;
-`render-manifest.sh` turns it into the content of `github.com/flathub/dev.nucleusframework.Lab`.
+`release-desktop`).
+
+## `linux { flathub { } }` and `generateFlathubRepository`
+
+The plugin writes the Flathub repository of any app from its DSL: `generateFlathubRepository`
+fills `build/flathub/<appId>/` with the manifest, the AppStream metainfo, the desktop entry, the
+icon, the shared-mime-info XML and, for a subset of architectures, `flathub.json` — the content of
+`github.com/flathub/<appId>`. `flathub { }` only holds what Flathub alone needs (`appId`, `summary`,
+`projectLicense`, `archiveUrl`, screenshots, finish-args…); the name, description, vendor,
+homepage, categories, icon, `fileAssociation` (MIME types) and `protocol` (`x-scheme-handler`)
+come from the rest of the DSL, the version from `packageVersion`, the executable from the GraalVM
+image name (`bin/<packageName>` for a jpackage build). It is independent of `flatpak { }`, which
+builds a `.flatpak` bundle through electron-builder that Flathub does not accept.
+
+- **Sources.** `archiveUrl` is a template (`{version}`, `{arch}` → `x64` / `arm64`); the task
+  downloads each archive once to hash it, so the release must exist first. With
+  `-Pnucleus.flathub.localArchive=<tar.gz>` it uses that file instead (host architecture only),
+  copied next to the manifest: the local loop below.
+- **Checks** before writing, failing the task with every problem at once: reverse-DNS app id, a
+  summary of at most 35 characters without a trailing period, description, license, developer,
+  categories, at least one screenshot, `#rrggbb` branding, and a square PNG icon of 256 px or more.
+- `-Pnucleus.flathub.releaseDate=YYYY-MM-DD` pins the metainfo release date (default: today, UTC).
+
+The Lab's block is the reference; `packaging/flathub/` keeps only its square icon and the
+screenshots.
 
 ## Manifest
 
@@ -43,10 +66,11 @@ minutes per iteration. `R=~/.cache/nucleus-flathub`:
 
 ```bash
 RELEASE_VERSION=1.0.1 ./gradlew :examples:lab:app:packageGraalvmTar
-examples/lab/app/packaging/flathub/render-manifest.sh $R/render --local 1.0.1 \
-  examples/lab/app/build/compose/binaries/main/graalvm-tar.gz/nucleus-lab-1.0.1-linux-x64.tar.gz
+RELEASE_VERSION=1.0.1 ./gradlew :examples:lab:app:generateFlathubRepository \
+  -Pnucleus.flathub.localArchive=examples/lab/app/build/compose/binaries/main/graalvm-tar.gz/nucleus-lab-1.0.1-linux-x64.tar.gz
+G=examples/lab/app/build/flathub/dev.nucleusframework.Lab
 flatpak-builder --user --install-deps-from=flathub --repo=$R/repo --default-branch=stable \
-  --force-clean --state-dir=$R/state $R/build $R/render/dev.nucleusframework.Lab.yml
+  --force-clean --state-dir=$R/state $R/build $G/dev.nucleusframework.Lab.yml
 flatpak --user remote-add --if-not-exists --no-gpg-verify nucleus-local file://$R/repo
 flatpak --user install nucleus-local dev.nucleusframework.Lab
 ```
@@ -58,12 +82,12 @@ Building the next version into the same repository makes it an update of the ins
 
 Flathub's checks only pass on a build made with Flathub's flags (`--compose-url-policy=full`,
 `--mirror-screenshots-url`): a plain `flatpak-builder` repository fails on the media URLs, and the
-host's `appstreamcli` ignores the URL policy. Use the builder's own wrapper, with the screenshots
-served (`--local` points them at `$SCREENSHOTS_URL`, default `http://localhost:8765`):
+host's `appstreamcli` ignores the URL policy. Use the builder's own wrapper on a copy of the
+generated repository (the screenshots must be reachable: generate it for a pushed tag, e.g.
+`RELEASE_VERSION=<released version>`):
 
 ```bash
-python3 -m http.server 8765 --directory examples/lab/app/packaging/flathub/screenshots &
-cd $R/render && flatpak run --filesystem=$R --share=network --command=flathub-build \
+cp -r $G $R/generated && cd $R/generated && flatpak run --filesystem=$R --share=network --command=flathub-build \
   org.flatpak.Builder --disable-rofiles-fuse dev.nucleusframework.Lab.yml
 flatpak run --filesystem=$R --command=flatpak-builder-lint org.flatpak.Builder manifest dev.nucleusframework.Lab.yml
 flatpak run --filesystem=$R --command=flatpak-builder-lint org.flatpak.Builder repo repo
@@ -72,7 +96,7 @@ flatpak run --filesystem=$R --command=flatpak-builder-lint org.flatpak.Builder r
 `--disable-rofiles-fuse` is only for machines where FUSE fails inside the sandbox. The linter
 fetches Flathub's summary: behind a TLS-inspecting proxy, give it the host bundle
 (`--filesystem=host-etc --env=REQUESTS_CA_BUNDLE=/run/host/etc/ssl/certs/ca-certificates.crt`).
-Inputs must sit next to the manifest, which is why `--local` copies the archives there.
+Inputs must sit next to the manifest, which is why a local archive is copied there.
 
 ## Screenshots
 
@@ -85,8 +109,8 @@ WAYLAND_DISPLAY=wayland-lab flatpak run --env=GDK_BACKEND=wayland --env=LAB_PROB
 WAYLAND_DISPLAY=wayland-lab weston-screenshooter   # GL readback is upside down: magick … -flip
 ```
 
-In `--release` mode the metainfo points at the screenshots of the release tag, so they must be
-committed before the tag is cut.
+The Lab's metainfo points at the screenshots of its release tag, so they must be committed
+before the tag is cut.
 
 ## In-app updates (`flatpak` module)
 

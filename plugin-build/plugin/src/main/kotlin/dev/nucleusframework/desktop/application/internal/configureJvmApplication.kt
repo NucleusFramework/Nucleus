@@ -22,6 +22,7 @@ import dev.nucleusframework.desktop.application.tasks.AbstractElectronBuilderPac
 import dev.nucleusframework.desktop.application.tasks.AbstractExtractNativeLibsTask
 import dev.nucleusframework.desktop.application.tasks.AbstractGenerateAotCacheTask
 import dev.nucleusframework.desktop.application.tasks.AbstractGenerateAppPropertiesTask
+import dev.nucleusframework.desktop.application.tasks.AbstractGenerateFlathubRepositoryTask
 import dev.nucleusframework.desktop.application.tasks.AbstractJLinkTask
 import dev.nucleusframework.desktop.application.tasks.AbstractJPackageTask
 import dev.nucleusframework.desktop.application.tasks.AbstractMergeUpdateYmlTask
@@ -474,6 +475,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         registerUpdateYmlMergeIfNeeded(nonStoreFormats, nonStorePackageFormats)
 
     registerServeUpdateFeedIfNeeded(nonStoreFormats, nonStorePackageFormats)
+    if (buildType === app.buildTypes.default) registerFlathubRepositoryIfNeeded()
 
     val notarizeForCurrentOS =
         if (allNotarizeTasks.isNotEmpty()) {
@@ -1527,5 +1529,75 @@ private fun JvmApplicationContext.registerPatchMacJvmTask(
             it.sdkVersion.set(sdkVersion)
             it.outputJavaHome.set(project.layout.buildDirectory.dir("nucleus/patched-jvm"))
         }
+    }
+}
+
+/**
+ * Registers `generateFlathubRepository` when `linux { flathub { appId } }` is set: the Flathub
+ * repository of the app, built from its released `tar.gz` (see [AbstractGenerateFlathubRepositoryTask]).
+ * Every value is resolved when the task runs, from the DSL as a whole.
+ */
+private fun JvmApplicationContext.registerFlathubRepositoryIfNeeded() {
+    val distributions = app.nativeDistributions
+    val linux = distributions.linux
+    val flathub = linux.flathub
+    val appId = flathub.appId ?: return
+    val version = packageVersionFor(TargetFormat.Tar)
+    val graalvm = app.graalvm
+    val imageName = graalvm.imageName.orElse(packageNameProvider)
+
+    tasks.register<AbstractGenerateFlathubRepositoryTask>(
+        taskNameAction = "generate",
+        taskNameObject = "flathubRepository",
+    ) {
+        description = "Writes the Flathub repository of the app (manifest, metainfo, desktop entry, icon)"
+        spec.set(
+            project.provider {
+                val packageName = packageNameProvider.get()
+                FlathubSpec(
+                    appId = appId,
+                    name = distributions.appName ?: packageName,
+                    version = version.get(),
+                    releaseDate =
+                        project.findProperty("nucleus.flathub.releaseDate")?.toString()
+                            ?: java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString(),
+                    runtime = flathub.runtime,
+                    runtimeVersion = flathub.runtimeVersion,
+                    sdk = flathub.sdk,
+                    finishArgs = flathub.finishArgs,
+                    executable =
+                        flathub.executable
+                            ?: if (graalvm.isEnabled.get()) imageName.get() else "bin/$packageName",
+                    summary = flathub.summary.orEmpty(),
+                    description = flathub.description ?: distributions.description.orEmpty(),
+                    projectLicense = flathub.projectLicense.orEmpty(),
+                    developerId = flathub.developerId ?: appId.substringBeforeLast('.'),
+                    developerName = flathub.developerName ?: distributions.vendor.orEmpty(),
+                    homepage = distributions.homepage,
+                    bugtrackerUrl = flathub.bugtrackerUrl,
+                    vcsBrowserUrl = flathub.vcsBrowserUrl,
+                    categories =
+                        flathub.categories.ifEmpty {
+                            (linux.appCategory ?: linux.menuGroup)
+                                ?.split(';')
+                                ?.map(String::trim)
+                                ?.filter(String::isNotEmpty)
+                                .orEmpty()
+                        },
+                    keywords = flathub.keywords,
+                    brandingLight = flathub.brandingLight,
+                    brandingDark = flathub.brandingDark,
+                    screenshots = flathub.screenshots.toList(),
+                    mimeTypes =
+                        linux.fileAssociations.map { FlathubMimeType(it.mimeType, it.extension, it.description) },
+                    urlSchemes = distributions.protocols.flatMap { it.schemes },
+                    arches = flathub.arches.sortedBy { it.ordinal },
+                )
+            },
+        )
+        flathub.archiveUrl?.let(archiveUrl::set)
+        project.findProperty("nucleus.flathub.localArchive")?.let { localArchive.set(project.file(it)) }
+        iconFile.set(flathub.iconFile.orElse(linux.iconFile))
+        outputDir.set(project.layout.buildDirectory.dir("flathub/$appId"))
     }
 }
