@@ -24,6 +24,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.security.MessageDigest
+import java.util.Locale
 
 /**
  * Writes the Flathub repository of the app (`linux { flathub { } }`) into [outputDir]: manifest,
@@ -132,7 +133,7 @@ abstract class AbstractGenerateFlathubRepositoryTask : DefaultTask() {
             if (read < 0) break
             digest.update(buffer, 0, read)
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it) }
     }
 
     private fun hostFlatpakArch(): String =

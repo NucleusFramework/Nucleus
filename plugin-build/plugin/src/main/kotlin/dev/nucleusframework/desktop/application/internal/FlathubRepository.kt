@@ -210,10 +210,10 @@ internal object FlathubRepository {
                     "homepage" to spec.homepage,
                     "bugtracker" to spec.bugtrackerUrl,
                     "vcs-browser" to spec.vcsBrowserUrl,
-                ).filter { it.second != null }
+                ).mapNotNull { (type, url) -> url?.let { type to it } }
             if (urls.isNotEmpty()) {
                 appendLine()
-                urls.forEach { (type, url) -> appendLine("""  <url type="$type">${xml(url!!)}</url>""") }
+                urls.forEach { (type, url) -> appendLine("""  <url type="$type">${xml(url)}</url>""") }
             }
             appendLine()
             appendLine("  <categories>")
