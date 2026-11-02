@@ -25,6 +25,10 @@ builds a `.flatpak` bundle through electron-builder that Flathub does not accept
   summary of at most 35 characters without a trailing period, description, license, developer,
   categories, at least one screenshot, `#rrggbb` branding, and a square PNG icon of 256 px or more.
 - `-Pnucleus.flathub.releaseDate=YYYY-MM-DD` pins the metainfo release date (default: today, UTC).
+- **Output.** `flathub { outputDir }` (default `build/flathub/<appId>`), or
+  `-Pnucleus.flathub.outputDir=<dir>` for one run, may be a clone of `github.com/flathub/<appId>`:
+  the task only replaces the files it writes and removes `flathub.json` or the MIME file when they
+  no longer apply. It never wipes the directory, so `.git` and files of your own stay.
 
 The Lab's block is the reference; `packaging/flathub/` keeps only its square icon and the
 screenshots.

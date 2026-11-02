@@ -1,5 +1,6 @@
 package dev.nucleusframework.desktop.application.dsl
 
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
 import java.io.Serializable
@@ -9,7 +10,8 @@ import javax.inject.Inject
  * The Flathub repository of the app: a manifest that repackages its released Linux `tar.gz`
  * (Flathub builds nothing from source, the path a closed-source app takes) and the AppStream
  * metadata, desktop entry, icon and MIME types it installs. `generateFlathubRepository` writes
- * them into `build/flathub/<appId>/`, the content of `github.com/flathub/<appId>`.
+ * them into [outputDir] (`build/flathub/<appId>/` by default), the content of
+ * `github.com/flathub/<appId>`.
  *
  * ```kotlin
  * linux {
@@ -103,6 +105,14 @@ abstract class FlathubSettings {
 
     /** Square PNG of at least 256 px. Default: `linux.iconFile`. */
     val iconFile: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * Where `generateFlathubRepository` writes. Default: `build/flathub/<appId>`. Point it at a clone
+     * of `github.com/flathub/<appId>` to update it in place: the task only replaces the files it
+     * writes (and removes `flathub.json` or the MIME file when they no longer apply), never the
+     * rest of the clone.
+     */
+    val outputDir: DirectoryProperty = objects.directoryProperty()
 
     internal val screenshots: MutableList<FlathubScreenshot> = mutableListOf()
 

@@ -28,6 +28,8 @@ import java.security.MessageDigest
 /**
  * Writes the Flathub repository of the app (`linux { flathub { } }`) into [outputDir]: manifest,
  * metainfo, desktop entry, icon, MIME types and, for a subset of architectures, `flathub.json`.
+ * [outputDir] may be a clone of the Flathub repository: only these files are replaced, nothing
+ * else in it is touched.
  *
  * Each archive comes from `archiveUrl` (downloaded once to hash it), or, with [localArchive], from
  * a local `tar.gz` of the host architecture copied next to the manifest — the local repository
@@ -66,17 +68,18 @@ abstract class AbstractGenerateFlathubRepositoryTask : DefaultTask() {
             )
         }
 
+        // Never wiped: outputDir may be a clone of github.com/flathub/<appId>, with its .git and
+        // files of its own. Only the files this task writes are replaced.
         val dir = outputDir.get().asFile
-        dir.deleteRecursively()
         dir.mkdirs()
 
         val sources = sources(spec, dir)
         dir.resolve(spec.manifestFile).writeText(FlathubRepository.manifest(spec, sources))
         dir.resolve(spec.metainfoFile).writeText(FlathubRepository.metainfo(spec))
         dir.resolve(spec.desktopFile).writeText(FlathubRepository.desktopEntry(spec))
-        icon.copyTo(dir.resolve(spec.iconFile))
-        FlathubRepository.mimeInfo(spec)?.let { dir.resolve(spec.mimeFile).writeText(it) }
-        FlathubRepository.flathubJson(spec)?.let { dir.resolve("flathub.json").writeText(it) }
+        icon.copyTo(dir.resolve(spec.iconFile), overwrite = true)
+        writeOrDelete(dir.resolve(spec.mimeFile), FlathubRepository.mimeInfo(spec))
+        writeOrDelete(dir.resolve("flathub.json"), FlathubRepository.flathubJson(spec))
         logger.lifecycle("Flathub repository of ${spec.appId} ${spec.version}: $dir")
     }
 
@@ -88,7 +91,7 @@ abstract class AbstractGenerateFlathubRepositoryTask : DefaultTask() {
         if (local != null) {
             // Only the host's architecture exists locally: the manifest builds that one.
             val arch = spec.arches.firstOrNull { it.flatpakArch == hostFlatpakArch() } ?: spec.arches.first()
-            local.copyTo(dir.resolve(local.name))
+            local.copyTo(dir.resolve(local.name), overwrite = true)
             return listOf(FlathubSource(arch, local.name, isUrl = false, sha256 = local.inputStream().use(::sha256)))
         }
         val template =
@@ -108,6 +111,14 @@ abstract class AbstractGenerateFlathubRepositoryTask : DefaultTask() {
             }
             FlathubSource(arch, url, isUrl = true, sha256 = response.body().use(::sha256))
         }
+    }
+
+    /** Writes [content], or deletes a file a previous run wrote when it no longer applies. */
+    private fun writeOrDelete(
+        file: File,
+        content: String?,
+    ) {
+        if (content != null) file.writeText(content) else file.delete()
     }
 
     private fun sha256(input: InputStream): String {

@@ -1598,6 +1598,8 @@ private fun JvmApplicationContext.registerFlathubRepositoryIfNeeded() {
         flathub.archiveUrl?.let(archiveUrl::set)
         project.findProperty("nucleus.flathub.localArchive")?.let { localArchive.set(project.file(it)) }
         iconFile.set(flathub.iconFile.orElse(linux.iconFile))
-        outputDir.set(project.layout.buildDirectory.dir("flathub/$appId"))
+        outputDir.set(flathub.outputDir.orElse(project.layout.buildDirectory.dir("flathub/$appId")))
+        // A clone of github.com/flathub/<appId> to update in place, without touching the build script.
+        project.findProperty("nucleus.flathub.outputDir")?.let { outputDir.set(project.file(it)) }
     }
 }
