@@ -21,7 +21,10 @@ data class FlathubMimeType(
 data class FlathubSpec(
     val appId: String,
     val name: String,
+    /** The release the store shows (metainfo); Flathub's stable remote refuses pre-release words in it. */
     val version: String,
+    /** The package version, the `{version}` of the archive URL. */
+    val archiveVersion: String,
     val releaseDate: String,
     val runtime: String,
     val runtimeVersion: String,
@@ -292,6 +295,9 @@ internal object FlathubChecks {
     private val APP_ID = Regex("[A-Za-z_][A-Za-z0-9_-]*(\\.[A-Za-z_][A-Za-z0-9_-]*){2,}")
     private val COLOR = Regex("#[0-9a-fA-F]{6}")
 
+    // flatpak-builder-lint's is_latest_release_prerelease, word for word.
+    private val PRERELEASE = Regex("(alpha|beta|rc|pre(?:view)?|dev(?:el)?)", RegexOption.IGNORE_CASE)
+
     /** What Flathub's review or linter would reject, as messages; empty when the spec is fine. */
     fun problems(spec: FlathubSpec): List<String> =
         buildList {
@@ -311,6 +317,12 @@ internal object FlathubChecks {
             if (spec.categories.isEmpty()) add("categories are required (flathub { categories } or linux.appCategory)")
             if (spec.screenshots.isEmpty()) add("at least one screenshot is required")
             if (spec.arches.isEmpty()) add("arches must not be empty")
+            if (PRERELEASE.containsMatchIn(spec.version)) {
+                add(
+                    "release version '${spec.version}' reads as a pre-release, which Flathub's stable remote " +
+                        "refuses (appstream-latest-release-is-prerelease): set flathub { releaseVersion }",
+                )
+            }
             listOfNotNull(spec.brandingLight, spec.brandingDark).filterNot(COLOR::matches).forEach {
                 add("branding color '$it' must be #rrggbb")
             }

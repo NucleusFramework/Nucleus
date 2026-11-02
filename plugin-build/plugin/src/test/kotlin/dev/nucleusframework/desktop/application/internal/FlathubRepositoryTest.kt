@@ -17,6 +17,7 @@ class FlathubRepositoryTest {
             appId = "com.example.App",
             name = "Example & Co",
             version = "1.2.3",
+            archiveVersion = "1.2.3",
             releaseDate = "2026-11-02",
             runtime = "org.gnome.Platform",
             runtimeVersion = "51",
@@ -137,6 +138,15 @@ class FlathubRepositoryTest {
                 ),
             )
         assertEquals(4, problems.size)
+    }
+
+    @Test
+    fun `a pre-release version is refused like Flathub's stable remote does`() {
+        for (version in listOf("3.0.0-dev-202611011507", "1.0-alpha.2", "2.0.0-RC1", "1.0-beta", "4.0-preview")) {
+            val problems = FlathubChecks.problems(spec.copy(version = version))
+            assertTrue(version, problems.single().contains("pre-release"))
+        }
+        assertEquals(emptyList<String>(), FlathubChecks.problems(spec.copy(version = "2026.11.01")))
     }
 
     @Test

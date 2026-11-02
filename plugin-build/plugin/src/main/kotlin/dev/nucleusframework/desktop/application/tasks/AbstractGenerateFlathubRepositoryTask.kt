@@ -101,7 +101,7 @@ abstract class AbstractGenerateFlathubRepositoryTask : DefaultTask() {
                 )
         val client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build()
         return spec.arches.map { arch ->
-            val url = FlathubRepository.archiveUrl(template, spec.version, arch)
+            val url = FlathubRepository.archiveUrl(template, spec.archiveVersion, arch)
             logger.lifecycle("Hashing $url")
             val request = HttpRequest.newBuilder(URI(url)).build()
             val response = client.send(request, HttpResponse.BodyHandlers.ofInputStream())

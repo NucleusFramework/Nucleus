@@ -1557,7 +1557,11 @@ private fun JvmApplicationContext.registerFlathubRepositoryIfNeeded() {
                 FlathubSpec(
                     appId = appId,
                     name = distributions.appName ?: packageName,
-                    version = version.get(),
+                    version =
+                        project.findProperty("nucleus.flathub.releaseVersion")?.toString()
+                            ?: flathub.releaseVersion
+                            ?: version.get(),
+                    archiveVersion = version.get(),
                     releaseDate =
                         project.findProperty("nucleus.flathub.releaseDate")?.toString()
                             ?: java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString(),

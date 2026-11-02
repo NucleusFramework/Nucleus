@@ -58,6 +58,13 @@ abstract class FlathubSettings {
      */
     var archiveUrl: String? = null
 
+    /**
+     * The release version the store shows. Default: the package version. Flathub's stable remote
+     * refuses any containing `alpha`, `beta`, `rc`, `pre` or `dev`: a pre-release build needs a
+     * version of its own here (a date, say), while [archiveUrl] keeps using the package version.
+     */
+    var releaseVersion: String? = null
+
     /** Architectures to publish; Flathub builds both by default. */
     var arches: Set<FlathubArch> = setOf(FlathubArch.X86_64, FlathubArch.AARCH64)
 

@@ -74,6 +74,15 @@ val releaseVersion =
 
 val nativePackageVersion = releaseVersion.substringBefore("-")
 
+// Flathub's stable remote refuses pre-release versions (dev, alpha, rc…): a dev build goes there
+// under the date of its tag (v3.0.0-dev-202611011507 → 2026.11.01). Read outside flathub { },
+// whose own releaseVersion would shadow the script's.
+val labReleaseTag = "v$releaseVersion"
+val flathubReleaseVersion =
+    Regex("-dev-(\\d{4})(\\d{2})(\\d{2})\\d{4}$").find(releaseVersion)?.destructured?.let { (year, month, day) ->
+        "$year.$month.$day"
+    }
+
 nucleus.application {
     mainClass = "dev.nucleusframework.lab.app.MainKt"
     javaHome = jvm25.get()
@@ -183,6 +192,7 @@ nucleus.application {
             flathub {
                 appId = "dev.nucleusframework.Lab"
                 summary = "Explore the Nucleus desktop APIs"
+                releaseVersion = flathubReleaseVersion
                 projectLicense = "MIT"
                 developerName = "Nucleus"
                 archiveUrl =
@@ -221,7 +231,7 @@ nucleus.application {
                 brandingDark = "#242d55"
                 iconFile.set(project.file("packaging/flathub/dev.nucleusframework.Lab.png"))
                 // Served from the release tag: committed before the tag is cut.
-                val shots = "https://raw.githubusercontent.com/NucleusFramework/Nucleus/v$releaseVersion/examples/lab/app/packaging/flathub/screenshots"
+                val shots = "https://raw.githubusercontent.com/NucleusFramework/Nucleus/$labReleaseTag/examples/lab/app/packaging/flathub/screenshots"
                 screenshot("$shots/overview.png", "Every probe of the Lab and where this run stands")
                 screenshot("$shots/design-system.png", "The same windows themed by Material 2, Material 3 and Jewel")
                 screenshot("$shots/appearance.png", "Dark mode, accent color and contrast followed live")

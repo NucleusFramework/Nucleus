@@ -97,6 +97,18 @@ flatpak run --filesystem=$R --command=flatpak-builder-lint org.flatpak.Builder m
 flatpak run --filesystem=$R --command=flatpak-builder-lint org.flatpak.Builder repo repo
 ```
 
+Flathub's CI lints with `--exceptions --exceptions-repo stable` and with `REPO` pointing at
+`https://github.com/flathub/flathub`: the linter only applies its new-submission rules when that
+variable says so. Without it a local lint passes builds the CI refuses, such as a pre-release
+version (`appstream-latest-release-is-prerelease`, never granted an exception: any release
+version containing `alpha`, `beta`, `rc`, `pre` or `dev`). Reproduce the CI with
+`flatpak run --env=REPO=https://github.com/flathub/flathub --command=flatpak-builder-lint
+org.flatpak.Builder --exceptions --exceptions-repo stable repo repo`. A pre-release build
+therefore needs `flathub { releaseVersion }` (the Lab uses the date of its dev tag,
+`2026.11.01`), the archive URL keeping the package version; `generateFlathubRepository` refuses
+a pre-release version itself. The `beta` channel accepts them, but only once the app's own
+repository exists, after the submission is accepted.
+
 `--disable-rofiles-fuse` is only for machines where FUSE fails inside the sandbox. The linter
 fetches Flathub's summary: behind a TLS-inspecting proxy, give it the host bundle
 (`--filesystem=host-etc --env=REQUESTS_CA_BUNDLE=/run/host/etc/ssl/certs/ca-certificates.crt`).
