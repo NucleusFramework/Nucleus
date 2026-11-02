@@ -5,11 +5,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
+import java.util.logging.Logger
 import kotlin.io.path.Path
 import kotlin.io.path.appendText
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
+import kotlin.io.path.isDirectory
 import kotlin.io.path.readLines
 import kotlin.io.path.writeText
 
@@ -23,8 +25,24 @@ object LabPaths {
                 Platform.Windows -> Path(System.getenv("APPDATA") ?: home, "NucleusLab")
                 else -> Path(System.getenv("XDG_DATA_HOME") ?: "$home/.local/share", "nucleus-lab")
             }
-        dir.createDirectories()
+        ensureDirectory(dir)
     }
+
+    /**
+     * Creates [dir], first moving aside a plain file that sits where it should be (a botched copy, a
+     * restore gone wrong) — kept as `<name>.not-a-dir-<millis>` so nothing is lost — instead of
+     * failing every probe with `FileAlreadyExistsException`.
+     */
+    internal fun ensureDirectory(dir: Path): Path {
+        if (dir.exists() && !dir.isDirectory()) {
+            val aside = dir.resolveSibling("${dir.fileName}.not-a-dir-${System.currentTimeMillis()}")
+            Files.move(dir, aside)
+            logger.warning("$dir was a file, not a directory: moved it to $aside")
+        }
+        return dir.createDirectories()
+    }
+
+    private val logger: Logger = Logger.getLogger(LabPaths::class.java.name)
 
     /** A fresh scratch directory under [dataDir], for probes that need real files. */
     fun scratch(name: String): Path = dataDir.resolve("scratch").resolve(name).createDirectories()
