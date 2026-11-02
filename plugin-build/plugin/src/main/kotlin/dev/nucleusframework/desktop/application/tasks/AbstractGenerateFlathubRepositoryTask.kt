@@ -16,7 +16,7 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
-import org.gradle.work.DisableCachingByDefault
+import org.gradle.api.tasks.UntrackedTask
 import java.io.File
 import java.io.InputStream
 import java.net.URI
@@ -35,7 +35,10 @@ import java.security.MessageDigest
  * a local `tar.gz` of the host architecture copied next to the manifest — the local repository
  * loop, where Flathub's sandboxed build reads nothing outside the manifest directory.
  */
-@DisableCachingByDefault(because = "Writes a handful of small files; remote archives are hashed on the fly")
+// Untracked: outputDir may be a clone of the Flathub repository, holding anything, Flatpak build
+// directories included (whose var/run links to /run), which Gradle must not fingerprint. The task
+// only writes a few small files and always runs.
+@UntrackedTask(because = "Writes into a directory it does not own, such as a clone of the Flathub repository")
 abstract class AbstractGenerateFlathubRepositoryTask : DefaultTask() {
     @get:Input
     abstract val spec: Property<FlathubSpec>
