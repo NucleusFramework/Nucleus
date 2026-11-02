@@ -401,6 +401,16 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
         fn.execute(flatpak)
     }
 
+    val flathub: FlathubSettings = objects.newInstance(FlathubSettings::class.java)
+
+    /**
+     * Configures the Flathub repository `generateFlathubRepository` writes. Independent of
+     * [flatpak], which builds a `.flatpak` bundle Flathub does not accept.
+     */
+    fun flathub(fn: Action<FlathubSettings>) {
+        fn.execute(flathub)
+    }
+
     val appImage: AppImageSettings = objects.newInstance(AppImageSettings::class.java)
 
     /** Configures the AppImage package. */

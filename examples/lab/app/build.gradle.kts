@@ -74,6 +74,15 @@ val releaseVersion =
 
 val nativePackageVersion = releaseVersion.substringBefore("-")
 
+// Flathub's stable remote refuses pre-release versions (dev, alpha, rc…): a dev build goes there
+// under the date of its tag (v3.0.0-dev-202611011507 → 2026.11.01). Read outside flathub { },
+// whose own releaseVersion would shadow the script's.
+val labReleaseTag = "v$releaseVersion"
+val flathubReleaseVersion =
+    Regex("-dev-(\\d{4})(\\d{2})(\\d{2})\\d{4}$").find(releaseVersion)?.destructured?.let { (year, month, day) ->
+        "$year.$month.$day"
+    }
+
 nucleus.application {
     mainClass = "dev.nucleusframework.lab.app.MainKt"
     javaHome = jvm25.get()
@@ -177,6 +186,55 @@ nucleus.application {
                 sdk = "org.freedesktop.Sdk"
                 branch = "master"
                 finishArgs = listOf("--share=ipc", "--socket=x11", "--socket=wayland")
+            }
+            // Flathub repackages the released GraalVM tar.gz: generateFlathubRepository writes
+            // build/flathub/dev.nucleusframework.Lab, the content of github.com/flathub/dev.nucleusframework.Lab.
+            flathub {
+                appId = "dev.nucleusframework.Lab"
+                summary = "Explore the Nucleus desktop APIs"
+                releaseVersion = flathubReleaseVersion
+                projectLicense = "MIT"
+                developerName = "Nucleus"
+                archiveUrl =
+                    "https://github.com/NucleusFramework/Nucleus/releases/download/v{version}/nucleus-lab-{version}-linux-{arch}.tar.gz"
+                finishArgs =
+                    listOf(
+                        "--share=ipc",
+                        "--socket=wayland",
+                        "--socket=fallback-x11",
+                        "--device=dri",
+                        // Updater, network and HTTP probes
+                        "--share=network",
+                        // notification-linux talks to the notification server directly
+                        "--talk-name=org.freedesktop.Notifications",
+                    )
+                description =
+                    """
+                    Nucleus Lab is the companion app of Nucleus, a toolkit for shipping native JVM desktop applications.
+                    Each page of the Lab drives one platform integration live, so you can see how it behaves on your
+                    own desktop before using it in an app.
+
+                    Among the integrations it covers:
+
+                    - Desktop notifications, launcher badges and progress
+                    - Dark mode, accent color and high contrast detection
+                    - Global shortcuts, media controls and the share sheet
+                    - Location, spell checking and speech recognition
+                    - Window decorations, tabs and docked panels
+                    - In-app updates delivered by Flathub
+                    """.trimIndent()
+                categories = listOf("Development")
+                keywords = listOf("nucleus", "kotlin", "compose", "desktop")
+                bugtrackerUrl = "https://github.com/NucleusFramework/Nucleus/issues"
+                vcsBrowserUrl = "https://github.com/NucleusFramework/Nucleus"
+                brandingLight = "#c7d0f0"
+                brandingDark = "#242d55"
+                iconFile.set(project.file("packaging/flathub/dev.nucleusframework.Lab.png"))
+                // Served from the release tag: committed before the tag is cut.
+                val shots = "https://raw.githubusercontent.com/NucleusFramework/Nucleus/$labReleaseTag/examples/lab/app/packaging/flathub/screenshots"
+                screenshot("$shots/overview.png", "Every probe of the Lab and where this run stands")
+                screenshot("$shots/design-system.png", "The same windows themed by Material 2, Material 3 and Jewel")
+                screenshot("$shots/appearance.png", "Dark mode, accent color and contrast followed live")
             }
             // GPG signing (deb/rpm) + passwordless self-update. CI: LINUX_GPG_* secrets → gradle.properties;
             // local: packaging/linux-signing.local.properties (gitignored), see the .example next to it.
