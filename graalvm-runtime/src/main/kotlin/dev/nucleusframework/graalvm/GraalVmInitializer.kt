@@ -275,21 +275,26 @@ public object GraalVmInitializer {
      * `/usr/local/bin`) or a relative path (`./app`), its parent would otherwise not be the bundle's
      * `Contents/MacOS`, and fonts and libraries would be looked up next to the link.
      *
-     * A relative command is resolved against [workingDir] (the shell's `PWD`) when it is an absolute
-     * path: inside the App Sandbox SubstrateVM's `user.dir` is not the directory the process was
-     * started from.
+     * A relative command is resolved against [currentDir] (`user.dir`) first, then [workingDir]
+     * (the shell's `PWD`), keeping the first that names an existing file: inside the App Sandbox
+     * `user.dir` is not the directory the process started in, while `PWD` is only inherited and
+     * goes stale under a launcher that changes directory without updating it.
      */
     internal fun execDirOf(
         command: String,
         workingDir: String? = null,
+        currentDir: String? = System.getProperty("user.dir"),
     ): String {
         if (command.isBlank()) return "."
         val started = File(command)
         val file =
-            if (started.isAbsolute || workingDir == null || !File(workingDir).isAbsolute) {
+            if (started.isAbsolute) {
                 started
             } else {
-                File(workingDir, command)
+                listOfNotNull(currentDir, workingDir)
+                    .filter { File(it).isAbsolute }
+                    .map { File(it, command) }
+                    .firstOrNull { it.isFile } ?: started.absoluteFile
             }
         val resolved =
             try {

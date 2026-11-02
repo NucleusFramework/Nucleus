@@ -79,8 +79,11 @@ watch works.
 `ProcessHandle…command()`, the path the process was started with. It is canonicalized, so a CLI
 symlink (`/usr/local/bin/app` → `…/Contents/MacOS/app`) finds the bundle's fonts and libraries —
 before, every image launched through a symlink died with "Fontconfig head is null". A relative
-path (`./app`) is resolved against `PWD`: inside the sandbox SubstrateVM's `user.dir` is not the
-directory the process started in. A sandboxed image launched through a symlink still dies, in
+path (`./app`) is resolved against `user.dir`, then `PWD`, keeping the one that names the file:
+inside the sandbox `user.dir` is not the directory the process started in, and `PWD` goes stale
+under a launcher that changes directory without updating it (Python's `subprocess` with `cwd=`).
+Sandboxed, relative *and* with a stale `PWD` has no right answer left; LaunchServices never
+starts an app that way. A sandboxed image launched through a symlink still dies, in
 AppKit ("NSRemoteView encountered app without bundle"): a sandboxed app must run from its bundle,
 as LaunchServices always does.
 

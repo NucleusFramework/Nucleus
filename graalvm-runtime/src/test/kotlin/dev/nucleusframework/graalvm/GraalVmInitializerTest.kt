@@ -89,12 +89,47 @@ class GraalVmInitializerTest {
             assertEquals(macOs.path, GraalVmInitializer.execDirOf(binary.path))
             assertEquals(macOs.path, GraalVmInitializer.execDirOf(link.path))
             assertEquals(".", GraalVmInitializer.execDirOf(""))
-            // ./app started from Contents/MacOS, whatever user.dir says.
-            assertEquals(macOs.path, GraalVmInitializer.execDirOf("./app", macOs.path))
+            // ./app started from Contents/MacOS: user.dir when it is right…
+            assertEquals(macOs.path, GraalVmInitializer.execDirOf("./app", "/stale/pwd", macOs.path))
+            // …PWD when user.dir is not (inside the App Sandbox)…
+            assertEquals(macOs.path, GraalVmInitializer.execDirOf("./app", macOs.path, root.path))
+            // …and a stale PWD never wins over a user.dir that names the executable.
+            assertEquals(macOs.path, GraalVmInitializer.execDirOf("./app", root.path, macOs.path))
             // A relative symlink path: both resolutions apply.
-            assertEquals(macOs.path, GraalVmInitializer.execDirOf("bin/app", root.path))
+            assertEquals(macOs.path, GraalVmInitializer.execDirOf("bin/app", null, root.path))
         } finally {
             root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `hostile inputs keep the sandbox wiring sane`() {
+        val account = Files.createTempDirectory("nucleus account é").toFile()
+        try {
+            val container = account.resolve("Library/Containers/dev.app/Data").apply { mkdirs() }
+            val env = mapOf("APP_SANDBOX_CONTAINER_ID" to "dev.app", "HOME" to container.path + "/")
+            // A trailing slash on either side still recognizes SubstrateVM's default.
+            assertEquals(container.path + "/", GraalVmInitializer.sandboxedUserHome(env::get, account.path + "/"))
+            // A HOME outside any container leaves an explicit user.home alone.
+            val odd = mapOf("APP_SANDBOX_CONTAINER_ID" to "dev.app", "HOME" to account.path)
+            assertNull(GraalVmInitializer.sandboxedUserHome(odd::get, "/explicit"))
+
+            // A manifest that is a directory is not a sandboxed layout.
+            val bundle = account.resolve("My App é.app/Contents")
+            val execDir = bundle.resolve("MacOS").apply { mkdirs() }
+            bundle.resolve("Resources/nucleus-sandbox-manifest.properties").mkdirs()
+            assertNull(GraalVmInitializer.macOsSandboxedLayout(File(execDir, ".")))
+
+            // Spaces and accents in the bundle path; a command naming a missing file.
+            val binary = execDir.resolve("my app").apply { writeText("") }
+            assertEquals(execDir.canonicalPath, GraalVmInitializer.execDirOf(binary.path))
+            assertEquals(execDir.canonicalPath, GraalVmInitializer.execDirOf(execDir.resolve("gone").path))
+            assertEquals(
+                execDir.canonicalPath,
+                GraalVmInitializer.execDirOf("./my app", null, execDir.path),
+            )
+        } finally {
+            account.deleteRecursively()
         }
     }
 

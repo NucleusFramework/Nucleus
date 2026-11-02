@@ -24,6 +24,10 @@ class TerminationSignalsTest {
     fun `SIGHUP runs the shutdown hooks and exits 129`() = assertSignalExit("HUP", 129)
 
     @Test
+    fun `installing twice still runs the hooks once`() =
+        assertSignalExit("TERM", 143, mode = "wait-twice", hookRuns = 1)
+
+    @Test
     fun `a child process started afterwards still dies on SIGTERM`() {
         if (!System.getProperty("os.name").startsWith("Mac")) return
         val dir = Files.createTempDirectory("nucleus-signals").toFile()
@@ -56,13 +60,15 @@ class TerminationSignalsTest {
     private fun assertSignalExit(
         signal: String,
         expectedStatus: Int,
+        mode: String = "wait",
+        hookRuns: Int = 1,
     ) {
         if (!System.getProperty("os.name").startsWith("Mac")) return
         val dir = Files.createTempDirectory("nucleus-signals").toFile()
         try {
             val ready = File(dir, "ready")
             val hookRan = File(dir, "hook-ran")
-            val child = startChild(dir, "wait", ready.path, hookRan.path)
+            val child = startChild(dir, mode, ready.path, hookRan.path)
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
             while (!ready.exists() && child.isAlive && System.nanoTime() < deadline) Thread.sleep(50)
             assertTrue(ready.exists(), "child never got ready: ${File(dir, "child.log").readText()}")
@@ -72,6 +78,7 @@ class TerminationSignalsTest {
             assertTrue(child.waitFor(30, TimeUnit.SECONDS), "child ignored SIG$signal")
             assertEquals(expectedStatus, child.exitValue())
             assertTrue(hookRan.exists(), "shutdown hook did not run")
+            assertEquals(hookRuns, hookRan.readLines().size, "shutdown hook runs")
         } finally {
             dir.deleteRecursively()
         }
@@ -88,10 +95,11 @@ object TerminationSignalsChild {
     fun main(args: Array<String>) {
         val installed = TerminationSignals.install()
         when (args.first()) {
-            "wait" -> {
+            "wait", "wait-twice" -> {
                 val (ready, hookRan) = args.drop(1).map(::File)
-                Runtime.getRuntime().addShutdownHook(Thread { hookRan.writeText("yes") })
-                ready.writeText(if (installed) "installed" else "unavailable")
+                Runtime.getRuntime().addShutdownHook(Thread { hookRan.appendText("ran\n") })
+                val again = args.first() == "wait-twice" && TerminationSignals.install()
+                ready.writeText(if (installed && (again || args.first() == "wait")) "installed" else "unavailable")
                 Thread.sleep(TimeUnit.MINUTES.toMillis(1))
             }
             "spawn" -> {
