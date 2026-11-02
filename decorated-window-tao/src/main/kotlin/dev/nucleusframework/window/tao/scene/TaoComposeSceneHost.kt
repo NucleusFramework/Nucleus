@@ -361,15 +361,21 @@ internal class TaoComposeSceneHost(
         require(nsView != 0L) { "NSView handle unavailable; window not yet realised" }
         nsViewHandle = nsView
 
-        // Apply transparent / full-size title bar so the native traffic-light
-        // buttons stay visible while our content fills the entire window.
-        NativeMetalBridge.nativeConfigureChrome(nsView)
+        if (window.hasSystemDecorations) {
+            // #841: keep AppKit's standard title bar; the content view starts
+            // below it and AppKit drags, zooms and lays the buttons out.
+            NativeMetalBridge.nativeConfigureSystemChrome(nsView)
+        } else {
+            // Apply transparent / full-size title bar so the native traffic-light
+            // buttons stay visible while our content fills the entire window.
+            NativeMetalBridge.nativeConfigureChrome(nsView)
 
-        // macOS 26 (Tahoe) modern chrome — silently no-op on older systems.
-        NativeMetalBridge.nativeApplyLargeCornerRadius(
-            nsView,
-            macOSStyle.shouldApplyLargeCornerRadius(),
-        )
+            // macOS 26 (Tahoe) modern chrome — silently no-op on older systems.
+            NativeMetalBridge.nativeApplyLargeCornerRadius(
+                nsView,
+                macOSStyle.shouldApplyLargeCornerRadius(),
+            )
+        }
 
         // Hide the app's Dock icon when requested. Activation policy is
         // app-wide, so only act on the opt-in value — a default (false) window

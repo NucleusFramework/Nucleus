@@ -189,6 +189,26 @@ jobs:
         shell: cmd
         run: call share\src\main\native\windows\build.bat
 
+      - name: Build authentication Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call authentication\src\main\native\windows\build.bat
+
+      - name: Build speech-recognition Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call speech-recognition\src\main\native\windows\build.bat
+
+      - name: Build location Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call location\src\main\native\windows\build.bat
+
+      - name: Build microsoft-store Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call microsoft-store\src\main\native\windows\build.bat
+
       - name: Build decorated-window-tao Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -216,6 +236,10 @@ jobs:
             "spellcheck/nucleus_spellcheck.dll"
             "fs-watcher/nucleus_fs_watcher.dll"
             "share/nucleus_share.dll"
+            "authentication/nucleus_authentication.dll"
+            "speech-recognition/nucleus_speech.dll"
+            "location/nucleus_location.dll"
+            "microsoft-store/nucleus_msstore.dll"
             "decorated-window-tao/nucleus_tao.dll"
             "decorated-window-tao/nucleus_tao_windows_deco.dll"
             "decorated-window-tao/nucleus_tao_gl.dll"
@@ -383,6 +407,18 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash share/src/main/native/macos/build.sh
 
+      - name: Build authentication macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash authentication/src/main/native/macos/build.sh
+
+      - name: Build speech-recognition macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash speech-recognition/src/main/native/macos/build.sh
+
+      - name: Build location macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash location/src/main/native/macos/build.sh
+
       - name: Build decorated-window-tao macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/macos/build.sh
@@ -413,6 +449,9 @@ jobs:
             "spellcheck/libnucleus_spellcheck.dylib"
             "fs-watcher/libnucleus_fs_watcher.dylib"
             "share/libnucleus_share.dylib"
+            "authentication/libnucleus_authentication.dylib"
+            "speech-recognition/libnucleus_speech.dylib"
+            "location/libnucleus_location.dylib"
             "decorated-window-tao/libnucleus_tao.dylib"
             "decorated-window-tao/libnucleus_tao_metal.dylib"
             "decorated-window-tao/libnucleus_tao_dnd.dylib"
@@ -560,6 +599,18 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash share/src/main/native/linux/build.sh
 
+      - name: Build authentication Linux native libraries
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash authentication/src/main/native/linux/build.sh
+
+      - name: Build location Linux native libraries
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash location/src/main/native/linux/build.sh
+
+      - name: Build flatpak Linux native libraries
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash flatpak/src/main/native/linux/build.sh
+
       - name: Build decorated-window-tao Linux native libraries
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-tao/src/main/native/linux/build.sh
@@ -584,6 +635,9 @@ jobs:
             "media-control/libnucleus_media_control_linux.so"
             "fs-watcher/libnucleus_fs_watcher.so"
             "share/libnucleus_share.so"
+            "authentication/libnucleus_authentication.so"
+            "location/libnucleus_location.so"
+            "flatpak/libnucleus_flatpak.so"
             "decorated-window-tao/libnucleus_tao.so"
             "decorated-window-tao/libnucleus_tao_egl.so"
             "decorated-window-tao/libnucleus_tao_linux_widget.so"

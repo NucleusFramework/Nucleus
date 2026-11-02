@@ -9,13 +9,16 @@ import dev.nucleusframework.desktop.application.dsl.CompressionLevel
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
 import dev.nucleusframework.desktop.application.dsl.MacAppExtension
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
+import dev.nucleusframework.desktop.application.dsl.PolkitActionDefinition
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
+import dev.nucleusframework.desktop.application.internal.AppXLogo
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
+import dev.nucleusframework.desktop.application.internal.LinuxPolkitActions
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
 import dev.nucleusframework.desktop.application.internal.MacPkgScripts
 import dev.nucleusframework.desktop.application.internal.MacDmgLzma
@@ -35,10 +38,12 @@ import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import dev.nucleusframework.desktop.application.internal.MACOS_DMG_TITLE_BAR_HEIGHT
 import dev.nucleusframework.desktop.application.internal.padDmgBackgroundForTitleBar
 import dev.nucleusframework.desktop.application.internal.readImageDimensions
+import dev.nucleusframework.desktop.application.internal.readIconImage
 import dev.nucleusframework.desktop.application.internal.WindowsHotUpdateLayout
 import dev.nucleusframework.desktop.application.internal.WindowsHotUpdateNsis
 import dev.nucleusframework.desktop.application.internal.sanitizeFileName
 import dev.nucleusframework.desktop.application.internal.updateExecutableTypeInAppImage
+import dev.nucleusframework.desktop.application.internal.writeAppXAssets
 import dev.nucleusframework.desktop.application.internal.validation.ValidatedMacOSSigningSettings
 import dev.nucleusframework.desktop.application.internal.validation.validate
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
@@ -50,8 +55,6 @@ import dev.nucleusframework.internal.utils.ioFile
 import dev.nucleusframework.internal.utils.notNullProperty
 import dev.nucleusframework.internal.utils.nullableProperty
 import net.coobird.thumbnailator.Thumbnails
-import net.coobird.thumbnailator.filters.Canvas
-import net.coobird.thumbnailator.geometry.Positions
 import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
@@ -71,7 +74,6 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
-import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -110,14 +112,12 @@ abstract class AbstractElectronBuilderPackageTask
         /** Packaging constants shared by the electron-builder pipeline. */
         companion object {
             private const val PERCENT = 100.0
-            private const val APPX_STORE_LOGO_SIZE = 50
-            private const val APPX_SQUARE44_LOGO_SIZE = 44
-            private const val APPX_SQUARE150_LOGO_SIZE = 150
-            private const val APPX_WIDE_LOGO_WIDTH = 310
-            private const val APPX_WIDE_LOGO_HEIGHT = 150
             private const val DEFAULT_PACKAGE_VERSION = "1.0.0"
             private val NSIS_FORMATS = setOf(TargetFormat.Nsis, TargetFormat.NsisWeb, TargetFormat.Exe)
             private val LINUX_SIGNED_FORMATS = setOf(TargetFormat.Deb, TargetFormat.Rpm)
+
+            /** The formats whose install scripts can write `/usr/share/polkit-1/actions/`. */
+            private val POLKIT_FORMATS = setOf(TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Pacman)
             internal val CUSTOM_INSTALL_MACRO = Regex("""!macro\s+customInstall\b""")
         }
 
@@ -353,6 +353,7 @@ abstract class AbstractElectronBuilderPackageTask
 
             ensureResourcesDirForElectronBuilder(workingAppDir)
             bundleSilentUpdateArtifacts(workingAppDir, dist)
+            bundlePolkitPolicies(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir)
@@ -365,17 +366,11 @@ abstract class AbstractElectronBuilderPackageTask
             val linuxIconOverride = prepareLinuxIconSet(outputDir)
             val windowsIconOverride = resolveWindowsIcon()
             val silentUpdate = isLinuxSilentUpdateEnabled(dist)
-            val linuxAfterInstallTemplate = prepareLinuxAfterInstallTemplate(outputDir, silentUpdate)
-            val linuxAfterRemoveTemplate = prepareLinuxAfterRemoveTemplate(outputDir, silentUpdate)
+            val polkitActions = dist.linux.polkitActions.actions
+            val linuxAfterInstallTemplate = prepareLinuxAfterInstallTemplate(outputDir, silentUpdate, polkitActions)
+            val linuxAfterRemoveTemplate = prepareLinuxAfterRemoveTemplate(outputDir, silentUpdate, polkitActions)
             if (targetFormat == TargetFormat.AppX) {
-                val hasExplicitWindowsIcon =
-                    dist.windows.iconFile.orNull
-                        ?.asFile != null
-                stageAppXAssets(
-                    outputDir = outputDir,
-                    windowsIconOverride = windowsIconOverride,
-                    hasExplicitWindowsIcon = hasExplicitWindowsIcon,
-                )
+                stageAppXAssets(outputDir = outputDir, windowsIconOverride = windowsIconOverride)
             }
             if (targetFormat == TargetFormat.Pkg) {
                 stagePkgScripts(outputDir)
@@ -593,7 +588,7 @@ abstract class AbstractElectronBuilderPackageTask
             appendLine("description: ${dist.description}")
             appendLine("vendor: ${dist.vendor}")
             when (currentOS) {
-                OS.Linux ->
+                OS.Linux -> {
                     if (targetFormat in LINUX_SIGNED_FORMATS) {
                         // signLinuxPackage(), bundleSilentUpdateArtifacts()
                         val signing = dist.linux.signing
@@ -603,6 +598,13 @@ abstract class AbstractElectronBuilderPackageTask
                         appendLine("linuxSigning.debMethod: ${signing.debMethod}")
                         appendLine("linuxSigning.silentUpdate: ${signing.silentUpdate.get()}")
                     }
+                    // writePolicies(), prepareLinuxAfterInstallTemplate(), prepareLinuxAfterRemoveTemplate()
+                    if (targetFormat in POLKIT_FORMATS) {
+                        for (action in dist.linux.polkitActions.actions) {
+                            appendLine("polkitAction: ${LinuxPolkitActions.policyXml(action)}")
+                        }
+                    }
+                }
                 OS.Windows -> {
                     // signWindowsAppImage(), generateNsisInclude()
                     appendLine("windowsSigning.signNativeLibraries: ${dist.windows.signing.signNativeLibraries}")
@@ -1862,6 +1864,15 @@ abstract class AbstractElectronBuilderPackageTask
          * Ships silent-update artifacts in the **package payload** (helper + public key).
          * afterInstall only installs polkit — see [LinuxUpdateHelper.polkitAfterInstallFragment].
          */
+        /** Ships the `linux.polkitActions` policies in the payload, see [LinuxPolkitActions]. */
+        private fun bundlePolkitPolicies(
+            workingAppDir: File,
+            dist: JvmApplicationDistributions,
+        ) {
+            if (currentOS != OS.Linux || targetFormat !in POLKIT_FORMATS) return
+            LinuxPolkitActions.writePolicies(workingAppDir, dist.linux.polkitActions.actions)
+        }
+
         private fun bundleSilentUpdateArtifacts(
             workingAppDir: File,
             dist: JvmApplicationDistributions,
@@ -1940,97 +1951,57 @@ abstract class AbstractElectronBuilderPackageTask
             val afterRemove: File?,
         )
 
-        private data class AppXAsset(
-            val targetFileName: String,
-            val width: Int,
-            val height: Int,
-            val source: File?,
-        )
-
+        /**
+         * Stages the AppX logos in electron-builder's `build/appx`: each declared logo, or else the
+         * app's icon, at every scale and target size Windows asks for (see [appXAssetFiles]).
+         * A logo left out would be electron-builder's sample one, which the Store rejects.
+         */
         private fun stageAppXAssets(
             outputDir: File,
             windowsIconOverride: File?,
-            hasExplicitWindowsIcon: Boolean,
         ) {
             val stagedAssetsDir = outputDir.resolve("build").resolve("appx")
             stagedAssetsDir.deleteRecursively()
 
-            val assets = appXAssets()
-            validateAppXAssetSources(assets)
-            val fallbackImage = resolveAppXFallbackImage(windowsIconOverride, hasExplicitWindowsIcon)
-
-            if (assets.none { it.source != null } && fallbackImage == null) return
-
-            stagedAssetsDir.mkdirs()
-            copyOrGenerateAppXAssets(assets, stagedAssetsDir, fallbackImage)
-
-            if (assets.any { it.source == null } && fallbackImage == null) {
-                logger.warn(
-                    "Some AppX assets are missing and no readable fallback icon was found. " +
-                        "Provide AppX logo files explicitly to avoid incomplete assets.",
-                )
+            val sources =
+                mapOf(
+                    AppXLogo.StoreLogo to appxStoreLogo,
+                    AppXLogo.Square44x44Logo to appxSquare44x44Logo,
+                    AppXLogo.Square150x150Logo to appxSquare150x150Logo,
+                    AppXLogo.Wide310x150Logo to appxWide310x150Logo,
+                ).mapValues { (_, property) -> property.orNull?.asFile }
+            for (source in sources.values.filterNotNull()) {
+                if (!source.isFile) throw GradleException("AppX asset file not found: ${source.absolutePath}")
             }
-        }
+            val fallbackImage by lazy {
+                readIconImage(windowsIconOverride) ?: readIconImage(linuxIconFile.orNull?.asFile)
+            }
 
-        private fun appXAssets(): List<AppXAsset> =
-            listOf(
-                AppXAsset("StoreLogo.png", APPX_STORE_LOGO_SIZE, APPX_STORE_LOGO_SIZE, appxStoreLogo.orNull?.asFile),
-                AppXAsset(
-                    "Square44x44Logo.png",
-                    APPX_SQUARE44_LOGO_SIZE,
-                    APPX_SQUARE44_LOGO_SIZE,
-                    appxSquare44x44Logo.orNull?.asFile,
-                ),
-                AppXAsset(
-                    "Square150x150Logo.png",
-                    APPX_SQUARE150_LOGO_SIZE,
-                    APPX_SQUARE150_LOGO_SIZE,
-                    appxSquare150x150Logo.orNull?.asFile,
-                ),
-                AppXAsset(
-                    "Wide310x150Logo.png",
-                    APPX_WIDE_LOGO_WIDTH,
-                    APPX_WIDE_LOGO_HEIGHT,
-                    appxWide310x150Logo.orNull?.asFile,
-                ),
-            )
-
-        private fun validateAppXAssetSources(assets: List<AppXAsset>) {
-            for (asset in assets) {
-                val source = asset.source ?: continue
-                if (!source.isFile) {
-                    throw GradleException("AppX asset file not found: ${source.absolutePath}")
+            for ((logo, file) in sources) {
+                val image =
+                    if (file != null) {
+                        readIconImage(file)
+                            ?: throw GradleException("AppX asset is not a readable image: ${file.absolutePath}")
+                    } else {
+                        fallbackImage
+                    }
+                if (image == null) {
+                    logger.warn(
+                        "No AppX ${logo.baseName} and no readable app icon to make it from: the package gets " +
+                            "electron-builder's sample logo, which the Microsoft Store rejects. Set " +
+                            "windows { appx { ${logo.name.replaceFirstChar { it.lowercase() }}.set(...) } }.",
+                    )
+                    continue
+                }
+                val enlarged = writeAppXAssets(logo, image, stagedAssetsDir)
+                if (enlarged.isNotEmpty()) {
+                    logger.warn(
+                        "AppX ${logo.baseName}: the ${image.width}x${image.height} source is enlarged for " +
+                            "${enlarged.joinToString { it.fileName }}. Provide a larger image for a sharp logo " +
+                            "at high display scaling.",
+                    )
                 }
             }
-        }
-
-        private fun resolveAppXFallbackImage(
-            windowsIconOverride: File?,
-            hasExplicitWindowsIcon: Boolean,
-        ): BufferedImage? =
-            readImage(windowsIconOverride)
-                ?: if (!hasExplicitWindowsIcon) readImage(linuxIconFile.orNull?.asFile) else null
-
-        private fun copyOrGenerateAppXAssets(
-            assets: List<AppXAsset>,
-            stagedAssetsDir: File,
-            fallbackImage: BufferedImage?,
-        ) {
-            for (asset in assets) {
-                val target = stagedAssetsDir.resolve(asset.targetFileName)
-                val source = asset.source
-                if (source != null) {
-                    source.copyTo(target, overwrite = true)
-                } else if (fallbackImage != null) {
-                    val generated = resizeIconToCanvas(fallbackImage, asset.width, asset.height)
-                    ImageIO.write(generated, "png", target)
-                }
-            }
-        }
-
-        private fun readImage(file: File?): BufferedImage? {
-            if (file == null || !file.isFile) return null
-            return ImageIO.read(file)
         }
 
         private fun shouldSkipForMissingTool(): Boolean {
@@ -2088,6 +2059,7 @@ abstract class AbstractElectronBuilderPackageTask
         private fun prepareLinuxAfterInstallTemplate(
             outputDir: File,
             silentUpdate: Boolean,
+            polkitActions: List<PolkitActionDefinition>,
         ): File? {
             if (currentOS != OS.Linux) return null
             if (targetFormat != TargetFormat.Deb &&
@@ -2168,20 +2140,21 @@ abstract class AbstractElectronBuilderPackageTask
                     ?.takeIf { it.isFile }
                     ?.readText()
             templateFile.writeText(
-                LinuxUpdateHelper.composeAfterInstallScript(script, silentUpdate, userScript),
+                LinuxUpdateHelper.composeAfterInstallScript(script, silentUpdate, userScript, polkitActions),
             )
             logger.info("Generated Linux after-install template at: ${templateFile.absolutePath}")
             return templateFile
         }
 
         /**
-         * afterRemove template: removes the polkit policy for silent update and appends any
-         * user after-remove script. Omitted when neither is present so electron-builder keeps
-         * its default unlink behaviour.
+         * afterRemove template: removes the polkit policies of silent update and of
+         * `linux.polkitActions`, then appends any user after-remove script. Omitted when none is
+         * present so electron-builder keeps its default unlink behaviour.
          */
         private fun prepareLinuxAfterRemoveTemplate(
             outputDir: File,
             silentUpdate: Boolean,
+            polkitActions: List<PolkitActionDefinition>,
         ): File? {
             if (currentOS != OS.Linux) return null
             if (targetFormat != TargetFormat.Deb &&
@@ -2195,7 +2168,8 @@ abstract class AbstractElectronBuilderPackageTask
                     ?.asFile
                     ?.takeIf { it.isFile }
                     ?.readText()
-            val composed = LinuxUpdateHelper.composeAfterRemoveScript(silentUpdate, userScript) ?: return null
+            val composed =
+                LinuxUpdateHelper.composeAfterRemoveScript(silentUpdate, userScript, polkitActions) ?: return null
             val templateFile = outputDir.resolve("after-remove-nucleus.tpl")
             templateFile.writeText(composed)
             logger.info("Generated Linux after-remove template at: ${templateFile.absolutePath}")
@@ -2210,19 +2184,6 @@ abstract class AbstractElectronBuilderPackageTask
             Thumbnails
                 .of(source)
                 .forceSize(width, height)
-                .imageType(BufferedImage.TYPE_INT_ARGB)
-                .asBufferedImage()
-
-        private fun resizeIconToCanvas(
-            source: BufferedImage,
-            width: Int,
-            height: Int,
-        ): BufferedImage =
-            Thumbnails
-                .of(source)
-                .size(width, height)
-                .keepAspectRatio(true)
-                .addFilter(Canvas(width, height, Positions.CENTER, true, Color(0, 0, 0, 0)))
                 .imageType(BufferedImage.TYPE_INT_ARGB)
                 .asBufferedImage()
 

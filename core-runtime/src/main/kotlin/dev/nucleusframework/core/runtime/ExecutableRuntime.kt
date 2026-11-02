@@ -37,13 +37,33 @@ public object ExecutableRuntime {
     public const val TYPE_PROPERTY: String = "nucleus.executable.type"
     private const val TYPE_MARKER_FILE: String = ".nucleus-executable-type"
     private const val APP_SANDBOX_CONTAINER_ID_ENV: String = "APP_SANDBOX_CONTAINER_ID"
+    private const val FLATPAK_INFO_FILE: String = "/.flatpak-info"
 
+    /**
+     * How this app was packaged: the [TYPE_PROPERTY] system property when set, then
+     * [ExecutableType.FLATPAK] inside a Flatpak sandbox, then the marker file the plugin writes
+     * next to the executable.
+     *
+     * The sandbox wins over the marker because a Flathub manifest repackages one of the app's
+     * other artifacts (typically its `tar.gz`), whose marker names that artifact instead.
+     */
     @JvmStatic
-    public fun type(): ExecutableType {
-        val fromProperty = System.getProperty(TYPE_PROPERTY)
-        if (fromProperty != null) return parseType(fromProperty)
-        return parseType(markerData?.type)
-    }
+    public fun type(): ExecutableType =
+        resolveType(System.getProperty(TYPE_PROPERTY), isInsideFlatpak, markerData?.type)
+
+    internal fun resolveType(
+        property: String?,
+        insideFlatpak: Boolean,
+        marker: String?,
+    ): ExecutableType =
+        when {
+            property != null -> parseType(property)
+            insideFlatpak -> ExecutableType.FLATPAK
+            else -> parseType(marker)
+        }
+
+    // Flatpak mounts this file at the root of every sandbox it starts.
+    private val isInsideFlatpak: Boolean by lazy { File(FLATPAK_INFO_FILE).isFile }
 
     @JvmStatic
     public fun type(propertyName: String): ExecutableType = parseType(System.getProperty(propertyName))

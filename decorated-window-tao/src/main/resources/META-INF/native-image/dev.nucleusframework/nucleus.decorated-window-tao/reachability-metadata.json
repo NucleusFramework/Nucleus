@@ -330,6 +330,12 @@
                     ]
                 },
                 {
+                    "name": "onShownWithOwner",
+                    "parameterTypes": [
+                        "long"
+                    ]
+                },
+                {
                     "name": "nativeFontSmoothingPixelGeometry",
                     "parameterTypes": []
                 }

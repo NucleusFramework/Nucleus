@@ -83,7 +83,8 @@ class TaoDirectManipulationGestureTest {
                 "pan ENDED 0.0,0.0",
                 "pan MOMENTUM_BEGAN 0.0,0.0",
                 "pan MOMENTUM_CHANGED 4.0,0.0",
-                "pan MOMENTUM_ENDED 0.0,0.0",
+                // Deferred, not MOMENTUM_ENDED's immediate PanEnd: see fingersBackOnThePadStopTheGlide.
+                "pan ENDED 0.0,0.0",
             ),
             out.map { it.label },
         )
@@ -98,7 +99,7 @@ class TaoDirectManipulationGestureTest {
         dm.content(y = 30f)
         dm.status(READY)
         assertEquals(
-            listOf("BEGAN", "ENDED", "MOMENTUM_BEGAN", "MOMENTUM_CHANGED", "MOMENTUM_ENDED"),
+            listOf("BEGAN", "ENDED", "MOMENTUM_BEGAN", "MOMENTUM_CHANGED", "ENDED"),
             out.map { it.phase },
         )
     }
@@ -161,7 +162,9 @@ class TaoDirectManipulationGestureTest {
         dm.content(y = 20f)
         dm.status(READY)
         assertEquals(
-            listOf("BEGAN", "ENDED", "MOMENTUM_BEGAN", "MOMENTUM_CHANGED", "MOMENTUM_ENDED", "BEGAN", "ENDED"),
+            // The glide closes with a deferred ENDED: an immediate PanEnd would
+            // hand Compose the glide's velocity and it would fling on.
+            listOf("BEGAN", "ENDED", "MOMENTUM_BEGAN", "MOMENTUM_CHANGED", "ENDED", "BEGAN", "ENDED"),
             out.map { it.phase },
         )
     }
@@ -484,9 +487,11 @@ class TaoDirectManipulationGestureTest {
                         fail("seed $seed: pan CHANGED outside the fingers' part")
                     }
                 TaoScrollGesturePhase.ENDED -> {
-                    if (!panOpen || momentum) fail("seed $seed: pan ENDED outside the fingers' part")
+                    if (!panOpen) fail("seed $seed: pan ENDED without a pan")
+                    // Ending the fingers' part allows a tail; ending the tail does not.
+                    tailAllowed = !momentum
                     panOpen = false
-                    tailAllowed = true
+                    momentum = false
                 }
                 TaoScrollGesturePhase.MOMENTUM_BEGAN -> {
                     if (!tailAllowed) fail("seed $seed: momentum without the pan it continues")

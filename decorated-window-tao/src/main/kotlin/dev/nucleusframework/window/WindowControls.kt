@@ -151,9 +151,11 @@ public fun DecoratedWindowScope.WindowControls(
             isFullscreen = state.isFullscreen,
             onExitFullscreen = { window.setFullscreen(false) },
         ).filter {
-            // A compositor that wants no decorations (#816) gets no window
-            // controls; leaving fullscreen is the app's own affordance and stays.
-            !window.isDecorationSuppressed || it.type == WindowControlType.ExitFullscreen
+            // A compositor that wants no decorations (#816), or a window the
+            // platform decorates (#841), gets no window controls; leaving
+            // fullscreen is the app's own affordance and stays.
+            !(window.isDecorationSuppressed || window.hasSystemDecorations) ||
+                it.type == WindowControlType.ExitFullscreen
         }
 
     CompositionLocalProvider(LocalLayoutDirection provides controlDir) {

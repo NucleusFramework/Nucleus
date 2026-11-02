@@ -1,0 +1,40 @@
+{
+  "reflection": [
+    {
+      "type": "dev.nucleusframework.location.NativeLocationBridge",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "onLocation",
+          "parameterTypes": [
+            "long",
+            "double",
+            "double",
+            "double",
+            "double",
+            "double",
+            "double",
+            "double",
+            "long",
+            "boolean"
+          ]
+        },
+        {
+          "name": "onError",
+          "parameterTypes": [
+            "long",
+            "int",
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "onAuthorization",
+          "parameterTypes": [
+            "long",
+            "int"
+          ]
+        }
+      ]
+    }
+  ]
+}

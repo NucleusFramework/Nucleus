@@ -51,6 +51,11 @@ internal class TaoWindowTestCase(
      */
     val nativePopupLayers: Boolean = false,
     /**
+     * Forwarded to the case window's and dialog's `systemDecorations` (#841):
+     * the platform draws the title bar and frame. Creation-time only.
+     */
+    val systemDecorations: Boolean = false,
+    /**
      * Initial [androidx.compose.ui.window.WindowState.size] for this case's
      * [dev.nucleusframework.window.tao.DecoratedWindow]. `null` keeps the
      * Compose Desktop default (800×600). Pass a [DpSize] with

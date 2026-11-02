@@ -25,6 +25,26 @@ internal object NativeTaoWindowsDecoBridge {
         titleBarHeightPx: Int,
     )
 
+    /**
+     * Installs the subclass for a window that keeps the Win32 caption and
+     * frame (#841), in place of [nativeInstallDecoration]: the non-client area
+     * stays the system's (native hit-testing, Snap Layouts, Alt+Space system
+     * menu, default caption colours), while fullscreen, the startup erase and
+     * the immersive dark mode keep working.
+     */
+    @JvmStatic
+    external fun nativeInstallSystemFrame(hwnd: Long)
+
+    /**
+     * The client size the window will have once maximized, in physical pixels
+     * as `[width, height]`, or `null`: its monitor's work area minus the
+     * caption. Used for the first frame of a maximized system-framed window
+     * (#841), rendered before `show()` while the hidden window still has its
+     * restored size.
+     */
+    @JvmStatic
+    external fun nativeGetMaximizedClientSize(hwnd: Long): IntArray?
+
     @JvmStatic
     external fun nativeUninstallDecoration(hwnd: Long)
 
@@ -222,6 +242,34 @@ internal object NativeTaoWindowsDecoBridge {
     ) {
         if (widthPx <= 0 || heightPx <= 0) return
         fullscreenSizeHooks[hwnd]?.invoke(widthPx, heightPx)
+    }
+
+    // ── Re-show by the owner (Windows) ───────────────────────────────────
+    //
+    // Win32 hides the windows a window owns while it is minimized and shows
+    // them again on restore (WM_SHOWWINDOW / SW_PARENTOPENING), without
+    // TaoWindow.show ever running. The deco WndProc forwards that show to
+    // [onShownWithOwner] so the scene host can force its next present.
+
+    private val ownerShowHooks = java.util.concurrent.ConcurrentHashMap<Long, () -> Unit>()
+
+    fun setOwnerShowHook(
+        hwnd: Long,
+        block: (() -> Unit)?,
+    ) {
+        if (hwnd == 0L) return
+        if (block == null) ownerShowHooks.remove(hwnd) else ownerShowHooks[hwnd] = block
+    }
+
+    /**
+     * Called from native on the Tao main thread, from the
+     * `WM_WINDOWPOSCHANGED` that maps [hwnd] again after an owner's restore —
+     * not from the `WM_SHOWWINDOW` that announces it, when the window is
+     * still hidden and DWM would drop a present.
+     */
+    @JvmStatic
+    fun onShownWithOwner(hwnd: Long) {
+        ownerShowHooks[hwnd]?.invoke()
     }
 
     @JvmStatic

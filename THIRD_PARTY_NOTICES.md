@@ -12,10 +12,14 @@ Full license texts are in [`licenses/`](licenses/):
 | [`licenses/LICENSE-APACHE-2.0.txt`](licenses/LICENSE-APACHE-2.0.txt) | Gradle plugin (derived), `tao`, AccessKit crates (Apache option) |
 | [`licenses/LICENSE-MIT-accesskit.txt`](licenses/LICENSE-MIT-accesskit.txt) | AccessKit crates (MIT option) |
 | [`licenses/LICENSE-BSD-3-Clause-angle.txt`](licenses/LICENSE-BSD-3-Clause-angle.txt) | ANGLE runtime libraries and EGL/KHR headers |
-| [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt) | `robius-share` (derived source in `share`) |
+| [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt) | `robius-share` (derived source in `share`), `robius-authentication` (derived source in `authentication`) |
+| [`licenses/LICENSE-MIT-robius-speech.txt`](licenses/LICENSE-MIT-robius-speech.txt) | `robius-speech` (desktop binary, Kotlin ports in `speech-recognition`) |
+| [`licenses/LICENSE-MIT-tauri-plugin-iap.txt`](licenses/LICENSE-MIT-tauri-plugin-iap.txt) | `tauri-plugin-iap` (derived source in `microsoft-store`) |
 
 The artifacts that redistribute third-party code ship this file and `licenses/` inside their JAR
-under `META-INF/` (`nucleus.decorated-window-tao`, the desktop JAR of `nucleus.share` and the
+under `META-INF/` (`nucleus.decorated-window-tao`, the desktop JARs of `nucleus.share` and
+`nucleus.authentication`, the JVM JAR and AAR of `nucleus.speech-recognition`,
+`nucleus.microsoft-store` and the
 `dev.nucleusframework` Gradle plugin), as required by Apache-2.0 §4(a) and the MIT notice clause.
 
 ---
@@ -116,6 +120,64 @@ portal), and its minimal D-Bus client is ported from it:
 
 ---
 
+## 6. robius-speech — compiled into a shipped binary, and ported to Kotlin (MIT)
+
+`speech-recognition` builds its desktop library (`nucleus_speech`) against the `robius-speech`
+crate, pinned by commit in `speech-recognition/src/main/native/Cargo.toml` (it is not published on
+crates.io): Windows SAPI dictation, and on macOS its Swift bridge to SFSpeechRecognizer, both
+statically linked. The module's Kotlin sources also port parts of it: `Dictation` and the word
+comparisons (from `dictation.rs`), the Android backend (from `NativeSpeech.java` /
+`SpeechPermissionFragment.java`), and the iOS backend with its segment tracking (from
+`NativeSpeech.swift`).
+
+- Project: Project Robius — https://github.com/project-robius/robius (`crates/speech`)
+- License: MIT — [`licenses/LICENSE-MIT-robius-speech.txt`](licenses/LICENSE-MIT-robius-speech.txt)
+- Copyright (c) 2026 Project Robius Developers
+
+---
+
+## 7. robius-authentication — derived source, compiled into a shipped binary (MIT)
+
+The `authentication` module's desktop bridge follows `robius-authentication`'s per-platform
+strategies (macOS `LAContext` policy and `LAError` mapping, Windows Hello through
+`IUserConsentVerifierInterop` with a CredUI + `LogonUserW` password fallback, polkit
+`CheckAuthorization` on Linux); the Windows fallback is ported from it:
+
+| Nucleus file | Derived from |
+|--------------|--------------|
+| `authentication/src/main/native/src/platform/windows/fallback.rs` | `crates/authentication/src/sys/windows/fallback.rs` |
+| `authentication/src/main/native/src/platform/windows/mod.rs` | `crates/authentication/src/sys/windows/mod.rs` |
+| `authentication/src/main/native/src/platform/macos.rs` | `crates/authentication/src/sys/apple.rs` |
+| `authentication/src/main/native/src/platform/linux/mod.rs` | `crates/authentication/src/sys/linux/mod.rs` |
+
+The Linux D-Bus client (`platform/linux/dbus.rs`) reuses the marshalling of `share`'s, itself
+ported from `robius-share` (§5).
+
+- Project: Project Robius — https://github.com/project-robius/robius (commit `ad00d61b`)
+- License: MIT — [`licenses/LICENSE-MIT-robius.txt`](licenses/LICENSE-MIT-robius.txt)
+- Copyright (c) 2023-2025 Project Robius
+
+---
+
+## 8. tauri-plugin-iap — derived source, compiled into a shipped binary (MIT)
+
+The Windows backend of `microsoft-store` is derived from tauri-plugin-iap's desktop code and keeps
+its copyright notice in the file headers:
+
+| Nucleus file | Derived from |
+|--------------|--------------|
+| `microsoft-store/src/main/native/src/windows_store.rs` | `src/windows.rs` |
+| `microsoft-store/src/main/native/src/protocol.rs` | `src/windows.rs` |
+
+Both are compiled into `nucleus_msstore.dll`. Nucleus decoupled the code from Tauri, replaced its model
+and FFI with a JSON protocol of its own, and reworked the parts listed in the file headers.
+
+- Project: tauri-plugin-iap — https://github.com/Choochmeque/tauri-plugin-iap
+- License: MIT — [`licenses/LICENSE-MIT-tauri-plugin-iap.txt`](licenses/LICENSE-MIT-tauri-plugin-iap.txt)
+- Copyright (c) 2025 Vladimir Pankratov
+
+---
+
 ## Build-time tools (not redistributed)
 
 These are resolved on the build machine and are **not** shipped inside any Nucleus artifact. They
@@ -139,3 +201,9 @@ are listed for transparency, not as a redistribution notice.
 `decorated-window-tao/src/main/native/Cargo.lock`; regenerate a per-crate license inventory with
 `cargo license` or `cargo about` from `decorated-window-tao/src/main/native/`. Sections 2 and 3
 above cover the crates Nucleus has forked and therefore redistributes as source.
+
+`libnucleus_location` (`nucleus.location`) likewise statically links its crate tree (`jni`,
+`windows`, `objc2` / `objc2-core-location`, `zbus`, …), all MIT and/or Apache-2.0; the list is
+`location/src/main/native/Cargo.lock`. Its design follows
+[robius-location](https://github.com/project-robius/robius/tree/main/crates/location) (MIT), from
+which no source is copied.
