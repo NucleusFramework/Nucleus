@@ -24,6 +24,8 @@ builds a `.flatpak` bundle through electron-builder that Flathub does not accept
 - **Checks** before writing, failing the task with every problem at once: reverse-DNS app id, a
   summary of at most 35 characters without a trailing period, description, license, developer,
   categories, at least one screenshot, `#rrggbb` branding, and a square PNG icon of 256 px or more.
+  The icon is installed in `hicolor/512x512`, scaled down when larger: `flatpak build-export`
+  refuses a 1024 px icon there ("Image too large").
 - `-Pnucleus.flathub.releaseDate=YYYY-MM-DD` pins the metainfo release date (default: today, UTC).
 - **Output.** `flathub { outputDir }` (default `build/flathub/<appId>`), or
   `-Pnucleus.flathub.outputDir=<dir>` for one run, may be a clone of `github.com/flathub/<appId>`:
