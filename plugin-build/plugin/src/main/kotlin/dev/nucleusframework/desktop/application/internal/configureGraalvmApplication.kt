@@ -36,6 +36,7 @@ import dev.nucleusframework.internal.utils.javaExecutable
 import dev.nucleusframework.internal.utils.uppercaseFirstChar
 import org.gradle.api.DefaultTask
 import org.gradle.api.Project
+import org.gradle.api.Task
 import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DuplicatesStrategy
@@ -2958,9 +2959,15 @@ private fun JvmApplicationContext.collectProjectResourceDirs(runtimeConfigName: 
  * all of them is harmless.
  */
 private fun JvmApplicationContext.collectNativeBuildTasks(runtimeConfigName: String?): List<Any> =
-    collectProjectResourceProjects(runtimeConfigName).map { p ->
-        p.tasks.matching { it.name.startsWith("buildNative") }
-    }
+    collectProjectResourceProjects(runtimeConfigName).flatMap(::buildNativeTasksOf)
+
+/**
+ * [p]'s `buildNative<OS>` tasks, selected by name. `tasks.matching` would create every task the
+ * project has registered in order to test it, and a task of another platform can refuse to be
+ * created at all: the Kotlin plugin fails on the iOS tasks of a Linux arm64 host.
+ */
+internal fun buildNativeTasksOf(p: Project): List<TaskProvider<Task>> =
+    p.tasks.names.filter { it.startsWith("buildNative") }.map(p.tasks::named)
 
 /**
  * Wires the app's own compilation class directories into [AnalyzeStaticMetadataTask]
