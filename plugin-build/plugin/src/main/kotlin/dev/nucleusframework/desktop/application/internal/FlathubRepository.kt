@@ -2,8 +2,13 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.FlathubArch
 import dev.nucleusframework.desktop.application.dsl.FlathubScreenshot
+import net.coobird.thumbnailator.Thumbnails
+import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.Serializable
 import java.nio.ByteBuffer
+import javax.imageio.ImageIO
 
 /** A file type the app opens, from `fileAssociation`. */
 data class FlathubMimeType(
@@ -79,6 +84,22 @@ internal data class FlathubSource(
  * and the shared-mime-info XML. Pure functions, so the content is testable without Gradle.
  */
 internal object FlathubRepository {
+    /** The installed icon's size: the largest raster icon `flatpak build-export` accepts. */
+    const val ICON_SIZE = 512
+
+    /** The installed icon: [png] as is, or scaled down to [ICON_SIZE] when larger. */
+    fun icon(png: ByteArray): ByteArray {
+        val image = ImageIO.read(ByteArrayInputStream(png))
+        if (image.width <= ICON_SIZE) return png
+        val scaled =
+            Thumbnails
+                .of(image)
+                .forceSize(ICON_SIZE, ICON_SIZE)
+                .imageType(BufferedImage.TYPE_INT_ARGB)
+                .asBufferedImage()
+        return ByteArrayOutputStream().also { ImageIO.write(scaled, "png", it) }.toByteArray()
+    }
+
     private val PLAIN_YAML = Regex("[A-Za-z0-9_./:=+@-]+")
 
     /** `{version}` and `{arch}` of [template] replaced. */
@@ -114,7 +135,8 @@ internal object FlathubRepository {
             appendLine("      - install -Dm644 ${spec.desktopFile} -t /app/share/applications")
             appendLine("      - install -Dm644 ${spec.metainfoFile} -t /app/share/metainfo")
             appendLine(
-                "      - install -Dm644 ${spec.iconFile} /app/share/icons/hicolor/512x512/apps/${spec.iconFile}",
+                "      - install -Dm644 ${spec.iconFile} " +
+                    "/app/share/icons/hicolor/${ICON_SIZE}x$ICON_SIZE/apps/${spec.iconFile}",
             )
             if (spec.mimeTypes.isNotEmpty()) {
                 appendLine("      - install -Dm644 ${spec.mimeFile} /app/share/mime/packages/${spec.appId}.xml")
