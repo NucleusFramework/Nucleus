@@ -62,6 +62,14 @@ Each of these was found by running the Lab from a local Flatpak repository.
   vanished on Ubuntu. `nucleus_layout_direction_linux.c` reads and watches the key through
   `org.freedesktop.portal.Settings` (`ReadOne`, then `Read`, `SettingChanged`) inside a sandbox,
   which is also GTK's own path there.
+- **The host's CAs.** `/etc/ssl` inside the sandbox is the runtime's static bundle (118 CAs on
+  GNOME 51): a company or filtering proxy's CA installed on the host (netfree here) is missing, and
+  every TLS connection through it failed with `PKIX path building failed`. Flatpak swaps the
+  runtime's p11-kit trust module for a client of the host's, so `LinuxCertificateProvider` adds
+  the output of `trust extract --filter=ca-anchors --purpose=server-auth` when `/.flatpak-info`
+  exists. A test on the JVM must empty its own trust store first
+  (`-Djavax.net.ssl.trustStore=<empty.p12>`): a host JDK's `cacerts` may already carry the CA, which
+  a native image's does not.
 
 ## Local loop
 
