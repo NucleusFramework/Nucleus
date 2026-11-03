@@ -707,12 +707,18 @@ Java_dev_nucleusframework_media_control_linux_NativeLinuxBridge_nativeSetMetadat
     const char *cover  = j_cover  ? (*env)->GetStringUTFChars(env, j_cover,  NULL) : NULL;
 
     pthread_mutex_lock(&g_state_mutex);
+    /* Duration and artwork can arrive after the track's initial metadata. */
+    if (g_track_counter == 0 ||
+        g_strcmp0(g_title ? g_title : "", title ? title : "") != 0 ||
+        g_strcmp0(g_artist ? g_artist : "", artist ? artist : "") != 0 ||
+        g_strcmp0(g_album ? g_album : "", album ? album : "") != 0) {
+        g_track_counter++;
+    }
     g_free(g_title);     g_title     = title  ? g_strdup(title)  : NULL;
     g_free(g_artist);    g_artist    = artist ? g_strdup(artist) : NULL;
     g_free(g_album);     g_album     = album  ? g_strdup(album)  : NULL;
     g_free(g_cover_url); g_cover_url = cover  ? g_strdup(cover)  : NULL;
     g_duration_us = (duration_ms > 0) ? (gint64)duration_ms * 1000 : -1;
-    g_track_counter++;
     GVariant *metadata = build_metadata_locked();
     pthread_mutex_unlock(&g_state_mutex);
 
