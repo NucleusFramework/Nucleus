@@ -103,6 +103,16 @@ class GraalVmInitializerTest {
     }
 
     @Test
+    fun `inside a Flatpak java util prefs move to the app's persisted config dir`() {
+        val config = "/home/u/.var/app/com.example.App/config"
+        val env = mapOf("XDG_CONFIG_HOME" to config)
+        assertEquals(config, GraalVmInitializer.flatpakPreferencesRoot(env::get, true))
+        // Outside a Flatpak, or without the variable, java.util.prefs keeps its default root.
+        assertNull(GraalVmInitializer.flatpakPreferencesRoot(env::get, false))
+        assertNull(GraalVmInitializer.flatpakPreferencesRoot(mapOf("XDG_CONFIG_HOME" to " ")::get, true))
+    }
+
+    @Test
     fun `hostile inputs keep the sandbox wiring sane`() {
         val account = Files.createTempDirectory("nucleus account é").toFile()
         try {

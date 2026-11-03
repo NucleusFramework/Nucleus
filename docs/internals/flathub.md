@@ -70,6 +70,12 @@ Each of these was found by running the Lab from a local Flatpak repository.
   exists. A test on the JVM must empty its own trust store first
   (`-Djavax.net.ssl.trustStore=<empty.p12>`): a host JDK's `cacerts` may already carry the CA, which
   a native image's does not.
+- **`java.util.prefs`.** Its user tree defaults to `user.home`/`.java/.userPrefs`, and a Flatpak
+  without `--filesystem=home` mounts a tmpfs on the home: every preference written through
+  `Preferences.userRoot()` (multiplatform-settings' `Settings()` on the JVM) was gone after a
+  restart, Zayit's `onboarding_finished` included. `GraalVmInitializer.initialize()` sets
+  `java.util.prefs.userRoot` to `XDG_CONFIG_HOME` (the app's persisted `~/.var/app/<id>/config`)
+  inside a Flatpak, before anything reads the preferences; an explicit `-D` wins.
 
 ## Local loop
 

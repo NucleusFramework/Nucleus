@@ -67,6 +67,11 @@ public object GraalVmInitializer {
             applyMacOsLocale()
         }
 
+        // Before anything reads java.util.prefs: its root is fixed once the class initializes.
+        flatpakPreferencesRoot(System::getenv, File(FLATPAK_INFO_FILE).exists())?.let {
+            setIfAbsent(PREFS_USER_ROOT_PROPERTY, it)
+        }
+
         // Linux: cap glibc malloc arenas (#757) before the app, Skia and driver threads exist —
         // a thread keeps the arena it got. Same JNI library as the HiDPI detection below, so it
         // too must come after java.library.path is configured.
@@ -169,12 +174,34 @@ public object GraalVmInitializer {
         return home.takeIf { userHome.isNullOrBlank() || userHome.trimEnd('/') == accountHome }
     }
 
+    /**
+     * Where `java.util.prefs` keeps the user tree inside a Flatpak, or `null` outside one.
+     *
+     * Its default root is `user.home`, and a Flatpak without `--filesystem=home` mounts a tmpfs
+     * there: every preference written through `Preferences.userRoot()` (multiplatform-settings'
+     * `Settings()` on the JVM) was lost when the app quit. `XDG_CONFIG_HOME` is the app's own
+     * `~/.var/app/<id>/config`, which Flatpak persists.
+     */
+    internal fun flatpakPreferencesRoot(
+        env: (String) -> String?,
+        insideFlatpak: Boolean,
+    ): String? {
+        if (!insideFlatpak) return null
+        return env("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }
+    }
+
     private fun setIfAbsent(
         key: String,
         value: String,
     ) {
         if (System.getProperty(key).isNullOrBlank()) System.setProperty(key, value)
     }
+
+    /** Mounted by Flatpak in every sandbox. */
+    private const val FLATPAK_INFO_FILE = "/.flatpak-info"
+
+    /** Read once by `java.util.prefs.FileSystemPreferences`; an explicit `-D` wins. */
+    private const val PREFS_USER_ROOT_PROPERTY = "java.util.prefs.userRoot"
 
     /** Set by macOS in the environment of every sandboxed process. */
     private const val APP_SANDBOX_CONTAINER_ID_ENV = "APP_SANDBOX_CONTAINER_ID"
