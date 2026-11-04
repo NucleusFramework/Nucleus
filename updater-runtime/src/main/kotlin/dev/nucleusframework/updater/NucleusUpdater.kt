@@ -162,6 +162,9 @@ public class NucleusUpdater(
         flow {
             val targetFile = info.currentFile
             requirePlainFileName(targetFile.fileName)
+            if (!isSingleLineVersion(info.version)) {
+                throw ParseException("Update version must not contain a line break: '${info.version}'")
+            }
             pendingUpdateVersion = info.version
             // A fresh, owner-only (0700 on POSIX) staging directory: a predictable path in the
             // shared temp dir would be a pre-created-file/symlink hazard on multi-user systems.

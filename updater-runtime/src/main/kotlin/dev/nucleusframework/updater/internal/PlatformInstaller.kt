@@ -202,8 +202,10 @@ internal object PlatformInstaller {
                 helper = silentHelper?.absolutePath,
                 appPid = pid,
                 restart = restart,
-                version = version.toRecordValue(),
-                runningVersion = runningVersion.toRecordValue(),
+                // Single lines (UpdaterConfig and downloadUpdate reject a version with a line
+                // break), so each fits on one line of the record.
+                version = version?.trim().orEmpty(),
+                runningVersion = runningVersion?.trim().orEmpty(),
                 logFile = InstallFailureRecord.logFile().absolutePath,
                 failureFile = InstallFailureRecord.recordFile().absolutePath,
             ),
@@ -215,9 +217,6 @@ internal object PlatformInstaller {
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
     }
-
-    /** A value for one line of the record: a line break would split it across lines. */
-    private fun String?.toRecordValue(): String = orEmpty().filterNot { it == '\n' || it == '\r' }.trim()
 
     /**
      * Resolves the passwordless update helper installed in the app dir, or `null` if absent.

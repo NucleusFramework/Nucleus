@@ -100,6 +100,9 @@ public class UpdaterConfig {
         require(::provider.isInitialized) {
             "UpdaterConfig.provider must be set, e.g. NucleusUpdater { provider = GitHubProvider(\"owner/repo\") }"
         }
+        require(isSingleLineVersion(currentVersion)) {
+            "UpdaterConfig.currentVersion must not contain a line break, was '$currentVersion'"
+        }
         return ResolvedUpdaterConfig(
             currentVersion = currentVersion,
             provider = provider,
@@ -119,6 +122,12 @@ public class UpdaterConfig {
         public const val DEV_VERSION: String = "0.0.0-dev"
     }
 }
+
+/**
+ * Whether [version], once trimmed, holds no line break. A version is one line wherever the updater
+ * stores it (the update marker, the failed-install record), so one with a line break is invalid.
+ */
+internal fun isSingleLineVersion(version: String): Boolean = version.trim().none { it == '\n' || it == '\r' }
 
 /** The immutable snapshot of an [UpdaterConfig], taken once when a [NucleusUpdater] is constructed. */
 internal data class ResolvedUpdaterConfig(
