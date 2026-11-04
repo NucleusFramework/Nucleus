@@ -22,6 +22,9 @@ internal object WindowsWidgetsPackaging {
     private const val PREVIEW_WIDTH = 300
     private const val PREVIEW_HEIGHT = 304
 
+    // The widget provider API arrived in the Windows App SDK 1.2.
+    private const val MIN_WIDGETS_MINOR = 2
+
     /** The identity the CLSID derives from: the AppX identity, else the package or app name. */
     fun identity(distributions: JvmApplicationDistributions): String =
         distributions.windows.appx.identityName
@@ -59,11 +62,15 @@ internal object WindowsWidgetsPackaging {
             }
 
         workDir.mkdirs()
+        val runtime = windowsAppRuntime(widgets.windowsAppSdkVersion)
         val template =
             workDir.resolve("AppxManifest.xml").apply {
                 writeText(
-                    WindowsWidgetsPackaging::class.java.getResource(MANIFEST_TEMPLATE)?.readText()
-                        ?: error("Missing plugin resource $MANIFEST_TEMPLATE"),
+                    (
+                        WindowsWidgetsPackaging::class.java.getResource(MANIFEST_TEMPLATE)?.readText()
+                            ?: error("Missing plugin resource $MANIFEST_TEMPLATE")
+                    ).replace("@WINDOWS_APP_RUNTIME_NAME@", runtime.name)
+                        .replace("@WINDOWS_APP_RUNTIME_MIN_VERSION@", runtime.minVersion),
                 )
             }
         val extensions =
@@ -74,6 +81,34 @@ internal object WindowsWidgetsPackaging {
                 )
             }
         return Staged(template, extensions)
+    }
+
+    /** The framework package of a Windows App SDK release, as an AppX `PackageDependency` names it. */
+    data class WindowsAppRuntime(
+        val name: String,
+        val minVersion: String,
+    )
+
+    /**
+     * Maps a Windows App SDK `major.minor` to its runtime package: 1.x ships one package per minor
+     * (`Microsoft.WindowsAppRuntime.1.8`, versions `8000.*`), 2.x one per major
+     * (`Microsoft.WindowsAppRuntime.2`, versions `2.<minor>.*`).
+     */
+    fun windowsAppRuntime(version: String): WindowsAppRuntime {
+        val parts = version.trim().split('.')
+        val major = parts.getOrNull(0)?.toIntOrNull()
+        val minor = parts.getOrNull(1)?.toIntOrNull()
+        if (parts.size != 2 || major == null || minor == null) {
+            throw GradleException("windowsAppSdkVersion must be major.minor (\"1.8\", \"2.6\"), was \"$version\"")
+        }
+        if (major < 1 || (major == 1 && minor < MIN_WIDGETS_MINOR)) {
+            throw GradleException("Windows widgets need the Windows App SDK 1.$MIN_WIDGETS_MINOR or later, was $version")
+        }
+        return if (major == 1) {
+            WindowsAppRuntime("Microsoft.WindowsAppRuntime.1.$minor", "${minor}000.0.0.0")
+        } else {
+            WindowsAppRuntime("Microsoft.WindowsAppRuntime.$major", "$major.$minor.0.0")
+        }
     }
 
     /** One widget's images, as package-relative paths. */

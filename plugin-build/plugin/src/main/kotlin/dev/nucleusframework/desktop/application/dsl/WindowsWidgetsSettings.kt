@@ -35,6 +35,13 @@ abstract class WindowsWidgetsSettings {
     internal val definitions = mutableListOf<WindowsWidgetSettings>()
 
     /**
+     * The Windows App SDK release whose framework package hosts the widget provider classes,
+     * `major.minor` (`"1.8"`, `"2.6"`): the AppX declares a dependency on it, which the Store
+     * installs with the app and a sideloaded install requires. Widgets need 1.2 or later.
+     */
+    var windowsAppSdkVersion: String = "1.8"
+
+    /**
      * Declares the widget [id]: the definition id `widgets { widget(id) { … } }` registers at run
      * time. Letters, digits and `_`, starting with a letter.
      */

@@ -27,7 +27,7 @@
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="${minVersion}" MaxVersionTested="${maxVersionTested}" />
     <!-- Microsoft.Windows.Widgets.Providers lives in the Windows App SDK framework package. -->
-    <PackageDependency Name="Microsoft.WindowsAppRuntime.1.8" MinVersion="8000.0.0.0"
+    <PackageDependency Name="@WINDOWS_APP_RUNTIME_NAME@" MinVersion="@WINDOWS_APP_RUNTIME_MIN_VERSION@"
       Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
   </Dependencies>
   ${capabilities}

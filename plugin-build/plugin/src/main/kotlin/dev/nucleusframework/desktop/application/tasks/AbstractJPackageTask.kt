@@ -420,6 +420,20 @@ abstract class AbstractJPackageTask
         @get:Internal
         val appResourcesDir: DirectoryProperty = objects.directoryProperty()
 
+        /**
+         * The content of [appResourcesDir], tracked: the directory itself is only a location, so a
+         * resource added or changed under `appResourcesRootDir` left the app image up to date and
+         * silently stale. Resolved lazily, as the directory is produced by `prepareAppResources`.
+         */
+        @get:InputFiles
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        internal val appResourcesFiles: ConfigurableFileCollection =
+            objects.fileCollection().from(
+                java.util.concurrent.Callable {
+                    appResourcesDir.orNull?.asFileTree ?: emptyList<java.io.File>()
+                },
+            )
+
         @get:Internal
         private val libsMappingFile: Provider<RegularFile> =
             workingDir.map {

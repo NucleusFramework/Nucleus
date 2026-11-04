@@ -111,6 +111,20 @@ class ElectronBuilderAppXWidgetsConfigTest {
     }
 
     @Test
+    fun `the windows app sdk version maps to its runtime package`() {
+        assertEquals(
+            WindowsWidgetsPackaging.WindowsAppRuntime("Microsoft.WindowsAppRuntime.1.8", "8000.0.0.0"),
+            WindowsWidgetsPackaging.windowsAppRuntime("1.8"),
+        )
+        assertEquals(
+            WindowsWidgetsPackaging.WindowsAppRuntime("Microsoft.WindowsAppRuntime.2", "2.6.0.0"),
+            WindowsWidgetsPackaging.windowsAppRuntime("2.6"),
+        )
+        assertTrue(runCatching { WindowsWidgetsPackaging.windowsAppRuntime("1.1") }.isFailure)
+        assertTrue(runCatching { WindowsWidgetsPackaging.windowsAppRuntime("1.8.1") }.isFailure)
+    }
+
+    @Test
     fun `the clsid is stable per identity and distinct across apps`() {
         assertEquals(WindowsWidgetsPackaging.clsid("Acme.Demo"), WindowsWidgetsPackaging.clsid("Acme.Demo"))
         assertNotEquals(WindowsWidgetsPackaging.clsid("Acme.Demo"), WindowsWidgetsPackaging.clsid("Acme.Other"))
