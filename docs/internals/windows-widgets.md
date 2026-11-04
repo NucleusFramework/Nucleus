@@ -25,6 +25,8 @@ windows {
 }
 ```
 
+Widgets need package identity, so they ship with the AppX / MSIX format only. In NSIS, MSI, portable and ZIP builds they are inert, with no error: the plugin stages nothing, `WindowsWidgetHost.isSupported` is false (no `WidgetManager` without identity), `widgets {}` is a no-op and `isWidgetHostOnly()` is false. A package with external location (sparse package) could add identity to those installers; it is deliberately not implemented.
+
 The plugin writes the whole AppX side: the `com.microsoft.windows.widgets` extension, the COM server (`com:ExeServer … -RegisterProcessAsComServer`), the Windows App SDK `PackageDependency` (`windowsAppSdkVersion`, 1.8 by default) and the `com` / `uap3` namespaces in a widget-enabled manifest template (`nucleus/appx/AppxManifest-widgets.xml`). The CLSID is a UUID v3 of the AppX identity, baked into `nucleus-app.properties` (`NucleusApp.windowsWidgetsClsid`). Without a `widget(…)` the AppX config is byte-identical (`ElectronBuilderAppXWidgetsConfigTest`).
 
 ## Rendering model
