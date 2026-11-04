@@ -39,6 +39,7 @@
 #include "widgets_abi.h"
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 #include <atomic>
 #include <mutex>
@@ -286,10 +287,8 @@ struct Dispatcher {
 
 // Kotlin returns false when the provider threw; surface that to the host.
 static HRESULT finish(JNIEnv *env, jboolean ok) {
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        return E_FAIL;
-    }
+    // The dispatcher catches provider exceptions itself; anything left pending is reported, not dropped.
+    if (nucleus_jni_clear_exception(env)) return E_FAIL;
     return ok ? S_OK : E_FAIL;
 }
 

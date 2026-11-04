@@ -1,8 +1,10 @@
 public final class dev/nucleusframework/widget/windows/Deferral {
+	public static final field $stable I
 	public final fun complete ()V
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetActionInvokedArgs {
+	public static final field $stable I
 	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
 	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
 	public final fun component2 ()Ljava/lang/String;
@@ -20,6 +22,7 @@ public final class dev/nucleusframework/widget/windows/WidgetActionInvokedArgs {
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetAnalyticsInfoReportedArgs {
+	public static final field $stable I
 	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)V
 	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
 	public final fun component2 ()Ljava/lang/String;
@@ -33,6 +36,7 @@ public final class dev/nucleusframework/widget/windows/WidgetAnalyticsInfoReport
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetContext {
+	public static final field $stable I
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/windows/WidgetSize;Z)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
@@ -50,6 +54,7 @@ public final class dev/nucleusframework/widget/windows/WidgetContext {
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetContextChangedArgs {
+	public static final field $stable I
 	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;)V
 	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
 	public final fun copy (Ldev/nucleusframework/widget/windows/WidgetContext;)Ldev/nucleusframework/widget/windows/WidgetContextChangedArgs;
@@ -61,6 +66,7 @@ public final class dev/nucleusframework/widget/windows/WidgetContextChangedArgs 
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetCustomizationRequestedArgs {
+	public static final field $stable I
 	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)V
 	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
 	public final fun component2 ()Ljava/lang/String;
@@ -74,6 +80,7 @@ public final class dev/nucleusframework/widget/windows/WidgetCustomizationReques
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetErrorInfoReportedArgs {
+	public static final field $stable I
 	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)V
 	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
 	public final fun component2 ()Ljava/lang/String;
@@ -87,11 +94,13 @@ public final class dev/nucleusframework/widget/windows/WidgetErrorInfoReportedAr
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetException : java/lang/RuntimeException {
+	public static final field $stable I
 	public fun <init> (Ljava/lang/String;I)V
 	public final fun getHresult ()I
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetHeaders {
+	public static final field $stable I
 	public final fun clear ()V
 	public final fun getSize ()I
 	public final fun hasKey (Ljava/lang/String;)Z
@@ -102,6 +111,7 @@ public final class dev/nucleusframework/widget/windows/WidgetHeaders {
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetInfo {
+	public static final field $stable I
 	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;Ljava/lang/Boolean;Ljava/lang/Integer;)V
 	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
 	public final fun component2 ()Ljava/lang/String;
@@ -125,6 +135,7 @@ public final class dev/nucleusframework/widget/windows/WidgetInfo {
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetManager {
+	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/widget/windows/WidgetManager$Companion;
 	public final fun deleteWidget (Ljava/lang/String;)V
 	public final fun getWidgetIds ()Ljava/util/List;
@@ -140,6 +151,7 @@ public final class dev/nucleusframework/widget/windows/WidgetManager$Companion {
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetMessageReceivedArgs {
+	public static final field $stable I
 	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)V
 	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
 	public final fun component2 ()Ljava/lang/String;
@@ -178,6 +190,7 @@ public abstract interface class dev/nucleusframework/widget/windows/WidgetProvid
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetProviderServer {
+	public static final field $stable I
 	public static final field COM_SERVER_ARGUMENT Ljava/lang/String;
 	public static final field INSTANCE Ldev/nucleusframework/widget/windows/WidgetProviderServer;
 	public final fun isComServerLaunch ([Ljava/lang/String;)Z
@@ -189,6 +202,7 @@ public abstract interface class dev/nucleusframework/widget/windows/WidgetResour
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetResourceRequest {
+	public static final field $stable I
 	public final fun getContent ()[B
 	public final fun getHeaders ()Ldev/nucleusframework/widget/windows/WidgetHeaders;
 	public final fun getMethod ()Ljava/lang/String;
@@ -198,6 +212,7 @@ public final class dev/nucleusframework/widget/windows/WidgetResourceRequest {
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetResourceRequestedArgs {
+	public static final field $stable I
 	public final fun getDeferral ()Ldev/nucleusframework/widget/windows/Deferral;
 	public final fun getRequest ()Ldev/nucleusframework/widget/windows/WidgetResourceRequest;
 	public final fun getResponse ()Ldev/nucleusframework/widget/windows/WidgetResourceResponse;
@@ -206,6 +221,7 @@ public final class dev/nucleusframework/widget/windows/WidgetResourceRequestedAr
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetResourceResponse {
+	public static final field $stable I
 	public fun <init> ([BLjava/lang/String;I)V
 	public final fun getContent ()[B
 	public final fun getHeaders ()Ldev/nucleusframework/widget/windows/WidgetHeaders;
@@ -223,6 +239,7 @@ public final class dev/nucleusframework/widget/windows/WidgetSize : java/lang/En
 }
 
 public final class dev/nucleusframework/widget/windows/WidgetUpdateRequestOptions {
+	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/widget/windows/WidgetUpdateRequestOptions$Companion;
 	public fun <init> (Ljava/lang/String;)V
 	public final fun getCustomState ()Ljava/lang/String;
@@ -240,5 +257,17 @@ public final class dev/nucleusframework/widget/windows/WidgetUpdateRequestOption
 
 public final class dev/nucleusframework/widget/windows/WidgetUpdateRequestOptions$Companion {
 	public final fun getUnsetValue ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/host/WindowsWidgetHost : dev/nucleusframework/widget/WidgetHost {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun isLaunchedByHost ()Z
+	public fun isSupported ()Z
+	public fun loadState-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun pinnedWidgets (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun refresh-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveState-b_9T3YA (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetState;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun start ()V
 }
 

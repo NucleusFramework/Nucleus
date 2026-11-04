@@ -2,6 +2,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    // Widget content is @Composable: the host's tests compose real widgets.
+    alias(libs.plugins.kotlinComposePlugin)
     id("nucleus.native-module")
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -15,17 +17,20 @@ val publishVersion =
 
 dependencies {
     implementation(project(":core-runtime"))
+    // The Windows host of the Glance-like API (WindowsWidgetHost, found through ServiceLoader).
+    api(project(":widget-runtime"))
     testImplementation(kotlin("test"))
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_11)
+        jvmTarget.set(JvmTarget.JVM_17)
+        optIn.add("dev.nucleusframework.widget.InternalNucleusWidgetApi")
     }
 }
 
