@@ -8,6 +8,7 @@ import dev.nucleusframework.desktop.application.dsl.SnapConfinement
 import dev.nucleusframework.desktop.application.dsl.SnapGrade
 import dev.nucleusframework.desktop.application.dsl.SnapPlug
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.WindowsWidgetSize
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Nucleus Lab: the single test bench app. Assembles the Metro graph from every probe module
@@ -318,6 +319,14 @@ nucleus.application {
                     preview.set(project.file("packaging/widgets/preview.png"))
                     previewDark.set(project.file("packaging/widgets/preview-dark.png"))
                     previewLight.set(project.file("packaging/widgets/preview-light.png"))
+                    customizable = true
+                }
+                widget("LabWeb") {
+                    displayName = "Lab web"
+                    description = "A web widget (European Economic Area) with its Adaptive Card fallback"
+                    sizes = listOf(WindowsWidgetSize.Medium, WindowsWidgetSize.Large)
+                    icon.set(project.file("packaging/widgets/icon.png"))
+                    preview.set(project.file("packaging/widgets/preview.png"))
                 }
             }
         }

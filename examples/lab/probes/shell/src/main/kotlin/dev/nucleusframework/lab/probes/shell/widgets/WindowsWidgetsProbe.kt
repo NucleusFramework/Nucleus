@@ -47,6 +47,13 @@ class WindowsWidgetsProbe : Probe {
                     Check("persist", "The count survives quitting and relaunching the Lab (widget state)"),
                     Check("open-url", "“Open probe” on the card brings this probe forward through the deep link"),
                     Check("unpin", "Unpinning the widget lists “unpinned”"),
+                    Check(
+                        "customize",
+                        "“Customize widget” in the counter's menu shows the settings; Done applies title, step, " +
+                            "note and background",
+                    ),
+                    Check("image", "The counter's header shows the Nucleus logo (an app resource, not embedded)"),
+                    Check("web", "“Lab web” shows its page in the EEA, its fallback card elsewhere"),
                 ),
             keywords = listOf("widget", "Widgets board", "Glance", "NucleusWidget", "Adaptive Cards", "COM"),
         )

@@ -6,7 +6,9 @@ import dev.nucleusframework.lab.app.shell.LabApp
 import dev.nucleusframework.lab.core.fixture.FIXTURE_PROPERTY
 import dev.nucleusframework.lab.core.process.FIXTURE_ARGUMENT
 import dev.nucleusframework.lab.probes.shell.widgets.LAB_COUNTER_WIDGET
+import dev.nucleusframework.lab.probes.shell.widgets.LAB_WEB_WIDGET
 import dev.nucleusframework.lab.probes.shell.widgets.LabCounterWidget
+import dev.nucleusframework.lab.probes.shell.widgets.LabWebWidget
 import dev.nucleusframework.widget.isWidgetHostOnly
 import dev.nucleusframework.widget.widgets
 import dev.zacsweers.metro.createGraph
@@ -35,7 +37,10 @@ fun main(args: Array<String>) {
         aotTraining(duration = 45.seconds)
         onDeepLink(graph.commands::handleDeepLink)
         // Windows 11 widgets board (probe shell.windows-widgets); declared in windows { widgets { } } too.
-        widgets { widget(LAB_COUNTER_WIDGET) { LabCounterWidget() } }
+        widgets {
+            widget(LAB_COUNTER_WIDGET) { LabCounterWidget() }
+            widget(LAB_WEB_WIDGET) { LabWebWidget() }
+        }
         // Started by the widgets board for a card click: no window until the user asks for one,
         // and exit once no widget has been visible for a while.
         if (!isWidgetHostOnly()) LabApp(graph)
