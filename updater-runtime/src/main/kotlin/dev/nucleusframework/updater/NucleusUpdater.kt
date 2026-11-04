@@ -12,6 +12,7 @@ import dev.nucleusframework.updater.internal.ChecksumVerifier
 import dev.nucleusframework.updater.internal.FeedFetcher
 import dev.nucleusframework.updater.internal.FeedOverride
 import dev.nucleusframework.updater.internal.FileSelector
+import dev.nucleusframework.updater.internal.InstallFailureRecord
 import dev.nucleusframework.updater.internal.InstalledVersionWatcher
 import dev.nucleusframework.updater.internal.PlatformInfo
 import dev.nucleusframework.updater.internal.PlatformInstaller
@@ -383,7 +384,14 @@ public class NucleusUpdater(
             WindowsHotUpdate.start(installerFile, hotInstall, relaunchArguments)
             return
         }
-        PlatformInstaller.install(installerFile, platform, restart = true, relaunchArguments = relaunchArguments)
+        PlatformInstaller.install(
+            installerFile,
+            platform,
+            restart = true,
+            relaunchArguments = relaunchArguments,
+            version = pendingUpdateVersion,
+            runningVersion = config.currentVersion,
+        )
     }
 
     /**
@@ -423,7 +431,13 @@ public class NucleusUpdater(
         if (skipsInstall(installerFile, restart = false)) return
         writeUpdateMarker()
         val platform = PlatformInfo.currentPlatform()
-        PlatformInstaller.install(installerFile, platform, restart = false)
+        PlatformInstaller.install(
+            installerFile,
+            platform,
+            restart = false,
+            version = pendingUpdateVersion,
+            runningVersion = config.currentVersion,
+        )
     }
 
     /**
@@ -438,6 +452,26 @@ public class NucleusUpdater(
         // Consumed either way: a marker for another version is stale and must not linger.
         UpdateMarker.delete()
         return event
+    }
+
+    /**
+     * Returns the failure of the last update install, if it failed, and clears it so that
+     * subsequent calls return `null`. Use this on startup, next to [consumeUpdateEvent], to tell
+     * the user why the app is still on the old version. Never throws.
+     *
+     * Only Linux deb and rpm installs record failures today: their installer runs after the app
+     * exits, and the app is relaunched whether or not it succeeded. The installer's full output
+     * stays in `nucleus-install.log` in the application data directory until the next install. A
+     * failure is reported only while the app is still the version that attempted the install; once
+     * it runs any other version (the update, or a later one, was installed some other way) it is
+     * discarded.
+     */
+    public fun consumeInstallFailure(): InstallFailure? {
+        val entry = InstallFailureRecord.read()
+        InstallFailureRecord.delete()
+        entry ?: return null
+        if (entry.runningVersion != config.currentVersion.trim()) return null
+        return InstallFailure(entry.version, entry.exitCode, entry.output)
     }
 
     /**

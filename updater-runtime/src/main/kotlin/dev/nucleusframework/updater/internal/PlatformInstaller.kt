@@ -52,11 +52,18 @@ internal object PlatformInstaller {
     /** Max parents walked from the launcher path when looking for [UPDATE_HELPER_NAME]. */
     internal const val HELPER_SEARCH_MAX_DEPTH = 3
 
+    /**
+     * Installs [file] and exits. [version] is the version being installed and [runningVersion] the
+     * one running now, when known; the Linux package installer records both if the install fails
+     * (see [InstallFailureRecord]).
+     */
     fun install(
         file: File,
         platform: Platform,
         restart: Boolean = true,
         relaunchArguments: List<String> = emptyList(),
+        version: String? = null,
+        runningVersion: String? = null,
     ) {
         val extension = file.name.substringAfterLast('.').lowercase()
 
@@ -65,7 +72,7 @@ internal object PlatformInstaller {
             platform == Platform.Windows -> installWindows(file, extension, restart, relaunchArguments)
             platform == Platform.Linux && extension == "appimage" -> installLinuxAppImage(file, restart)
             platform == Platform.Linux && (extension == "deb" || extension == "rpm") ->
-                installLinuxPackage(file, extension, restart)
+                installLinuxPackage(file, extension, restart, version, runningVersion)
             else -> buildProcessForInstaller(file, platform, extension).start()
         }
         exitProcess(0)
@@ -170,6 +177,8 @@ internal object PlatformInstaller {
         packageFile: File,
         extension: String,
         restart: Boolean,
+        version: String?,
+        runningVersion: String?,
     ) {
         val pid = ProcessHandle.current().pid()
         val launcher =
@@ -193,6 +202,10 @@ internal object PlatformInstaller {
                 helper = silentHelper?.absolutePath,
                 appPid = pid,
                 restart = restart,
+                version = version.toRecordValue(),
+                runningVersion = runningVersion.toRecordValue(),
+                logFile = InstallFailureRecord.logFile().absolutePath,
+                failureFile = InstallFailureRecord.recordFile().absolutePath,
             ),
         )
         script.setExecutable(true)
@@ -202,6 +215,9 @@ internal object PlatformInstaller {
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
     }
+
+    /** A value for one line of the record: a line break would split it across lines. */
+    private fun String?.toRecordValue(): String = orEmpty().filterNot { it == '\n' || it == '\r' }.trim()
 
     /**
      * Resolves the passwordless update helper installed in the app dir, or `null` if absent.
