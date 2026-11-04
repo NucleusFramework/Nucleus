@@ -10,8 +10,6 @@ import dev.nucleusframework.lab.core.Domain
 import dev.nucleusframework.lab.core.Probe
 import dev.nucleusframework.lab.core.ProbeDescriptor
 import dev.nucleusframework.lab.core.ProbeId
-import dev.nucleusframework.lab.core.format.formatDurationMillis
-import dev.nucleusframework.lab.core.format.formatTime
 import dev.nucleusframework.lab.designsystem.Actions
 import dev.nucleusframework.lab.designsystem.EventLog
 import dev.nucleusframework.lab.designsystem.Hint
@@ -34,35 +32,29 @@ class WindowsWidgetsProbe : Probe {
             title = "Windows 11 widgets",
             domain = Domain.Shell,
             summary =
-                "Does the Widgets board activate the Lab's COM widget provider, render its Adaptive Card " +
-                    "and route the card's actions back into the app?",
-            modules = listOf("widget-windows"),
+                "Does a Glance-like NucleusWidget show up in the Widgets board, render, and route its " +
+                    "buttons and app-side updates back through the widget state?",
+            modules = listOf("widget-runtime", "widget-windows"),
             platforms = setOf(Platform.Windows),
             checks =
                 listOf(
-                    Check("picker", "In the Widgets board, “+” lists Nucleus Lab with the Lab counter widget"),
-                    Check("pin", "Pinning it shows a card at 0; createWidget then activate are listed here"),
-                    Check("actions", "+1 and Reset on the card change the number; onActionInvoked shows the verb"),
+                    Check("picker", "In the Widgets board, “+” lists Nucleus Lab with “Lab counter” and its preview"),
+                    Check("pin", "Pinning it shows a card at 0; “pinned” then “rendered” are listed here"),
+                    Check("actions", "+1 and Reset on the card change the number; each click is listed as an action"),
                     Check("push", "Push +1 from this probe changes the pinned card within a second"),
-                    Check("resize", "Resizing the widget lists onWidgetContextChanged with the new size"),
-                    Check(
-                        "cold-start",
-                        "With the Lab closed, opening the Widgets board starts it through COM; the first callback " +
-                            "comes within the host's patience",
-                    ),
-                    Check("persist", "The count survives quitting and relaunching the Lab (widget custom state)"),
+                    Check("resize", "Resizing the widget re-renders it; Small hides “Open probe”"),
+                    Check("cold-start", "With the Lab closed, opening the Widgets board starts it and the card shows"),
+                    Check("persist", "The count survives quitting and relaunching the Lab (widget state)"),
                     Check("open-url", "“Open probe” on the card brings this probe forward through the deep link"),
-                    Check("unpin", "Unpinning the widget lists deleteWidget with its last count"),
+                    Check("unpin", "Unpinning the widget lists “unpinned”"),
                 ),
-            keywords =
-                listOf("widget", "Widgets board", "IWidgetProvider", "WidgetManager", "Adaptive Cards", "COM"),
+            keywords = listOf("widget", "Widgets board", "Glance", "NucleusWidget", "Adaptive Cards", "COM"),
         )
 
     @Composable
     override fun Content() {
         val vm = metroViewModel<WindowsWidgetsViewModel>()
         val state by vm.state.collectAsState()
-        val provider = state.provider
 
         ProbeLayout(
             capabilities =
@@ -72,19 +64,15 @@ class WindowsWidgetsProbe : Probe {
                         state.manager,
                         detail = "needs package identity and the Windows App SDK 1.8 framework",
                     ),
-                    Capability(
-                        "COM provider",
-                        provider.registration,
-                        detail = "CLSID ${NucleusWindowsWidgetsGateway.CLSID}",
-                    ),
+                    Capability("Widget host", state.host.host, detail = state.host.clsid?.let { "CLSID $it" }),
                 ),
             controls = {
                 Actions {
-                    PrimaryAction("Refresh", enabled = state.manager.isAvailable) {
+                    PrimaryAction("Refresh", enabled = state.host.host.isAvailable) {
                         vm.onIntent(WindowsWidgetsIntent.Refresh)
                     }
                 }
-                SubHeading("Pinned widgets")
+                SubHeading("Pinned counters")
                 if (state.widgets.isEmpty()) {
                     Hint("Open the Widgets board (Win+W), press “+” and pin “Lab counter”.")
                 }
@@ -100,20 +88,9 @@ class WindowsWidgetsProbe : Probe {
                 }
             },
             observed = {
-                Readout("Launched by", if (provider.launchedByCom) "COM (widget host)" else "user")
-                Readout(
-                    "First host callback",
-                    provider.firstCallbackMillis?.let {
-                        "${formatTime(
-                            it,
-                        )}, ${formatDurationMillis(it - provider.processStartMillis)} after process start"
-                    } ?: "none yet",
-                )
-                state.widgets.forEach { widget ->
-                    Readout("${widget.definitionId} ${widget.id}", "updated ${formatTime(widget.lastUpdateMillis)}")
-                }
-                SubHeading("Host callbacks")
-                EventLog(state.callbacks, empty = "The widget host has not called the provider yet.")
+                Readout("Launched by", if (state.host.launchedByHost) "the Widgets board (COM)" else "the user")
+                SubHeading("Widget events")
+                EventLog(state.events, empty = "The widget host has not called the app yet.")
                 SubHeading("Calls")
                 EventLog(state.calls)
             },

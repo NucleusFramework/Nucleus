@@ -9,35 +9,31 @@ import dev.nucleusframework.lab.core.mvi.Reducer
 import dev.nucleusframework.lab.core.mvi.plusCall
 import dev.nucleusframework.lab.core.mvi.plusDelivery
 
-/** The COM class object the widget host activates, as registered at startup. */
+/** The widget host as `widgets { }` connected to it at startup. */
 @Immutable
-data class ProviderStatus(
-    val registration: Availability = Availability.Unknown,
-    /** The process was started by COM for the widget host, not by the user. */
-    val launchedByCom: Boolean = false,
-    val processStartMillis: Long = 0,
-    /** First host callback, to measure how long a COM cold start keeps the host waiting. */
-    val firstCallbackMillis: Long? = null,
+data class HostStatus(
+    val host: Availability = Availability.Unknown,
+    /** The process was started by the widgets board (COM), not by the user. */
+    val launchedByHost: Boolean = false,
+    val clsid: String? = null,
 )
 
-/** A pinned widget as [dev.nucleusframework.widget.windows.WidgetManager] reports it. */
+/** A pinned instance of the Lab counter. */
 @Immutable
-data class PinnedWidget(
+data class PinnedCounter(
     val id: String,
-    val definitionId: String,
     val size: String,
     val isActive: Boolean,
     val count: Int,
-    val lastUpdateMillis: Long,
 )
 
 @Immutable
 data class WindowsWidgetsState(
     val manager: Availability = Availability.Unknown,
-    val provider: ProviderStatus = ProviderStatus(),
-    val widgets: List<PinnedWidget> = emptyList(),
-    /** Every host callback, stamped with the COM thread it arrived on. */
-    val callbacks: List<Delivery> = emptyList(),
+    val host: HostStatus = HostStatus(),
+    val widgets: List<PinnedCounter> = emptyList(),
+    /** NucleusWidgets.events: host callbacks, renders and failures. */
+    val events: List<Delivery> = emptyList(),
     val calls: List<CallRecord> = emptyList(),
 )
 
@@ -56,18 +52,15 @@ sealed interface WindowsWidgetsIntent {
 sealed interface WindowsWidgetsEvent {
     data class Ready(
         val manager: Availability,
+        val host: HostStatus,
     ) : WindowsWidgetsEvent
 
-    data class ProviderChanged(
-        val provider: ProviderStatus,
-    ) : WindowsWidgetsEvent
-
-    data class Callback(
+    data class Received(
         val delivery: Delivery,
     ) : WindowsWidgetsEvent
 
     data class Listed(
-        val widgets: List<PinnedWidget>?,
+        val widgets: List<PinnedCounter>?,
         val outcome: CallOutcome,
     ) : WindowsWidgetsEvent
 
@@ -83,13 +76,12 @@ object WindowsWidgetsReducer : Reducer<WindowsWidgetsState, WindowsWidgetsEvent>
         event: WindowsWidgetsEvent,
     ): WindowsWidgetsState =
         when (event) {
-            is WindowsWidgetsEvent.Ready -> state.copy(manager = event.manager)
-            is WindowsWidgetsEvent.ProviderChanged -> state.copy(provider = event.provider)
-            is WindowsWidgetsEvent.Callback -> state.copy(callbacks = state.callbacks.plusDelivery(event.delivery))
+            is WindowsWidgetsEvent.Ready -> state.copy(manager = event.manager, host = event.host)
+            is WindowsWidgetsEvent.Received -> state.copy(events = state.events.plusDelivery(event.delivery))
             is WindowsWidgetsEvent.Listed ->
                 state.copy(
                     widgets = event.widgets ?: state.widgets,
-                    calls = state.calls.plusCall("getWidgetInfos()", event.outcome, event.widgets?.size?.toString()),
+                    calls = state.calls.plusCall("pinnedWidgets()", event.outcome, event.widgets?.size?.toString()),
                 )
             is WindowsWidgetsEvent.Called -> state.copy(calls = state.calls.plusCall(event.call, event.outcome))
         }

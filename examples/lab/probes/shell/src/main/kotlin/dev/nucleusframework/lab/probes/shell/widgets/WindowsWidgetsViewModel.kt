@@ -26,23 +26,22 @@ class WindowsWidgetsViewModel(
         WindowsWidgetsProbe.ID,
     ) {
     init {
-        dispatch(WindowsWidgetsEvent.Ready(gateway.managerAvailability()))
-        launch { gateway.provider.collect { dispatch(WindowsWidgetsEvent.ProviderChanged(it)) } }
+        dispatch(WindowsWidgetsEvent.Ready(gateway.managerAvailability(), gateway.hostStatus()))
         launch {
-            gateway.callbacks.collect { stamped ->
-                dispatch(stamped.map { WindowsWidgetsEvent.Callback(stamped.toDelivery()) })
-                // Every callback may have changed a widget: keep the list current.
-                if (state.value.manager.isAvailable) refresh()
+            gateway.events.collect { stamped ->
+                dispatch(stamped.map { WindowsWidgetsEvent.Received(stamped.toDelivery()) })
+                // Every event may have changed a widget: keep the list current.
+                if (state.value.host.host.isAvailable) refresh()
             }
         }
-        if (state.value.manager.isAvailable) launch { refresh() }
+        if (state.value.host.host.isAvailable) launch { refresh() }
     }
 
     override suspend fun handle(intent: WindowsWidgetsIntent) {
         when (intent) {
             WindowsWidgetsIntent.Refresh -> refresh()
             is WindowsWidgetsIntent.Push -> {
-                called("updateWidget(${intent.widgetId}, count+1)", io { gateway.push(intent.widgetId) })
+                called("updateWidgetState + update(${intent.widgetId})", io { gateway.push(intent.widgetId) })
                 refresh()
             }
             is WindowsWidgetsIntent.Delete -> {

@@ -43,6 +43,8 @@ dependencies {
     implementation(project(":examples:lab:probes:system"))
     implementation(project(":examples:lab:probes:fixtures"))
     implementation(project(":darkmode-detector"))
+    // widgets { } in main (the Windows 11 widgets board host comes with it).
+    implementation(project(":widget-windows"))
     implementation(libs.coroutines.swing)
     // The shell's pane layout, saved across launches.
     implementation(libs.kotlinx.serialization.json)
@@ -306,10 +308,17 @@ nucleus.application {
                 square44x44Logo.set(project.file("packaging/icons/appx/Square44x44Logo.png"))
                 square150x150Logo.set(project.file("packaging/icons/appx/Square150x150Logo.png"))
                 wide310x150Logo.set(project.file("packaging/icons/appx/Wide310x150Logo.png"))
-                // Windows 11 widget provider (probe shell.windows-widgets): COM server + widgets extension,
-                // and the Windows App SDK framework dependency their namespaces/classes need.
-                customManifest.set(project.file("packaging/appx/AppxManifest.xml"))
-                customExtensions.set(project.file("packaging/appx/widget-extensions.xml"))
+            }
+            // Windows 11 widgets board (probe shell.windows-widgets), rendered by widgets { } in main.
+            widgets {
+                widget("LabCounter") {
+                    displayName = "Lab counter"
+                    description = "A counter driven by the Nucleus Lab widget probe"
+                    icon.set(project.file("packaging/widgets/icon.png"))
+                    preview.set(project.file("packaging/widgets/preview.png"))
+                    previewDark.set(project.file("packaging/widgets/preview-dark.png"))
+                    previewLight.set(project.file("packaging/widgets/preview-light.png"))
+                }
             }
         }
 
