@@ -26,7 +26,7 @@ public class ImageProvider private constructor(
         /**
          * An image shipped as an app resource: [path] is relative to the app's resources directory
          * (the Gradle plugin's `appResourcesRootDir`, e.g. `"widgets/logo.png"`). The host loads it from
-         * the installed package, so it costs nothing per update.
+         * the installed app, so it costs nothing per update.
          */
         public fun appResource(path: String): ImageProvider =
             ImageProvider(null, null, null, path.replace('\\', '/').trimStart('/'))

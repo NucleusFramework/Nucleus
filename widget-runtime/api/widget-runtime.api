@@ -144,7 +144,7 @@ public final class dev/nucleusframework/widget/ImageSize : java/lang/Enum {
 public final class dev/nucleusframework/widget/InputsKt {
 	public static final fun ChoiceField (Ldev/nucleusframework/widget/WidgetStateKey;Ljava/util/List;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;ZLandroidx/compose/runtime/Composer;II)V
 	public static final fun NumberField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;Landroidx/compose/runtime/Composer;II)V
-	public static final fun Switch (Ldev/nucleusframework/widget/WidgetStateKey;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetModifier;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Switch (Ldev/nucleusframework/widget/WidgetStateKey;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetModifier;ZLandroidx/compose/runtime/Composer;II)V
 	public static final fun TextField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Landroidx/compose/runtime/Composer;II)V
 	public static final fun WebContent (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetModifier;Landroidx/compose/runtime/Composer;II)V
 }

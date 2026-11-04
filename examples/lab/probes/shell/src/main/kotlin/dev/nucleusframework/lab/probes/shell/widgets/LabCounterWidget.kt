@@ -26,6 +26,8 @@ import dev.nucleusframework.widget.WidgetColor
 import dev.nucleusframework.widget.WidgetId
 import dev.nucleusframework.widget.WidgetModifier
 import dev.nucleusframework.widget.WidgetSize
+import dev.nucleusframework.widget.WidgetWebRequest
+import dev.nucleusframework.widget.WidgetWebResponse
 import dev.nucleusframework.widget.actionFinishCustomization
 import dev.nucleusframework.widget.actionOpenUrl
 import dev.nucleusframework.widget.background
@@ -70,7 +72,7 @@ class LabCounterWidget : NucleusWidget() {
             Text("Customize the counter", style = TextStyle(fontWeight = FontWeight.Bold))
             TextField(TitleKey, label = "Title", placeholder = "Nucleus Lab", maxLength = 24)
             NumberField(StepKey, label = "Step", min = 1.0, max = 100.0)
-            Switch(ShowNoteKey, title = "Show the last change")
+            Switch(ShowNoteKey, title = "Show the last change", defaultValue = true)
             ChoiceField(BackgroundKey, Backgrounds, label = "Background")
             Button("Done", onClick = actionFinishCustomization())
         }
@@ -125,7 +127,9 @@ class LabCounterWidget : NucleusWidget() {
 
 /**
  * A web widget: the page replaces the card where the host shows web content (on Windows, the
- * European Economic Area); elsewhere the fallback below is shown. Messages from the page are echoed.
+ * European Economic Area); elsewhere the fallback below is shown. The page is served by
+ * [onWebRequest] (its URL matches the definition's webRequestFilter, so it never reaches the
+ * network), posts a message when it loads, and shows the echo [onMessage] sends back.
  */
 class LabWebWidget : NucleusWidget() {
     override suspend fun provideWidget(id: WidgetId) {
@@ -137,7 +141,7 @@ class LabWebWidget : NucleusWidget() {
                     "Web widgets show a page only in the European Economic Area; this card is the fallback.",
                     style = TextStyle(fontSize = TextSize.Small, color = WidgetColor.Subtle),
                 )
-                Button("Open the page", onClick = actionOpenUrl(WEB_URL))
+                Button("Open the Lab", onClick = actionOpenUrl(LabCommands.deepLink(WindowsWidgetsProbe.ID)))
             }
         }
     }
@@ -146,10 +150,32 @@ class LabWebWidget : NucleusWidget() {
         id: WidgetId,
         message: String,
     ) {
-        sendWidgetMessage(id, "echo: $message")
+        sendWidgetMessage(id, "echo from the app: $message")
     }
 
+    override suspend fun onWebRequest(
+        id: WidgetId,
+        request: WidgetWebRequest,
+    ): WidgetWebResponse? =
+        if (request.uri.startsWith(WEB_URL)) {
+            WidgetWebResponse(PAGE.encodeToByteArray(), headers = mapOf("Content-Type" to "text/html; charset=utf-8"))
+        } else {
+            null
+        }
+
     private companion object {
-        const val WEB_URL = "https://nucleusframework.dev"
+        // Matched by the LabWeb webRequestFilter in the Lab's build script: served by onWebRequest.
+        const val WEB_URL = "https://lab.nucleusframework.dev/widget.html"
+
+        val PAGE =
+            """
+            <!doctype html><html><body style="font-family:Segoe UI;color:#ddd;background:#202020;margin:12px">
+            <h3>Served by the app</h3><div id="log">Posting a message…</div>
+            <script>
+              const log = document.getElementById('log');
+              window.chrome.webview.addEventListener('message', e => { log.textContent = e.data; });
+              window.chrome.webview.postMessage('hello from the page');
+            </script></body></html>
+            """.trimIndent()
     }
 }

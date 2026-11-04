@@ -23,7 +23,7 @@ internal object AdaptiveCardRenderer {
 
     /**
      * Renders [root]; [resolveImage] turns an app-resource image path into a URL the host can load
-     * (an `ms-appx:///` URI in a package), or `null` to embed the file instead.
+     * (the installed file's `file:///` URI), or `null` to embed the file instead.
      */
     fun render(
         root: WidgetElement,
@@ -52,7 +52,7 @@ internal object AdaptiveCardRenderer {
 
     /** Where an app-resource image is read from. */
     sealed interface ImageSource {
-        /** A URL the host loads itself (`ms-appx:///…`). */
+        /** A URL the host loads itself (`file:///…` of the installed file). */
         data class Url(
             val url: String,
         ) : ImageSource

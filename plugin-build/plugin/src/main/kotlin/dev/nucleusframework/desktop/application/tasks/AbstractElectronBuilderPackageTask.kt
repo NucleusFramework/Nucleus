@@ -1977,6 +1977,7 @@ abstract class AbstractElectronBuilderPackageTask
                 WindowsWidgetsPackaging.stage(
                     widgets = widgets,
                     identity = WindowsWidgetsPackaging.identity(dist),
+                    displayName = WindowsWidgetsPackaging.displayName(dist),
                     executableName =
                         resolveExecutableName() ?: throw GradleException("No executable name for the widget provider"),
                     appImageDir = appDir,

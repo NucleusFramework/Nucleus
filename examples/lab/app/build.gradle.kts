@@ -325,6 +325,8 @@ nucleus.application {
                     displayName = "Lab web"
                     description = "A web widget (European Economic Area) with its Adaptive Card fallback"
                     sizes = listOf(WindowsWidgetSize.Medium, WindowsWidgetSize.Large)
+                    // The page LabWebWidget serves itself (onWebRequest), never fetched from the network.
+                    webRequestFilter = "https://lab.nucleusframework.dev/*"
                     icon.set(project.file("packaging/widgets/icon.png"))
                     preview.set(project.file("packaging/widgets/preview.png"))
                 }

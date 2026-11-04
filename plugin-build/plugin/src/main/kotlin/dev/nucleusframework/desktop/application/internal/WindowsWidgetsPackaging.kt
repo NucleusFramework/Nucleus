@@ -34,6 +34,13 @@ internal object WindowsWidgetsPackaging {
             ?: distributions.appName
             ?: "app"
 
+    /** The provider name the widget picker lists: the AppX display name, else the app name. */
+    fun displayName(distributions: JvmApplicationDistributions): String =
+        distributions.windows.appx.displayName
+            ?: distributions.appName
+            ?: distributions.packageName
+            ?: "Widgets"
+
     /** The COM CLSID of the app's widget provider: stable for a package identity, distinct across apps. */
     fun clsid(identity: String): UUID = UUID.nameUUIDFromBytes("nucleus-windows-widgets:$identity".toByteArray())
 
@@ -50,6 +57,7 @@ internal object WindowsWidgetsPackaging {
     fun stage(
         widgets: WindowsWidgetsSettings,
         identity: String,
+        displayName: String,
         executableName: String,
         appImageDir: File,
         workDir: File,
@@ -78,7 +86,7 @@ internal object WindowsWidgetsPackaging {
         val extensions =
             workDir.resolve("widget-extensions.xml").apply {
                 writeText(
-                    extensionsXml(clsid(identity), "app\\$executableName.exe", definitions, paths) +
+                    extensionsXml(clsid(identity), displayName, "app\\$executableName.exe", definitions, paths) +
                         (userExtensions?.readText().orEmpty()),
                 )
             }
@@ -173,6 +181,7 @@ internal object WindowsWidgetsPackaging {
     @Suppress("MagicNumber")
     internal fun extensionsXml(
         clsid: UUID,
+        displayName: String,
         executable: String,
         definitions: List<WindowsWidgetSettings>,
         images: Map<String, Images>,
@@ -197,7 +206,7 @@ internal object WindowsWidgetsPackaging {
             // does, the widget host does not read it.
             line(
                 10,
-                "<uap3:AppExtension Name=\"com.microsoft.windows.widgets\" DisplayName=\"Widgets\" " +
+                "<uap3:AppExtension Name=\"com.microsoft.windows.widgets\" DisplayName=\"${xml(displayName)}\" " +
                     "Id=\"NucleusWidgets\" PublicFolder=\"assets\">",
             )
             line(12, "<uap3:Properties>")

@@ -33,15 +33,16 @@ public fun TextField(
     )
 }
 
-/** An on/off switch labelled [title], showing and editing [key] (off while unset). */
+/** An on/off switch labelled [title], showing and editing [key]; [defaultValue] while unset. */
 @Composable
 public fun Switch(
     key: WidgetStateKey<Boolean>,
     title: String,
     modifier: WidgetModifier = WidgetModifier,
+    defaultValue: Boolean = false,
 ) {
     val resolved = LocalActionRegistry.current.resolve(modifier)
-    val value = LocalWidgetStateHandle.current[key] ?: false
+    val value = LocalWidgetStateHandle.current[key] ?: defaultValue
     ComposeNode<WidgetNode.Toggle, WidgetApplier>(
         factory = WidgetNode::Toggle,
         update = {

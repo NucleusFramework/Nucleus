@@ -34,8 +34,9 @@ The plugin writes the whole AppX side: the `com.microsoft.windows.widgets` exten
 - Inputs use the state key's storage name (`s:city`) as their Adaptive Card id. The host sends their values in the `Action.Execute` data; the engine writes them into the state before the action runs.
 - Customization is a reserved state key (`b:nucleus.customizing`), so it survives a restart: `OnCustomizationRequested` sets it, `actionFinishCustomization()` clears it.
 - The Windows host renders the tree as an Adaptive Card 1.5 template with the values inline (data `{}`), stores the state in the widget's custom state, and serializes every render on one coroutine (`WidgetEngine.scope`).
-- `ImageProvider.appResource(path)` becomes `ms-appx:///<path from the package root>`: the host process reads the installed file. Bytes become a data URI (logged above 64 KB: re-sent with every update).
-- `WebContent(url)` becomes the card's `metadata.webUrl`; the rest of the body is the fallback. Web widgets are limited to the European Economic Area by Windows.
+- `ImageProvider.appResource(path)` becomes the installed file's `file:///` URI, which the board loads. Checked on the board: `ms-appx:///` resolves against the host's own package and `ms-appx://<family name>/` is not loaded. Bytes become a data URI (logged above 64 KB: re-sent with every update).
+- `WebContent(url)` becomes the card's `metadata.webUrl`; the rest of the body is the fallback (Windows documents web widgets for the European Economic Area; this board showed them in Israel too). A URL matching the widget's `webRequestFilter` never reaches the network when `onWebRequest` answers it: the Lab's `LabWeb` serves its whole page that way and echoes the page's `postMessage` back with `sendWidgetMessage`.
+- `WidgetBackground.Accent` makes the host draw the card's buttons with little contrast: prefer `Emphasis` behind buttons.
 
 ## Process lifetime
 

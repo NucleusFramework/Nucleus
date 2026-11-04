@@ -77,6 +77,7 @@ class ElectronBuilderAppXWidgetsConfigTest {
             WindowsWidgetsPackaging.stage(
                 widgets = distributions.windows.widgets,
                 identity = WindowsWidgetsPackaging.identity(distributions),
+                displayName = "Acme Demo",
                 executableName = "Demo",
                 appImageDir = appImage,
                 workDir = temp.newFolder("work"),
@@ -96,6 +97,7 @@ class ElectronBuilderAppXWidgetsConfigTest {
             "<com:Class Id=\"$clsid\"",
             "<CreateInstance ClassId=\"$clsid\" />",
             "PublicFolder=\"assets\"",
+            "DisplayName=\"Acme Demo\" Id=\"NucleusWidgets\"",
             "<Definition Id=\"Counter\" DisplayName=\"Counter &amp; co\"",
             "WebRequestFilter=\"https://example.com/api/*\"",
             "<Size Name=\"small\" />",
