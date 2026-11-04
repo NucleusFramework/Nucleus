@@ -5,7 +5,6 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.lab.core.Availability
 import dev.nucleusframework.lab.core.mvi.CallOutcome
 import dev.nucleusframework.lab.core.mvi.Stamped
-import dev.nucleusframework.lab.core.mvi.stampedUnjudged
 import dev.nucleusframework.widget.NucleusWidgets
 import dev.nucleusframework.widget.WidgetEvent
 import dev.nucleusframework.widget.WidgetId
@@ -44,7 +43,11 @@ interface WindowsWidgetsGateway {
 @ContributesBinding(AppScope::class)
 @Inject
 class NucleusWindowsWidgetsGateway : WindowsWidgetsGateway {
-    override val events: Flow<Stamped<String>> = NucleusWidgets.events.map { it.describe().stampedUnjudged() }
+    // Stamped with the event's own time: the runtime replays its latest events to new collectors.
+    override val events: Flow<Stamped<String>> =
+        NucleusWidgets.events.map { event ->
+            Stamped(event.describe(), Thread.currentThread().name, onUiThread = null, epochMillis = event.epochMillis)
+        }
 
     override fun managerAvailability(): Availability =
         if (Platform.Current != Platform.Windows) {
