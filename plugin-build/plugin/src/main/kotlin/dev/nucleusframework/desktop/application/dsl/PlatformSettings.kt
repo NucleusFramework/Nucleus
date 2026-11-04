@@ -496,6 +496,13 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
         fn.execute(appx)
     }
 
+    /** Windows 11 widgets the app provides; see [WindowsWidgetsSettings]. */
+    val widgets: WindowsWidgetsSettings = objects.newInstance(WindowsWidgetsSettings::class.java)
+
+    fun widgets(fn: Action<WindowsWidgetsSettings>) {
+        fn.execute(widgets)
+    }
+
     val portable: PortableSettings = objects.newInstance(PortableSettings::class.java)
 
     /** Configures the portable executable. */

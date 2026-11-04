@@ -17,6 +17,8 @@ import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
 import dev.nucleusframework.desktop.application.internal.AppXLogo
+import dev.nucleusframework.desktop.application.internal.WindowsWidgetsPackaging
+import dev.nucleusframework.desktop.application.internal.electronbuilder.AppXWidgetFiles
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxPolkitActions
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
@@ -359,6 +361,7 @@ abstract class AbstractElectronBuilderPackageTask
             val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir)
             signWindowsAppImage(workingAppDir, outputDir, dist)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
+            val appxWidgets = stageWindowsWidgets(dist, workingAppDir, outputDir)
 
             val (node, npm) = resolveNodeJs()
             validateNodeVersion(node)
@@ -384,6 +387,7 @@ abstract class AbstractElectronBuilderPackageTask
                     windowsIconOverride = windowsIconOverride,
                     linuxScripts = LinuxScriptTemplates(linuxAfterInstallTemplate, linuxAfterRemoveTemplate),
                     hotUpdateLayout = hotUpdateLayout,
+                    appxWidgets = appxWidgets,
                 )
             ensureProjectPackageMetadata(outputDir, dist)
 
@@ -569,6 +573,7 @@ abstract class AbstractElectronBuilderPackageTask
                     appendSettingsReadOutsideConfig(dist, generator, arch)
                 }
             val files = generator.referencedFiles.toMutableSet()
+            if (targetFormat == TargetFormat.AppX) files += WindowsWidgetsPackaging.files(dist.windows.widgets)
             if (currentOS == OS.Linux && targetFormat in LINUX_SIGNED_FORMATS) {
                 dist.linux.signing.keyFile.orNull
                     ?.let { files += it.asFile }
@@ -609,6 +614,8 @@ abstract class AbstractElectronBuilderPackageTask
                     // signWindowsAppImage(), generateNsisInclude()
                     appendLine("windowsSigning.signNativeLibraries: ${dist.windows.signing.signNativeLibraries}")
                     appendLine("appName: ${dist.appName}")
+                    // stageWindowsWidgets()
+                    if (targetFormat == TargetFormat.AppX) appendLine(WindowsWidgetsPackaging.describe(dist.windows.widgets))
                 }
                 OS.MacOS -> {
                     // exportMacOSPackagingMetadata() writes the DMG layout and install location
@@ -629,6 +636,7 @@ abstract class AbstractElectronBuilderPackageTask
             windowsIconOverride: File?,
             linuxScripts: LinuxScriptTemplates,
             hotUpdateLayout: Boolean,
+            appxWidgets: AppXWidgetFiles?,
         ): File {
             val configGenerator = ElectronBuilderConfigGenerator()
             val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
@@ -666,6 +674,7 @@ abstract class AbstractElectronBuilderPackageTask
                     dmgWindowOverride = dmgWindowOverride,
                     nsisInclude = nsisInclude,
                     macBundleName = macBundleName.orNull,
+                    appxWidgets = appxWidgets,
                 )
             val configFile = File(outputDir, "electron-builder.yml")
             configFile.writeText(configContent)
@@ -1950,6 +1959,30 @@ abstract class AbstractElectronBuilderPackageTask
             val afterInstall: File?,
             val afterRemove: File?,
         )
+
+        /**
+         * For an AppX of an app declaring `windows { widgets { } }`: copies the widget images into the
+         * app image and writes the widget manifest template and extensions (see [WindowsWidgetsPackaging]).
+         */
+        private fun stageWindowsWidgets(
+            dist: JvmApplicationDistributions,
+            appDir: File,
+            outputDir: File,
+        ): AppXWidgetFiles? {
+            val widgets = dist.windows.widgets
+            if (targetFormat != TargetFormat.AppX || widgets.definitions.isEmpty()) return null
+            val staged =
+                WindowsWidgetsPackaging.stage(
+                    widgets = widgets,
+                    identity = WindowsWidgetsPackaging.identity(dist),
+                    executableName = resolveExecutableName() ?: throw GradleException("No executable name for the widget provider"),
+                    appImageDir = appDir,
+                    workDir = outputDir.resolve("widgets"),
+                    userExtensions = dist.windows.appx.customExtensions.orNull?.asFile,
+                    warn = logger::warn,
+                )
+            return AppXWidgetFiles(staged.manifestTemplate, staged.extensions)
+        }
 
         /**
          * Stages the AppX logos in electron-builder's `build/appx`: each declared logo, or else the

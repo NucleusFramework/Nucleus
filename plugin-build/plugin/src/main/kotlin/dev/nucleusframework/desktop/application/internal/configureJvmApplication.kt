@@ -321,6 +321,17 @@ private fun JvmApplicationContext.registerGenerateAppProperties() {
                 val taskId = appxSettings.startupTaskId ?: "SlackStartup"
                 startupTaskId.set(taskId)
             }
+            // The COM class the widgets board activates: the same CLSID the AppX manifest declares.
+            windowsWidgetsClsid.set(
+                project.provider {
+                    val distributions = app.nativeDistributions
+                    if (distributions.windows.widgets.definitions.isEmpty()) {
+                        null
+                    } else {
+                        WindowsWidgetsPackaging.clsid(WindowsWidgetsPackaging.identity(distributions)).toString()
+                    }
+                },
+            )
             // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
             idleGc.set(project.provider { app.optIdleGc })
             partialRedraw.set(project.provider { app.optPartialRedraw })
