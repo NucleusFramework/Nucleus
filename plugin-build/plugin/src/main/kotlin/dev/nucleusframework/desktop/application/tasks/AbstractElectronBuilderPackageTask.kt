@@ -615,7 +615,9 @@ abstract class AbstractElectronBuilderPackageTask
                     appendLine("windowsSigning.signNativeLibraries: ${dist.windows.signing.signNativeLibraries}")
                     appendLine("appName: ${dist.appName}")
                     // stageWindowsWidgets()
-                    if (targetFormat == TargetFormat.AppX) appendLine(WindowsWidgetsPackaging.describe(dist.windows.widgets))
+                    if (targetFormat == TargetFormat.AppX) {
+                        appendLine(WindowsWidgetsPackaging.describe(dist.windows.widgets))
+                    }
                 }
                 OS.MacOS -> {
                     // exportMacOSPackagingMetadata() writes the DMG layout and install location
@@ -1975,7 +1977,8 @@ abstract class AbstractElectronBuilderPackageTask
                 WindowsWidgetsPackaging.stage(
                     widgets = widgets,
                     identity = WindowsWidgetsPackaging.identity(dist),
-                    executableName = resolveExecutableName() ?: throw GradleException("No executable name for the widget provider"),
+                    executableName =
+                        resolveExecutableName() ?: throw GradleException("No executable name for the widget provider"),
                     appImageDir = appDir,
                     workDir = outputDir.resolve("widgets"),
                     userExtensions = dist.windows.appx.customExtensions.orNull?.asFile,

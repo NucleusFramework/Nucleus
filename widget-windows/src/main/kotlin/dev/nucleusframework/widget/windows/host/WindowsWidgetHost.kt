@@ -10,16 +10,22 @@ import dev.nucleusframework.widget.WidgetHost
 import dev.nucleusframework.widget.WidgetId
 import dev.nucleusframework.widget.WidgetInstance
 import dev.nucleusframework.widget.WidgetState
+import dev.nucleusframework.widget.WidgetWebRequest
 import dev.nucleusframework.widget.windows.WidgetActionInvokedArgs
 import dev.nucleusframework.widget.windows.WidgetContext
 import dev.nucleusframework.widget.windows.WidgetContextChangedArgs
 import dev.nucleusframework.widget.windows.WidgetCustomizationRequestedArgs
 import dev.nucleusframework.widget.windows.WidgetErrorInfoReportedArgs
 import dev.nucleusframework.widget.windows.WidgetManager
+import dev.nucleusframework.widget.windows.WidgetMessageReceivedArgs
 import dev.nucleusframework.widget.windows.WidgetProvider
 import dev.nucleusframework.widget.windows.WidgetProvider2
 import dev.nucleusframework.widget.windows.WidgetProviderErrors
+import dev.nucleusframework.widget.windows.WidgetProviderMessage
 import dev.nucleusframework.widget.windows.WidgetProviderServer
+import dev.nucleusframework.widget.windows.WidgetResourceProvider
+import dev.nucleusframework.widget.windows.WidgetResourceRequestedArgs
+import dev.nucleusframework.widget.windows.WidgetResourceResponse
 import dev.nucleusframework.widget.windows.WidgetSize
 import dev.nucleusframework.widget.windows.WidgetUpdateRequestOptions
 import kotlinx.coroutines.launch
@@ -83,6 +89,13 @@ public class WindowsWidgetHost : WidgetHost {
         manager().updateWidget(WidgetUpdateRequestOptions(id.value).apply { customState = state.encode() })
     }
 
+    override suspend fun sendMessage(
+        id: WidgetId,
+        message: String,
+    ) {
+        manager().sendMessageToContent(id.value, message)
+    }
+
     private fun stateOf(
         id: String,
         persisted: String?,
@@ -97,7 +110,7 @@ public class WindowsWidgetHost : WidgetHost {
         val render = WidgetEngine.render(instance)
         manager().updateWidget(
             WidgetUpdateRequestOptions(context.id).apply {
-                template = AdaptiveCardRenderer.render(render.root)
+                template = AdaptiveCardRenderer.render(render.root, AppResourceImages::resolve)
                 data = "{}"
                 customState = state.encode()
             },
@@ -125,7 +138,9 @@ public class WindowsWidgetHost : WidgetHost {
     private inner class Provider :
         WidgetProvider,
         WidgetProvider2,
-        WidgetProviderErrors {
+        WidgetProviderErrors,
+        WidgetProviderMessage,
+        WidgetResourceProvider {
         override fun createWidget(widgetContext: WidgetContext) {
             WidgetEngine.emit(
                 WidgetEvent.Pinned(
@@ -154,7 +169,9 @@ public class WindowsWidgetHost : WidgetHost {
                 states[context.id] = state
                 val instance =
                     WidgetInstance(WidgetId(context.id), context.definitionId, context.size.toRuntime(), state)
-                if (!WidgetEngine.invokeAction(instance, actionInvokedArgs.verb)) {
+                // Input values come back in the action data, keyed by input id.
+                val inputs = WidgetEngine.parseInputs(actionInvokedArgs.data)
+                if (!WidgetEngine.invokeAction(instance, actionInvokedArgs.verb, inputs)) {
                     logger.fine { "Stale action '${actionInvokedArgs.verb}' on ${context.id}: re-rendering" }
                 }
                 push(context, state)
@@ -178,7 +195,45 @@ public class WindowsWidgetHost : WidgetHost {
 
         override fun onCustomizationRequested(customizationRequestedArgs: WidgetCustomizationRequestedArgs) {
             val context = customizationRequestedArgs.widgetContext
-            dispatch(context.id, "customization") { push(context, loadState(WidgetId(context.id))) }
+            dispatch(context.id, "customization") {
+                val state = loadState(WidgetId(context.id))
+                WidgetEngine.requestCustomization(
+                    WidgetInstance(WidgetId(context.id), context.definitionId, context.size.toRuntime(), state),
+                )
+                push(context, state)
+            }
+        }
+
+        override fun onMessageReceived(args: WidgetMessageReceivedArgs) {
+            val context = args.widgetContext
+            dispatch(context.id, "message") {
+                WidgetEngine.deliverMessage(context.definitionId, WidgetId(context.id), args.message)
+            }
+        }
+
+        override fun onResourceRequested(args: WidgetResourceRequestedArgs) {
+            val context = args.widgetContext
+            // The host waits for the response until the deferral completes, so the widget may suspend.
+            val deferral = args.getDeferral()
+            dispatch(context.id, "web request") {
+                try {
+                    val request = args.request
+                    val answer =
+                        WidgetEngine.answerWebRequest(
+                            context.definitionId,
+                            WidgetId(context.id),
+                            WidgetWebRequest(request.uri, request.method, request.headers.toMap(), request.content),
+                        )
+                    if (answer != null) {
+                        args.response =
+                            WidgetResourceResponse(answer.body, answer.reasonPhrase, answer.statusCode).apply {
+                                answer.headers.forEach { (name, value) -> headers.insert(name, value) }
+                            }
+                    }
+                } finally {
+                    deferral.complete()
+                }
+            }
         }
 
         override fun onErrorInfoReported(args: WidgetErrorInfoReportedArgs) {

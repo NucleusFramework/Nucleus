@@ -98,8 +98,12 @@ public class MutableWidgetState internal constructor(
     }
 }
 
-// The type tag keeps two keys of the same name and different types apart.
-private val WidgetStateKey<*>.storageName: String get() = "$type:$name"
+// The type tag keeps two keys of the same name and different types apart. Inputs use it as their
+// Adaptive Card id, so a submitted value lands straight in the state.
+internal val WidgetStateKey<*>.storageName: String get() = "$type:$name"
+
+/** Reserved: whether the host asked for the widget's customization UI (see [isCustomizing]). */
+internal val CustomizingKey: WidgetStateKey<Boolean> = booleanStateKey("nucleus.customizing")
 
 /** Minimal flat `{"k":"v"}` JSON codec: the state needs nothing more and no JSON dependency. */
 internal object FlatJson {
@@ -139,8 +143,9 @@ internal object FlatJson {
         while (true) {
             val key = reader.string() ?: return null
             if (!reader.consume(':')) return null
-            val value = reader.string() ?: return null
-            result[key] = value
+            // Inputs submit numbers and booleans unquoted; `null` means no value.
+            val value = reader.string() ?: reader.literal() ?: return null
+            if (value != "null") result[key] = value
             if (reader.consume('}')) return result
             if (!reader.consume(',')) return null
         }
@@ -158,6 +163,14 @@ internal object FlatJson {
                 return true
             }
             return false
+        }
+
+        /** A bare JSON number, `true`, `false` or `null`, as its text. */
+        fun literal(): String? {
+            while (index < text.length && text[index].isWhitespace()) index++
+            val start = index
+            while (index < text.length && (text[index].isLetterOrDigit() || text[index] in "+-.")) index++
+            return text.substring(start, index).takeIf { it.isNotEmpty() }
         }
 
         @Suppress("ReturnCount", "MagicNumber")

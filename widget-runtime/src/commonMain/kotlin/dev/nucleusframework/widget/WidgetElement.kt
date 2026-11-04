@@ -1,6 +1,10 @@
 package dev.nucleusframework.widget
 
-/** Source of an [Image]: encoded image bytes shipped with the app, or a URL the host downloads. */
+/**
+ * Source of an [Image]. Prefer [appResource] for anything but small generated images: encoded
+ * [bytes] travel inside every card the host receives, while a resource is read by the host from the
+ * installed app.
+ */
 public class ImageProvider private constructor(
     /** The encoded image, when built from bytes. */
     public val bytes: ByteArray?,
@@ -8,13 +12,32 @@ public class ImageProvider private constructor(
     public val mimeType: String?,
     /** The image URL, when built from one. */
     public val url: String?,
+    /** The path of an app resource (under `appResourcesRootDir`), when built from one. */
+    public val appResource: String?,
 ) {
-    /** An image from its encoded [bytes]. */
-    public constructor(bytes: ByteArray, mimeType: String = "image/png") : this(bytes, mimeType, null)
+    /** An image from its encoded [bytes]; keep it small, it is embedded in the card. */
+    public constructor(bytes: ByteArray, mimeType: String = "image/png") : this(bytes, mimeType, null, null)
 
     /** An image the host downloads from [url] (`https:`). */
-    public constructor(url: String) : this(null, null, url)
+    public constructor(url: String) : this(null, null, url, null)
+
+    /** Factories. */
+    public companion object {
+        /**
+         * An image shipped as an app resource: [path] is relative to the app's resources directory
+         * (the Gradle plugin's `appResourcesRootDir`, e.g. `"widgets/logo.png"`). The host loads it from
+         * the installed package, so it costs nothing per update.
+         */
+        public fun appResource(path: String): ImageProvider =
+            ImageProvider(null, null, null, path.replace('\\', '/').trimStart('/'))
+    }
 }
+
+/** One option of a [ChoiceField]: [title] is shown, [value] is stored in the widget state. */
+public data class Choice(
+    val title: String,
+    val value: String,
+)
 
 /**
  * The rendered widget, as composed by the runtime and handed to the platform host. Immutable:
@@ -62,6 +85,54 @@ public sealed interface WidgetElement {
         public val provider: ImageProvider,
         public val contentDescription: String?,
         public val size: ImageSize,
+        override val modifier: ResolvedModifier,
+    ) : WidgetElement
+
+    /** A text field; [id] is the state key its value is stored under. */
+    public data class TextInput(
+        val id: String,
+        val value: String?,
+        val label: String?,
+        val placeholder: String?,
+        val isMultiline: Boolean,
+        val maxLength: Int?,
+        override val modifier: ResolvedModifier,
+    ) : WidgetElement
+
+    /** An on/off switch; [id] is the state key its value is stored under. */
+    public data class Toggle(
+        val id: String,
+        val title: String,
+        val value: Boolean,
+        override val modifier: ResolvedModifier,
+    ) : WidgetElement
+
+    /** A choice among [choices]; [id] is the state key the chosen value is stored under. */
+    public data class ChoiceInput(
+        val id: String,
+        val value: String?,
+        val choices: List<Choice>,
+        val label: String?,
+        val isExpanded: Boolean,
+        override val modifier: ResolvedModifier,
+    ) : WidgetElement
+
+    /** A number field; [id] is the state key its value is stored under. */
+    public data class NumberInput(
+        val id: String,
+        val value: Double?,
+        val label: String?,
+        val min: Double?,
+        val max: Double?,
+        override val modifier: ResolvedModifier,
+    ) : WidgetElement
+
+    /**
+     * Web content shown instead of the widget's other elements where the host supports it; those
+     * elements are the fallback elsewhere.
+     */
+    public data class WebContent(
+        val url: String,
         override val modifier: ResolvedModifier,
     ) : WidgetElement
 

@@ -17,89 +17,210 @@ import java.util.Base64
  * Windows widgets board renders. The values are written into the template itself: the data
  * payload stays `{}`, since every render is a full snapshot.
  */
+@Suppress("TooManyFunctions") // one function per Adaptive Card element type
 internal object AdaptiveCardRenderer {
     private const val SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
 
-    fun render(root: WidgetElement): String {
+    /**
+     * Renders [root]; [resolveImage] turns an app-resource image path into a URL the host can load
+     * (an `ms-appx:///` URI in a package), or `null` to embed the file instead.
+     */
+    fun render(
+        root: WidgetElement,
+        resolveImage: (String) -> ImageSource = { ImageSource.Missing },
+    ): String {
+        val context = Context(resolveImage)
         val body =
-            when (root) {
-                is WidgetElement.Column -> items(root.children, root.spacing, root.horizontalAlignment)
-                else -> listOf(element(root))
+            with(context) {
+                when (root) {
+                    is WidgetElement.Column -> items(root.children, root.spacing, root.horizontalAlignment)
+                    else -> listOfNotNull(element(root))
+                }
             }
-        return Json.write(
-            linkedMapOf(
+        val card =
+            linkedMapOf<String, Any?>(
                 "type" to "AdaptiveCard",
                 "\$schema" to SCHEMA,
-                "version" to "1.5",
+                "version" to VERSION,
                 "body" to body,
-            ),
-        )
+            )
+        // A web widget is still an Adaptive Card: the body is the fallback where the host
+        // cannot show web content.
+        root.firstWebContent()?.let { card["metadata"] = linkedMapOf("webUrl" to it.url) }
+        return Json.write(card)
     }
 
-    private fun items(
+    /** Where an app-resource image is read from. */
+    sealed interface ImageSource {
+        /** A URL the host loads itself (`ms-appx:///…`). */
+        data class Url(
+            val url: String,
+        ) : ImageSource
+
+        /** The file's bytes, embedded as a data URI (outside a package). */
+        class Bytes(
+            val bytes: ByteArray,
+            val mimeType: String,
+        ) : ImageSource
+
+        /** Not found: the image is left out. */
+        data object Missing : ImageSource
+    }
+
+    private class Context(
+        val resolveImage: (String) -> ImageSource,
+    )
+
+    private fun WidgetElement.firstWebContent(): WidgetElement.WebContent? =
+        when (this) {
+            is WidgetElement.WebContent -> this
+            is WidgetElement.Column -> children.firstNotNullOfOrNull { it.firstWebContent() }
+            is WidgetElement.Row -> children.firstNotNullOfOrNull { it.firstWebContent() }
+            else -> null
+        }
+
+    private fun Context.items(
         children: List<WidgetElement>,
         spacing: Spacing,
         alignment: Alignment.Horizontal,
     ): List<Map<String, Any?>> =
-        children.mapIndexed { index, child ->
-            element(child).apply {
-                if (index > 0) put("spacing", spacing.json)
-                if (child.acceptsHorizontalAlignment) putIfAbsent("horizontalAlignment", alignment.json)
+        children
+            .mapNotNull { child -> element(child)?.let { child to it } }
+            .mapIndexed { index, (child, json) ->
+                json.apply {
+                    if (index > 0) put("spacing", spacing.json)
+                    if (child.acceptsHorizontalAlignment) putIfAbsent("horizontalAlignment", alignment.json)
+                }
             }
-        }
 
-    private fun element(element: WidgetElement): MutableMap<String, Any?> =
+    private fun Context.element(element: WidgetElement): MutableMap<String, Any?>? =
         when (element) {
             is WidgetElement.Column ->
                 linkedMapOf<String, Any?>(
                     "type" to "Container",
                     "items" to items(element.children, element.spacing, element.horizontalAlignment),
                 )
-            is WidgetElement.Row ->
-                linkedMapOf<String, Any?>(
-                    "type" to "ColumnSet",
-                    "columns" to
-                        element.children.mapIndexed { index, child ->
-                            linkedMapOf<String, Any?>(
-                                "type" to "Column",
-                                "width" to child.modifier.columnWidth,
-                                "verticalContentAlignment" to element.verticalAlignment.json,
-                                "items" to listOf(element(child)),
-                            ).apply { if (index > 0) put("spacing", element.spacing.json) }
-                        },
-                )
-            is WidgetElement.Text ->
-                linkedMapOf<String, Any?>(
-                    "type" to "TextBlock",
-                    "text" to element.text,
-                    "wrap" to true,
-                    "size" to element.style.fontSize.json,
-                    "weight" to element.style.fontWeight.json,
-                    "color" to element.style.color.json,
-                ).apply {
-                    if (element.style.color == WidgetColor.Subtle) put("isSubtle", true)
-                    if (element.maxLines != Int.MAX_VALUE) put("maxLines", element.maxLines)
-                }
-            is WidgetElement.Button ->
-                linkedMapOf<String, Any?>(
-                    "type" to "ActionSet",
-                    "actions" to
-                        listOf(
-                            action(element.action).apply {
-                                put("title", element.text)
-                                if (!element.enabled) put("isEnabled", false)
-                            },
-                        ),
-                )
-            is WidgetElement.Image ->
-                linkedMapOf<String, Any?>(
-                    "type" to "Image",
-                    "url" to (element.provider.url ?: dataUri(element.provider.bytes!!, element.provider.mimeType!!)),
-                    "size" to element.size.json,
-                ).apply { element.contentDescription?.let { put("altText", it) } }
+            is WidgetElement.Row -> row(element)
+            is WidgetElement.Text -> text(element)
+            is WidgetElement.Button -> button(element)
+            is WidgetElement.Image -> image(element)
+            is WidgetElement.TextInput, is WidgetElement.Toggle, is WidgetElement.ChoiceInput,
+            is WidgetElement.NumberInput,
+            -> input(element)
+            // Carried by the card's metadata, not its body.
+            is WidgetElement.WebContent -> null
             is WidgetElement.Spacer ->
                 linkedMapOf<String, Any?>("type" to "Container", "items" to emptyList<Any>(), "minHeight" to "8px")
-        }.apply { decorate(element.modifier) }
+        }?.apply { decorate(element.modifier) }
+
+    private fun Context.row(element: WidgetElement.Row): MutableMap<String, Any?> =
+        linkedMapOf(
+            "type" to "ColumnSet",
+            "columns" to
+                element.children
+                    .mapNotNull { child -> element(child)?.let { child to it } }
+                    .mapIndexed { index, (child, json) ->
+                        linkedMapOf<String, Any?>(
+                            "type" to "Column",
+                            "width" to child.modifier.columnWidth,
+                            "verticalContentAlignment" to element.verticalAlignment.json,
+                            "items" to listOf(json),
+                        ).apply { if (index > 0) put("spacing", element.spacing.json) }
+                    },
+        )
+
+    private fun text(element: WidgetElement.Text): MutableMap<String, Any?> =
+        linkedMapOf<String, Any?>(
+            "type" to "TextBlock",
+            "text" to element.text,
+            "wrap" to true,
+            "size" to element.style.fontSize.json,
+            "weight" to element.style.fontWeight.json,
+            "color" to element.style.color.json,
+        ).apply {
+            if (element.style.color == WidgetColor.Subtle) put("isSubtle", true)
+            if (element.maxLines != Int.MAX_VALUE) put("maxLines", element.maxLines)
+        }
+
+    private fun button(element: WidgetElement.Button): MutableMap<String, Any?> =
+        linkedMapOf(
+            "type" to "ActionSet",
+            "actions" to
+                listOf(
+                    action(element.action).apply {
+                        put("title", element.text)
+                        if (!element.enabled) put("isEnabled", false)
+                    },
+                ),
+        )
+
+    private fun Context.image(element: WidgetElement.Image): MutableMap<String, Any?>? =
+        imageUrl(element)?.let { url ->
+            linkedMapOf<String, Any?>(
+                "type" to "Image",
+                "url" to url,
+                "size" to element.size.json,
+            ).apply { element.contentDescription?.let { put("altText", it) } }
+        }
+
+    // Adaptive Card inputs: their id is the widget state key, their value comes back with the next action.
+    private fun input(element: WidgetElement): MutableMap<String, Any?> =
+        when (element) {
+            is WidgetElement.TextInput ->
+                linkedMapOf<String, Any?>("type" to "Input.Text", "id" to element.id).apply {
+                    putOptional("value", element.value)
+                    putOptional("label", element.label)
+                    putOptional("placeholder", element.placeholder)
+                    if (element.isMultiline) put("isMultiline", true)
+                    putOptional("maxLength", element.maxLength)
+                }
+            is WidgetElement.Toggle ->
+                linkedMapOf(
+                    "type" to "Input.Toggle",
+                    "id" to element.id,
+                    "title" to element.title,
+                    "value" to element.value.toString(),
+                    "valueOn" to "true",
+                    "valueOff" to "false",
+                )
+            is WidgetElement.ChoiceInput ->
+                linkedMapOf<String, Any?>(
+                    "type" to "Input.ChoiceSet",
+                    "id" to element.id,
+                    "style" to if (element.isExpanded) "expanded" else "compact",
+                    "choices" to element.choices.map { linkedMapOf("title" to it.title, "value" to it.value) },
+                ).apply {
+                    putOptional("value", element.value)
+                    putOptional("label", element.label)
+                }
+            is WidgetElement.NumberInput ->
+                linkedMapOf<String, Any?>("type" to "Input.Number", "id" to element.id).apply {
+                    putOptional("value", element.value)
+                    putOptional("label", element.label)
+                    putOptional("min", element.min)
+                    putOptional("max", element.max)
+                }
+            else -> error("Not an input: $element")
+        }
+
+    private fun MutableMap<String, Any?>.putOptional(
+        key: String,
+        value: Any?,
+    ) {
+        if (value != null) put(key, value)
+    }
+
+    private fun Context.imageUrl(element: WidgetElement.Image): String? {
+        val provider = element.provider
+        provider.url?.let { return it }
+        provider.bytes?.let { return dataUri(it, provider.mimeType ?: "image/png") }
+        val path = provider.appResource ?: return null
+        return when (val source = resolveImage(path)) {
+            is ImageSource.Url -> source.url
+            is ImageSource.Bytes -> dataUri(source.bytes, source.mimeType)
+            ImageSource.Missing -> null
+        }
+    }
 
     private fun MutableMap<String, Any?>.decorate(modifier: ResolvedModifier) {
         if (modifier.fillMaxHeight) put("height", "stretch")
@@ -131,7 +252,22 @@ internal object AdaptiveCardRenderer {
     private fun dataUri(
         bytes: ByteArray,
         mimeType: String,
-    ) = "data:$mimeType;base64," + Base64.getEncoder().encodeToString(bytes)
+    ): String {
+        if (bytes.size > LARGE_EMBEDDED_IMAGE) {
+            logger.warning {
+                "A ${bytes.size / BYTES_PER_KB} KB image is embedded in a widget card and re-sent with every " +
+                    "update: ship it with ImageProvider.appResource instead"
+            }
+        }
+        return "data:$mimeType;base64," + Base64.getEncoder().encodeToString(bytes)
+    }
+
+    private const val VERSION = "1.5"
+    private const val BYTES_PER_KB = 1024
+    private const val LARGE_EMBEDDED_IMAGE = 64 * BYTES_PER_KB
+    private val logger =
+        java.util.logging.Logger
+            .getLogger(AdaptiveCardRenderer::class.java.name)
 
     private val WidgetElement.acceptsHorizontalAlignment: Boolean
         get() = this is WidgetElement.Text || this is WidgetElement.Image || this is WidgetElement.Button
@@ -194,6 +330,7 @@ internal object Json {
             null -> out.append("null")
             is String -> quote(out, value)
             is Boolean, is Int, is Long -> out.append(value)
+            is Double -> if (value % 1.0 == 0.0) out.append(value.toLong()) else out.append(value)
             is Map<*, *> -> {
                 out.append('{')
                 value.entries.forEachIndexed { index, (key, item) ->

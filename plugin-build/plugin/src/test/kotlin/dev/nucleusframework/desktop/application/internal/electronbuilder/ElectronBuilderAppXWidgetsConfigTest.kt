@@ -70,6 +70,7 @@ class ElectronBuilderAppXWidgetsConfigTest {
             it.icon.set(png("icon.png", 64, 64))
             it.preview.set(png("preview.png", 300, 304))
             it.previewDark.set(png("dark.png", 300, 304))
+            it.webRequestFilter = "https://example.com/api/*"
         }
         val appImage = temp.newFolder("app")
         val staged =
@@ -96,6 +97,7 @@ class ElectronBuilderAppXWidgetsConfigTest {
             "<CreateInstance ClassId=\"$clsid\" />",
             "PublicFolder=\"assets\"",
             "<Definition Id=\"Counter\" DisplayName=\"Counter &amp; co\"",
+            "WebRequestFilter=\"https://example.com/api/*\"",
             "<Size Name=\"small\" />",
             "<Size Name=\"medium\" />",
             "<Screenshot Path=\"app\\widgets\\Counter\\preview.png\"",

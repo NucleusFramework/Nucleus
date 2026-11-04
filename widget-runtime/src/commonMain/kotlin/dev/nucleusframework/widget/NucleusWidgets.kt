@@ -78,6 +78,19 @@ public sealed interface WidgetEvent {
         override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
+    /** The [WebContent] page posted a message. */
+    public data class MessageReceived(
+        override val id: WidgetId,
+        val message: String,
+        override val epochMillis: Long = currentEpochMillis(),
+    ) : WidgetEvent
+
+    /** The user asked for the widget's customization UI. */
+    public data class CustomizationRequested(
+        override val id: WidgetId,
+        override val epochMillis: Long = currentEpochMillis(),
+    ) : WidgetEvent
+
     /** The user clicked an element that runs app code. */
     public data class ActionInvoked(
         override val id: WidgetId,
@@ -201,6 +214,12 @@ public interface WidgetHost {
         id: WidgetId,
         state: WidgetState,
     )
+
+    /** Sends [message] to the web content of [id]. */
+    public suspend fun sendMessage(
+        id: WidgetId,
+        message: String,
+    )
 }
 
 /** What hosts call: rendering, actions and events, all serialized on one coroutine. */
@@ -233,16 +252,49 @@ public object WidgetEngine {
     public suspend fun invokeAction(
         instance: WidgetInstance,
         key: String,
+        inputs: Map<String, String> = emptyMap(),
     ): Boolean {
         emit(WidgetEvent.ActionInvoked(instance.id, key))
+        // Input ids are state storage names ("s:city"): submitted values land in the state first.
+        for ((id, value) in inputs) {
+            if (id.length > 2 && id[1] == ':') instance.state.values[id] = value
+        }
         val action = render(instance).actions[key] ?: return false
         when (action) {
             is LambdaAction -> action.block()
             is RunCallbackAction -> action.callback.onAction(instance.id, action.parameters)
+            FinishCustomizationAction -> instance.state.remove(CustomizingKey)
             is OpenUrlAction -> Unit // opened by the host itself
         }
         return true
     }
+
+    /** The input values of an action's data (a flat JSON object): input id to value. */
+    public fun parseInputs(data: String): Map<String, String> =
+        if (data.isBlank()) emptyMap() else FlatJson.decode(data).orEmpty()
+
+    /** Puts [instance] in customization mode; the host renders it next. */
+    public fun requestCustomization(instance: WidgetInstance) {
+        emit(WidgetEvent.CustomizationRequested(instance.id))
+        instance.state[CustomizingKey] = true
+    }
+
+    /** Hands a message from the web content of [id] to its widget's [NucleusWidget.onMessage]. */
+    public suspend fun deliverMessage(
+        definitionId: String,
+        id: WidgetId,
+        message: String,
+    ) {
+        emit(WidgetEvent.MessageReceived(id, message))
+        NucleusWidgets.factories[definitionId]?.invoke()?.onMessage(id, message)
+    }
+
+    /** Asks the widget [definitionId] to answer a web request of [id]; `null` lets it through. */
+    public suspend fun answerWebRequest(
+        definitionId: String,
+        id: WidgetId,
+        request: WidgetWebRequest,
+    ): WidgetWebResponse? = NucleusWidgets.factories[definitionId]?.invoke()?.onWebRequest(id, request)
 
     /** Reports [event] on [NucleusWidgets.events]. */
     public fun emit(event: WidgetEvent): Unit = NucleusWidgets.emit(event)

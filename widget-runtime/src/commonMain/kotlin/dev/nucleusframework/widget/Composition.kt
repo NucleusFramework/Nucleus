@@ -71,6 +71,53 @@ internal sealed class WidgetNode {
     class Spacer : WidgetNode() {
         override fun toElement(): WidgetElement = WidgetElement.Spacer(modifier)
     }
+
+    class TextInput : WidgetNode() {
+        var id = ""
+        var value: String? = null
+        var label: String? = null
+        var placeholder: String? = null
+        var isMultiline = false
+        var maxLength: Int? = null
+
+        override fun toElement(): WidgetElement =
+            WidgetElement.TextInput(id, value, label, placeholder, isMultiline, maxLength, modifier)
+    }
+
+    class Toggle : WidgetNode() {
+        var id = ""
+        var title = ""
+        var value = false
+
+        override fun toElement(): WidgetElement = WidgetElement.Toggle(id, title, value, modifier)
+    }
+
+    class ChoiceInput : WidgetNode() {
+        var id = ""
+        var value: String? = null
+        var choices: List<Choice> = emptyList()
+        var label: String? = null
+        var isExpanded = false
+
+        override fun toElement(): WidgetElement =
+            WidgetElement.ChoiceInput(id, value, choices, label, isExpanded, modifier)
+    }
+
+    class NumberInput : WidgetNode() {
+        var id = ""
+        var value: Double? = null
+        var label: String? = null
+        var min: Double? = null
+        var max: Double? = null
+
+        override fun toElement(): WidgetElement = WidgetElement.NumberInput(id, value, label, min, max, modifier)
+    }
+
+    class WebContent : WidgetNode() {
+        var url = ""
+
+        override fun toElement(): WidgetElement = WidgetElement.WebContent(url, modifier)
+    }
 }
 
 internal class WidgetApplier(

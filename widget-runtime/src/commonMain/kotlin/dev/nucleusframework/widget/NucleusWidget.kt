@@ -65,6 +65,49 @@ public abstract class NucleusWidget {
             if (pinned.definitionId in definitions) host.refresh(pinned.id)
         }
     }
+
+    /**
+     * Called with each message the [WebContent] page of widget [id] posts
+     * (`window.chrome.webview.postMessage`). Answer with [sendWidgetMessage].
+     */
+    public open suspend fun onMessage(
+        id: WidgetId,
+        message: String,
+    ) {
+    }
+
+    /**
+     * Answers a request of the [WebContent] page of widget [id] that matches the widget's web
+     * request filter (the plugin's `webRequestFilter`). Return `null` to let it go to the network.
+     */
+    public open suspend fun onWebRequest(
+        id: WidgetId,
+        request: WidgetWebRequest,
+    ): WidgetWebResponse? = null
+}
+
+/** A request made by a widget's [WebContent] page, as seen by [NucleusWidget.onWebRequest]. */
+public class WidgetWebRequest(
+    public val uri: String,
+    public val method: String,
+    public val headers: Map<String, String>,
+    public val body: ByteArray?,
+)
+
+/** The answer to a [WidgetWebRequest]. */
+public class WidgetWebResponse(
+    public val body: ByteArray?,
+    public val statusCode: Int = 200,
+    public val reasonPhrase: String = "OK",
+    public val headers: Map<String, String> = emptyMap(),
+)
+
+/** Sends [message] to the [WebContent] page of widget [id] (its `window.chrome.webview` `message` event). */
+public suspend fun sendWidgetMessage(
+    id: WidgetId,
+    message: String,
+) {
+    NucleusWidgets.host?.sendMessage(id, message)
 }
 
 /**
@@ -106,9 +149,29 @@ public class WidgetStateHandle internal constructor(
     public fun update(block: (MutableWidgetState) -> Unit) {
         block(state)
     }
+
+    /** Leaves the customization UI the host asked for (see [isCustomizing]). */
+    public fun finishCustomization() {
+        state.remove(CustomizingKey)
+    }
 }
 
-private val LocalWidgetStateHandle =
+/**
+ * Whether the user asked for the widget's customization UI (on Windows, *Customize widget* in its
+ * menu, offered when the plugin's `customizable = true`). Show the settings while it is `true`, and
+ * leave with [actionFinishCustomization] or [WidgetStateHandle.finishCustomization]:
+ *
+ * ```
+ * if (isCustomizing()) {
+ *     TextField(CityKey, label = "City")
+ *     Button("Done", onClick = actionFinishCustomization())
+ * } else { … }
+ * ```
+ */
+@Composable
+public fun isCustomizing(): Boolean = LocalWidgetStateHandle.current[CustomizingKey] == true
+
+internal val LocalWidgetStateHandle =
     staticCompositionLocalOf<WidgetStateHandle> { error("No widget is being rendered") }
 
 /** The state of the widget being rendered. */

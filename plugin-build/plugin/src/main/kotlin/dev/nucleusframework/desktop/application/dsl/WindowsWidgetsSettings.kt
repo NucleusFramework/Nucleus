@@ -85,6 +85,13 @@ abstract class WindowsWidgetSettings
         /** Whether the user may pin several instances. */
         var allowMultiple: Boolean = true
 
+        /**
+         * For a web widget (`WebContent`): the requests of its page routed to `onWebRequest`, as a
+         * WebExtensions match pattern on the page's origin (everything under `https://contoso.com/api/`
+         * is that path followed by an asterisk).
+         */
+        var webRequestFilter: String? = null
+
         /** Icon shown in the widget's header and in the picker. Required. */
         val icon: RegularFileProperty = objects.fileProperty()
 

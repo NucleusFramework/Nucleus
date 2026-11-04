@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 private val Count = intStateKey("count")
 private val Label = stringStateKey("label")
 
-private class CounterWidget : NucleusWidget() {
+internal class CounterWidget : NucleusWidget() {
     override suspend fun provideWidget(id: WidgetId) {
         provideContent {
             val state = currentWidgetState()
@@ -29,7 +29,7 @@ private class CounterWidget : NucleusWidget() {
 
 class WidgetRuntimeTest {
     init {
-        NucleusWidgets.start { widget("Counter") { CounterWidget() } }
+        startTestWidgets()
     }
 
     private fun instance(state: MutableWidgetState = WidgetState.decode(null)) =
