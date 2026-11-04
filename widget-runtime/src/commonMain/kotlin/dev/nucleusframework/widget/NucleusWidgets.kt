@@ -42,50 +42,61 @@ public sealed interface WidgetEvent {
     /** The widget concerned, when there is one. */
     public val id: WidgetId?
 
+    /** When it happened (Unix epoch, ms): replayed events keep their original time. */
+    public val epochMillis: Long
+
     /** The user pinned a widget. */
     public data class Pinned(
         override val id: WidgetId,
         val definitionId: String,
         val size: WidgetSize,
+        override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
     /** The user removed a pinned widget. */
     public data class Unpinned(
         override val id: WidgetId,
+        override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
     /** The widget became visible in the host. */
     public data class Activated(
         override val id: WidgetId,
+        override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
     /** The widget is no longer visible in the host. */
     public data class Deactivated(
         override val id: WidgetId,
+        override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
     /** The user resized the widget. */
     public data class Resized(
         override val id: WidgetId,
         val size: WidgetSize,
+        override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
     /** The user clicked an element that runs app code. */
     public data class ActionInvoked(
         override val id: WidgetId,
         val key: String,
+        override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
     /** The widget was composed and handed to the host. */
     public data class Rendered(
         override val id: WidgetId,
         val millis: Long,
+        override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
     /** The host reported an error about the widget (e.g. content it cannot display). */
     public data class HostError(
         override val id: WidgetId?,
         val details: String,
+        override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
     /** Rendering, an action or a host call failed. */
@@ -93,6 +104,7 @@ public sealed interface WidgetEvent {
         override val id: WidgetId?,
         val message: String,
         val cause: Throwable?,
+        override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 }
 
@@ -154,6 +166,8 @@ public object NucleusWidgets {
 }
 
 internal expect fun loadWidgetHost(): WidgetHost?
+
+internal expect fun currentEpochMillis(): Long
 
 /**
  * A platform's widget host (Windows widgets board), loaded through `ServiceLoader` by

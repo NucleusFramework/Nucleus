@@ -51,6 +51,8 @@ internal object NativeWidgetBridge {
 
     @JvmStatic external fun nativeInitializeApartment(): Int
 
+    @JvmStatic external fun nativeCommandLine(): String
+
     @JvmStatic external fun nativeIsAvailable(): Boolean
 
     @JvmStatic external fun nativeRegisterProvider(

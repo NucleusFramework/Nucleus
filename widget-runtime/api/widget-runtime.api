@@ -131,6 +131,7 @@ public final class dev/nucleusframework/widget/MutableWidgetState : dev/nucleusf
 }
 
 public final class dev/nucleusframework/widget/NucleusApplicationWidgetsKt {
+	public static final fun isWidgetHostOnly-C2H2yOE (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/time/Duration;Landroidx/compose/runtime/Composer;II)Z
 	public static final fun widgets (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function1;)V
 }
 
@@ -375,17 +376,21 @@ public final class dev/nucleusframework/widget/WidgetEngine {
 }
 
 public abstract interface class dev/nucleusframework/widget/WidgetEvent {
+	public abstract fun getEpochMillis ()J
 	public abstract fun getId-d-GyMs4 ()Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/widget/WidgetEvent$ActionInvoked : dev/nucleusframework/widget/WidgetEvent {
 	public static final field $stable I
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-JfwnnfE ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
-	public final fun copy-GcnOI4E (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetEvent$ActionInvoked;
-	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$ActionInvoked;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$ActionInvoked;
+	public final fun component3 ()J
+	public final fun copy-b_9T3YA (Ljava/lang/String;Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$ActionInvoked;
+	public static synthetic fun copy-b_9T3YA$default (Ldev/nucleusframework/widget/WidgetEvent$ActionInvoked;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$ActionInvoked;
 	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
 	public fun getId-JfwnnfE ()Ljava/lang/String;
 	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
 	public final fun getKey ()Ljava/lang/String;
@@ -395,11 +400,14 @@ public final class dev/nucleusframework/widget/WidgetEvent$ActionInvoked : dev/n
 
 public final class dev/nucleusframework/widget/WidgetEvent$Activated : dev/nucleusframework/widget/WidgetEvent {
 	public static final field $stable I
-	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-JfwnnfE ()Ljava/lang/String;
-	public final fun copy-QzCRwpY (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetEvent$Activated;
-	public static synthetic fun copy-QzCRwpY$default (Ldev/nucleusframework/widget/WidgetEvent$Activated;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Activated;
+	public final fun component2 ()J
+	public final fun copy-GcnOI4E (Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$Activated;
+	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$Activated;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Activated;
 	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
 	public fun getId-JfwnnfE ()Ljava/lang/String;
 	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
 	public fun hashCode ()I
@@ -408,11 +416,14 @@ public final class dev/nucleusframework/widget/WidgetEvent$Activated : dev/nucle
 
 public final class dev/nucleusframework/widget/WidgetEvent$Deactivated : dev/nucleusframework/widget/WidgetEvent {
 	public static final field $stable I
-	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-JfwnnfE ()Ljava/lang/String;
-	public final fun copy-QzCRwpY (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetEvent$Deactivated;
-	public static synthetic fun copy-QzCRwpY$default (Ldev/nucleusframework/widget/WidgetEvent$Deactivated;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Deactivated;
+	public final fun component2 ()J
+	public final fun copy-GcnOI4E (Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$Deactivated;
+	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$Deactivated;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Deactivated;
 	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
 	public fun getId-JfwnnfE ()Ljava/lang/String;
 	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
 	public fun hashCode ()I
@@ -421,14 +432,17 @@ public final class dev/nucleusframework/widget/WidgetEvent$Deactivated : dev/nuc
 
 public final class dev/nucleusframework/widget/WidgetEvent$Failed : dev/nucleusframework/widget/WidgetEvent {
 	public static final field $stable I
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-d-GyMs4 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/Throwable;
-	public final fun copy-sc4he_A (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)Ldev/nucleusframework/widget/WidgetEvent$Failed;
-	public static synthetic fun copy-sc4he_A$default (Ldev/nucleusframework/widget/WidgetEvent$Failed;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Failed;
+	public final fun component4 ()J
+	public final fun copy-Su_clzY (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;J)Ldev/nucleusframework/widget/WidgetEvent$Failed;
+	public static synthetic fun copy-Su_clzY$default (Ldev/nucleusframework/widget/WidgetEvent$Failed;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Failed;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCause ()Ljava/lang/Throwable;
+	public fun getEpochMillis ()J
 	public fun getId-d-GyMs4 ()Ljava/lang/String;
 	public final fun getMessage ()Ljava/lang/String;
 	public fun hashCode ()I
@@ -437,13 +451,16 @@ public final class dev/nucleusframework/widget/WidgetEvent$Failed : dev/nucleusf
 
 public final class dev/nucleusframework/widget/WidgetEvent$HostError : dev/nucleusframework/widget/WidgetEvent {
 	public static final field $stable I
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-d-GyMs4 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
-	public final fun copy-4ocII30 (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetEvent$HostError;
-	public static synthetic fun copy-4ocII30$default (Ldev/nucleusframework/widget/WidgetEvent$HostError;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$HostError;
+	public final fun component3 ()J
+	public final fun copy-sc4he_A (Ljava/lang/String;Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$HostError;
+	public static synthetic fun copy-sc4he_A$default (Ldev/nucleusframework/widget/WidgetEvent$HostError;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$HostError;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getDetails ()Ljava/lang/String;
+	public fun getEpochMillis ()J
 	public fun getId-d-GyMs4 ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -451,14 +468,17 @@ public final class dev/nucleusframework/widget/WidgetEvent$HostError : dev/nucle
 
 public final class dev/nucleusframework/widget/WidgetEvent$Pinned : dev/nucleusframework/widget/WidgetEvent {
 	public static final field $stable I
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-JfwnnfE ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ldev/nucleusframework/widget/WidgetSize;
-	public final fun copy-b_9T3YA (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;)Ldev/nucleusframework/widget/WidgetEvent$Pinned;
-	public static synthetic fun copy-b_9T3YA$default (Ldev/nucleusframework/widget/WidgetEvent$Pinned;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Pinned;
+	public final fun component4 ()J
+	public final fun copy-rTXAoxg (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;J)Ldev/nucleusframework/widget/WidgetEvent$Pinned;
+	public static synthetic fun copy-rTXAoxg$default (Ldev/nucleusframework/widget/WidgetEvent$Pinned;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Pinned;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getDefinitionId ()Ljava/lang/String;
+	public fun getEpochMillis ()J
 	public fun getId-JfwnnfE ()Ljava/lang/String;
 	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
 	public final fun getSize ()Ldev/nucleusframework/widget/WidgetSize;
@@ -468,12 +488,15 @@ public final class dev/nucleusframework/widget/WidgetEvent$Pinned : dev/nucleusf
 
 public final class dev/nucleusframework/widget/WidgetEvent$Rendered : dev/nucleusframework/widget/WidgetEvent {
 	public static final field $stable I
-	public synthetic fun <init> (Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JJLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-JfwnnfE ()Ljava/lang/String;
 	public final fun component2 ()J
-	public final fun copy-GcnOI4E (Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$Rendered;
-	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$Rendered;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Rendered;
+	public final fun component3 ()J
+	public final fun copy-b_9T3YA (Ljava/lang/String;JJ)Ldev/nucleusframework/widget/WidgetEvent$Rendered;
+	public static synthetic fun copy-b_9T3YA$default (Ldev/nucleusframework/widget/WidgetEvent$Rendered;Ljava/lang/String;JJILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Rendered;
 	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
 	public fun getId-JfwnnfE ()Ljava/lang/String;
 	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
 	public final fun getMillis ()J
@@ -483,12 +506,15 @@ public final class dev/nucleusframework/widget/WidgetEvent$Rendered : dev/nucleu
 
 public final class dev/nucleusframework/widget/WidgetEvent$Resized : dev/nucleusframework/widget/WidgetEvent {
 	public static final field $stable I
-	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-JfwnnfE ()Ljava/lang/String;
 	public final fun component2 ()Ldev/nucleusframework/widget/WidgetSize;
-	public final fun copy-GcnOI4E (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;)Ldev/nucleusframework/widget/WidgetEvent$Resized;
-	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$Resized;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Resized;
+	public final fun component3 ()J
+	public final fun copy-b_9T3YA (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;J)Ldev/nucleusframework/widget/WidgetEvent$Resized;
+	public static synthetic fun copy-b_9T3YA$default (Ldev/nucleusframework/widget/WidgetEvent$Resized;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Resized;
 	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
 	public fun getId-JfwnnfE ()Ljava/lang/String;
 	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
 	public final fun getSize ()Ldev/nucleusframework/widget/WidgetSize;
@@ -498,11 +524,14 @@ public final class dev/nucleusframework/widget/WidgetEvent$Resized : dev/nucleus
 
 public final class dev/nucleusframework/widget/WidgetEvent$Unpinned : dev/nucleusframework/widget/WidgetEvent {
 	public static final field $stable I
-	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1-JfwnnfE ()Ljava/lang/String;
-	public final fun copy-QzCRwpY (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetEvent$Unpinned;
-	public static synthetic fun copy-QzCRwpY$default (Ldev/nucleusframework/widget/WidgetEvent$Unpinned;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Unpinned;
+	public final fun component2 ()J
+	public final fun copy-GcnOI4E (Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$Unpinned;
+	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$Unpinned;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Unpinned;
 	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
 	public fun getId-JfwnnfE ()Ljava/lang/String;
 	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
 	public fun hashCode ()I

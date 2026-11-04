@@ -193,6 +193,7 @@ public final class dev/nucleusframework/widget/windows/WidgetProviderServer {
 	public static final field $stable I
 	public static final field COM_SERVER_ARGUMENT Ljava/lang/String;
 	public static final field INSTANCE Ldev/nucleusframework/widget/windows/WidgetProviderServer;
+	public final fun isComServerLaunch ()Z
 	public final fun isComServerLaunch ([Ljava/lang/String;)Z
 	public final fun register (Ljava/util/UUID;Ldev/nucleusframework/widget/windows/WidgetProvider;)Ljava/lang/AutoCloseable;
 }

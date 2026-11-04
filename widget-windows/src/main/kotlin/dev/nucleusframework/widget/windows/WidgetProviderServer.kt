@@ -23,6 +23,16 @@ public object WidgetProviderServer {
         args.any { it.equals(COM_SERVER_ARGUMENT, ignoreCase = true) || it.equals("-Embedding", ignoreCase = true) }
 
     /**
+     * Whether COM launched this process for the widget host, read from the process command line
+     * (so it works without access to `main`'s arguments). `false` off Windows.
+     */
+    public val isComServerLaunch: Boolean by lazy {
+        NativeWidgetBridge.isLoaded &&
+            runCatching { isComServerLaunch(NativeWidgetBridge.nativeCommandLine().split(' ').toTypedArray()) }
+                .getOrDefault(false)
+    }
+
+    /**
      * Registers [provider] as the class object for [clsid] (`CoRegisterClassObject`,
      * `CLSCTX_LOCAL_SERVER`, `REGCLS_MULTIPLEUSE`). Close the returned handle to revoke it.
      *

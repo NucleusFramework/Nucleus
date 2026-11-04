@@ -604,6 +604,13 @@ JNIEXPORT jint JNICALL JNI_FN(nativeInitializeApartment)(JNIEnv *, jclass) {
     return (hr == S_FALSE || hr == RPC_E_CHANGED_MODE) ? S_OK : hr;
 }
 
+// The process command line as Windows has it: COM launches the provider with the manifest's
+// Arguments (or -Embedding), which ProcessHandle does not expose on Windows.
+JNIEXPORT jstring JNICALL JNI_FN(nativeCommandLine)(JNIEnv *env, jclass) {
+    const wchar_t *line = GetCommandLineW();
+    return env->NewString((const jchar *)line, (jsize)wcslen(line));
+}
+
 JNIEXPORT jboolean JNICALL JNI_FN(nativeIsAvailable)(JNIEnv *, jclass) {
     ComPtr<IWidgetManager> manager;
     return SUCCEEDED(getManager(manager)) ? JNI_TRUE : JNI_FALSE;

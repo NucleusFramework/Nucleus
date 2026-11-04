@@ -41,14 +41,7 @@ public class WindowsWidgetHost : WidgetHost {
         Platform.Current == Platform.Windows && runCatching { WidgetManager.isAvailable }.getOrDefault(false)
     }
 
-    override val isLaunchedByHost: Boolean by lazy {
-        ProcessHandle
-            .current()
-            .info()
-            .arguments()
-            .map(WidgetProviderServer::isComServerLaunch)
-            .orElse(false)
-    }
+    override val isLaunchedByHost: Boolean get() = WidgetProviderServer.isComServerLaunch
 
     /** Live state per widget id: renders read it, click handlers change it, every push persists it. */
     private val states = ConcurrentHashMap<String, MutableWidgetState>()
