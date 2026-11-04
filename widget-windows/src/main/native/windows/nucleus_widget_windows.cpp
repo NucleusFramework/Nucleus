@@ -69,6 +69,24 @@ static const int FLAG_RESOURCE = 1 << 4;
 
 static JavaVM *g_jvm = nullptr;
 
+// Diagnostics: with NUCLEUS_WIDGET_TRACE=<file>, every class-object request and provider
+// QueryInterface is appended to that file, so a host that gives up before CreateWidget is visible.
+static void trace(const wchar_t *what, REFIID riid) {
+    wchar_t path[MAX_PATH];
+    if (GetEnvironmentVariableW(L"NUCLEUS_WIDGET_TRACE", path, MAX_PATH) == 0) return;
+    wchar_t iid[64] = L"";
+    StringFromGUID2(riid, iid, 64);
+    wchar_t line[256];
+    swprintf_s(line, L"%lu %ls %ls\r\n", GetCurrentThreadId(), what, iid);
+    HANDLE f = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    char utf8[512];
+    int n = WideCharToMultiByte(CP_UTF8, 0, line, -1, utf8, sizeof(utf8), nullptr, nullptr);
+    if (n > 1) WriteFile(f, utf8, (DWORD)(n - 1), &written, nullptr);
+    CloseHandle(f);
+}
+
 // ============================================================================
 // JNI helpers
 // ============================================================================
@@ -183,6 +201,29 @@ static HRESULT getManager(ComPtr<IWidgetManager> &out) {
     return S_OK;
 }
 
+// The default WidgetManager is a proxy to WidgetService: it dies with the service (Store update,
+// crash, user restart) and every call then fails with an RPC disconnection.
+static bool isDisconnected(HRESULT hr) {
+    return hr == HRESULT_FROM_WIN32(RPC_S_SERVER_UNAVAILABLE) || hr == HRESULT_FROM_WIN32(RPC_S_CALL_FAILED) ||
+        hr == RPC_E_DISCONNECTED || hr == CO_E_OBJNOTCONNECTED;
+}
+
+// Runs [call] on the cached manager; on a dead proxy, drops it and retries once on a fresh one.
+template <typename F>
+static HRESULT callManager(F &&call) {
+    ComPtr<IWidgetManager> manager;
+    HRESULT hr = getManager(manager);
+    if (FAILED(hr)) return hr;
+    hr = call(manager.Get());
+    if (!isDisconnected(hr)) return hr;
+    {
+        std::lock_guard<std::mutex> lock(g_managerMutex);
+        if (g_manager == manager) g_manager.Reset();
+    }
+    hr = getManager(manager);
+    return FAILED(hr) ? hr : call(manager.Get());
+}
+
 // ============================================================================
 // WidgetContext
 // ============================================================================
@@ -292,6 +333,7 @@ public:
     IFACEMETHODIMP QueryInterface(REFIID riid, void **ppv) override {
         if (!ppv) return E_POINTER;
         *ppv = nullptr;
+        trace(L"provider QI", riid);
         if (riid == __uuidof(IUnknown) || riid == __uuidof(IInspectable) || riid == __uuidof(IWidgetProvider)) {
             *ppv = static_cast<IWidgetProvider *>(this);
         } else if (riid == __uuidof(IWidgetProvider2) && has(FLAG_PROVIDER2)) {
@@ -333,8 +375,12 @@ public:
         *count = (ULONG)list.size();
         return S_OK;
     }
+    // Must name a type the WinRT metadata marshaler can resolve: the host's stub looks it up and
+    // silently drops a provider whose class name is in no .winmd. Like C++/WinRT's `implements`,
+    // report the first WinRT interface implemented.
     IFACEMETHODIMP GetRuntimeClassName(HSTRING *name) override {
-        return WindowsCreateString(L"Nucleus.WidgetProvider", 22, name);
+        static const wchar_t kName[] = L"Microsoft.Windows.Widgets.Providers.IWidgetProvider";
+        return WindowsCreateString(kName, ARRAYSIZE(kName) - 1, name);
     }
     IFACEMETHODIMP GetTrustLevel(TrustLevel *level) override {
         *level = BaseTrust;
@@ -438,6 +484,7 @@ public:
     ~WidgetProviderFactory() override { _d->release(); }
 
     IFACEMETHODIMP CreateInstance(IUnknown *outer, REFIID riid, void **ppv) override {
+        trace(L"factory CreateInstance", riid);
         if (!ppv) return E_POINTER;
         *ppv = nullptr;
         if (outer) return CLASS_E_NOAGGREGATION;
@@ -612,9 +659,6 @@ JNIEXPORT void JNICALL JNI_FN(nativeUpdateWidget)(
     JNIEnv *env, jclass, jstring jWidgetId, jstring jTemplate, jstring jData, jstring jCustomState,
     jint placeholder, jboolean hasRank, jint rank
 ) {
-    ComPtr<IWidgetManager> manager;
-    THROW_IF_FAILED(env, getManager(manager), "WidgetManager is unavailable", );
-
     ComPtr<IWidgetUpdateRequestOptionsFactory> factory;
     THROW_IF_FAILED(env, getFactory(RuntimeClass_WidgetUpdateRequestOptions, factory),
         "WidgetUpdateRequestOptions is unavailable", );
@@ -662,15 +706,15 @@ JNIEXPORT void JNICALL JNI_FN(nativeUpdateWidget)(
         }
     }
 
-    THROW_IF_FAILED(env, manager->UpdateWidget(options.Get()), "UpdateWidget failed", );
+    THROW_IF_FAILED(env, callManager([&](IWidgetManager *manager) { return manager->UpdateWidget(options.Get()); }),
+        "UpdateWidget failed", );
 }
 
 JNIEXPORT jobjectArray JNICALL JNI_FN(nativeGetWidgetIds)(JNIEnv *env, jclass) {
-    ComPtr<IWidgetManager> manager;
-    THROW_IF_FAILED(env, getManager(manager), "WidgetManager is unavailable", nullptr);
     UINT32 count = 0;
     HSTRING *ids = nullptr;
-    THROW_IF_FAILED(env, manager->GetWidgetIds(&count, &ids), "GetWidgetIds failed", nullptr);
+    THROW_IF_FAILED(env, callManager([&](IWidgetManager *manager) { return manager->GetWidgetIds(&count, &ids); }),
+        "GetWidgetIds failed", nullptr);
     jobjectArray result = env->NewObjectArray((jsize)count, env->FindClass("java/lang/String"), nullptr);
     for (UINT32 i = 0; i < count; i++) {
         if (result) env->SetObjectArrayElement(result, (jsize)i, toJString(env, ids[i]));
@@ -741,12 +785,11 @@ static jobjectArray packInfos(JNIEnv *env, const std::vector<jstring> &strings, 
 }
 
 JNIEXPORT jobjectArray JNICALL JNI_FN(nativeGetWidgetInfo)(JNIEnv *env, jclass, jstring jWidgetId) {
-    ComPtr<IWidgetManager> manager;
-    THROW_IF_FAILED(env, getManager(manager), "WidgetManager is unavailable", nullptr);
     ComPtr<IWidgetInfo> info;
     {
         JHString id(env, jWidgetId);
-        THROW_IF_FAILED(env, manager->GetWidgetInfo(id.get(), &info), "GetWidgetInfo failed", nullptr);
+        THROW_IF_FAILED(env, callManager([&](IWidgetManager *manager) { return manager->GetWidgetInfo(id.get(), &info); }),
+            "GetWidgetInfo failed", nullptr);
     }
     std::vector<jstring> strings;
     std::vector<jlong> numbers;
@@ -755,11 +798,10 @@ JNIEXPORT jobjectArray JNICALL JNI_FN(nativeGetWidgetInfo)(JNIEnv *env, jclass, 
 }
 
 JNIEXPORT jobjectArray JNICALL JNI_FN(nativeGetWidgetInfos)(JNIEnv *env, jclass) {
-    ComPtr<IWidgetManager> manager;
-    THROW_IF_FAILED(env, getManager(manager), "WidgetManager is unavailable", nullptr);
     UINT32 count = 0;
     IWidgetInfo **infos = nullptr;
-    THROW_IF_FAILED(env, manager->GetWidgetInfos(&count, &infos), "GetWidgetInfos failed", nullptr);
+    THROW_IF_FAILED(env, callManager([&](IWidgetManager *manager) { return manager->GetWidgetInfos(&count, &infos); }),
+        "GetWidgetInfos failed", nullptr);
     std::vector<jstring> strings;
     std::vector<jlong> numbers;
     HRESULT hr = S_OK;
@@ -773,20 +815,22 @@ JNIEXPORT jobjectArray JNICALL JNI_FN(nativeGetWidgetInfos)(JNIEnv *env, jclass)
 }
 
 JNIEXPORT void JNICALL JNI_FN(nativeDeleteWidget)(JNIEnv *env, jclass, jstring jWidgetId) {
-    ComPtr<IWidgetManager> manager;
-    THROW_IF_FAILED(env, getManager(manager), "WidgetManager is unavailable", );
     JHString id(env, jWidgetId);
-    THROW_IF_FAILED(env, manager->DeleteWidget(id.get()), "DeleteWidget failed", );
+    THROW_IF_FAILED(env, callManager([&](IWidgetManager *manager) { return manager->DeleteWidget(id.get()); }),
+        "DeleteWidget failed", );
 }
 
 JNIEXPORT void JNICALL JNI_FN(nativeSendMessageToContent)(JNIEnv *env, jclass, jstring jWidgetId, jstring jMessage) {
-    ComPtr<IWidgetManager> manager;
-    THROW_IF_FAILED(env, getManager(manager), "WidgetManager is unavailable", );
-    ComPtr<IWidgetManager2> manager2;
-    THROW_IF_FAILED(env, manager.As(&manager2), "SendMessageToContent requires WidgetContract 6 (Windows App SDK 1.5+)", );
     JHString id(env, jWidgetId);
     JHString message(env, jMessage);
-    THROW_IF_FAILED(env, manager2->SendMessageToContent(id.get(), message.get()), "SendMessageToContent failed", );
+    HRESULT hr = callManager([&](IWidgetManager *manager) {
+        ComPtr<IWidgetManager2> manager2;
+        HRESULT qi = manager->QueryInterface(IID_PPV_ARGS(&manager2));
+        return FAILED(qi) ? qi : manager2->SendMessageToContent(id.get(), message.get());
+    });
+    THROW_IF_FAILED(env, hr,
+        hr == E_NOINTERFACE ? "SendMessageToContent requires WidgetContract 6 (Windows App SDK 1.5+)"
+                            : "SendMessageToContent failed", );
 }
 
 JNIEXPORT jstring JNICALL JNI_FN(nativeGetUnsetValue)(JNIEnv *env, jclass) {
