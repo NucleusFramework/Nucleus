@@ -132,6 +132,11 @@ jobs:
         shell: cmd
         run: call notification-windows\src\main\native\windows\build.bat
 
+      - name: Build widget-windows Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call widget-windows\src\main\native\windows\build.bat
+
       - name: Build autolaunch Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -226,6 +231,7 @@ jobs:
             "energy-manager/nucleus_energy_manager.dll"
             "taskbar-progress/nucleus_taskbar_progress.dll"
             "notification-windows/nucleus_notification_windows.dll"
+            "widget-windows/nucleus_widget_windows.dll"
             "autolaunch/nucleus_autolaunch.dll"
             "launcher-windows/nucleus_launcher_windows.dll"
             "global-hotkey/nucleus_global_hotkey.dll"

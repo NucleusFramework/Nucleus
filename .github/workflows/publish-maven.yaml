@@ -134,6 +134,8 @@ jobs:
             "launcher-linux/src/main/resources/nucleus/native/linux-aarch64/libnucleus_launcher_linux.so"
             "notification-windows/src/main/resources/nucleus/native/win32-x64/nucleus_notification_windows.dll"
             "notification-windows/src/main/resources/nucleus/native/win32-aarch64/nucleus_notification_windows.dll"
+            "widget-windows/src/main/resources/nucleus/native/win32-x64/nucleus_widget_windows.dll"
+            "widget-windows/src/main/resources/nucleus/native/win32-aarch64/nucleus_widget_windows.dll"
             "autolaunch/src/main/resources/nucleus/native/win32-x64/nucleus_autolaunch.dll"
             "autolaunch/src/main/resources/nucleus/native/win32-aarch64/nucleus_autolaunch.dll"
             "autolaunch/src/main/resources/nucleus/native/linux-x64/libnucleus_autolaunch_linux.so"
