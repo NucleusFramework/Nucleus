@@ -26,6 +26,9 @@ fun main(args: Array<String>) {
         return
     }
 
+    // Before any UI: an OS activation (COM launching the Lab as widget provider) waits on these.
+    graph.startups.forEach { it.start(args) }
+
     nucleusApplication(args) {
         // Exits after 45 s under -Dnucleus.aot.mode=training, so packaging can record an AOT cache.
         aotTraining(duration = 45.seconds)

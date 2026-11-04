@@ -1,5 +1,6 @@
 package dev.nucleusframework.lab.app
 
+import dev.nucleusframework.lab.core.LabStartup
 import dev.nucleusframework.lab.core.Probe
 import dev.nucleusframework.lab.core.checks.CheckStore
 import dev.nucleusframework.lab.core.commands.LabCommands
@@ -20,6 +21,9 @@ interface LabGraph : ViewModelGraph {
 
     @Multibinds(allowEmpty = true)
     val fixtures: Set<Fixture>
+
+    @Multibinds(allowEmpty = true)
+    val startups: Set<LabStartup>
 
     val timeline: Timeline
     val environment: EnvironmentProvider

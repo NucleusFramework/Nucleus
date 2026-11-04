@@ -306,6 +306,10 @@ nucleus.application {
                 square44x44Logo.set(project.file("packaging/icons/appx/Square44x44Logo.png"))
                 square150x150Logo.set(project.file("packaging/icons/appx/Square150x150Logo.png"))
                 wide310x150Logo.set(project.file("packaging/icons/appx/Wide310x150Logo.png"))
+                // Windows 11 widget provider (probe shell.windows-widgets): COM server + widgets extension,
+                // and the Windows App SDK framework dependency their namespaces/classes need.
+                customManifest.set(project.file("packaging/appx/AppxManifest.xml"))
+                customExtensions.set(project.file("packaging/appx/widget-extensions.xml"))
             }
         }
 
