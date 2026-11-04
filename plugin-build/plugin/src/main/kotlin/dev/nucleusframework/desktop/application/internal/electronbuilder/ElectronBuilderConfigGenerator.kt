@@ -598,6 +598,8 @@ internal class ElectronBuilderConfigGenerator(
                 yaml.appendLine("    - \"$cap\"")
             }
         }
+        appendIfNotNull(yaml, "  customManifestPath", appx.customManifest.ref())
+        appendIfNotNull(yaml, "  customExtensionsPath", appx.customExtensions.ref())
     }
 
     // Mirrors generateConfig's inputs one-to-one and is called directly by the unit tests.
