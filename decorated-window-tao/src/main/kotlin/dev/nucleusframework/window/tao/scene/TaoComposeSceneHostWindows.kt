@@ -618,7 +618,7 @@ internal class TaoComposeSceneHostWindows(
         window.onFocusChanged { focused ->
             if (focused) onOwnerFocusGained() else onOwnerFocusLost()
         }
-        architectureComponents.onAttached(focused = windowInfo.isWindowFocused, minimized = window.isMinimized)
+        architectureComponents.onAttached(focused = window.isFocused, minimized = window.isMinimized)
     }
 
     private fun onOwnerFocusLost() {
@@ -2973,9 +2973,9 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun detach() {
-        // First, as ComposeContainer.dispose does: view models are cleared
-        // while the scene they were created for still exists.
-        architectureComponents.onDetached()
+        // Paused and stopped while the content is still composed, so its
+        // lifecycle observers see the window go; see [TaoArchitectureComponents.onDetaching].
+        architectureComponents.onDetaching()
         // Layers whose dismiss animation was still running: Compose closes a
         // native popup layer only when its own disappearance finishes, so an
         // owner destroyed mid-animation left the layer's popup window mapped
@@ -3010,6 +3010,8 @@ internal class TaoComposeSceneHostWindows(
         sceneBundle?.close()
         window.clearContentMeasurer()
         sceneBundle = null
+        // After the composition is gone, so no onDispose meets a cleared view model.
+        architectureComponents.onDetached()
         if (directContext != null) {
             // Belt for TextureView imports a leaked composition may still hold:
             // scene.close() above released the leases of every live one. They

@@ -9,10 +9,9 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import dev.nucleusframework.window.tao.dispatch.LifecycleMainDispatcherPriming
-import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -29,19 +28,19 @@ import kotlin.test.assertTrue
  * contexts wired the way the three hosts wire theirs.
  */
 class TaoArchitectureComponentsTest {
-    @BeforeTest
-    fun primeLifecycleMainThread() {
-        // The hosts run on the Tao main thread, which TaoApplication primes;
-        // here the test thread plays that part.
-        LifecycleMainDispatcherPriming.primeWithCurrentThread()
-    }
-
     @Test
     fun `two scenes without their own owner share one view model`() {
         // The bug, reproduced: the fallback the hosts used to leave in place.
-        val first = viewModelOfScene(architectureComponents = null)
-        val second = viewModelOfScene(architectureComponents = null)
-        assertSame(first, second)
+        // That fallback is process-wide, so empty its store afterwards rather
+        // than leave this test's view model to whichever test runs next.
+        var fallback: ViewModelStoreOwner? = null
+        try {
+            val first = viewModelOfScene(architectureComponents = null) { fallback = it }
+            val second = viewModelOfScene(architectureComponents = null)
+            assertSame(first, second)
+        } finally {
+            fallback?.viewModelStore?.clear()
+        }
     }
 
     @Test
@@ -69,7 +68,7 @@ class TaoArchitectureComponentsTest {
 
     @Test
     fun `lifecycle follows attach, focus, minimize and detach`() {
-        val components = TaoArchitectureComponents()
+        val components = TaoArchitectureComponents(enforceMainThread = false)
         val lifecycle = components.owner.lifecycle
         assertEquals(Lifecycle.State.INITIALIZED, lifecycle.currentState)
 
@@ -87,6 +86,13 @@ class TaoArchitectureComponentsTest {
 
         components.onMinimizedChanged(false)
         assertEquals(Lifecycle.State.RESUMED, lifecycle.currentState)
+
+        components.onDetaching()
+        assertEquals(Lifecycle.State.CREATED, lifecycle.currentState, "stopped before the scene closes")
+
+        components.onFocusChanged(true)
+        components.onMinimizedChanged(false)
+        assertEquals(Lifecycle.State.CREATED, lifecycle.currentState, "a closing window does not resume")
 
         components.onDetached()
         assertEquals(Lifecycle.State.DESTROYED, lifecycle.currentState)
@@ -106,19 +112,35 @@ class TaoArchitectureComponentsTest {
     }
 
     @Test
+    fun `detaching stops the window but keeps its view models`() {
+        // The hosts call onDetaching before closing the scene and onDetached
+        // after, so content disposed with the scene still finds its view models.
+        val components = attachedComponents()
+        val viewModel = viewModelOfScene(components)
+        components.onDetaching()
+        assertFalse(viewModel.cleared)
+    }
+
+    @Test
     fun `a window destroyed before it was attached does not throw`() {
-        val components = TaoArchitectureComponents()
+        val components = TaoArchitectureComponents(enforceMainThread = false)
         components.onDetached()
         assertEquals(Lifecycle.State.DESTROYED, components.owner.lifecycle.currentState)
     }
 
     private fun attachedComponents(): TaoArchitectureComponents =
-        TaoArchitectureComponents().apply { onAttached(focused = true, minimized = false) }
+        TaoArchitectureComponents(enforceMainThread = false).apply { onAttached(focused = true, minimized = false) }
 
-    private fun viewModelOfScene(architectureComponents: TaoArchitectureComponents?): RecordingViewModel {
+    private fun viewModelOfScene(
+        architectureComponents: TaoArchitectureComponents?,
+        onStoreOwner: (ViewModelStoreOwner) -> Unit = {},
+    ): RecordingViewModel {
         var result: RecordingViewModel? = null
         runTaoSceneTest(architectureComponents = architectureComponents) {
-            setContent { result = viewModel { RecordingViewModel() } }
+            setContent {
+                LocalViewModelStoreOwner.current?.let(onStoreOwner)
+                result = viewModel { RecordingViewModel() }
+            }
             frame()
         }
         return checkNotNull(result) { "the scene never composed" }

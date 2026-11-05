@@ -22,7 +22,14 @@ import androidx.lifecycle.enableSavedStateHandles
  *
  * - `CREATED` before [onAttached] and while minimized,
  * - `RESUMED` while focused, `STARTED` otherwise,
- * - `DESTROYED` after [onDetached], which clears the view models.
+ * - `CREATED` again from [onDetaching], so `ON_PAUSE` and `ON_STOP` reach
+ *   observers while the content is still composed,
+ * - `DESTROYED` after [onDetached], which clears the view models; the host
+ *   calls it once the scene is closed, as `ComposeContainer.dispose` does.
+ *
+ * Wayland gives a client no way to learn that its window was minimized by the
+ * compositor (xdg-shell has no minimized state), so there a window minimized
+ * from outside stays `STARTED` or `RESUMED`; only the focus change is seen.
  *
  * Popup layers and standalone popups need nothing of their own: they replay
  * their owner window's composition locals, so they share its owner, as the
@@ -30,13 +37,18 @@ import androidx.lifecycle.enableSavedStateHandles
  *
  * Threading: every method must run on the Tao main thread, which the
  * lifecycle main-thread check recognises (see `LifecycleMainDispatcherPriming`).
+ * Tests pass `enforceMainThread = false` instead of priming that check.
  */
 @OptIn(InternalComposeUiApi::class)
-internal class TaoArchitectureComponents {
+internal class TaoArchitectureComponents(
+    enforceMainThread: Boolean = true,
+) {
     val owner: DefaultArchitectureComponentsOwner =
-        DefaultArchitectureComponentsOwner().apply { enableSavedStateHandles() }
+        DefaultArchitectureComponentsOwner(enforceMainThread = enforceMainThread)
+            .apply { enableSavedStateHandles() }
 
     private var isAttached = false
+    private var isDetaching = false
     private var isDetached = false
     private var isMinimized = false
     private var isFocused = false
@@ -52,7 +64,16 @@ internal class TaoArchitectureComponents {
         updateLifecycleState()
     }
 
-    /** The window is gone: moves to `DESTROYED`, which clears its view models. Terminal. */
+    /**
+     * The window is about to go: drops to `CREATED` while its content is still
+     * composed, so lifecycle observers stop before the scene is torn down.
+     */
+    fun onDetaching() {
+        isDetaching = true
+        updateLifecycleState()
+    }
+
+    /** The window and its scene are gone: moves to `DESTROYED`, which clears its view models. Terminal. */
     fun onDetached() {
         isDetached = true
         updateLifecycleState()
@@ -80,7 +101,7 @@ internal class TaoArchitectureComponents {
         owner.setLifecycleState(
             when {
                 isDetached -> Lifecycle.State.DESTROYED
-                !isAttached || isMinimized -> Lifecycle.State.CREATED
+                isDetaching || !isAttached || isMinimized -> Lifecycle.State.CREATED
                 isFocused -> Lifecycle.State.RESUMED
                 else -> Lifecycle.State.STARTED
             },

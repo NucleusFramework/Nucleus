@@ -778,7 +778,7 @@ internal class TaoComposeSceneHostLinux(
         window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
         registerTouch()
-        architectureComponents.onAttached(focused = windowInfo.isWindowFocused, minimized = window.isMinimized)
+        architectureComponents.onAttached(focused = window.isFocused, minimized = window.isMinimized)
     }
 
     /**
@@ -2018,7 +2018,10 @@ internal class TaoComposeSceneHostLinux(
         // is real pointer input resuming (see [onPointerMove] / [onPointerButton]),
         // which the compositor withholds for the whole grab.
         windowInfo.isWindowFocused = focused
-        architectureComponents.onFocusChanged(focused)
+        // Masked like the chrome is (see [isCompositorGrabActive]): GNOME reports a
+        // focus-out for the whole of a resize or move grab, and the lifecycle must
+        // not pause and resume on every drag.
+        architectureComponents.onFocusChanged(focused || compositorDragActive)
         if (!focused) interruptRotation()
     }
 
@@ -3726,9 +3729,9 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun detach() {
-        // First, as ComposeContainer.dispose does: view models are cleared
-        // while the scene they were created for still exists.
-        architectureComponents.onDetached()
+        // Paused and stopped while the content is still composed, so its
+        // lifecycle observers see the window go; see [TaoArchitectureComponents.onDetaching].
+        architectureComponents.onDetaching()
         liveHosts -= this
         // Layers whose dismiss animation was still running: Compose closes a
         // native popup layer only when its own disappearance finishes, so an
@@ -3771,6 +3774,8 @@ internal class TaoComposeSceneHostLinux(
         sceneBundle?.close()
         window.clearContentMeasurer()
         sceneBundle = null
+        // After the composition is gone, so no onDispose meets a cleared view model.
+        architectureComponents.onDetached()
 
         // Re-bind THIS window's EGL context before tearing down Skia. The
         // GPU-resource releases that follow (glDeleteFramebuffers /

@@ -532,7 +532,7 @@ internal class TaoComposeSceneHost(
         // resolves it through here, and so does an in-process driver.
         window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
-        architectureComponents.onAttached(focused = windowInfo.isWindowFocused, minimized = window.isMinimized)
+        architectureComponents.onAttached(focused = window.isFocused, minimized = window.isMinimized)
     }
 
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -2180,9 +2180,9 @@ internal class TaoComposeSceneHost(
     }
 
     fun detach() {
-        // First, as ComposeContainer.dispose does: view models are cleared
-        // while the scene they were created for still exists.
-        architectureComponents.onDetached()
+        // Paused and stopped while the content is still composed, so its
+        // lifecycle observers see the window go; see [TaoArchitectureComponents.onDetaching].
+        architectureComponents.onDetaching()
         // Layers whose dismiss animation was still running: Compose closes a
         // native popup layer only when its own disappearance finishes, so an
         // owner destroyed mid-animation left the layer's popup window mapped
@@ -2213,6 +2213,8 @@ internal class TaoComposeSceneHost(
         window.clearContentMeasurer()
         sceneBundle?.close()
         sceneBundle = null
+        // After the composition is gone, so no onDispose meets a cleared view model.
+        architectureComponents.onDetached()
         // Drop the TextureView handle before the context it points at dies.
         metalTextureHostCache.invalidate()
         // Close the DirectContext on its owning thread (FIFO after any in-flight
