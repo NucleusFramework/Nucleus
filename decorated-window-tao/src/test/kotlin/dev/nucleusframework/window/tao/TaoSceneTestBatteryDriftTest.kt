@@ -169,6 +169,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
             dev.nucleusframework.window.tao.scene.TaoArchitectureComponentsTest::class.java to
                 "owner plumbing guard; viewModel { } comes from test-only lifecycle-viewmodel-compose",
+            dev.nucleusframework.window.tao.workspace.RelocatedViewModelStoreTest::class.java to
+                "viewModel { } comes from test-only lifecycle-viewmodel-compose",
             EventLoopHangDetectorTest::class.java to
                 "pure-function hang state machine (#643); no ComposeScene",
             TaoEventLoopWatchdogMonkeyTest::class.java to

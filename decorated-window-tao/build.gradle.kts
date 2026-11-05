@@ -46,6 +46,8 @@ dependencies {
     compileOnly(libs.lifecycle.runtime)
     compileOnly(libs.lifecycle.viewmodel.savedstate)
     compileOnly(libs.navigationevent)
+    // LocalViewModelStoreOwner, provided around relocatable content (RelocatedContentHost).
+    compileOnly(libs.lifecycle.viewmodel.compose)
     // Compose Hot Reload interop (TaoHotReloadBridge). compileOnly: these
     // artifacts are only referenced when running under the hot-reload agent,
     // which puts them on the runtime classpath itself (the plugin adds
@@ -61,7 +63,7 @@ dependencies {
     testImplementation(compose.desktop.currentOs)
     // The Material 3 AlertDialog the headful appearance film compares against (the Lab's gallery)
     testImplementation(libs.compose.material3)
-    // `viewModel { }` / `LocalViewModelStoreOwner` for TaoArchitectureComponentsTest
+    // The compileOnly lifecycle artifacts above, for the tests that compose view models
     testImplementation(libs.lifecycle.viewmodel.compose)
     testImplementation(libs.lifecycle.runtime)
     testImplementation(libs.lifecycle.viewmodel.savedstate)

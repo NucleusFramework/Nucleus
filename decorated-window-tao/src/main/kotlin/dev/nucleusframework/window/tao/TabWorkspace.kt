@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -458,13 +459,14 @@ public class TabWorkspace(
      * Removes the tab [tabId] from the workspace: its group selects a
      * neighbour, and a group left empty is dropped along with its window.
      *
-     * The tab is forgotten entirely, state included — a closed tab is gone,
-     * unlike a satellite, which is only hidden.
+     * The tab is forgotten entirely, state and view models included — a
+     * closed tab is gone, unlike a satellite, which is only hidden.
      */
     public fun close(tabId: String) {
         val entry = entryMap.remove(tabId) ?: return
         entry.group?.let { detach(it, tabId) }
         entry.group = null
+        entry.stateSlot.clear()
     }
 
     /**
@@ -1207,6 +1209,11 @@ public class TabWorkspace(
         entry.content = null
     }
 
+    /** The workspace left the composition: clears every tab's view models. */
+    internal fun dispose() {
+        for (entry in entryMap.values) entry.stateSlot.clear()
+    }
+
     /** Defaults shared with [TabWindows] and [TabStrip]. */
     public companion object {
         /** Size a group's window gets when nothing else determines it. */
@@ -1296,10 +1303,19 @@ public interface TabDragSession {
     public fun cancel()
 }
 
-/** Remembers a [TabWorkspace] for the lifetime of the calling composition. */
+/**
+ * Remembers a [TabWorkspace] for the lifetime of the calling composition, and
+ * clears its tabs' view models when it leaves.
+ */
 @Composable
 @ExperimentalNucleusApi
 public fun rememberTabWorkspace(
     defaultWindowSize: DpSize = TabWorkspace.DefaultWindowSize,
     captureThumbnails: Boolean = false,
-): TabWorkspace = remember { TabWorkspace(defaultWindowSize, captureThumbnails) }
+): TabWorkspace {
+    val workspace = remember { TabWorkspace(defaultWindowSize, captureThumbnails) }
+    DisposableEffect(workspace) {
+        onDispose { workspace.dispose() }
+    }
+    return workspace
+}

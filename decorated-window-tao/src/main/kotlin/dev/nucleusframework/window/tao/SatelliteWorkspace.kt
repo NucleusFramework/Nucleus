@@ -982,6 +982,11 @@ public class SatelliteWorkspace(
         entry.header = null
     }
 
+    /** The workspace left the composition: clears every satellite's view models. */
+    internal fun dispose() {
+        for (entry in entryMap.values) entry.stateSlot.clear()
+    }
+
     // ── Internals ────────────────────────────────────────────────────────
 
     private fun apply(
@@ -1415,11 +1420,19 @@ internal sealed interface DockHit {
     ) : DockHit
 }
 
-/** Remembers a [SatelliteWorkspace] for the lifetime of the calling composition. */
+/**
+ * Remembers a [SatelliteWorkspace] for the lifetime of the calling
+ * composition, and clears its satellites' view models when it leaves.
+ */
 @Composable
 @ExperimentalNucleusApi
-public fun rememberSatelliteWorkspace(followFocus: Boolean = true): SatelliteWorkspace =
-    remember { SatelliteWorkspace(followFocus) }
+public fun rememberSatelliteWorkspace(followFocus: Boolean = true): SatelliteWorkspace {
+    val workspace = remember { SatelliteWorkspace(followFocus) }
+    DisposableEffect(workspace) {
+        onDispose { workspace.dispose() }
+    }
+    return workspace
+}
 
 /**
  * Makes the enclosing window (or [window]) a member of [workspace] for as long
