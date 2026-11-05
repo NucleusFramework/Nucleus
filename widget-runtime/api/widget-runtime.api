@@ -132,6 +132,7 @@ public final class dev/nucleusframework/widget/ImageProvider$Companion {
 
 public final class dev/nucleusframework/widget/ImageSize : java/lang/Enum {
 	public static final field Auto Ldev/nucleusframework/widget/ImageSize;
+	public static final field Icon Ldev/nucleusframework/widget/ImageSize;
 	public static final field Large Ldev/nucleusframework/widget/ImageSize;
 	public static final field Medium Ldev/nucleusframework/widget/ImageSize;
 	public static final field Small Ldev/nucleusframework/widget/ImageSize;

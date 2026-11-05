@@ -6,5 +6,6 @@ internal fun startTestWidgets() {
     NucleusWidgets.start {
         widget("Counter") { CounterWidget() }
         widget("Settings") { SettingsWidget() }
+        widget("Callback") { CallbackWidget() }
     }
 }

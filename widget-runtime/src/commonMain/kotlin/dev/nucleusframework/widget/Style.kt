@@ -149,4 +149,7 @@ public enum class ImageSize {
 
     /** A large picture. */
     Large,
+
+    /** An inline icon the height of a line of text (20 px on Windows), e.g. a check mark beside a label. */
+    Icon,
 }

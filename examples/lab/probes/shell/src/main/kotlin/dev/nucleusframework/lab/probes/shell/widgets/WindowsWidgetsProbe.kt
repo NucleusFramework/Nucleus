@@ -42,18 +42,31 @@ class WindowsWidgetsProbe : Probe {
                     Check("pin", "Pinning it shows a card at 0; “pinned” then “rendered” are listed here"),
                     Check("actions", "+1 and Reset on the card change the number; each click is listed as an action"),
                     Check("push", "Push +1 from this probe changes the pinned card within a second"),
-                    Check("resize", "Resizing the widget re-renders it; Small hides “Open probe”"),
+                    Check("resize", "Resizing the widget re-renders it; Small keeps only the count and +step"),
                     Check("cold-start", "With the Lab closed, opening the Widgets board starts it and the card shows"),
                     Check("persist", "The count survives quitting and relaunching the Lab (widget state)"),
-                    Check("open-url", "“Open probe” on the card brings this probe forward through the deep link"),
+                    Check("open-url", "“Open in the Lab” on the card brings this probe forward through the deep link"),
                     Check("unpin", "Unpinning the widget lists “unpinned”"),
                     Check(
                         "customize",
                         "“Customize widget” in the counter's menu shows the settings; Done applies title, step, " +
                             "note and background",
                     ),
-                    Check("image", "The counter's header shows the Nucleus logo (an app resource, not embedded)"),
+                    Check("image", "“Lab tasks” draws its check marks from app resources at icon size (not embedded)"),
                     Check("web", "“Lab web” shows its page in the EEA, its fallback card elsewhere"),
+                    Check(
+                        "tasks",
+                        "“Lab tasks”: Add puts the typed task in the list, a click on a task checks it, " +
+                            "“Add a task” here adds one from the app",
+                    ),
+                    Check(
+                        "tasks-sizes",
+                        "“Lab tasks” Small shows the next task and Check; Large adds filters and Clear done",
+                    ),
+                    Check(
+                        "tasks-customize",
+                        "Customizing “Lab tasks” applies its title, hiding done tasks and the to-do-first order",
+                    ),
                 ),
             keywords = listOf("widget", "Widgets board", "Glance", "NucleusWidget", "Adaptive Cards", "COM"),
         )
@@ -79,17 +92,25 @@ class WindowsWidgetsProbe : Probe {
                         vm.onIntent(WindowsWidgetsIntent.Refresh)
                     }
                 }
-                SubHeading("Pinned counters")
+                SubHeading("Pinned Lab widgets")
                 if (state.widgets.isEmpty()) {
-                    Hint("Open the Widgets board (Win+W), press “+” and pin “Lab counter”.")
+                    Hint("Open the Widgets board (Win+W), press “+” and pin “Lab counter” or “Lab tasks”.")
                 }
                 state.widgets.forEach { widget ->
                     Readout(
                         widget.id,
-                        "${widget.size}, ${if (widget.isActive) "active" else "inactive"}, count ${widget.count}",
+                        "${widget.definitionId}, ${widget.size}, ${if (widget.isActive) "active" else "inactive"}, ${widget.summary}",
                     )
                     Actions {
-                        SecondaryAction("Push +1") { vm.onIntent(WindowsWidgetsIntent.Push(widget.id)) }
+                        SecondaryAction(
+                            if (widget.definitionId ==
+                                LAB_TASKS_WIDGET
+                            ) {
+                                "Add a task"
+                            } else {
+                                "Push +1"
+                            },
+                        ) { vm.onIntent(WindowsWidgetsIntent.Push(widget.id)) }
                         SecondaryAction("Unpin") { vm.onIntent(WindowsWidgetsIntent.Delete(widget.id)) }
                     }
                 }

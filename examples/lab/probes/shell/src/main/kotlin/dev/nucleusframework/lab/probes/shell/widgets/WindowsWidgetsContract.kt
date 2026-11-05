@@ -18,20 +18,22 @@ data class HostStatus(
     val clsid: String? = null,
 )
 
-/** A pinned instance of the Lab counter. */
+/** A pinned instance of a Lab widget (counter or tasks). */
 @Immutable
-data class PinnedCounter(
+data class PinnedLabWidget(
     val id: String,
+    val definitionId: String,
     val size: String,
     val isActive: Boolean,
-    val count: Int,
+    /** What the widget state holds: the count, or the tasks left. */
+    val summary: String,
 )
 
 @Immutable
 data class WindowsWidgetsState(
     val manager: Availability = Availability.Unknown,
     val host: HostStatus = HostStatus(),
-    val widgets: List<PinnedCounter> = emptyList(),
+    val widgets: List<PinnedLabWidget> = emptyList(),
     /** NucleusWidgets.events: host callbacks, renders and failures. */
     val events: List<Delivery> = emptyList(),
     val calls: List<CallRecord> = emptyList(),
@@ -60,7 +62,7 @@ sealed interface WindowsWidgetsEvent {
     ) : WindowsWidgetsEvent
 
     data class Listed(
-        val widgets: List<PinnedCounter>?,
+        val widgets: List<PinnedLabWidget>?,
         val outcome: CallOutcome,
     ) : WindowsWidgetsEvent
 

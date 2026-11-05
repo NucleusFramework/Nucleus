@@ -51,6 +51,11 @@ public class WindowsWidgetHost : WidgetHost {
 
     /** Live state per widget id: renders read it, click handlers change it, every push persists it. */
     private val states = ConcurrentHashMap<String, MutableWidgetState>()
+
+    // Ids the host deleted: WidgetService still lists a widget for a moment after telling the
+    // provider, so a pinnedWidgets() run on the Unpinned event would bring it back. Ids are GUIDs,
+    // never reused.
+    private val deleted = ConcurrentHashMap.newKeySet<String>()
     private var registration: AutoCloseable? = null
 
     override fun start() {
@@ -64,7 +69,7 @@ public class WindowsWidgetHost : WidgetHost {
     override suspend fun pinnedWidgets(): List<PinnedWidget> =
         manager()
             .getWidgetInfos()
-            .filter { WidgetEngine.isDeclared(it.widgetContext.definitionId) }
+            .filter { WidgetEngine.isDeclared(it.widgetContext.definitionId) && it.widgetContext.id !in deleted }
             .map {
                 PinnedWidget(
                     WidgetId(it.widgetContext.id),
@@ -157,6 +162,7 @@ public class WindowsWidgetHost : WidgetHost {
             widgetId: String,
             customState: String,
         ) {
+            deleted += widgetId
             states.remove(widgetId)
             WidgetEngine.emit(WidgetEvent.Unpinned(WidgetId(widgetId)))
         }

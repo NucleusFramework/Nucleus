@@ -17,6 +17,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.time.LocalTime
 
 /**
  * Port over the widget runtime (`widget-runtime` + `widget-windows`): the Lab counter registered by
@@ -31,9 +32,12 @@ interface WindowsWidgetsGateway {
     /** [NucleusWidgets.events], described. The runtime promises no thread: they are not judged. */
     val events: Flow<Stamped<String>>
 
-    suspend fun list(): Result<List<PinnedCounter>>
+    suspend fun list(): Result<List<PinnedLabWidget>>
 
-    /** Bumps the counter from the app side, as a background update would. */
+    /**
+     * Changes a widget from the app side, as a background update would: bumps a counter, adds a
+     * task to a task list.
+     */
     suspend fun push(widgetId: String): CallOutcome
 
     fun delete(widgetId: String): CallOutcome
@@ -68,17 +72,25 @@ class NucleusWindowsWidgetsGateway : WindowsWidgetsGateway {
             clsid = NucleusApp.windowsWidgetsClsid,
         )
 
-    override suspend fun list(): Result<List<PinnedCounter>> =
+    override suspend fun list(): Result<List<PinnedLabWidget>> =
         runCatching {
             NucleusWidgets
                 .pinnedWidgets()
-                .filter { it.definitionId == LAB_COUNTER_WIDGET }
+                .filter { it.definitionId == LAB_COUNTER_WIDGET || it.definitionId == LAB_TASKS_WIDGET }
                 .map { pinned ->
-                    PinnedCounter(
+                    val state = getWidgetState(pinned.id)
+                    PinnedLabWidget(
                         id = pinned.id.value,
+                        definitionId = pinned.definitionId,
                         size = pinned.size.name,
                         isActive = pinned.isActive,
-                        count = getWidgetState(pinned.id)[CountKey] ?: 0,
+                        summary =
+                            if (pinned.definitionId == LAB_TASKS_WIDGET) {
+                                val tasks = LabTasks.read(state)
+                                "${tasks.count { !it.isDone }} of ${tasks.size} tasks left"
+                            } else {
+                                "count ${state[CountKey] ?: 0}"
+                            },
                     )
                 }
         }
@@ -87,11 +99,17 @@ class NucleusWindowsWidgetsGateway : WindowsWidgetsGateway {
         CallOutcome.of(
             runCatching {
                 val id = WidgetId(widgetId)
-                updateWidgetState(id) {
-                    it[CountKey] = (it[CountKey] ?: 0) + 1
-                    it[NoteKey] = "pushed by the app"
+                val definition = NucleusWidgets.pinnedWidgets().firstOrNull { it.id == id }?.definitionId
+                if (definition == LAB_TASKS_WIDGET) {
+                    updateWidgetState(id) { LabTasks.add(it, "From the app at ${LocalTime.now().withNano(0)}") }
+                    LabTasksWidget().update(id)
+                } else {
+                    updateWidgetState(id) {
+                        it[CountKey] = (it[CountKey] ?: 0) + 1
+                        it[NoteKey] = "pushed by the app"
+                    }
+                    LabCounterWidget().update(id)
                 }
-                LabCounterWidget().update(id)
             },
         )
 

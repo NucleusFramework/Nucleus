@@ -36,6 +36,27 @@ internal class SettingsWidget : NucleusWidget() {
     }
 }
 
+private val Bumped = intStateKey("bumped")
+
+private object Bump : ActionCallback {
+    val By = ActionParameters.Key<Int>("by")
+
+    override suspend fun onAction(
+        id: WidgetId,
+        parameters: ActionParameters,
+    ) {
+        updateWidgetState(id) { it[Bumped] = (it[Bumped] ?: 0) + (parameters[By] ?: 0) }
+    }
+}
+
+internal class CallbackWidget : NucleusWidget() {
+    override suspend fun provideWidget(id: WidgetId) {
+        provideContent {
+            Button("Bump", onClick = actionRunCallback(Bump, actionParametersOf(Bump.By to 3)))
+        }
+    }
+}
+
 class WidgetFeaturesTest {
     init {
         startTestWidgets()
@@ -106,4 +127,13 @@ class WidgetFeaturesTest {
         assertEquals(emptyMap(), WidgetEngine.parseInputs("""{"nested":{"a":1}}"""))
         assertNull(WidgetEngine.parseInputs("""{"s:x":null}""")["s:x"])
     }
+
+    @Test
+    fun anActionCallbackUpdatesTheStateItRunsOnWithoutAHost() =
+        runTest {
+            val target = WidgetInstance(WidgetId("c1"), "Callback", WidgetSize.Small, WidgetState.decode(null))
+            assertTrue(WidgetEngine.invokeAction(target, "a0"))
+            assertEquals(3, target.state[Bumped])
+            assertNull(WidgetEngine.acting)
+        }
 }

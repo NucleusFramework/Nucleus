@@ -229,6 +229,10 @@ public object WidgetEngine {
     @OptIn(ExperimentalCoroutinesApi::class)
     public val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
 
+    /** The widget whose action callback is running: [updateWidgetState] on it edits its live state. */
+    @Volatile
+    internal var acting: WidgetInstance? = null
+
     /** Whether [definitionId] was declared with `widgets { widget(definitionId) { … } }`. */
     public fun isDeclared(definitionId: String): Boolean = definitionId in NucleusWidgets.factories
 
@@ -262,7 +266,15 @@ public object WidgetEngine {
         val action = render(instance).actions[key] ?: return false
         when (action) {
             is LambdaAction -> action.block()
-            is RunCallbackAction -> action.callback.onAction(instance.id, action.parameters)
+            is RunCallbackAction -> {
+                // updateWidgetState on this widget changes the action's own state, whatever the host.
+                acting = instance
+                try {
+                    action.callback.onAction(instance.id, action.parameters)
+                } finally {
+                    acting = null
+                }
+            }
             FinishCustomizationAction -> instance.state.remove(CustomizingKey)
             is OpenUrlAction -> Unit // opened by the host itself
         }

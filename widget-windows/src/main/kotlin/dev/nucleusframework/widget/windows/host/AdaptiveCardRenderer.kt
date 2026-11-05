@@ -156,11 +156,16 @@ internal object AdaptiveCardRenderer {
 
     private fun Context.image(element: WidgetElement.Image): MutableMap<String, Any?>? =
         imageUrl(element)?.let { url ->
-            linkedMapOf<String, Any?>(
-                "type" to "Image",
-                "url" to url,
-                "size" to element.size.json,
-            ).apply { element.contentDescription?.let { put("altText", it) } }
+            linkedMapOf<String, Any?>("type" to "Image", "url" to url).apply {
+                // Adaptive Cards has no size below "small" (a 40 px avatar): an icon is pinned in pixels.
+                if (element.size == ImageSize.Icon) {
+                    put("width", ICON_SIZE)
+                    put("height", ICON_SIZE)
+                } else {
+                    put("size", element.size.json)
+                }
+                element.contentDescription?.let { put("altText", it) }
+            }
         }
 
     // Adaptive Card inputs: their id is the widget state key, their value comes back with the next action.
@@ -263,14 +268,21 @@ internal object AdaptiveCardRenderer {
     }
 
     private const val VERSION = "1.5"
+    private const val ICON_SIZE = "20px"
     private const val BYTES_PER_KB = 1024
     private const val LARGE_EMBEDDED_IMAGE = 64 * BYTES_PER_KB
     private val logger =
         java.util.logging.Logger
             .getLogger(AdaptiveCardRenderer::class.java.name)
 
+    // A Row is a ColumnSet, which takes the alignment too: without it a centered Column's rows
+    // (a row of buttons under a centered value) stay at the left edge.
     private val WidgetElement.acceptsHorizontalAlignment: Boolean
-        get() = this is WidgetElement.Text || this is WidgetElement.Image || this is WidgetElement.Button
+        get() =
+            this is WidgetElement.Text ||
+                this is WidgetElement.Image ||
+                this is WidgetElement.Button ||
+                this is WidgetElement.Row
 
     private val ResolvedModifier.columnWidth: Any
         get() = weight?.toString() ?: if (fillMaxWidth) "stretch" else "auto"

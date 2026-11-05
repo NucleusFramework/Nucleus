@@ -7,13 +7,11 @@ import dev.nucleusframework.widget.Choice
 import dev.nucleusframework.widget.ChoiceField
 import dev.nucleusframework.widget.Column
 import dev.nucleusframework.widget.FontWeight
-import dev.nucleusframework.widget.Image
-import dev.nucleusframework.widget.ImageProvider
-import dev.nucleusframework.widget.ImageSize
 import dev.nucleusframework.widget.LocalSize
 import dev.nucleusframework.widget.NucleusWidget
 import dev.nucleusframework.widget.NumberField
 import dev.nucleusframework.widget.Row
+import dev.nucleusframework.widget.Spacer
 import dev.nucleusframework.widget.Spacing
 import dev.nucleusframework.widget.Switch
 import dev.nucleusframework.widget.Text
@@ -32,7 +30,10 @@ import dev.nucleusframework.widget.actionFinishCustomization
 import dev.nucleusframework.widget.actionOpenUrl
 import dev.nucleusframework.widget.background
 import dev.nucleusframework.widget.booleanStateKey
+import dev.nucleusframework.widget.clickable
 import dev.nucleusframework.widget.currentWidgetState
+import dev.nucleusframework.widget.fillMaxHeight
+import dev.nucleusframework.widget.fillMaxSize
 import dev.nucleusframework.widget.intStateKey
 import dev.nucleusframework.widget.isCustomizing
 import dev.nucleusframework.widget.sendWidgetMessage
@@ -78,6 +79,8 @@ class LabCounterWidget : NucleusWidget() {
         }
     }
 
+    // The board's header already shows the app and widget names: the card opens on the value,
+    // centered in the free height, with its actions along the bottom edge.
     @androidx.compose.runtime.Composable
     private fun Counter() {
         val state = currentWidgetState()
@@ -85,40 +88,44 @@ class LabCounterWidget : NucleusWidget() {
         val step = state[StepKey] ?: 1
         val background =
             WidgetBackground.entries.firstOrNull { it.name == state[BackgroundKey] } ?: WidgetBackground.Default
+        val isSmall = LocalSize.current == WidgetSize.Small
         Column(
-            modifier = WidgetModifier.background(background),
+            modifier = WidgetModifier.fillMaxSize().background(background),
             spacing = Spacing.Small,
             horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
         ) {
-            Row(spacing = Spacing.Small, verticalAlignment = Alignment.Vertical.CenterVertically) {
-                Image(ImageProvider.appResource("widget/logo.png"), "Nucleus", size = ImageSize.Small)
-                Text(
-                    state[TitleKey]?.takeIf { it.isNotBlank() } ?: "Nucleus Lab",
-                    style = TextStyle(fontSize = TextSize.Small, color = WidgetColor.Subtle),
-                )
-            }
+            Spacer(WidgetModifier.fillMaxHeight())
             Text("$count", style = TextStyle(fontSize = TextSize.ExtraLarge, fontWeight = FontWeight.Bold))
-            if (state[ShowNoteKey] != false) {
-                Text(
-                    "${LocalSize.current} · ${state[NoteKey] ?: "pinned"}",
-                    style = TextStyle(fontSize = TextSize.Small, color = WidgetColor.Subtle),
-                )
+            Text(
+                state[TitleKey]?.takeIf { it.isNotBlank() } ?: "Count",
+                style = TextStyle(fontSize = TextSize.Small, color = WidgetColor.Subtle),
+                maxLines = 1,
+            )
+            if (!isSmall && state[ShowNoteKey] != false) {
+                state[NoteKey]?.let {
+                    Text(it, style = TextStyle(fontSize = TextSize.Small, color = WidgetColor.Subtle), maxLines = 1)
+                }
             }
+            Spacer(WidgetModifier.fillMaxHeight())
             Row(spacing = Spacing.Small) {
+                if (!isSmall) {
+                    Button("Reset", enabled = count != 0, onClick = {
+                        state.update {
+                            it[CountKey] = 0
+                            it[NoteKey] = "Reset from the widget"
+                        }
+                    })
+                }
                 Button("+$step", onClick = {
                     state.update {
                         it[CountKey] = count + step
                         it[NoteKey] = "+$step from the widget"
                     }
                 })
-                Button("Reset", onClick = {
-                    state.update {
-                        it[CountKey] = 0
-                        it[NoteKey] = "reset from the widget"
-                    }
-                })
-                if (LocalSize.current != WidgetSize.Small) {
-                    Button("Open probe", onClick = actionOpenUrl(LabCommands.deepLink(WindowsWidgetsProbe.ID)))
+            }
+            if (!isSmall) {
+                Row(modifier = WidgetModifier.clickable(actionOpenUrl(LabCommands.deepLink(WindowsWidgetsProbe.ID)))) {
+                    Text("Open in the Lab", style = TextStyle(fontSize = TextSize.Small, color = WidgetColor.Accent))
                 }
             }
         }

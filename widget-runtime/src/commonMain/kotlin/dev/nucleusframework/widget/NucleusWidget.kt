@@ -112,12 +112,17 @@ public suspend fun sendWidgetMessage(
 
 /**
  * Changes the state of the pinned widget [id] from anywhere in the app; call
- * [NucleusWidget.update] afterwards to show the change.
+ * [NucleusWidget.update] afterwards to show the change. From an [ActionCallback] of that same
+ * widget, it changes the state the action runs on, and the widget is rendered with it right after.
  */
 public suspend fun updateWidgetState(
     id: WidgetId,
     block: (MutableWidgetState) -> Unit,
 ) {
+    WidgetEngine.acting?.takeIf { it.id == id }?.let {
+        block(it.state)
+        return
+    }
     val host = NucleusWidgets.host ?: return
     val state = host.loadState(id)
     block(state)

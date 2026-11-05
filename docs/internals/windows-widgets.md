@@ -38,6 +38,9 @@ The plugin writes the whole AppX side: the `com.microsoft.windows.widgets` exten
 - The Windows host renders the tree as an Adaptive Card 1.5 template with the values inline (data `{}`), stores the state in the widget's custom state, and serializes every render on one coroutine (`WidgetEngine.scope`).
 - `ImageProvider.appResource(path)` becomes the installed file's `file:///` URI, which the board loads. Checked on the board: `ms-appx:///` resolves against the host's own package and `ms-appx://<family name>/` is not loaded. Bytes become a data URI (logged above 64 KB: re-sent with every update).
 - `WebContent(url)` becomes the card's `metadata.webUrl`; the rest of the body is the fallback (Windows documents web widgets for the European Economic Area; this board showed them in Israel too). A URL matching the widget's `webRequestFilter` never reaches the network when `onWebRequest` answers it: the Lab's `LabWeb` serves its whole page that way and echoes the page's `postMessage` back with `sendWidgetMessage`.
+- `ImageSize.Icon` is pinned at 20 px (`width` / `height`): Adaptive Cards' smallest named size is a 40 px avatar. A `Row` takes its parent `Column`'s horizontal alignment (`ColumnSet.horizontalAlignment`).
+- Layout on the board: its header already shows the app icon and the widget name, so a card should not repeat them. `LabCounter` and `LabTasks` follow the board's own widgets (value or status first, actions along the bottom, links as accent text rather than buttons); the picker preview is a static PNG, so compare it with a screenshot of the real card.
+- An `ActionCallback` that calls `updateWidgetState` on its own widget edits the state the action runs on (`WidgetEngine.acting`), whatever the host: the widget is rendered with it right after.
 - `WidgetBackground.Accent` makes the host draw the card's buttons with little contrast: prefer `Emphasis` behind buttons.
 
 ## Process lifetime
@@ -58,6 +61,7 @@ The widgets board reports almost nothing; each of these looked like "nothing hap
 ## Debugging
 
 - `NUCLEUS_WIDGET_TRACE=<file>`: the native bridge appends every class-object request and provider `QueryInterface` to the file. A host that creates the object, queries `IWidgetProvider` and stops is the runtime class name failure above.
+- `pinnedWidgets()` leaves out widgets the host already deleted: `WidgetService` still lists a widget for a moment after its `DeleteWidget` callback, so a list read on the `Unpinned` event (the Lab probe does) brought it back.
 - `NucleusWidgets.events`: pins, activations, actions, renders (with their time), host errors (`onErrorInfoReported`, e.g. an invalid template) and failures.
 - Activate the provider like the host: `[Activator]::CreateInstance([Type]::GetTypeFromCLSID([Guid]'<clsid>'))` in PowerShell (the `QueryInterface` of `IWidgetProvider` then fails on the PowerShell side, which lacks the metadata; the trace shows the provider side). `HKLM\SOFTWARE\Classes\PackagedCom\ClassIndex\{clsid}` proves the package registered the class.
 - After reinstalling, the picker may keep old metadata: restart `WidgetBoard.exe` / `WidgetService.exe` (they restart on demand).

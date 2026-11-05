@@ -8,6 +8,7 @@ import dev.nucleusframework.widget.Column
 import dev.nucleusframework.widget.FontWeight
 import dev.nucleusframework.widget.Image
 import dev.nucleusframework.widget.ImageProvider
+import dev.nucleusframework.widget.ImageSize
 import dev.nucleusframework.widget.NucleusWidget
 import dev.nucleusframework.widget.NucleusWidgets
 import dev.nucleusframework.widget.NumberField
@@ -47,6 +48,10 @@ private class SampleWidget : NucleusWidget() {
                     Button("+1", onClick = {}, modifier = WidgetModifier.fillMaxWidth())
                     Button("Open", onClick = actionOpenUrl("app://x"))
                 }
+                // Only the row itself can carry "right" here: its text sits in a column of its own.
+                Column(horizontalAlignment = Alignment.Horizontal.End) {
+                    Row { Text("end") }
+                }
             }
         }
     }
@@ -63,6 +68,7 @@ private class FormWidget : NucleusWidget() {
                 WebContent("https://example.com/w")
                 Image(ImageProvider.appResource("widgets/logo.png"), "Logo")
                 Image(ImageProvider.appResource("missing.png"), "Missing")
+                Image(ImageProvider.appResource("widgets/logo.png"), "Icon", size = ImageSize.Icon)
                 TextField(Name, label = "Name", placeholder = "Your name")
                 Switch(On, title = "Enabled")
                 NumberField(Size, label = "Size", min = 1.0, max = 5.0)
@@ -101,6 +107,7 @@ class AdaptiveCardRendererTest {
             "\"type\":\"Input.Toggle\",\"id\":\"b:on\",\"title\":\"Enabled\",\"value\":\"false\"",
             "\"type\":\"Input.Number\",\"id\":\"i:size\",\"value\":3,\"label\":\"Size\",\"min\":1,\"max\":5",
             "\"type\":\"Input.ChoiceSet\",\"id\":\"s:name\",\"style\":\"expanded\"",
+            "\"width\":\"20px\",\"height\":\"20px\",\"altText\":\"Icon\"",
         )) {
             assertTrue(expected in json, "missing $expected in $json")
         }
@@ -131,6 +138,7 @@ class AdaptiveCardRendererTest {
             "\"width\":\"stretch\"",
             "{\"type\":\"Action.Execute\",\"verb\":\"a0\",\"title\":\"+1\"}",
             "{\"type\":\"Action.OpenUrl\",\"url\":\"app://x\",\"title\":\"Open\"}",
+            "\"horizontalAlignment\":\"right\"",
         )) {
             assertTrue(expected in json, "missing $expected in $json")
         }

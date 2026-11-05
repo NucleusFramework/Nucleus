@@ -6,8 +6,10 @@ import dev.nucleusframework.lab.app.shell.LabApp
 import dev.nucleusframework.lab.core.fixture.FIXTURE_PROPERTY
 import dev.nucleusframework.lab.core.process.FIXTURE_ARGUMENT
 import dev.nucleusframework.lab.probes.shell.widgets.LAB_COUNTER_WIDGET
+import dev.nucleusframework.lab.probes.shell.widgets.LAB_TASKS_WIDGET
 import dev.nucleusframework.lab.probes.shell.widgets.LAB_WEB_WIDGET
 import dev.nucleusframework.lab.probes.shell.widgets.LabCounterWidget
+import dev.nucleusframework.lab.probes.shell.widgets.LabTasksWidget
 import dev.nucleusframework.lab.probes.shell.widgets.LabWebWidget
 import dev.nucleusframework.widget.isWidgetHostOnly
 import dev.nucleusframework.widget.widgets
@@ -40,6 +42,7 @@ fun main(args: Array<String>) {
         widgets {
             widget(LAB_COUNTER_WIDGET) { LabCounterWidget() }
             widget(LAB_WEB_WIDGET) { LabWebWidget() }
+            widget(LAB_TASKS_WIDGET) { LabTasksWidget() }
         }
         // Started by the widgets board for a card click: no window until the user asks for one,
         // and exit once no widget has been visible for a while.

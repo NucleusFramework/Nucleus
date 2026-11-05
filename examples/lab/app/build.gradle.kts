@@ -330,6 +330,13 @@ nucleus.application {
                     icon.set(project.file("packaging/widgets/icon.png"))
                     preview.set(project.file("packaging/widgets/preview.png"))
                 }
+                widget("LabTasks") {
+                    displayName = "Lab tasks"
+                    description = "A to-do list: add, check, filter and clear tasks from the widget or the app"
+                    icon.set(project.file("packaging/widgets/icon.png"))
+                    preview.set(project.file("packaging/widgets/tasks-preview.png"))
+                    customizable = true
+                }
             }
         }
 
