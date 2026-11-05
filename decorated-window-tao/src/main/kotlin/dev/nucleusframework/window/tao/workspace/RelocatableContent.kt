@@ -7,6 +7,14 @@ import androidx.compose.runtime.currentCompositeKeyHashCode
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.saveable.SaveableStateRegistry
+import androidx.lifecycle.HasDefaultViewModelProviderFactory
+import androidx.lifecycle.VIEW_MODEL_STORE_OWNER_KEY
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.CreationExtras
+import androidx.lifecycle.viewmodel.MutableCreationExtras
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 
 /**
  * `rememberSaveable` values saved by one host, with the composite key hash of
@@ -18,14 +26,33 @@ internal class RelocatedSavedState(
 )
 
 /**
- * The saveable state of one piece of content that moves between hosts — a
- * panel between its floating window and a dock, a tab between windows: what
- * the last host saved, and the registry of the host composing it right now.
+ * The state of one piece of content that moves between hosts — a panel
+ * between its floating window and a dock, a tab between windows: what the last
+ * host saved, the registry of the host composing it right now, and the
+ * content's view models.
  *
  * Owned by whatever identifies the content across the move (a workspace
  * entry), never by a host.
  */
 internal class RelocatableSlot {
+    /**
+     * The view models of the content, `viewModel { }` inside it resolves here
+     * rather than to the window composing it, so they follow the content from
+     * one host to the next as its `rememberSaveable` values do. Each window has
+     * a store of its own, so without this a move would recreate them; and two
+     * pieces of content asking for the same view-model class get one each.
+     */
+    val viewModelStore: ViewModelStore = ViewModelStore()
+
+    /**
+     * The content is gone for good — a closed tab, a workspace that left the
+     * composition: clears its view models. Not for a move or a hide, which
+     * keep them.
+     */
+    fun clear() {
+        viewModelStore.clear()
+    }
+
     /** What the previous host saved on its way out. */
     var savedState: RelocatedSavedState? = null
 
@@ -79,9 +106,45 @@ internal fun <S> RelocatedContentHost(
         }
     }
     if (content == null) return
-    CompositionLocalProvider(LocalSaveableStateRegistry provides registry) {
+    val hostOwner = LocalViewModelStoreOwner.current
+    val viewModelStoreOwner = remember(slot, hostOwner) { slot.viewModelStoreOwnerUnder(hostOwner) }
+    CompositionLocalProvider(
+        LocalSaveableStateRegistry provides registry,
+        LocalViewModelStoreOwner provides viewModelStoreOwner,
+    ) {
         content(scope)
     }
+}
+
+/**
+ * The owner [RelocatedContentHost] provides: the slot's store, with the
+ * default factory and creation extras of the window composing the content, so
+ * `createSavedStateHandle()` keeps working inside it. The extras name this
+ * owner as the view-model store owner, which keeps a handle's backing state in
+ * the slot's store, where it moves with the content.
+ */
+private fun RelocatableSlot.viewModelStoreOwnerUnder(host: ViewModelStoreOwner?): ViewModelStoreOwner =
+    if (host is HasDefaultViewModelProviderFactory) {
+        SlotViewModelStoreOwnerWithDefaults(viewModelStore, host)
+    } else {
+        SlotViewModelStoreOwner(viewModelStore)
+    }
+
+private class SlotViewModelStoreOwner(
+    override val viewModelStore: ViewModelStore,
+) : ViewModelStoreOwner
+
+private class SlotViewModelStoreOwnerWithDefaults(
+    override val viewModelStore: ViewModelStore,
+    host: HasDefaultViewModelProviderFactory,
+) : ViewModelStoreOwner,
+    HasDefaultViewModelProviderFactory {
+    override val defaultViewModelProviderFactory: ViewModelProvider.Factory = host.defaultViewModelProviderFactory
+
+    override val defaultViewModelCreationExtras: CreationExtras =
+        MutableCreationExtras(host.defaultViewModelCreationExtras).apply {
+            this[VIEW_MODEL_STORE_OWNER_KEY] = this@SlotViewModelStoreOwnerWithDefaults
+        }
 }
 
 /**
