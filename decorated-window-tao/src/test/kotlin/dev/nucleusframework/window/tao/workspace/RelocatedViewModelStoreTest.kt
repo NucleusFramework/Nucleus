@@ -1,14 +1,20 @@
 package dev.nucleusframework.window.tao.workspace
 
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.nucleusframework.window.tao.SatellitePlacement
+import dev.nucleusframework.window.tao.SatelliteWorkspace
 import dev.nucleusframework.window.tao.TabWorkspace
 import dev.nucleusframework.window.tao.scene.TaoArchitectureComponents
 import dev.nucleusframework.window.tao.scene.runTaoSceneTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -65,27 +71,84 @@ class RelocatedViewModelStoreTest {
     }
 
     @Test
-    fun `disposing a workspace clears every tab's view models`() {
+    fun `a tab whose declaration leaves has its view models cleared`() {
         val workspace = TabWorkspace()
-        val first = viewModelIn(workspace.register("a", "A", null).stateSlot, attachedWindow())
-        val second = viewModelIn(workspace.register("b", "B", null).stateSlot, attachedWindow())
-        workspace.dispose()
-        assertTrue(first.cleared)
-        assertTrue(second.cleared)
+        val entry = workspace.register(id = "editor", title = "Editor", groupId = null)
+        val viewModel = viewModelIn(entry.stateSlot, attachedWindow())
+        workspace.unregister(entry)
+        assertTrue(viewModel.cleared)
     }
 
     @Test
-    fun `a saved-state handle works inside relocatable content`() {
-        var handleViewModel: HandleViewModel? = null
+    fun `a satellite whose declaration leaves has its view models cleared`() {
+        val workspace = SatelliteWorkspace()
+        val entry = workspace.register("tools", "Tools", SatellitePlacement.Floating(), initiallyOpen = true)
+        val viewModel = viewModelIn(entry.stateSlot, attachedWindow())
+        workspace.unregister(entry)
+        assertTrue(viewModel.cleared)
+    }
+
+    @Test
+    fun `a clear while the content is on screen waits until it is disposed`() {
+        val slot = RelocatableSlot()
+        var shown by mutableStateOf(true)
+        var viewModel: RecordingViewModel? = null
+        var clearedWhenDisposed: Boolean? = null
         runTaoSceneTest(architectureComponents = attachedWindow()) {
             setContent {
-                RelocatedContentHost(RelocatableSlot(), Unit) {
-                    handleViewModel = viewModel { HandleViewModel(createSavedStateHandle()) }
+                if (shown) {
+                    RelocatedContentHost(slot, Unit) {
+                        val vm = viewModel { RecordingViewModel() }
+                        viewModel = vm
+                        DisposableEffect(vm) { onDispose { clearedWhenDisposed = vm.cleared } }
+                    }
                 }
             }
             frame()
+            slot.clear()
+            assertFalse(checkNotNull(viewModel).cleared, "cleared while still composed")
+            shown = false
+            frame()
         }
-        assertNotNull(handleViewModel)
+        assertEquals(false, clearedWhenDisposed, "the content's onDispose saw a cleared view model")
+        assertTrue(checkNotNull(viewModel).cleared)
+    }
+
+    @Test
+    fun `a content declared again before its pending clear keeps its view models`() {
+        val slot = RelocatableSlot()
+        var viewModel: RecordingViewModel? = null
+        runTaoSceneTest(architectureComponents = attachedWindow()) {
+            setContent { RelocatedContentHost(slot, Unit) { viewModel = viewModel { RecordingViewModel() } } }
+            frame()
+            slot.clear()
+            slot.cancelPendingClear()
+        }
+        assertFalse(checkNotNull(viewModel).cleared)
+    }
+
+    @Test
+    fun `a saved-state handle follows its content to another window`() {
+        val slot = RelocatableSlot()
+        val inFirstWindow = handleViewModelIn(slot, attachedWindow())
+        inFirstWindow.handle["draft"] = "hello"
+        val inSecondWindow = handleViewModelIn(slot, attachedWindow())
+        assertSame(inFirstWindow, inSecondWindow)
+        assertEquals("hello", inSecondWindow.handle.get<String>("draft"))
+    }
+
+    private fun handleViewModelIn(
+        slot: RelocatableSlot,
+        window: TaoArchitectureComponents,
+    ): HandleViewModel {
+        var result: HandleViewModel? = null
+        runTaoSceneTest(architectureComponents = window) {
+            setContent {
+                RelocatedContentHost(slot, Unit) { result = viewModel { HandleViewModel(createSavedStateHandle()) } }
+            }
+            frame()
+        }
+        return checkNotNull(result) { "the content never composed" }
     }
 
     private fun attachedWindow(): TaoArchitectureComponents =
@@ -114,6 +177,6 @@ class RelocatedViewModelStoreTest {
     }
 
     private class HandleViewModel(
-        @Suppress("unused") val handle: androidx.lifecycle.SavedStateHandle,
+        val handle: androidx.lifecycle.SavedStateHandle,
     ) : ViewModel()
 }

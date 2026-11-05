@@ -44,13 +44,45 @@ internal class RelocatableSlot {
      */
     val viewModelStore: ViewModelStore = ViewModelStore()
 
+    /** How many hosts are composing the content right now (two, mid-move). */
+    private var hostCount = 0
+
+    /** [clear] was asked for while the content was still composed. */
+    private var clearPending = false
+
     /**
-     * The content is gone for good — a closed tab, a workspace that left the
+     * The content is gone for good — a closed tab, a declaration that left the
      * composition: clears its view models. Not for a move or a hide, which
      * keep them.
+     *
+     * Content still on screen is cleared only once its last host has disposed
+     * it, as a window's own view models are cleared only after its scene
+     * closes: an `onDispose` in the content still finds its view models, and a
+     * view model created in that last frame is cleared with the rest.
      */
     fun clear() {
-        viewModelStore.clear()
+        if (hostCount > 0) {
+            clearPending = true
+        } else {
+            viewModelStore.clear()
+        }
+    }
+
+    /** The content is declared again before a pending [clear] ran: keep its view models. */
+    fun cancelPendingClear() {
+        clearPending = false
+    }
+
+    internal fun onHostEntered() {
+        hostCount++
+    }
+
+    internal fun onHostLeft() {
+        hostCount--
+        if (hostCount == 0 && clearPending) {
+            clearPending = false
+            viewModelStore.clear()
+        }
     }
 
     /** What the previous host saved on its way out. */
@@ -106,8 +138,14 @@ internal fun <S> RelocatedContentHost(
         }
     }
     if (content == null) return
+    // Before the content, so it is disposed after it: a pending clear runs once
+    // the content's own onDispose callbacks have.
+    DisposableEffect(slot) {
+        slot.onHostEntered()
+        onDispose { slot.onHostLeft() }
+    }
     val hostOwner = LocalViewModelStoreOwner.current
-    val viewModelStoreOwner = remember(slot, hostOwner) { slot.viewModelStoreOwnerUnder(hostOwner) }
+    val viewModelStoreOwner = remember(slot, hostOwner) { SlotViewModelStoreOwner(slot.viewModelStore, hostOwner) }
     CompositionLocalProvider(
         LocalSaveableStateRegistry provides registry,
         LocalViewModelStoreOwner provides viewModelStoreOwner,
@@ -123,27 +161,19 @@ internal fun <S> RelocatedContentHost(
  * owner as the view-model store owner, which keeps a handle's backing state in
  * the slot's store, where it moves with the content.
  */
-private fun RelocatableSlot.viewModelStoreOwnerUnder(host: ViewModelStoreOwner?): ViewModelStoreOwner =
-    if (host is HasDefaultViewModelProviderFactory) {
-        SlotViewModelStoreOwnerWithDefaults(viewModelStore, host)
-    } else {
-        SlotViewModelStoreOwner(viewModelStore)
-    }
-
 private class SlotViewModelStoreOwner(
     override val viewModelStore: ViewModelStore,
-) : ViewModelStoreOwner
-
-private class SlotViewModelStoreOwnerWithDefaults(
-    override val viewModelStore: ViewModelStore,
-    host: HasDefaultViewModelProviderFactory,
+    host: ViewModelStoreOwner?,
 ) : ViewModelStoreOwner,
     HasDefaultViewModelProviderFactory {
-    override val defaultViewModelProviderFactory: ViewModelProvider.Factory = host.defaultViewModelProviderFactory
+    private val hostDefaults = host as? HasDefaultViewModelProviderFactory
+
+    override val defaultViewModelProviderFactory: ViewModelProvider.Factory =
+        hostDefaults?.defaultViewModelProviderFactory ?: ViewModelProvider.NewInstanceFactory.instance
 
     override val defaultViewModelCreationExtras: CreationExtras =
-        MutableCreationExtras(host.defaultViewModelCreationExtras).apply {
-            this[VIEW_MODEL_STORE_OWNER_KEY] = this@SlotViewModelStoreOwnerWithDefaults
+        MutableCreationExtras(hostDefaults?.defaultViewModelCreationExtras ?: CreationExtras.Empty).apply {
+            this[VIEW_MODEL_STORE_OWNER_KEY] = this@SlotViewModelStoreOwner
         }
 }
 
