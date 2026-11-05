@@ -3,13 +3,19 @@ package dev.nucleusframework.widget
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ComposeNode
 
-// Inputs are bound to a widget state key: the host submits their values with the next action
-// that runs app code (any Button or clickable but an actionOpenUrl), and the runtime writes them
-// into the state before that action runs. Read them back from the state like any other value.
+// Inputs are bound to a widget state key and read back from the state like any other value. Only
+// the inputs every host can draw are here: a switch and a choice. When the host writes their value
+// differs (Windows submits it with the next action that runs app code, WidgetKit when clicked).
+// Text and number entry exist on Windows alone: `widget-windows` builds them on the Platform*
+// composables below.
 
-/** A text field showing and editing [key]. */
+/**
+ * A text field showing and editing [key], for platform modules: apps use the host's own
+ * (`dev.nucleusframework.widget.windows.TextField`), since not every host has text entry.
+ */
+@InternalNucleusWidgetApi
 @Composable
-public fun TextField(
+public fun PlatformTextField(
     key: WidgetStateKey<String>,
     modifier: WidgetModifier = WidgetModifier,
     label: String? = null,
@@ -82,11 +88,12 @@ public fun ChoiceField(
 }
 
 /**
- * A number field showing and editing [key]: an [intStateKey] keeps whole numbers only (a decimal
- * entry leaves it unset), a [doubleStateKey] any number.
+ * A number field showing and editing [key], for platform modules: apps use the host's own
+ * (`dev.nucleusframework.widget.windows.NumberField`), since not every host has number entry.
  */
+@InternalNucleusWidgetApi
 @Composable
-public fun NumberField(
+public fun PlatformNumberField(
     key: WidgetStateKey<out Number>,
     modifier: WidgetModifier = WidgetModifier,
     label: String? = null,

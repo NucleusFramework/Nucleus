@@ -9,6 +9,7 @@ import dev.nucleusframework.widget.NucleusWidgets
 import dev.nucleusframework.widget.WidgetEvent
 import dev.nucleusframework.widget.WidgetId
 import dev.nucleusframework.widget.getWidgetState
+import dev.nucleusframework.widget.macos.WidgetCenter
 import dev.nucleusframework.widget.updateWidgetState
 import dev.nucleusframework.widget.windows.WidgetManager
 import dev.zacsweers.metro.AppScope
@@ -20,9 +21,9 @@ import kotlinx.coroutines.flow.map
 import java.time.LocalTime
 
 /**
- * Port over the widget runtime (`widget-runtime` + `widget-windows`): the Lab counter registered by
- * `widgets { }` in the Lab's `main`, and the 1:1 [WidgetManager] for what the high-level API does
- * not cover (unpinning).
+ * Port over the widget runtime (`widget-runtime` + `widget-windows` / `widget-macos`): the Lab
+ * widgets registered by `widgets { }` in the Lab's `main`, and the 1:1 [WidgetManager] for what the
+ * high-level API does not cover (unpinning; WidgetKit cannot remove a widget).
  */
 interface WindowsWidgetsGateway {
     fun managerAvailability(): Availability
@@ -57,8 +58,10 @@ class NucleusWindowsWidgetsGateway : WindowsWidgetsGateway {
         }
 
     override fun managerAvailability(): Availability =
-        if (Platform.Current != Platform.Windows) {
-            Availability.Unavailable("Windows 11 only")
+        if (Platform.Current == Platform.MacOS) {
+            Availability.of(WidgetCenter.isAvailable) { "WidgetKit unavailable: needs macOS 12" }
+        } else if (Platform.Current != Platform.Windows) {
+            Availability.Unavailable("Windows 11 and macOS only")
         } else {
             Availability.catching({ "WidgetManager not activatable: run the packaged Lab (runAppX)" }) {
                 WidgetManager.isAvailable
@@ -69,7 +72,11 @@ class NucleusWindowsWidgetsGateway : WindowsWidgetsGateway {
         HostStatus(
             host =
                 Availability.of(NucleusWidgets.isAvailable) {
-                    "no widget host: needs the packaged Lab on Windows 11"
+                    if (Platform.Current == Platform.MacOS) {
+                        "no widget host: needs the packaged Lab (runDistributable) on macOS 14"
+                    } else {
+                        "no widget host: needs the packaged Lab on Windows 11"
+                    }
                 },
             launchedByHost = NucleusWidgets.isLaunchedByWidgetHost,
             clsid = NucleusApp.windowsWidgetsClsid,
@@ -119,7 +126,12 @@ class NucleusWindowsWidgetsGateway : WindowsWidgetsGateway {
         )
 
     override fun delete(widgetId: String): CallOutcome =
-        CallOutcome.of(runCatching { WidgetManager.getDefault().deleteWidget(widgetId) })
+        CallOutcome.of(
+            runCatching {
+                check(Platform.Current == Platform.Windows) { "WidgetKit has no API to remove a widget" }
+                WidgetManager.getDefault().deleteWidget(widgetId)
+            },
+        )
 
     private fun WidgetEvent.describe(): String =
         when (this) {

@@ -1,0 +1,125 @@
+public final class dev/nucleusframework/widget/macos/ControlCenter {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/macos/ControlCenter;
+	public final fun currentControls-VtjQ1oo (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun currentControls-VtjQ1oo$default (Ldev/nucleusframework/widget/macos/ControlCenter;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun isAvailable ()Z
+	public final fun reloadAllControls ()V
+	public final fun reloadControls (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/widget/macos/ControlInfo {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/widget/macos/ControlPushInfo;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/widget/macos/ControlPushInfo;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/widget/macos/ControlPushInfo;)Ldev/nucleusframework/widget/macos/ControlInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/macos/ControlInfo;Ljava/lang/String;Ldev/nucleusframework/widget/macos/ControlPushInfo;ILjava/lang/Object;)Ldev/nucleusframework/widget/macos/ControlInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKind ()Ljava/lang/String;
+	public final fun getPushInfo ()Ldev/nucleusframework/widget/macos/ControlPushInfo;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/macos/ControlPushInfo {
+	public static final field $stable I
+	public fun <init> ([B)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getToken ()[B
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/macos/DarwinNotificationCenter {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/macos/DarwinNotificationCenter;
+	public final fun addObserver (Ljava/lang/String;Lkotlin/jvm/functions/Function0;)Ljava/lang/AutoCloseable;
+	public final fun isAvailable ()Z
+	public final fun post (Ljava/lang/String;)Z
+}
+
+public final class dev/nucleusframework/widget/macos/WidgetCenter {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/macos/WidgetCenter;
+	public final fun currentConfigurations-VtjQ1oo (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun currentConfigurations-VtjQ1oo$default (Ldev/nucleusframework/widget/macos/WidgetCenter;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun currentPushInfo-VtjQ1oo (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun currentPushInfo-VtjQ1oo$default (Ldev/nucleusframework/widget/macos/WidgetCenter;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun invalidateConfigurationRecommendations ()Z
+	public final fun invalidateRelevance (Ljava/lang/String;)Z
+	public final fun isAvailable ()Z
+	public final fun reloadAllTimelines ()V
+	public final fun reloadTimelines (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/widget/macos/WidgetCenter$UserInfoKey {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/macos/WidgetCenter$UserInfoKey;
+	public final fun getActivityID ()Ljava/lang/String;
+	public final fun getFamily ()Ljava/lang/String;
+	public final fun getKind ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/macos/WidgetFamily : java/lang/Enum {
+	public static final field Companion Ldev/nucleusframework/widget/macos/WidgetFamily$Companion;
+	public static final field SystemExtraLarge Ldev/nucleusframework/widget/macos/WidgetFamily;
+	public static final field SystemExtraLargePortrait Ldev/nucleusframework/widget/macos/WidgetFamily;
+	public static final field SystemLarge Ldev/nucleusframework/widget/macos/WidgetFamily;
+	public static final field SystemMedium Ldev/nucleusframework/widget/macos/WidgetFamily;
+	public static final field SystemSmall Ldev/nucleusframework/widget/macos/WidgetFamily;
+	public static final field Unknown Ldev/nucleusframework/widget/macos/WidgetFamily;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/macos/WidgetFamily;
+	public static fun values ()[Ldev/nucleusframework/widget/macos/WidgetFamily;
+}
+
+public final class dev/nucleusframework/widget/macos/WidgetFamily$Companion {
+	public final fun of (Ljava/lang/String;)Ldev/nucleusframework/widget/macos/WidgetFamily;
+}
+
+public final class dev/nucleusframework/widget/macos/WidgetInfo {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/widget/macos/WidgetFamily;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/widget/macos/WidgetFamily;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/widget/macos/WidgetFamily;)Ldev/nucleusframework/widget/macos/WidgetInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/macos/WidgetInfo;Ljava/lang/String;Ldev/nucleusframework/widget/macos/WidgetFamily;ILjava/lang/Object;)Ldev/nucleusframework/widget/macos/WidgetInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFamily ()Ldev/nucleusframework/widget/macos/WidgetFamily;
+	public final fun getKind ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/macos/WidgetKitException : java/lang/Exception {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/widget/macos/WidgetPushInfo {
+	public static final field $stable I
+	public fun <init> ([B)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getToken ()[B
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/macos/host/MacWidgetHost : dev/nucleusframework/widget/WidgetHost {
+	public static final field $stable I
+	public static final field CONFIG_HEADER I
+	public static final field LAUNCH_MARKER_MAX_AGE J
+	public static final field MIN_MACOS I
+	public static final field STALE_REQUEST_AGE J
+	public fun <init> ()V
+	public fun isLaunchedByHost ()Z
+	public fun isSupported ()Z
+	public fun loadState-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun pinnedWidgets (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun refresh-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveState-b_9T3YA (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetState;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun start ()V
+}
+

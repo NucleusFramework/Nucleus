@@ -30,6 +30,7 @@ import dev.nucleusframework.widget.windows.WidgetResourceResponse
 import dev.nucleusframework.widget.windows.WidgetSize
 import dev.nucleusframework.widget.windows.WidgetUpdateRequestOptions
 import dev.nucleusframework.widget.windows.WindowsWebWidget
+import dev.nucleusframework.widget.windows.requestCustomization
 import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -217,7 +218,7 @@ public class WindowsWidgetHost : WidgetHost {
             val context = customizationRequestedArgs.widgetContext
             dispatch(context.id, "customization") {
                 val state = loadState(WidgetId(context.id))
-                WidgetEngine.requestCustomization(
+                requestCustomization(
                     WidgetInstance(WidgetId(context.id), context.definitionId, context.size.toRuntime(), state),
                 )
                 push(context, state)

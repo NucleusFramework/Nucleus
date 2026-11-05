@@ -23,7 +23,7 @@ class WindowsWidgetsViewModel(
         WindowsWidgetsState(),
         WindowsWidgetsReducer,
         timeline,
-        WindowsWidgetsProbe.ID,
+        widgetsProbeId,
     ) {
     init {
         dispatch(WindowsWidgetsEvent.Ready(gateway.managerAvailability(), gateway.hostStatus()))

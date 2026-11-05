@@ -11,11 +11,9 @@ import dev.nucleusframework.widget.ImageProvider
 import dev.nucleusframework.widget.ImageSize
 import dev.nucleusframework.widget.NucleusWidget
 import dev.nucleusframework.widget.NucleusWidgets
-import dev.nucleusframework.widget.NumberField
 import dev.nucleusframework.widget.Row
 import dev.nucleusframework.widget.Switch
 import dev.nucleusframework.widget.Text
-import dev.nucleusframework.widget.TextField
 import dev.nucleusframework.widget.TextSize
 import dev.nucleusframework.widget.TextStyle
 import dev.nucleusframework.widget.WidgetBackground
@@ -32,6 +30,9 @@ import dev.nucleusframework.widget.booleanStateKey
 import dev.nucleusframework.widget.fillMaxWidth
 import dev.nucleusframework.widget.intStateKey
 import dev.nucleusframework.widget.stringStateKey
+import dev.nucleusframework.widget.windows.CustomizableWidget
+import dev.nucleusframework.widget.windows.NumberField
+import dev.nucleusframework.widget.windows.TextField
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -83,6 +84,7 @@ internal fun startWindowsTestWidgets() {
         widget("Sample") { SampleWidget() }
         widget("Form") { FormWidget() }
         widget("Items") { ItemsWidget() }
+        widget("Customizable") { CustomizableWidget() }
     }
 }
 

@@ -227,6 +227,14 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
         fn.execute(appExtensions)
     }
 
+    /** macOS widgets (WidgetKit) the app provides; see [MacWidgetsSettings]. */
+    val widgets: MacWidgetsSettings = MacWidgetsSettings()
+
+    /** Configures [widgets]. */
+    fun widgets(fn: Action<MacWidgetsSettings>) {
+        fn.execute(widgets)
+    }
+
     internal val infoPlistSettings = InfoPlistSettings()
 
     /** Configures extra keys added to the bundle's `Info.plist`. */

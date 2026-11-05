@@ -3,7 +3,8 @@ package dev.nucleusframework.widget
 import kotlin.jvm.JvmInline
 
 /**
- * Marks the contract between the widget runtime and its platform hosts (`widget-windows`).
+ * Marks the contract between the widget runtime and its platform hosts (`widget-windows`,
+ * `widget-macos`).
  * Apps never need it; it may change without notice.
  */
 @RequiresOptIn(

@@ -1185,12 +1185,13 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         packageTask.macRuntimeEntitlementsFile.set(
             mac.runtimeEntitlementsFile.orElse(defaultRuntimeEntitlements),
         )
-        packageTask.macAppExtensions.set(mac.appExtensions.extensions)
+        packageTask.macAppExtensions.set(macAppExtensionsWithWidgets())
         packageTask.macAppExtensionFiles.from(
             mac.appExtensions.extensions.flatMap {
                 listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
             },
         )
+        macWidgetsExtension()?.let { packageTask.macAppExtensionFiles.from(it.task) }
     }
 }
 
@@ -1314,12 +1315,13 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                 packageTask.urlProtocols.set(app.nativeDistributions.protocols)
                 packageTask.macLayeredIcons.set(mac.layeredIconDir)
                 packageTask.macLaunchAgents.set(mac.launchAgents.agents)
-                packageTask.macAppExtensions.set(mac.appExtensions.extensions)
+                packageTask.macAppExtensions.set(macAppExtensionsWithWidgets())
                 packageTask.macAppExtensionFiles.from(
                     mac.appExtensions.extensions.flatMap {
                         listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
                     },
                 )
+                macWidgetsExtension()?.let { packageTask.macAppExtensionFiles.from(it.task) }
             }
         }
     }

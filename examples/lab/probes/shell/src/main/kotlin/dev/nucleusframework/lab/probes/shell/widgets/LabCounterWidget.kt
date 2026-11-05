@@ -9,13 +9,11 @@ import dev.nucleusframework.widget.Column
 import dev.nucleusframework.widget.FontWeight
 import dev.nucleusframework.widget.LocalSize
 import dev.nucleusframework.widget.NucleusWidget
-import dev.nucleusframework.widget.NumberField
 import dev.nucleusframework.widget.Row
 import dev.nucleusframework.widget.Spacer
 import dev.nucleusframework.widget.Spacing
 import dev.nucleusframework.widget.Switch
 import dev.nucleusframework.widget.Text
-import dev.nucleusframework.widget.TextField
 import dev.nucleusframework.widget.TextSize
 import dev.nucleusframework.widget.TextStyle
 import dev.nucleusframework.widget.WidgetBackground
@@ -24,7 +22,6 @@ import dev.nucleusframework.widget.WidgetId
 import dev.nucleusframework.widget.WidgetModifier
 import dev.nucleusframework.widget.WidgetSize
 import dev.nucleusframework.widget.WidgetState
-import dev.nucleusframework.widget.actionFinishCustomization
 import dev.nucleusframework.widget.actionOpenUrl
 import dev.nucleusframework.widget.background
 import dev.nucleusframework.widget.booleanStateKey
@@ -33,11 +30,14 @@ import dev.nucleusframework.widget.currentWidgetState
 import dev.nucleusframework.widget.fillMaxHeight
 import dev.nucleusframework.widget.fillMaxSize
 import dev.nucleusframework.widget.intStateKey
-import dev.nucleusframework.widget.isCustomizing
 import dev.nucleusframework.widget.stringStateKey
+import dev.nucleusframework.widget.windows.NumberField
+import dev.nucleusframework.widget.windows.TextField
 import dev.nucleusframework.widget.windows.WebWidgetRequest
 import dev.nucleusframework.widget.windows.WebWidgetResponse
 import dev.nucleusframework.widget.windows.WindowsWebWidget
+import dev.nucleusframework.widget.windows.actionFinishCustomization
+import dev.nucleusframework.widget.windows.isCustomizing
 import dev.nucleusframework.widget.windows.sendWebWidgetMessage
 
 /** Definition ids shared with `windows { widgets { widget(…) } }` in the Lab's build script. */
@@ -125,7 +125,7 @@ class LabCounterWidget : NucleusWidget() {
                 })
             }
             if (!isSmall) {
-                Row(modifier = WidgetModifier.clickable(actionOpenUrl(LabCommands.deepLink(WindowsWidgetsProbe.ID)))) {
+                Row(modifier = WidgetModifier.clickable(actionOpenUrl(LabCommands.deepLink(widgetsProbeId)))) {
                     Text("Open in the Lab", style = TextStyle(fontSize = TextSize.Small, color = WidgetColor.Accent))
                 }
             }
@@ -151,7 +151,7 @@ class LabWebWidget :
                     "Web widgets show a page only in the European Economic Area; this card is the fallback.",
                     style = TextStyle(fontSize = TextSize.Small, color = WidgetColor.Subtle),
                 )
-                Button("Open the Lab", onClick = actionOpenUrl(LabCommands.deepLink(WindowsWidgetsProbe.ID)))
+                Button("Open the Lab", onClick = actionOpenUrl(LabCommands.deepLink(widgetsProbeId)))
             }
         }
     }

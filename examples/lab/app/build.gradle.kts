@@ -1,5 +1,6 @@
 import dev.nucleusframework.desktop.application.dsl.AppImageCategory
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.MacWidgetFamily
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.ReleaseType
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
@@ -44,8 +45,9 @@ dependencies {
     implementation(project(":examples:lab:probes:system"))
     implementation(project(":examples:lab:probes:fixtures"))
     implementation(project(":darkmode-detector"))
-    // widgets { } in main (the Windows 11 widgets board host comes with it).
+    // widgets { } in main (the Windows 11 widgets board and WidgetKit hosts come with them).
     implementation(project(":widget-windows"))
+    implementation(project(":widget-macos"))
     implementation(libs.coroutines.swing)
     // The shell's pane layout, saved across launches.
     implementation(libs.kotlinx.serialization.json)
@@ -349,6 +351,20 @@ nucleus.application {
             bundleID = "dev.nucleusframework.demo"
             appCategory = "public.app-category.developer-tools"
             dockName = "Nucleus Lab"
+            // WidgetKit widgets (desktop, Notification Center), rendered by widgets { } in main.
+            // LabWeb stays Windows-only: WidgetKit has no web content.
+            widgets {
+                widget("LabCounter") {
+                    displayName = "Lab counter"
+                    description = "A counter driven by the Nucleus Lab widget probe"
+                    families = listOf(MacWidgetFamily.Small, MacWidgetFamily.Medium)
+                }
+                widget("LabTasks") {
+                    displayName = "Lab tasks"
+                    description = "A to-do list: add, check, filter and clear tasks from the widget or the app"
+                    families = listOf(MacWidgetFamily.Medium, MacWidgetFamily.Large)
+                }
+            }
             dmg {
                 title = $$"${productName} ${version}"
                 iconSize = 128

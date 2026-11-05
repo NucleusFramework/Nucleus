@@ -102,9 +102,6 @@ public class MutableWidgetState internal constructor(
 // Adaptive Card id, so a submitted value lands straight in the state.
 internal val WidgetStateKey<*>.storageName: String get() = "$type:$name"
 
-/** Reserved: whether the host asked for the widget's customization UI (see [isCustomizing]). */
-internal val CustomizingKey: WidgetStateKey<Boolean> = booleanStateKey("nucleus.customizing")
-
 /** Minimal flat `{"k":"v"}` JSON codec: the state needs nothing more and no JSON dependency. */
 internal object FlatJson {
     private const val HEX = 16

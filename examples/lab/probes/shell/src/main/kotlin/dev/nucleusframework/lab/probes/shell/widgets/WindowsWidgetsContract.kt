@@ -1,13 +1,28 @@
 package dev.nucleusframework.lab.probes.shell.widgets
 
 import androidx.compose.runtime.Immutable
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.lab.core.Availability
+import dev.nucleusframework.lab.core.ProbeId
 import dev.nucleusframework.lab.core.mvi.CallOutcome
 import dev.nucleusframework.lab.core.mvi.CallRecord
 import dev.nucleusframework.lab.core.mvi.Delivery
 import dev.nucleusframework.lab.core.mvi.Reducer
 import dev.nucleusframework.lab.core.mvi.plusCall
 import dev.nucleusframework.lab.core.mvi.plusDelivery
+
+/**
+ * The widgets probe of this platform: the two share the gateway and the view model, only one of
+ * them runs on a given OS.
+ */
+val widgetsProbeId: ProbeId get() =
+    if (Platform.Current ==
+        Platform.MacOS
+    ) {
+        MacWidgetsProbe.ID
+    } else {
+        WindowsWidgetsProbe.ID
+    }
 
 /** The widget host as `widgets { }` connected to it at startup. */
 @Immutable

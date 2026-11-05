@@ -115,27 +115,7 @@ public class WidgetStateHandle internal constructor(
     public fun update(block: (MutableWidgetState) -> Unit) {
         block(state)
     }
-
-    /** Leaves the customization UI the host asked for (see [isCustomizing]). */
-    public fun finishCustomization() {
-        state.remove(CustomizingKey)
-    }
 }
-
-/**
- * Whether the user asked for the widget's customization UI (on Windows, *Customize widget* in its
- * menu, offered when the plugin's `customizable = true`). Show the settings while it is `true`, and
- * leave with [actionFinishCustomization] or [WidgetStateHandle.finishCustomization]:
- *
- * ```
- * if (isCustomizing()) {
- *     TextField(CityKey, label = "City")
- *     Button("Done", onClick = actionFinishCustomization())
- * } else { … }
- * ```
- */
-@Composable
-public fun isCustomizing(): Boolean = LocalWidgetStateHandle.current[CustomizingKey] == true
 
 internal val LocalWidgetStateHandle =
     staticCompositionLocalOf<WidgetStateHandle> { error("No widget is being rendered") }

@@ -8,6 +8,7 @@ package dev.nucleusframework.desktop.application.tasks
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.LaunchAgentDefinition
 import dev.nucleusframework.desktop.application.dsl.MacAppExtension
+import dev.nucleusframework.desktop.application.internal.MacWidgetsPackaging
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.internal.LaunchAgentPlistGenerator
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
@@ -971,7 +972,9 @@ abstract class AbstractJPackageTask
          * custom `entitlementsFile` without them — modern JDKs only need `allow-jit`.
          */
         private fun warnIfHostEntitlementsBlockExtensions(appEntitlementsFile: File?) {
-            if (macAppExtensions.get().isEmpty() || appEntitlementsFile == null) return
+            // The Nucleus widget extension launches fine beside the JVM's default entitlements.
+            val userExtensions = macAppExtensions.get().filter { it.name != MacWidgetsPackaging.EXTENSION_NAME }
+            if (userExtensions.isEmpty() || appEntitlementsFile == null) return
             val offending =
                 listOf(
                     "com.apple.security.cs.allow-unsigned-executable-memory",

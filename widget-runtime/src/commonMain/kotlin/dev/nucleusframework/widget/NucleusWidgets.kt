@@ -19,7 +19,8 @@ public class WidgetsBuilder internal constructor() {
 
     /**
      * Declares the widget [definitionId], rendered by the [NucleusWidget] [factory] returns. The id
-     * must match a `widget("…")` of the Gradle plugin's `windows { widgets { } }`.
+     * must match a `widget("…")` of the Gradle plugin's `windows { widgets { } }` and / or
+     * `macOS { widgets { } }` (the WidgetKit kind).
      */
     public fun widget(
         definitionId: String,
@@ -79,7 +80,7 @@ public sealed interface WidgetEvent {
         override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
-    /** The user asked for the widget's customization UI. */
+    /** The user asked for the widget's customization UI (Windows: *Customize widget*). */
     public data class CustomizationRequested(
         override val id: WidgetId,
         override val epochMillis: Long = currentEpochMillis(),
@@ -142,12 +143,12 @@ public object NucleusWidgets {
     public val events: SharedFlow<WidgetEvent> = eventFlow.asSharedFlow()
 
     /**
-     * Whether the widget host started this process (COM on Windows) rather than the user: such a
-     * launch may not want to open the main window.
+     * Whether the widget host started this process (COM on Windows, the widget extension on macOS)
+     * rather than the user: such a launch may not want to open the main window.
      */
     public val isLaunchedByWidgetHost: Boolean get() = host?.isLaunchedByHost ?: false
 
-    /** Whether a widget host is running for this app (Windows 11 with the packaged app). */
+    /** Whether a widget host is running for this app (the packaged app on Windows 11 or macOS 14+). */
     public val isAvailable: Boolean get() = host != null
 
     /**
@@ -187,7 +188,7 @@ internal expect fun loadWidgetHost(): WidgetHost?
 internal expect fun currentEpochMillis(): Long
 
 /**
- * A platform's widget host (Windows widgets board), loaded through `ServiceLoader` by
+ * A platform's widget host (Windows widgets board, WidgetKit), loaded through `ServiceLoader` by
  * [NucleusWidgets.start]. Implementations drive [WidgetEngine].
  */
 @InternalNucleusWidgetApi
@@ -266,7 +267,6 @@ public object WidgetEngine {
                 // updateWidgetState on this widget changes the action's own state, whatever the host.
                 withContext(ActingInstance(instance)) { action.callback.onAction(instance.id, action.parameters) }
             }
-            FinishCustomizationAction -> instance.state.remove(CustomizingKey)
             is OpenUrlAction -> Unit // opened by the host itself
         }
         return true
@@ -288,12 +288,6 @@ public object WidgetEngine {
     /** The input values of an action's data (a flat JSON object): input id to value. */
     public fun parseInputs(data: String): Map<String, String> =
         if (data.isBlank()) emptyMap() else FlatJson.decode(data).orEmpty()
-
-    /** Puts [instance] in customization mode; the host renders it next. */
-    public fun requestCustomization(instance: WidgetInstance) {
-        emit(WidgetEvent.CustomizationRequested(instance.id))
-        instance.state[CustomizingKey] = true
-    }
 
     /**
      * A new instance of the widget declared as [definitionId], or `null`: lets a host reach what a

@@ -10,6 +10,7 @@ import dev.nucleusframework.widget.TextSize
 import dev.nucleusframework.widget.WidgetBackground
 import dev.nucleusframework.widget.WidgetColor
 import dev.nucleusframework.widget.WidgetElement
+import dev.nucleusframework.widget.WidgetJson
 import java.util.Base64
 
 /**
@@ -57,7 +58,7 @@ internal object AdaptiveCardRenderer {
         // A web widget is still an Adaptive Card: the body is the fallback where the host
         // cannot show web content.
         if (webUrl != null) card["metadata"] = linkedMapOf("webUrl" to webUrl)
-        return Json.write(card)
+        return WidgetJson.write(card)
     }
 
     /** Where an app-resource image is read from. */
@@ -341,58 +342,4 @@ internal object AdaptiveCardRenderer {
     private val WidgetBackground.json get() = name.replaceFirstChar(Char::lowercaseChar)
 
     private val ImageSize.json get() = name.replaceFirstChar(Char::lowercaseChar)
-}
-
-/** Minimal JSON writer for the card maps: strings, booleans, numbers, lists, maps. */
-internal object Json {
-    fun write(value: Any?): String = StringBuilder().also { append(it, value) }.toString()
-
-    private fun append(
-        out: StringBuilder,
-        value: Any?,
-    ) {
-        when (value) {
-            null -> out.append("null")
-            is String -> quote(out, value)
-            is Boolean, is Int, is Long -> out.append(value)
-            is Double -> if (value % 1.0 == 0.0) out.append(value.toLong()) else out.append(value)
-            is Map<*, *> -> {
-                out.append('{')
-                value.entries.forEachIndexed { index, (key, item) ->
-                    if (index > 0) out.append(',')
-                    quote(out, key.toString())
-                    out.append(':')
-                    append(out, item)
-                }
-                out.append('}')
-            }
-            is List<*> -> {
-                out.append('[')
-                value.forEachIndexed { index, item ->
-                    if (index > 0) out.append(',')
-                    append(out, item)
-                }
-                out.append(']')
-            }
-            else -> quote(out, value.toString())
-        }
-    }
-
-    private fun quote(
-        out: StringBuilder,
-        value: String,
-    ) {
-        out.append('"')
-        for (c in value) {
-            when (c) {
-                '"' -> out.append("\\\"")
-                '\\' -> out.append("\\\\")
-                '\n' -> out.append("\\n")
-                '\r' -> out.append("\\r")
-                '\t' -> out.append("\\t")
-                else -> if (c < ' ') out.append("\\u%04x".format(c.code)) else out.append(c)
-            }
-        }
-        out.append('"')
-    }
 }

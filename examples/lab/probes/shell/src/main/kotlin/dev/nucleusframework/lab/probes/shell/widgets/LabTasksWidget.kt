@@ -1,6 +1,7 @@
 package dev.nucleusframework.lab.probes.shell.widgets
 
 import androidx.compose.runtime.Composable
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.widget.ActionCallback
 import dev.nucleusframework.widget.ActionParameters
 import dev.nucleusframework.widget.Alignment
@@ -20,7 +21,6 @@ import dev.nucleusframework.widget.Spacer
 import dev.nucleusframework.widget.Spacing
 import dev.nucleusframework.widget.Switch
 import dev.nucleusframework.widget.Text
-import dev.nucleusframework.widget.TextField
 import dev.nucleusframework.widget.TextSize
 import dev.nucleusframework.widget.TextStyle
 import dev.nucleusframework.widget.WidgetColor
@@ -29,7 +29,6 @@ import dev.nucleusframework.widget.WidgetModifier
 import dev.nucleusframework.widget.WidgetSize
 import dev.nucleusframework.widget.WidgetState
 import dev.nucleusframework.widget.WidgetStateHandle
-import dev.nucleusframework.widget.actionFinishCustomization
 import dev.nucleusframework.widget.actionParametersOf
 import dev.nucleusframework.widget.actionRunCallback
 import dev.nucleusframework.widget.booleanStateKey
@@ -37,10 +36,12 @@ import dev.nucleusframework.widget.clickable
 import dev.nucleusframework.widget.currentWidgetState
 import dev.nucleusframework.widget.fillMaxHeight
 import dev.nucleusframework.widget.fillMaxWidth
-import dev.nucleusframework.widget.isCustomizing
 import dev.nucleusframework.widget.stringStateKey
 import dev.nucleusframework.widget.updateWidgetState
 import dev.nucleusframework.widget.weight
+import dev.nucleusframework.widget.windows.TextField
+import dev.nucleusframework.widget.windows.actionFinishCustomization
+import dev.nucleusframework.widget.windows.isCustomizing
 
 /** Definition id shared with `windows { widgets { widget(…) } }` in the Lab's build script. */
 const val LAB_TASKS_WIDGET: String = "LabTasks"
@@ -266,7 +267,8 @@ class LabTasksWidget : NucleusWidget() {
             }
         }
         Spacer(WidgetModifier.fillMaxHeight())
-        AddTask(state)
+        // Text entry is a Windows board feature (widget-windows): elsewhere tasks come from the app.
+        if (Platform.Current == Platform.Windows) AddTask(state)
     }
 
     /** Text tabs, the selected one bold: lighter than a row of buttons, and never disabled-looking. */

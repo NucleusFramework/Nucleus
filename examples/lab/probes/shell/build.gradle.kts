@@ -28,6 +28,7 @@ dependencies {
     implementation(project(":media-control"))
     implementation(project(":global-hotkey"))
     implementation(project(":widget-windows"))
+    implementation(project(":widget-macos"))
     // Built against published Nucleus modules: the in-tree ones must win (duplicate classes otherwise).
     implementation(libs.composenativetray) {
         exclude(group = "dev.nucleusframework", module = "nucleus.core-runtime")

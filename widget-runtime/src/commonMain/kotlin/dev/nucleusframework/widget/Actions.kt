@@ -61,11 +61,6 @@ public fun actionRunCallback(
 /** Opens [url] when clicked: a web page or the app's own deep link (`NucleusApp` scheme). */
 public fun actionOpenUrl(url: String): Action = OpenUrlAction(url)
 
-/** Leaves the widget's customization UI (see [isCustomizing]); input values are kept. */
-public fun actionFinishCustomization(): Action = FinishCustomizationAction
-
-internal object FinishCustomizationAction : Action
-
 internal class LambdaAction(
     val block: () -> Unit,
 ) : Action

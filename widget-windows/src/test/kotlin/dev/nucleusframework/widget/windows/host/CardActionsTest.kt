@@ -6,7 +6,6 @@ import dev.nucleusframework.widget.Button
 import dev.nucleusframework.widget.Column
 import dev.nucleusframework.widget.InternalNucleusWidgetApi
 import dev.nucleusframework.widget.NucleusWidget
-import dev.nucleusframework.widget.TextField
 import dev.nucleusframework.widget.WidgetElement
 import dev.nucleusframework.widget.WidgetEngine
 import dev.nucleusframework.widget.WidgetId
@@ -16,6 +15,7 @@ import dev.nucleusframework.widget.WidgetState
 import dev.nucleusframework.widget.currentWidgetState
 import dev.nucleusframework.widget.intStateKey
 import dev.nucleusframework.widget.stringStateKey
+import dev.nucleusframework.widget.windows.TextField
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals

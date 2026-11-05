@@ -279,6 +279,14 @@ public final class dev/nucleusframework/widget/windows/WidgetUpdateRequestOption
 	public final fun getUnsetValue ()Ljava/lang/String;
 }
 
+public final class dev/nucleusframework/widget/windows/WindowsInputsKt {
+	public static final fun NumberField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TextField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Landroidx/compose/runtime/Composer;II)V
+	public static final fun actionFinishCustomization ()Ldev/nucleusframework/widget/Action;
+	public static final fun finishCustomization (Ldev/nucleusframework/widget/WidgetStateHandle;)V
+	public static final fun isCustomizing (Landroidx/compose/runtime/Composer;I)Z
+}
+
 public abstract interface class dev/nucleusframework/widget/windows/WindowsWebWidget {
 	public fun onWebMessage-b_9T3YA (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun onWebRequest-b_9T3YA (Ljava/lang/String;Ldev/nucleusframework/widget/windows/WebWidgetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

@@ -1,6 +1,6 @@
 package dev.nucleusframework.widget.windows.host
 
-import dev.nucleusframework.widget.ElementAction
+import dev.nucleusframework.widget.WidgetActionSignatures
 import dev.nucleusframework.widget.WidgetElement
 import dev.nucleusframework.widget.WidgetEngine
 import dev.nucleusframework.widget.WidgetEvent
@@ -31,7 +31,7 @@ internal object CardActions {
     }
 
     /** The signature of what each action key of [root] stands for: element kind and label. */
-    fun signatures(root: WidgetElement): Map<String, String> = buildMap { collectSignatures(root, this) }
+    fun signatures(root: WidgetElement): Map<String, String> = WidgetActionSignatures.of(root)
 
     /** Every input of [root] by id, valued as the card shows it (and submits it when untouched). */
     fun shownInputs(root: WidgetElement): Map<String, String> = buildMap { collectInputs(root, this) }
@@ -72,17 +72,6 @@ internal object CardActions {
         return if (WidgetEngine.invokeAction(instance, key, edited)) Outcome.Ran else Outcome.Stale
     }
 
-    private fun collectSignatures(
-        element: WidgetElement,
-        out: MutableMap<String, String>,
-    ) {
-        if (element is WidgetElement.Button) {
-            (element.action as? ElementAction.Execute)?.let { out[it.key] = "button:${element.text}" }
-        }
-        (element.modifier.onClick as? ElementAction.Execute)?.let { out[it.key] = "${kind(element)}:${label(element)}" }
-        children(element).forEach { collectSignatures(it, out) }
-    }
-
     private fun collectInputs(
         element: WidgetElement,
         out: MutableMap<String, String>,
@@ -104,30 +93,5 @@ internal object CardActions {
             is WidgetElement.Column -> element.children
             is WidgetElement.Row -> element.children
             else -> emptyList()
-        }
-
-    private fun kind(element: WidgetElement): String =
-        when (element) {
-            is WidgetElement.Row -> "row"
-            is WidgetElement.Column -> "column"
-            is WidgetElement.Text -> "text"
-            is WidgetElement.Image -> "image"
-            else -> "element"
-        }
-
-    /**
-     * The texts an element shows, to tell two clickable rows apart: a check icon's description is
-     * the same on every row, so images only count when there is no text at all.
-     */
-    private fun label(element: WidgetElement): String =
-        texts(element).joinToString("|").ifEmpty {
-            (element as? WidgetElement.Image)?.contentDescription.orEmpty()
-        }
-
-    private fun texts(element: WidgetElement): List<String> =
-        when (element) {
-            is WidgetElement.Text -> listOf(element.text)
-            is WidgetElement.Button -> listOf(element.text)
-            else -> children(element).flatMap(::texts)
         }
 }

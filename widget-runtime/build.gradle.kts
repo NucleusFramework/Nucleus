@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Platform-agnostic widget runtime: the Glance-like API (NucleusWidget, composables, state,
 // actions) and the one-shot composition that turns it into a WidgetElement tree. Hosts
-// (widget-windows today) render that tree; this module renders nothing itself.
+// (widget-windows, widget-macos) render that tree; this module renders nothing itself.
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.kotlinComposePlugin)
@@ -52,7 +52,7 @@ mavenPublishing {
 
     pom {
         name.set("Nucleus Widget Runtime")
-        description.set("Glance-like API for desktop widgets (Windows 11 widgets board)")
+        description.set("Glance-like API for desktop widgets (Windows 11 widgets board, macOS WidgetKit)")
         url.set("https://github.com/NucleusFramework/Nucleus")
 
         licenses {

@@ -23,7 +23,6 @@ public final class dev/nucleusframework/widget/ActionParameters$Key {
 }
 
 public final class dev/nucleusframework/widget/ActionsKt {
-	public static final fun actionFinishCustomization ()Ldev/nucleusframework/widget/Action;
 	public static final fun actionOpenUrl (Ljava/lang/String;)Ldev/nucleusframework/widget/Action;
 	public static final fun actionParametersOf ([Lkotlin/Pair;)Ldev/nucleusframework/widget/ActionParameters;
 	public static final fun actionRunCallback (Ldev/nucleusframework/widget/ActionCallback;Ldev/nucleusframework/widget/ActionParameters;)Ldev/nucleusframework/widget/Action;
@@ -144,9 +143,9 @@ public final class dev/nucleusframework/widget/ImageSize : java/lang/Enum {
 
 public final class dev/nucleusframework/widget/InputsKt {
 	public static final fun ChoiceField (Ldev/nucleusframework/widget/WidgetStateKey;Ljava/util/List;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;ZLandroidx/compose/runtime/Composer;II)V
-	public static final fun NumberField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;Landroidx/compose/runtime/Composer;II)V
+	public static final fun PlatformNumberField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;Landroidx/compose/runtime/Composer;II)V
+	public static final fun PlatformTextField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Landroidx/compose/runtime/Composer;II)V
 	public static final fun Switch (Ldev/nucleusframework/widget/WidgetStateKey;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetModifier;ZLandroidx/compose/runtime/Composer;II)V
-	public static final fun TextField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Landroidx/compose/runtime/Composer;II)V
 }
 
 public abstract interface annotation class dev/nucleusframework/widget/InternalNucleusWidgetApi : java/lang/annotation/Annotation {
@@ -180,7 +179,6 @@ public final class dev/nucleusframework/widget/NucleusWidgetKt {
 	public static final fun getLocalSize ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 	public static final fun getLocalWidgetId ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 	public static final fun getWidgetState-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static final fun isCustomizing (Landroidx/compose/runtime/Composer;I)Z
 	public static final fun updateWidgetState-b_9T3YA (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
@@ -273,6 +271,12 @@ public final class dev/nucleusframework/widget/TextStyle {
 	public final fun getFontWeight ()Ldev/nucleusframework/widget/FontWeight;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetActionSignatures {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetActionSignatures;
+	public final fun of (Ldev/nucleusframework/widget/WidgetElement;)Ljava/util/Map;
 }
 
 public final class dev/nucleusframework/widget/WidgetBackground : java/lang/Enum {
@@ -494,7 +498,6 @@ public final class dev/nucleusframework/widget/WidgetEngine {
 	public final fun newWidget (Ljava/lang/String;)Ldev/nucleusframework/widget/NucleusWidget;
 	public final fun parseInputs (Ljava/lang/String;)Ljava/util/Map;
 	public final fun render (Ldev/nucleusframework/widget/WidgetInstance;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public final fun requestCustomization (Ldev/nucleusframework/widget/WidgetInstance;)V
 }
 
 public abstract interface class dev/nucleusframework/widget/WidgetEvent {
@@ -727,6 +730,12 @@ public final class dev/nucleusframework/widget/WidgetInstance {
 	public final fun getState ()Ldev/nucleusframework/widget/MutableWidgetState;
 }
 
+public final class dev/nucleusframework/widget/WidgetJson {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetJson;
+	public final fun write (Ljava/lang/Object;)Ljava/lang/String;
+}
+
 public abstract interface class dev/nucleusframework/widget/WidgetModifier {
 	public static final field Companion Ldev/nucleusframework/widget/WidgetModifier$Companion;
 	public fun elements ()Ljava/util/List;
@@ -853,7 +862,6 @@ public final class dev/nucleusframework/widget/WidgetState$Companion {
 
 public final class dev/nucleusframework/widget/WidgetStateHandle {
 	public static final field $stable I
-	public final fun finishCustomization ()V
 	public final fun get (Ldev/nucleusframework/widget/WidgetStateKey;)Ljava/lang/Object;
 	public final fun update (Lkotlin/jvm/functions/Function1;)V
 }
