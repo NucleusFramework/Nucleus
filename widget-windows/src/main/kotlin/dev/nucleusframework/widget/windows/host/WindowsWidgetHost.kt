@@ -10,7 +10,7 @@ import dev.nucleusframework.widget.WidgetHost
 import dev.nucleusframework.widget.WidgetId
 import dev.nucleusframework.widget.WidgetInstance
 import dev.nucleusframework.widget.WidgetState
-import dev.nucleusframework.widget.WidgetWebRequest
+import dev.nucleusframework.widget.windows.WebWidgetRequest
 import dev.nucleusframework.widget.windows.WidgetActionInvokedArgs
 import dev.nucleusframework.widget.windows.WidgetContext
 import dev.nucleusframework.widget.windows.WidgetContextChangedArgs
@@ -28,6 +28,7 @@ import dev.nucleusframework.widget.windows.WidgetResourceRequestedArgs
 import dev.nucleusframework.widget.windows.WidgetResourceResponse
 import dev.nucleusframework.widget.windows.WidgetSize
 import dev.nucleusframework.widget.windows.WidgetUpdateRequestOptions
+import dev.nucleusframework.widget.windows.WindowsWebWidget
 import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -94,13 +95,6 @@ public class WindowsWidgetHost : WidgetHost {
         manager().updateWidget(WidgetUpdateRequestOptions(id.value).apply { customState = state.encode() })
     }
 
-    override suspend fun sendMessage(
-        id: WidgetId,
-        message: String,
-    ) {
-        manager().sendMessageToContent(id.value, message)
-    }
-
     private fun stateOf(
         id: String,
         persisted: String?,
@@ -115,7 +109,12 @@ public class WindowsWidgetHost : WidgetHost {
         val render = WidgetEngine.render(instance)
         manager().updateWidget(
             WidgetUpdateRequestOptions(context.id).apply {
-                template = AdaptiveCardRenderer.render(render.root, AppResourceImages::resolve)
+                template =
+                    AdaptiveCardRenderer.render(
+                        render.root,
+                        AppResourceImages::resolve,
+                        webWidget(context.definitionId)?.webUrl(instance.id, state),
+                    )
                 data = "{}"
                 customState = state.encode()
             },
@@ -213,7 +212,7 @@ public class WindowsWidgetHost : WidgetHost {
         override fun onMessageReceived(args: WidgetMessageReceivedArgs) {
             val context = args.widgetContext
             dispatch(context.id, "message") {
-                WidgetEngine.deliverMessage(context.definitionId, WidgetId(context.id), args.message)
+                webWidget(context.definitionId)?.onWebMessage(WidgetId(context.id), args.message)
             }
         }
 
@@ -225,10 +224,9 @@ public class WindowsWidgetHost : WidgetHost {
                 try {
                     val request = args.request
                     val answer =
-                        WidgetEngine.answerWebRequest(
-                            context.definitionId,
+                        webWidget(context.definitionId)?.onWebRequest(
                             WidgetId(context.id),
-                            WidgetWebRequest(request.uri, request.method, request.headers.toMap(), request.content),
+                            WebWidgetRequest(request.uri, request.method, request.headers.toMap(), request.content),
                         )
                     if (answer != null) {
                         args.response =
@@ -249,6 +247,10 @@ public class WindowsWidgetHost : WidgetHost {
     }
 
     private fun manager() = WidgetManager.getDefault()
+
+    /** The web side of the widget [definitionId], when it implements [WindowsWebWidget]. */
+    private fun webWidget(definitionId: String): WindowsWebWidget? =
+        WidgetEngine.newWidget(definitionId) as? WindowsWebWidget
 
     private companion object {
         val logger: Logger = Logger.getLogger(WindowsWidgetHost::class.java.name)

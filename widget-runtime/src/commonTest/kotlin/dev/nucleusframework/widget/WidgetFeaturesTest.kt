@@ -27,7 +27,6 @@ internal class SettingsWidget : NucleusWidget() {
                 }
             } else {
                 Column {
-                    WebContent("https://example.com/widget")
                     Text(state[City] ?: "no city")
                     Button("Save", onClick = { state.update { it[Saved] = (it[Saved] ?: 0) + 1 } })
                 }
@@ -102,8 +101,7 @@ class WidgetFeaturesTest {
             assertFalse(CustomizingKey in target.state)
 
             val regular = WidgetEngine.render(target).root.column()
-            assertEquals("https://example.com/widget", assertIs<WidgetElement.WebContent>(regular.children[0]).url)
-            assertEquals("Lyon", assertIs<WidgetElement.Text>(regular.children[1]).text)
+            assertEquals("Lyon", assertIs<WidgetElement.Text>(regular.children[0]).text)
         }
 
     @Test
@@ -115,7 +113,7 @@ class WidgetFeaturesTest {
                     .render(target)
                     .root
                     .column()
-                    .children[2] as WidgetElement.Button
+                    .children[1] as WidgetElement.Button
             WidgetEngine.invokeAction(target, (save.action as ElementAction.Execute).key, mapOf("s:city" to "Oslo"))
             assertEquals("Oslo", target.state[City])
             assertEquals(1, target.state[Saved])

@@ -18,14 +18,12 @@ import dev.nucleusframework.widget.Text
 import dev.nucleusframework.widget.TextField
 import dev.nucleusframework.widget.TextSize
 import dev.nucleusframework.widget.TextStyle
-import dev.nucleusframework.widget.WebContent
 import dev.nucleusframework.widget.WidgetBackground
 import dev.nucleusframework.widget.WidgetColor
 import dev.nucleusframework.widget.WidgetId
 import dev.nucleusframework.widget.WidgetModifier
 import dev.nucleusframework.widget.WidgetSize
-import dev.nucleusframework.widget.WidgetWebRequest
-import dev.nucleusframework.widget.WidgetWebResponse
+import dev.nucleusframework.widget.WidgetState
 import dev.nucleusframework.widget.actionFinishCustomization
 import dev.nucleusframework.widget.actionOpenUrl
 import dev.nucleusframework.widget.background
@@ -36,8 +34,11 @@ import dev.nucleusframework.widget.fillMaxHeight
 import dev.nucleusframework.widget.fillMaxSize
 import dev.nucleusframework.widget.intStateKey
 import dev.nucleusframework.widget.isCustomizing
-import dev.nucleusframework.widget.sendWidgetMessage
 import dev.nucleusframework.widget.stringStateKey
+import dev.nucleusframework.widget.windows.WebWidgetRequest
+import dev.nucleusframework.widget.windows.WebWidgetResponse
+import dev.nucleusframework.widget.windows.WindowsWebWidget
+import dev.nucleusframework.widget.windows.sendWebWidgetMessage
 
 /** Definition ids shared with `windows { widgets { widget(…) } }` in the Lab's build script. */
 const val LAB_COUNTER_WIDGET: String = "LabCounter"
@@ -133,16 +134,18 @@ class LabCounterWidget : NucleusWidget() {
 }
 
 /**
- * A web widget: the page replaces the card where the host shows web content (on Windows, the
- * European Economic Area); elsewhere the fallback below is shown. The page is served by
- * [onWebRequest] (its URL matches the definition's webRequestFilter, so it never reaches the
- * network), posts a message when it loads, and shows the echo [onMessage] sends back.
+ * A Windows web widget ([WindowsWebWidget], not part of the common API): the page replaces the
+ * card where the board shows web content (documented for the European Economic Area); elsewhere
+ * the card below is shown. The page is served by [onWebRequest] (its URL matches the definition's
+ * webRequestFilter, so it never reaches the network), posts a message when it loads, and shows the
+ * echo [onWebMessage] sends back.
  */
-class LabWebWidget : NucleusWidget() {
+class LabWebWidget :
+    NucleusWidget(),
+    WindowsWebWidget {
     override suspend fun provideWidget(id: WidgetId) {
         provideContent {
             Column(spacing = Spacing.Small) {
-                WebContent(WEB_URL)
                 Text("Nucleus Lab web widget", style = TextStyle(fontWeight = FontWeight.Bold))
                 Text(
                     "Web widgets show a page only in the European Economic Area; this card is the fallback.",
@@ -153,19 +156,24 @@ class LabWebWidget : NucleusWidget() {
         }
     }
 
-    override suspend fun onMessage(
+    override fun webUrl(
+        id: WidgetId,
+        state: WidgetState,
+    ): String = WEB_URL
+
+    override suspend fun onWebMessage(
         id: WidgetId,
         message: String,
     ) {
-        sendWidgetMessage(id, "echo from the app: $message")
+        sendWebWidgetMessage(id, "echo from the app: $message")
     }
 
     override suspend fun onWebRequest(
         id: WidgetId,
-        request: WidgetWebRequest,
-    ): WidgetWebResponse? =
+        request: WebWidgetRequest,
+    ): WebWidgetResponse? =
         if (request.uri.startsWith(WEB_URL)) {
-            WidgetWebResponse(PAGE.encodeToByteArray(), headers = mapOf("Content-Type" to "text/html; charset=utf-8"))
+            WebWidgetResponse(PAGE.encodeToByteArray(), headers = mapOf("Content-Type" to "text/html; charset=utf-8"))
         } else {
             null
         }

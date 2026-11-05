@@ -78,13 +78,6 @@ public sealed interface WidgetEvent {
         override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
-    /** The [WebContent] page posted a message. */
-    public data class MessageReceived(
-        override val id: WidgetId,
-        val message: String,
-        override val epochMillis: Long = currentEpochMillis(),
-    ) : WidgetEvent
-
     /** The user asked for the widget's customization UI. */
     public data class CustomizationRequested(
         override val id: WidgetId,
@@ -214,12 +207,6 @@ public interface WidgetHost {
         id: WidgetId,
         state: WidgetState,
     )
-
-    /** Sends [message] to the web content of [id]. */
-    public suspend fun sendMessage(
-        id: WidgetId,
-        message: String,
-    )
 }
 
 /** What hosts call: rendering, actions and events, all serialized on one coroutine. */
@@ -291,22 +278,11 @@ public object WidgetEngine {
         instance.state[CustomizingKey] = true
     }
 
-    /** Hands a message from the web content of [id] to its widget's [NucleusWidget.onMessage]. */
-    public suspend fun deliverMessage(
-        definitionId: String,
-        id: WidgetId,
-        message: String,
-    ) {
-        emit(WidgetEvent.MessageReceived(id, message))
-        NucleusWidgets.factories[definitionId]?.invoke()?.onMessage(id, message)
-    }
-
-    /** Asks the widget [definitionId] to answer a web request of [id]; `null` lets it through. */
-    public suspend fun answerWebRequest(
-        definitionId: String,
-        id: WidgetId,
-        request: WidgetWebRequest,
-    ): WidgetWebResponse? = NucleusWidgets.factories[definitionId]?.invoke()?.onWebRequest(id, request)
+    /**
+     * A new instance of the widget declared as [definitionId], or `null`: lets a host reach what a
+     * widget implements for that platform alone (e.g. `WindowsWebWidget`).
+     */
+    public fun newWidget(definitionId: String): NucleusWidget? = NucleusWidgets.factories[definitionId]?.invoke()
 
     /** Reports [event] on [NucleusWidgets.events]. */
     public fun emit(event: WidgetEvent): Unit = NucleusWidgets.emit(event)

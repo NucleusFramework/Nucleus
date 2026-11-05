@@ -23,11 +23,13 @@ internal object AdaptiveCardRenderer {
 
     /**
      * Renders [root]; [resolveImage] turns an app-resource image path into a URL the host can load
-     * (the installed file's `file:///` URI), or `null` to embed the file instead.
+     * (the installed file's `file:///` URI), or `null` to embed the file instead. [webUrl] is the
+     * page of a `WindowsWebWidget`, shown instead of the body where the host shows web content.
      */
     fun render(
         root: WidgetElement,
         resolveImage: (String) -> ImageSource = { ImageSource.Missing },
+        webUrl: String? = null,
     ): String {
         val context = Context(resolveImage)
         val body =
@@ -46,7 +48,7 @@ internal object AdaptiveCardRenderer {
             )
         // A web widget is still an Adaptive Card: the body is the fallback where the host
         // cannot show web content.
-        root.firstWebContent()?.let { card["metadata"] = linkedMapOf("webUrl" to it.url) }
+        if (webUrl != null) card["metadata"] = linkedMapOf("webUrl" to webUrl)
         return Json.write(card)
     }
 
@@ -70,14 +72,6 @@ internal object AdaptiveCardRenderer {
     private class Context(
         val resolveImage: (String) -> ImageSource,
     )
-
-    private fun WidgetElement.firstWebContent(): WidgetElement.WebContent? =
-        when (this) {
-            is WidgetElement.WebContent -> this
-            is WidgetElement.Column -> children.firstNotNullOfOrNull { it.firstWebContent() }
-            is WidgetElement.Row -> children.firstNotNullOfOrNull { it.firstWebContent() }
-            else -> null
-        }
 
     private fun Context.items(
         children: List<WidgetElement>,
@@ -107,8 +101,6 @@ internal object AdaptiveCardRenderer {
             is WidgetElement.TextInput, is WidgetElement.Toggle, is WidgetElement.ChoiceInput,
             is WidgetElement.NumberInput,
             -> input(element)
-            // Carried by the card's metadata, not its body.
-            is WidgetElement.WebContent -> null
             is WidgetElement.Spacer ->
                 linkedMapOf<String, Any?>("type" to "Container", "items" to emptyList<Any>(), "minHeight" to "8px")
         }?.apply { decorate(element.modifier) }

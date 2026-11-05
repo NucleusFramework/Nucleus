@@ -112,12 +112,6 @@ internal sealed class WidgetNode {
 
         override fun toElement(): WidgetElement = WidgetElement.NumberInput(id, value, label, min, max, modifier)
     }
-
-    class WebContent : WidgetNode() {
-        var url = ""
-
-        override fun toElement(): WidgetElement = WidgetElement.WebContent(url, modifier)
-    }
 }
 
 internal class WidgetApplier(

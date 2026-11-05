@@ -107,24 +107,3 @@ public fun NumberField(
         },
     )
 }
-
-/**
- * Shows the web page at [url] in place of the widget's other elements, which remain the fallback
- * where the host cannot show web content (on Windows, web widgets are limited to the European
- * Economic Area). Messages to and from the page go through [NucleusWidget.onMessage] and
- * [sendWidgetMessage]; [NucleusWidget.onWebRequest] answers the requests the manifest filters.
- */
-@Composable
-public fun WebContent(
-    url: String,
-    modifier: WidgetModifier = WidgetModifier,
-) {
-    val resolved = LocalActionRegistry.current.resolve(modifier)
-    ComposeNode<WidgetNode.WebContent, WidgetApplier>(
-        factory = WidgetNode::WebContent,
-        update = {
-            set(resolved) { this.modifier = it }
-            set(url) { this.url = it }
-        },
-    )
-}

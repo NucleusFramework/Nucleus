@@ -18,7 +18,6 @@ import dev.nucleusframework.widget.Text
 import dev.nucleusframework.widget.TextField
 import dev.nucleusframework.widget.TextSize
 import dev.nucleusframework.widget.TextStyle
-import dev.nucleusframework.widget.WebContent
 import dev.nucleusframework.widget.WidgetBackground
 import dev.nucleusframework.widget.WidgetColor
 import dev.nucleusframework.widget.WidgetEngine
@@ -65,7 +64,6 @@ private class FormWidget : NucleusWidget() {
     override suspend fun provideWidget(id: WidgetId) {
         provideContent {
             Column {
-                WebContent("https://example.com/w")
                 Image(ImageProvider.appResource("widgets/logo.png"), "Logo")
                 Image(ImageProvider.appResource("missing.png"), "Missing")
                 Image(ImageProvider.appResource("widgets/logo.png"), "Icon", size = ImageSize.Icon)
@@ -92,13 +90,17 @@ class AdaptiveCardRendererTest {
         val render =
             runBlocking { WidgetEngine.render(WidgetInstance(WidgetId("f"), "Form", WidgetSize.Medium, state)) }
         val json =
-            AdaptiveCardRenderer.render(render.root) { path ->
-                if (path == "widgets/logo.png") {
-                    AdaptiveCardRenderer.ImageSource.Url("ms-appx:///app/app/resources/widgets/logo.png")
-                } else {
-                    AdaptiveCardRenderer.ImageSource.Missing
-                }
-            }
+            AdaptiveCardRenderer.render(
+                render.root,
+                resolveImage = { path ->
+                    if (path == "widgets/logo.png") {
+                        AdaptiveCardRenderer.ImageSource.Url("ms-appx:///app/app/resources/widgets/logo.png")
+                    } else {
+                        AdaptiveCardRenderer.ImageSource.Missing
+                    }
+                },
+                webUrl = "https://example.com/w",
+            )
 
         for (expected in listOf(
             "\"metadata\":{\"webUrl\":\"https://example.com/w\"}",
@@ -111,7 +113,7 @@ class AdaptiveCardRendererTest {
         )) {
             assertTrue(expected in json, "missing $expected in $json")
         }
-        assertFalse("WebContent" in json || "\"Missing\"" in json, json)
+        assertFalse("\"Missing\"" in json, json)
     }
 
     @Test
@@ -123,6 +125,7 @@ class AdaptiveCardRendererTest {
                 )
             }
         val json = AdaptiveCardRenderer.render(render.root)
+        assertFalse("metadata" in json, "no webUrl, no metadata: $json")
 
         for (expected in listOf(
             "\"type\":\"AdaptiveCard\"",

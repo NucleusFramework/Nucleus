@@ -127,15 +127,6 @@ public sealed interface WidgetElement {
         override val modifier: ResolvedModifier,
     ) : WidgetElement
 
-    /**
-     * Web content shown instead of the widget's other elements where the host supports it; those
-     * elements are the fallback elsewhere.
-     */
-    public data class WebContent(
-        val url: String,
-        override val modifier: ResolvedModifier,
-    ) : WidgetElement
-
     /** Empty space, usually with [ResolvedModifier.fillMaxHeight] to push siblings apart. */
     public data class Spacer(
         override val modifier: ResolvedModifier,

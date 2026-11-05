@@ -125,7 +125,6 @@ class NucleusWindowsWidgetsGateway : WindowsWidgetsGateway {
             is WidgetEvent.Resized -> "resized $id to $size"
             is WidgetEvent.ActionInvoked -> "action '$key' on $id"
             is WidgetEvent.CustomizationRequested -> "customization requested on $id"
-            is WidgetEvent.MessageReceived -> "message from the page of $id: $message"
             is WidgetEvent.Rendered -> "rendered $id in $millis ms"
             is WidgetEvent.HostError -> "host error on $id: $details"
             is WidgetEvent.Failed -> "FAILED${id?.let { " on $it" }.orEmpty()}: $message"

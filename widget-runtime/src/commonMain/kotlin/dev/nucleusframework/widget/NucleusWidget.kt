@@ -65,49 +65,6 @@ public abstract class NucleusWidget {
             if (pinned.definitionId in definitions) host.refresh(pinned.id)
         }
     }
-
-    /**
-     * Called with each message the [WebContent] page of widget [id] posts
-     * (`window.chrome.webview.postMessage`). Answer with [sendWidgetMessage].
-     */
-    public open suspend fun onMessage(
-        id: WidgetId,
-        message: String,
-    ) {
-    }
-
-    /**
-     * Answers a request of the [WebContent] page of widget [id] that matches the widget's web
-     * request filter (the plugin's `webRequestFilter`). Return `null` to let it go to the network.
-     */
-    public open suspend fun onWebRequest(
-        id: WidgetId,
-        request: WidgetWebRequest,
-    ): WidgetWebResponse? = null
-}
-
-/** A request made by a widget's [WebContent] page, as seen by [NucleusWidget.onWebRequest]. */
-public class WidgetWebRequest(
-    public val uri: String,
-    public val method: String,
-    public val headers: Map<String, String>,
-    public val body: ByteArray?,
-)
-
-/** The answer to a [WidgetWebRequest]. */
-public class WidgetWebResponse(
-    public val body: ByteArray?,
-    public val statusCode: Int = 200,
-    public val reasonPhrase: String = "OK",
-    public val headers: Map<String, String> = emptyMap(),
-)
-
-/** Sends [message] to the [WebContent] page of widget [id] (its `window.chrome.webview` `message` event). */
-public suspend fun sendWidgetMessage(
-    id: WidgetId,
-    message: String,
-) {
-    NucleusWidgets.host?.sendMessage(id, message)
 }
 
 /**
