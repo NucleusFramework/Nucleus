@@ -10,6 +10,7 @@ import dev.nucleusframework.widget.WidgetHost
 import dev.nucleusframework.widget.WidgetId
 import dev.nucleusframework.widget.WidgetInstance
 import dev.nucleusframework.widget.WidgetState
+import dev.nucleusframework.widget.longStateKey
 import dev.nucleusframework.widget.windows.WebWidgetRequest
 import dev.nucleusframework.widget.windows.WidgetActionInvokedArgs
 import dev.nucleusframework.widget.windows.WidgetContext
@@ -81,6 +82,7 @@ public class WindowsWidgetHost : WidgetHost {
             }
 
     override suspend fun refresh(id: WidgetId) {
+        if (id.value in deleted) return
         val info = manager().getWidgetInfo(id.value) ?: return
         push(info.widgetContext, stateOf(id.value, info.customState))
     }
@@ -92,7 +94,9 @@ public class WindowsWidgetHost : WidgetHost {
         id: WidgetId,
         state: WidgetState,
     ) {
-        manager().updateWidget(WidgetUpdateRequestOptions(id.value).apply { customState = state.encode() })
+        // A new revision: a click on the card drawn before this change is stale (see onActionInvoked).
+        val saved = (state as? MutableWidgetState ?: state.toMutable()).apply { bumpRevision() }
+        manager().updateWidget(WidgetUpdateRequestOptions(id.value).apply { customState = saved.encode() })
     }
 
     private fun stateOf(
@@ -105,6 +109,7 @@ public class WindowsWidgetHost : WidgetHost {
         context: WidgetContext,
         state: MutableWidgetState,
     ) {
+        if (context.id in deleted) return
         val instance = WidgetInstance(WidgetId(context.id), context.definitionId, context.size.toRuntime(), state)
         val render = WidgetEngine.render(instance)
         manager().updateWidget(
@@ -113,7 +118,8 @@ public class WindowsWidgetHost : WidgetHost {
                     AdaptiveCardRenderer.render(
                         render.root,
                         AppResourceImages::resolve,
-                        webWidget(context.definitionId)?.webUrl(instance.id, state),
+                        (render.widget as? WindowsWebWidget)?.webUrl(instance.id, state),
+                        state.bumpRevision(),
                     )
                 data = "{}"
                 customState = state.encode()
@@ -176,7 +182,12 @@ public class WindowsWidgetHost : WidgetHost {
                     WidgetInstance(WidgetId(context.id), context.definitionId, context.size.toRuntime(), state)
                 // Input values come back in the action data, keyed by input id.
                 val inputs = WidgetEngine.parseInputs(actionInvokedArgs.data)
-                if (!WidgetEngine.invokeAction(instance, actionInvokedArgs.verb, inputs)) {
+                // Action keys are positions in the card: on a card older than the state (the app
+                // changed it since), the same key may name another element. Re-render instead.
+                val clicked = inputs[AdaptiveCardRenderer.REVISION_INPUT]?.toLongOrNull()
+                if (clicked != null && clicked != state[RevisionKey]) {
+                    logger.fine { "Action on an outdated card of ${context.id}: re-rendering" }
+                } else if (!WidgetEngine.invokeAction(instance, actionInvokedArgs.verb, inputs)) {
                     logger.fine { "Stale action '${actionInvokedArgs.verb}' on ${context.id}: re-rendering" }
                 }
                 push(context, state)
@@ -211,6 +222,7 @@ public class WindowsWidgetHost : WidgetHost {
 
         override fun onMessageReceived(args: WidgetMessageReceivedArgs) {
             val context = args.widgetContext
+            logger.fine { "Message from the web page of ${context.id}: ${args.message}" }
             dispatch(context.id, "message") {
                 webWidget(context.definitionId)?.onWebMessage(WidgetId(context.id), args.message)
             }
@@ -254,6 +266,11 @@ public class WindowsWidgetHost : WidgetHost {
 
     private companion object {
         val logger: Logger = Logger.getLogger(WindowsWidgetHost::class.java.name)
+
+        // Reserved: incremented by every push and save, sent back by the card with each action.
+        val RevisionKey = longStateKey("nucleus.revision")
+
+        fun MutableWidgetState.bumpRevision(): Long = ((this[RevisionKey] ?: 0L) + 1).also { this[RevisionKey] = it }
 
         fun WidgetSize.toRuntime(): RuntimeWidgetSize =
             when (this) {

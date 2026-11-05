@@ -41,7 +41,10 @@ class WindowsWidgetsViewModel(
         when (intent) {
             WindowsWidgetsIntent.Refresh -> refresh()
             is WindowsWidgetsIntent.Push -> {
-                called("updateWidgetState + update(${intent.widgetId})", io { gateway.push(intent.widgetId) })
+                called(
+                    "updateWidgetState + update(${intent.widgetId})",
+                    io { gateway.push(intent.widgetId, intent.definitionId) },
+                )
                 refresh()
             }
             is WindowsWidgetsIntent.Delete -> {

@@ -126,6 +126,8 @@ class AdaptiveCardRendererTest {
             }
         val json = AdaptiveCardRenderer.render(render.root)
         assertFalse("metadata" in json, "no webUrl, no metadata: $json")
+        val revised = AdaptiveCardRenderer.render(render.root, revision = 7)
+        assertTrue("\"verb\":\"a0\",\"data\":{\"nucleus.revision\":7}" in revised, revised)
 
         for (expected in listOf(
             "\"type\":\"AdaptiveCard\"",

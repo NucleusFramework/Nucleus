@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
 
@@ -212,13 +213,14 @@ public interface WidgetHost {
 /** What hosts call: rendering, actions and events, all serialized on one coroutine. */
 @InternalNucleusWidgetApi
 public object WidgetEngine {
-    /** Single-threaded scope every host callback should run in, so renders never interleave. */
     @OptIn(ExperimentalCoroutinesApi::class)
-    public val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+    private val dispatcher = Dispatchers.Default.limitedParallelism(1)
 
-    /** The widget whose action callback is running: [updateWidgetState] on it edits its live state. */
-    @Volatile
-    internal var acting: WidgetInstance? = null
+    /** Single-threaded scope every host callback should run in, so renders never interleave. */
+    public val scope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatcher)
+
+    /** Runs [block] on the engine's thread, like the host callbacks (no hop when already there). */
+    internal suspend fun <T> serialized(block: suspend () -> T): T = withContext(dispatcher) { block() }
 
     /** Whether [definitionId] was declared with `widgets { widget(definitionId) { … } }`. */
     public fun isDeclared(definitionId: String): Boolean = definitionId in NucleusWidgets.factories
@@ -255,12 +257,7 @@ public object WidgetEngine {
             is LambdaAction -> action.block()
             is RunCallbackAction -> {
                 // updateWidgetState on this widget changes the action's own state, whatever the host.
-                acting = instance
-                try {
-                    action.callback.onAction(instance.id, action.parameters)
-                } finally {
-                    acting = null
-                }
+                withContext(ActingInstance(instance)) { action.callback.onAction(instance.id, action.parameters) }
             }
             FinishCustomizationAction -> instance.state.remove(CustomizingKey)
             is OpenUrlAction -> Unit // opened by the host itself

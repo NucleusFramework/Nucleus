@@ -38,7 +38,10 @@ interface WindowsWidgetsGateway {
      * Changes a widget from the app side, as a background update would: bumps a counter, adds a
      * task to a task list.
      */
-    suspend fun push(widgetId: String): CallOutcome
+    suspend fun push(
+        widgetId: String,
+        definitionId: String,
+    ): CallOutcome
 
     fun delete(widgetId: String): CallOutcome
 }
@@ -95,12 +98,14 @@ class NucleusWindowsWidgetsGateway : WindowsWidgetsGateway {
                 }
         }
 
-    override suspend fun push(widgetId: String): CallOutcome =
+    override suspend fun push(
+        widgetId: String,
+        definitionId: String,
+    ): CallOutcome =
         CallOutcome.of(
             runCatching {
                 val id = WidgetId(widgetId)
-                val definition = NucleusWidgets.pinnedWidgets().firstOrNull { it.id == id }?.definitionId
-                if (definition == LAB_TASKS_WIDGET) {
+                if (definitionId == LAB_TASKS_WIDGET) {
                     updateWidgetState(id) { LabTasks.add(it, "From the app at ${LocalTime.now().withNano(0)}") }
                     LabTasksWidget().update(id)
                 } else {

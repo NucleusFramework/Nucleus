@@ -81,9 +81,12 @@ object LabTasks {
         state: MutableWidgetState,
         title: String,
     ) {
-        val trimmed = title.trim().replace('\n', ' ')
+        val trimmed = title.replace(LINE_BREAKS, " ").trim()
         if (trimmed.isNotEmpty()) write(state, decode(state[ListKey]) + LabTask(trimmed, isDone = false))
     }
+
+    // lineSequence() splits on \r too: a title must hold neither.
+    private val LINE_BREAKS = Regex("[\r\n]+")
 
     internal fun decode(encoded: String?): List<LabTask> =
         encoded

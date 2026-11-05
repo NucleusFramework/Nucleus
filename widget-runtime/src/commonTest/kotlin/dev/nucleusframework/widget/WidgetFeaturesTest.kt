@@ -132,6 +132,5 @@ class WidgetFeaturesTest {
             val target = WidgetInstance(WidgetId("c1"), "Callback", WidgetSize.Small, WidgetState.decode(null))
             assertTrue(WidgetEngine.invokeAction(target, "a0"))
             assertEquals(3, target.state[Bumped])
-            assertNull(WidgetEngine.acting)
         }
 }

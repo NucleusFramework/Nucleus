@@ -44,6 +44,7 @@ sealed interface WindowsWidgetsIntent {
 
     data class Push(
         val widgetId: String,
+        val definitionId: String,
     ) : WindowsWidgetsIntent
 
     data class Delete(

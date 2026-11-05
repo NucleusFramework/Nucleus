@@ -64,7 +64,7 @@ class WindowsWidgetsProbe : Probe {
                     ),
                     Check(
                         "tasks-sizes",
-                        "“Lab tasks” Small shows the next task and Check; Large adds filters and Clear done",
+                        "“Lab tasks” Small shows the next task and Mark done; Medium adds the list, Clear completed and the add field; Large adds the All / To do / Done tabs",
                     ),
                     Check(
                         "tasks-customize",
@@ -113,7 +113,7 @@ class WindowsWidgetsProbe : Probe {
                             } else {
                                 "Push +1"
                             },
-                        ) { vm.onIntent(WindowsWidgetsIntent.Push(widget.id)) }
+                        ) { vm.onIntent(WindowsWidgetsIntent.Push(widget.id, widget.definitionId)) }
                         SecondaryAction("Unpin") { vm.onIntent(WindowsWidgetsIntent.Delete(widget.id)) }
                     }
                 }

@@ -802,6 +802,7 @@ public final class dev/nucleusframework/widget/WidgetRender {
 	public static final field $stable I
 	public final fun getInstance ()Ldev/nucleusframework/widget/WidgetInstance;
 	public final fun getRoot ()Ldev/nucleusframework/widget/WidgetElement;
+	public final fun getWidget ()Ldev/nucleusframework/widget/NucleusWidget;
 }
 
 public final class dev/nucleusframework/widget/WidgetSize : java/lang/Enum {

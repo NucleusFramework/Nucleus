@@ -79,6 +79,9 @@ class LabTasksWidgetTest {
             widget.click("Add", mapOf("s:draft" to "  Ship the widget "))
             widget.click("Add", mapOf("s:draft" to "Write the docs"))
             widget.click("Add", mapOf("s:draft" to "   ")) // blank: ignored
+            LabTasks.add(widget.state, "Split\r\nline")
+            assertEquals(LabTask("Split line", false), widget.tasks().last(), "line breaks never split a task")
+            LabTasks.write(widget.state, widget.tasks().dropLast(1))
             assertEquals(listOf(LabTask("Ship the widget", false), LabTask("Write the docs", false)), widget.tasks())
             assertNull(widget.state[LabTasks.DraftKey], "the field is cleared after Add")
             assertTrue("2 of 2 left" in widget.texts())

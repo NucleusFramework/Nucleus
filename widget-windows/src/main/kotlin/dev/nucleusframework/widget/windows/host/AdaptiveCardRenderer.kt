@@ -25,13 +25,16 @@ internal object AdaptiveCardRenderer {
      * Renders [root]; [resolveImage] turns an app-resource image path into a URL the host can load
      * (the installed file's `file:///` URI), or `null` to embed the file instead. [webUrl] is the
      * page of a `WindowsWebWidget`, shown instead of the body where the host shows web content.
+     * [revision] is sent back with every action ([REVISION_INPUT]), so a click on a card older
+     * than the state can be told apart.
      */
     fun render(
         root: WidgetElement,
         resolveImage: (String) -> ImageSource = { ImageSource.Missing },
         webUrl: String? = null,
+        revision: Long? = null,
     ): String {
-        val context = Context(resolveImage)
+        val context = Context(resolveImage, revision)
         val body =
             with(context) {
                 when (root) {
@@ -71,6 +74,7 @@ internal object AdaptiveCardRenderer {
 
     private class Context(
         val resolveImage: (String) -> ImageSource,
+        val revision: Long?,
     )
 
     private fun Context.items(
@@ -83,7 +87,8 @@ internal object AdaptiveCardRenderer {
             .mapIndexed { index, (child, json) ->
                 json.apply {
                     if (index > 0) put("spacing", spacing.json)
-                    if (child.acceptsHorizontalAlignment) putIfAbsent("horizontalAlignment", alignment.json)
+                    // A background wraps the element in a Container, which has no alignment: align the element.
+                    if (child.acceptsHorizontalAlignment) alignable().putIfAbsent("horizontalAlignment", alignment.json)
                 }
             }
 
@@ -103,7 +108,11 @@ internal object AdaptiveCardRenderer {
             -> input(element)
             is WidgetElement.Spacer ->
                 linkedMapOf<String, Any?>("type" to "Container", "items" to emptyList<Any>(), "minHeight" to "8px")
-        }?.apply { decorate(element.modifier) }
+        }?.also { decorate(it, element.modifier) }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun MutableMap<String, Any?>.alignable(): MutableMap<String, Any?> =
+        if (this["type"] == "Container") (this["items"] as List<MutableMap<String, Any?>>).single() else this
 
     private fun Context.row(element: WidgetElement.Row): MutableMap<String, Any?> =
         linkedMapOf(
@@ -134,7 +143,7 @@ internal object AdaptiveCardRenderer {
             if (element.maxLines != Int.MAX_VALUE) put("maxLines", element.maxLines)
         }
 
-    private fun button(element: WidgetElement.Button): MutableMap<String, Any?> =
+    private fun Context.button(element: WidgetElement.Button): MutableMap<String, Any?> =
         linkedMapOf(
             "type" to "ActionSet",
             "actions" to
@@ -219,7 +228,10 @@ internal object AdaptiveCardRenderer {
         }
     }
 
-    private fun MutableMap<String, Any?>.decorate(modifier: ResolvedModifier) {
+    private fun Context.decorate(
+        json: MutableMap<String, Any?>,
+        modifier: ResolvedModifier,
+    ) = json.apply {
         if (modifier.fillMaxHeight) put("height", "stretch")
         modifier.background?.let { background ->
             // Only containers take a style: wrap anything else in one.
@@ -240,9 +252,12 @@ internal object AdaptiveCardRenderer {
         modifier.onClick?.let { put("selectAction", action(it)) }
     }
 
-    private fun action(action: ElementAction): MutableMap<String, Any?> =
+    private fun Context.action(action: ElementAction): MutableMap<String, Any?> =
         when (action) {
-            is ElementAction.Execute -> linkedMapOf<String, Any?>("type" to "Action.Execute", "verb" to action.key)
+            is ElementAction.Execute ->
+                linkedMapOf<String, Any?>("type" to "Action.Execute", "verb" to action.key).apply {
+                    if (revision != null) put("data", linkedMapOf(REVISION_INPUT to revision))
+                }
             is ElementAction.OpenUrl -> linkedMapOf<String, Any?>("type" to "Action.OpenUrl", "url" to action.url)
         }
 
@@ -259,6 +274,8 @@ internal object AdaptiveCardRenderer {
         return "data:$mimeType;base64," + Base64.getEncoder().encodeToString(bytes)
     }
 
+    /** The action data key carrying the revision of the card that was clicked. */
+    const val REVISION_INPUT = "nucleus.revision"
     private const val VERSION = "1.5"
     private const val ICON_SIZE = "20px"
     private const val BYTES_PER_KB = 1024

@@ -54,7 +54,8 @@ public abstract class NucleusWidget {
 
     /** Renders the pinned widget [id] again, e.g. after its data changed. No-op if it is not pinned. */
     public suspend fun update(id: WidgetId) {
-        NucleusWidgets.host?.refresh(id)
+        val host = NucleusWidgets.host ?: return
+        WidgetEngine.serialized { host.refresh(id) }
     }
 
     /** Renders again every pinned instance of this widget. */
@@ -62,7 +63,7 @@ public abstract class NucleusWidget {
         val host = NucleusWidgets.host ?: return
         val definitions = NucleusWidgets.definitionIdsOf(this)
         for (pinned in host.pinnedWidgets()) {
-            if (pinned.definitionId in definitions) host.refresh(pinned.id)
+            if (pinned.definitionId in definitions) WidgetEngine.serialized { host.refresh(pinned.id) }
         }
     }
 }
@@ -76,14 +77,17 @@ public suspend fun updateWidgetState(
     id: WidgetId,
     block: (MutableWidgetState) -> Unit,
 ) {
-    WidgetEngine.acting?.takeIf { it.id == id }?.let {
+    coroutineContext[ActingInstance]?.instance?.takeIf { it.id == id }?.let {
         block(it.state)
         return
     }
     val host = NucleusWidgets.host ?: return
-    val state = host.loadState(id)
-    block(state)
-    host.saveState(id, state)
+    // On the engine's thread: the host's cached state may be rendered or changed by an action.
+    WidgetEngine.serialized {
+        val state = host.loadState(id)
+        block(state)
+        host.saveState(id, state)
+    }
 }
 
 /** The state of the pinned widget [id], like Glance's `getAppWidgetState`; empty when no host runs. */
@@ -150,6 +154,16 @@ internal class RenderSession : AbstractCoroutineContextElement(RenderSession) {
     companion object Key : CoroutineContext.Key<RenderSession>
 }
 
+/**
+ * The widget whose [ActionCallback] runs in this coroutine: [updateWidgetState] on it edits its
+ * live state. Carried by the coroutine, so a callback that suspends keeps it.
+ */
+internal class ActingInstance(
+    val instance: WidgetInstance,
+) : AbstractCoroutineContextElement(ActingInstance) {
+    companion object Key : CoroutineContext.Key<ActingInstance>
+}
+
 /** One pinned instance, as the host knows it. */
 @InternalNucleusWidgetApi
 public class WidgetInstance(
@@ -163,6 +177,8 @@ public class WidgetInstance(
 /** A composed widget: the element tree for the host, and the actions its keys stand for. */
 @InternalNucleusWidgetApi
 public class WidgetRender internal constructor(
+    /** The widget that was rendered: a host reaches what it implements for that platform alone. */
+    public val widget: NucleusWidget,
     public val instance: WidgetInstance,
     public val root: WidgetElement,
     internal val actions: Map<String, Action>,
@@ -187,5 +203,5 @@ internal suspend fun renderWidget(
             },
             content = content,
         )
-    return WidgetRender(instance, root, actions)
+    return WidgetRender(widget, instance, root, actions)
 }
