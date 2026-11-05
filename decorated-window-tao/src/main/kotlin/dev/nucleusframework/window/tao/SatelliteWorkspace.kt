@@ -977,14 +977,15 @@ public class SatelliteWorkspace(
         return entry
     }
 
+    /**
+     * The satellite's declaration left the composition: its content stops, and
+     * so do its view models, cleared once the content is off screen. Its saved
+     * state and placement are kept for a later declaration of the same id.
+     */
     internal fun unregister(entry: SatelliteEntry) {
         entry.content = null
         entry.header = null
-    }
-
-    /** The workspace left the composition: clears every satellite's view models. */
-    internal fun dispose() {
-        for (entry in entryMap.values) entry.stateSlot.clear()
+        entry.stateSlot.clear()
     }
 
     // ── Internals ────────────────────────────────────────────────────────
@@ -1420,19 +1421,11 @@ internal sealed interface DockHit {
     ) : DockHit
 }
 
-/**
- * Remembers a [SatelliteWorkspace] for the lifetime of the calling
- * composition, and clears its satellites' view models when it leaves.
- */
+/** Remembers a [SatelliteWorkspace] for the lifetime of the calling composition. */
 @Composable
 @ExperimentalNucleusApi
-public fun rememberSatelliteWorkspace(followFocus: Boolean = true): SatelliteWorkspace {
-    val workspace = remember { SatelliteWorkspace(followFocus) }
-    DisposableEffect(workspace) {
-        onDispose { workspace.dispose() }
-    }
-    return workspace
-}
+public fun rememberSatelliteWorkspace(followFocus: Boolean = true): SatelliteWorkspace =
+    remember { SatelliteWorkspace(followFocus) }
 
 /**
  * Makes the enclosing window (or [window]) a member of [workspace] for as long

@@ -1,7 +1,6 @@
 package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -1205,13 +1204,14 @@ public class TabWorkspace(
         move(entry.id, target)
     }
 
+    /**
+     * The tab's declaration left the composition: its content stops, and so
+     * do its view models, cleared once the content is off screen. Its saved
+     * state is kept for a later declaration of the same id.
+     */
     internal fun unregister(entry: TabEntry) {
         entry.content = null
-    }
-
-    /** The workspace left the composition: clears every tab's view models. */
-    internal fun dispose() {
-        for (entry in entryMap.values) entry.stateSlot.clear()
+        entry.stateSlot.clear()
     }
 
     /** Defaults shared with [TabWindows] and [TabStrip]. */
@@ -1303,19 +1303,10 @@ public interface TabDragSession {
     public fun cancel()
 }
 
-/**
- * Remembers a [TabWorkspace] for the lifetime of the calling composition, and
- * clears its tabs' view models when it leaves.
- */
+/** Remembers a [TabWorkspace] for the lifetime of the calling composition. */
 @Composable
 @ExperimentalNucleusApi
 public fun rememberTabWorkspace(
     defaultWindowSize: DpSize = TabWorkspace.DefaultWindowSize,
     captureThumbnails: Boolean = false,
-): TabWorkspace {
-    val workspace = remember { TabWorkspace(defaultWindowSize, captureThumbnails) }
-    DisposableEffect(workspace) {
-        onDispose { workspace.dispose() }
-    }
-    return workspace
-}
+): TabWorkspace = remember { TabWorkspace(defaultWindowSize, captureThumbnails) }
