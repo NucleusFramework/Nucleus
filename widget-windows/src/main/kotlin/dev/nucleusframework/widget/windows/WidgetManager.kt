@@ -39,7 +39,11 @@ public class WidgetManager private constructor() {
     public fun getWidgetInfos(): List<WidgetInfo> =
         NativeWidgetBridge.onCom { WidgetInfo.unpack(NativeWidgetBridge.nativeGetWidgetInfos()) }
 
-    /** Removes the widget [widgetId] from the host. */
+    /**
+     * Removes the widget [widgetId] from the host: the provider gets its `DeleteWidget` callback and
+     * the widget leaves [getWidgetIds] at once, but a Widgets board already open keeps drawing the
+     * card until it is reopened (observed on Windows 11 24H2; the provider cannot refresh it).
+     */
     public fun deleteWidget(widgetId: String) {
         NativeWidgetBridge.onCom { NativeWidgetBridge.nativeDeleteWidget(widgetId) }
     }

@@ -61,6 +61,7 @@ The widgets board reports almost nothing; each of these looked like "nothing hap
 ## Debugging
 
 - `NUCLEUS_WIDGET_TRACE=<file>`: the native bridge appends every class-object request and provider `QueryInterface` to the file. A host that creates the object, queries `IWidgetProvider` and stops is the runtime class name failure above.
+- `WidgetManager.deleteWidget` (the probe's Unpin) removes the widget from `WidgetService` and calls the provider's `DeleteWidget`, but an open board keeps drawing the card until it is reopened. Nothing on the provider side refreshes it.
 - `pinnedWidgets()` leaves out widgets the host already deleted: `WidgetService` still lists a widget for a moment after its `DeleteWidget` callback, so a list read on the `Unpinned` event (the Lab probe does) brought it back.
 - `NucleusWidgets.events`: pins, activations, actions, renders (with their time), host errors (`onErrorInfoReported`, e.g. an invalid template) and failures.
 - Activate the provider like the host: `[Activator]::CreateInstance([Type]::GetTypeFromCLSID([Guid]'<clsid>'))` in PowerShell (the `QueryInterface` of `IWidgetProvider` then fails on the PowerShell side, which lacks the metadata; the trace shows the provider side). `HKLM\SOFTWARE\Classes\PackagedCom\ClassIndex\{clsid}` proves the package registered the class.

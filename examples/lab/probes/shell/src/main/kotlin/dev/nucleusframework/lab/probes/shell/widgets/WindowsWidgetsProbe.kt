@@ -46,7 +46,10 @@ class WindowsWidgetsProbe : Probe {
                     Check("cold-start", "With the Lab closed, opening the Widgets board starts it and the card shows"),
                     Check("persist", "The count survives quitting and relaunching the Lab (widget state)"),
                     Check("open-url", "“Open in the Lab” on the card brings this probe forward through the deep link"),
-                    Check("unpin", "Unpinning the widget lists “unpinned”"),
+                    Check(
+                        "unpin",
+                        "Unpin here lists “unpinned” and drops the row; the open board keeps the card until reopened",
+                    ),
                     Check(
                         "customize",
                         "“Customize widget” in the counter's menu shows the settings; Done applies title, step, " +
