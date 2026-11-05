@@ -129,6 +129,7 @@ class NucleusWindowsWidgetsGateway : WindowsWidgetsGateway {
             is WidgetEvent.Deactivated -> "deactivated $id"
             is WidgetEvent.Resized -> "resized $id to $size"
             is WidgetEvent.ActionInvoked -> "action '$key' on $id"
+            is WidgetEvent.ActionDropped -> "action '$key' on $id dropped: the card was outdated"
             is WidgetEvent.CustomizationRequested -> "customization requested on $id"
             is WidgetEvent.Rendered -> "rendered $id in $millis ms"
             is WidgetEvent.HostError -> "host error on $id: $details"

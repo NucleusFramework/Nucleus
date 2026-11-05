@@ -92,6 +92,16 @@ public sealed interface WidgetEvent {
         override val epochMillis: Long = currentEpochMillis(),
     ) : WidgetEvent
 
+    /**
+     * A click was not run because the card it came from is older than the widget state (the app
+     * changed it meanwhile): its input values were kept and the widget rendered again.
+     */
+    public data class ActionDropped(
+        override val id: WidgetId,
+        val key: String,
+        override val epochMillis: Long = currentEpochMillis(),
+    ) : WidgetEvent
+
     /** The widget was composed and handed to the host. */
     public data class Rendered(
         override val id: WidgetId,
@@ -248,10 +258,7 @@ public object WidgetEngine {
         inputs: Map<String, String> = emptyMap(),
     ): Boolean {
         emit(WidgetEvent.ActionInvoked(instance.id, key))
-        // Input ids are state storage names ("s:city"): submitted values land in the state first.
-        for ((id, value) in inputs) {
-            if (id.length > 2 && id[1] == ':') instance.state.values[id] = value
-        }
+        applyInputs(instance, inputs)
         val action = render(instance).actions[key] ?: return false
         when (action) {
             is LambdaAction -> action.block()
@@ -263,6 +270,19 @@ public object WidgetEngine {
             is OpenUrlAction -> Unit // opened by the host itself
         }
         return true
+    }
+
+    /**
+     * Writes the input values a click submitted into [instance]'s state. Input ids are state
+     * storage names (`s:city`), not positions, so they hold even when the action itself is dropped.
+     */
+    public fun applyInputs(
+        instance: WidgetInstance,
+        inputs: Map<String, String>,
+    ) {
+        for ((id, value) in inputs) {
+            if (id.length > 2 && id[1] == ':') instance.state.values[id] = value
+        }
     }
 
     /** The input values of an action's data (a flat JSON object): input id to value. */

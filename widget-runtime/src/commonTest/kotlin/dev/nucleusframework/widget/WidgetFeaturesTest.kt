@@ -1,6 +1,9 @@
 package dev.nucleusframework.widget
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -53,6 +56,25 @@ internal class CallbackWidget : NucleusWidget() {
         provideContent {
             Button("Bump", onClick = actionRunCallback(Bump, actionParametersOf(Bump.By to 3)))
         }
+    }
+}
+
+/** Suspends on [gate] before changing its widget's state, like a callback waiting on the network. */
+private object SlowBump : ActionCallback {
+    var gate = CompletableDeferred<Unit>()
+
+    override suspend fun onAction(
+        id: WidgetId,
+        parameters: ActionParameters,
+    ) {
+        gate.await()
+        updateWidgetState(id) { it[Bumped] = (it[Bumped] ?: 0) + 1 }
+    }
+}
+
+internal class SlowWidget : NucleusWidget() {
+    override suspend fun provideWidget(id: WidgetId) {
+        provideContent { Button("Slow", onClick = actionRunCallback(SlowBump)) }
     }
 }
 
@@ -132,5 +154,20 @@ class WidgetFeaturesTest {
             val target = WidgetInstance(WidgetId("c1"), "Callback", WidgetSize.Small, WidgetState.decode(null))
             assertTrue(WidgetEngine.invokeAction(target, "a0"))
             assertEquals(3, target.state[Bumped])
+        }
+
+    @Test
+    fun aSuspendedCallbackKeepsItsWidgetWhileAnotherActionRuns() =
+        runTest {
+            SlowBump.gate = CompletableDeferred()
+            val slow = WidgetInstance(WidgetId("slow"), "Slow", WidgetSize.Small, WidgetState.decode(null))
+            val other = WidgetInstance(WidgetId("c2"), "Callback", WidgetSize.Small, WidgetState.decode(null))
+            val pending = async { WidgetEngine.invokeAction(slow, "a0") }
+            yield() // the slow callback is now suspended on its gate
+            assertTrue(WidgetEngine.invokeAction(other, "a0"))
+            SlowBump.gate.complete(Unit)
+            assertTrue(pending.await())
+            assertEquals(1, slow.state[Bumped], "the slow callback still updates its own widget")
+            assertEquals(3, other.state[Bumped])
         }
 }

@@ -485,6 +485,7 @@ public final class dev/nucleusframework/widget/WidgetElement$Toggle : dev/nucleu
 public final class dev/nucleusframework/widget/WidgetEngine {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetEngine;
+	public final fun applyInputs (Ldev/nucleusframework/widget/WidgetInstance;Ljava/util/Map;)V
 	public final fun emit (Ldev/nucleusframework/widget/WidgetEvent;)V
 	public final fun getScope ()Lkotlinx/coroutines/CoroutineScope;
 	public final fun invokeAction (Ldev/nucleusframework/widget/WidgetInstance;Ljava/lang/String;Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -499,6 +500,24 @@ public final class dev/nucleusframework/widget/WidgetEngine {
 public abstract interface class dev/nucleusframework/widget/WidgetEvent {
 	public abstract fun getEpochMillis ()J
 	public abstract fun getId-d-GyMs4 ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$ActionDropped : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()J
+	public final fun copy-b_9T3YA (Ljava/lang/String;Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$ActionDropped;
+	public static synthetic fun copy-b_9T3YA$default (Ldev/nucleusframework/widget/WidgetEvent$ActionDropped;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$ActionDropped;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public final fun getKey ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/widget/WidgetEvent$ActionInvoked : dev/nucleusframework/widget/WidgetEvent {
