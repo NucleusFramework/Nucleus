@@ -30,6 +30,10 @@ kotlinxSerialization = "1.11.0"
 kover = "0.9.9"
 ktlintGradle = "14.2.0"
 ktor = "3.6.0"
+# The lifecycle, saved-state and navigation-event versions Compose Multiplatform's ui already
+# brings at run time; decorated-window-tao compiles against them for its per-window
+# architecture-components owner (keep in step with the Compose version).
+lifecycle = "2.11.0"
 lifecycleViewmodelNavigation3 = "2.11.0"
 lighthouse = "2.3.2"
 # Only used by :examples:tao-native-test, as the native-image regression fixture for the
@@ -38,6 +42,7 @@ logback = "1.6.3"
 material3 = "1.12.0-alpha03"
 materialkolor = "5.0.1"
 navigation3 = "1.1.1"
+navigationevent = "1.1.1"
 materialIcons = "1.7.3"
 # Compile-time DI of the Nucleus Lab (examples/lab).
 metro = "1.4.5"
@@ -119,7 +124,11 @@ composewebview = { module = "dev.nucleusframework:composewebview", version.ref =
 filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
 navigation3-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
+lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime", version.ref = "lifecycle" }
+lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+lifecycle-viewmodel-savedstate = { module = "androidx.lifecycle:lifecycle-viewmodel-savedstate", version.ref = "lifecycle" }
 lifecycle-viewmodel-navigation3 = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "lifecycleViewmodelNavigation3" }
+navigationevent = { module = "androidx.navigationevent:navigationevent", version.ref = "navigationevent" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialkolor" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }

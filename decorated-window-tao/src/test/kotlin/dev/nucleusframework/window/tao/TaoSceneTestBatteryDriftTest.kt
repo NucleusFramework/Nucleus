@@ -165,6 +165,8 @@ class TaoSceneTestBatteryDriftTest {
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
+            dev.nucleusframework.window.tao.scene.TaoArchitectureComponentsTest::class.java to
+                "primes Lifecycle's main-thread checker by reflection; uses test-only viewmodel-compose",
             EventLoopHangDetectorTest::class.java to
                 "pure-function hang state machine (#643); no ComposeScene",
             TaoEventLoopWatchdogMonkeyTest::class.java to
