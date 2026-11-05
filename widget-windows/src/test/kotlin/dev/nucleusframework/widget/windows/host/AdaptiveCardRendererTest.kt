@@ -76,12 +76,19 @@ private class FormWidget : NucleusWidget() {
     }
 }
 
+// NucleusWidgets.start only honours its first call per process: every test class of this module
+// declares the same widgets through this one entry point.
+internal fun startWindowsTestWidgets() {
+    NucleusWidgets.start {
+        widget("Sample") { SampleWidget() }
+        widget("Form") { FormWidget() }
+        widget("Items") { ItemsWidget() }
+    }
+}
+
 class AdaptiveCardRendererTest {
     init {
-        NucleusWidgets.start {
-            widget("Sample") { SampleWidget() }
-            widget("Form") { FormWidget() }
-        }
+        startWindowsTestWidgets()
     }
 
     @Test
@@ -126,8 +133,8 @@ class AdaptiveCardRendererTest {
             }
         val json = AdaptiveCardRenderer.render(render.root)
         assertFalse("metadata" in json, "no webUrl, no metadata: $json")
-        val revised = AdaptiveCardRenderer.render(render.root, revision = 7)
-        assertTrue("\"verb\":\"a0\",\"data\":{\"nucleus.revision\":7}" in revised, revised)
+        val stamped = AdaptiveCardRenderer.render(render.root, stampActions = true)
+        assertTrue("\"verb\":\"a0\",\"data\":{\"nucleus.action\":\"button:+1\"}" in stamped, stamped)
 
         for (expected in listOf(
             "\"type\":\"AdaptiveCard\"",

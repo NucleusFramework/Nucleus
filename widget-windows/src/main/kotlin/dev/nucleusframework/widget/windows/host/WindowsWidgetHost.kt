@@ -16,6 +16,7 @@ import dev.nucleusframework.widget.windows.WidgetContext
 import dev.nucleusframework.widget.windows.WidgetContextChangedArgs
 import dev.nucleusframework.widget.windows.WidgetCustomizationRequestedArgs
 import dev.nucleusframework.widget.windows.WidgetErrorInfoReportedArgs
+import dev.nucleusframework.widget.windows.WidgetException
 import dev.nucleusframework.widget.windows.WidgetManager
 import dev.nucleusframework.widget.windows.WidgetMessageReceivedArgs
 import dev.nucleusframework.widget.windows.WidgetProvider
@@ -99,9 +100,7 @@ public class WindowsWidgetHost : WidgetHost {
         state: WidgetState,
     ) {
         if (id.value in deleted) return
-        // A new revision: a click on the card drawn before this change is stale (see onActionInvoked).
-        val saved = (state as? MutableWidgetState ?: state.toMutable()).also(CardRevision::bump)
-        manager().updateWidget(WidgetUpdateRequestOptions(id.value).apply { customState = saved.encode() })
+        manager().updateWidget(WidgetUpdateRequestOptions(id.value).apply { customState = state.encode() })
     }
 
     private fun stateOf(
@@ -117,19 +116,24 @@ public class WindowsWidgetHost : WidgetHost {
         if (context.id in deleted) return
         val instance = WidgetInstance(WidgetId(context.id), context.definitionId, context.size.toRuntime(), state)
         val render = WidgetEngine.render(instance)
-        manager().updateWidget(
+        val options =
             WidgetUpdateRequestOptions(context.id).apply {
                 template =
                     AdaptiveCardRenderer.render(
                         render.root,
                         AppResourceImages::resolve,
                         (render.widget as? WindowsWebWidget)?.webUrl(instance.id, state),
-                        CardRevision.bump(state),
+                        stampActions = true,
                     )
                 data = "{}"
                 customState = state.encode()
-            },
-        )
+            }
+        try {
+            manager().updateWidget(options)
+        } catch (e: WidgetException) {
+            // Unpinned while this render was in flight (deleteWidget comes on a COM thread): not a failure.
+            if (context.id !in deleted) throw e
+        }
     }
 
     /** Runs [block] on the engine's single thread, so renders never interleave; reports failures. */
@@ -185,15 +189,9 @@ public class WindowsWidgetHost : WidgetHost {
                 states[context.id] = state
                 val instance =
                     WidgetInstance(WidgetId(context.id), context.definitionId, context.size.toRuntime(), state)
-                // Input values come back in the action data, keyed by input id.
+                // Input values and what the card showed come back in the action data.
                 val inputs = WidgetEngine.parseInputs(actionInvokedArgs.data)
-                // Action keys are positions in the card: on a card older than the state (the app
-                // changed it since), the same key may name another element. Keep what the user
-                // typed, drop the action and re-render.
-                if (!CardRevision.isCurrent(state, inputs)) {
-                    WidgetEngine.applyInputs(instance, inputs)
-                    WidgetEngine.emit(WidgetEvent.ActionDropped(instance.id, actionInvokedArgs.verb))
-                } else if (!WidgetEngine.invokeAction(instance, actionInvokedArgs.verb, inputs)) {
+                if (CardActions.run(instance, actionInvokedArgs.verb, inputs) == CardActions.Outcome.Stale) {
                     logger.fine { "Stale action '${actionInvokedArgs.verb}' on ${context.id}: re-rendering" }
                 }
                 push(context, state)

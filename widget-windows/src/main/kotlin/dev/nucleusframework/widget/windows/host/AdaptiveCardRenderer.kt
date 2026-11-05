@@ -25,16 +25,21 @@ internal object AdaptiveCardRenderer {
      * Renders [root]; [resolveImage] turns an app-resource image path into a URL the host can load
      * (the installed file's `file:///` URI), or `null` to embed the file instead. [webUrl] is the
      * page of a `WindowsWebWidget`, shown instead of the body where the host shows web content.
-     * [revision] is sent back with every action ([REVISION_INPUT]), so a click on a card older
-     * than the state can be told apart.
+     * With [stampActions], every action carries what the card showed ([CardActions]), so a click
+     * on a card older than the state can be told apart.
      */
     fun render(
         root: WidgetElement,
         resolveImage: (String) -> ImageSource = { ImageSource.Missing },
         webUrl: String? = null,
-        revision: Long? = null,
+        stampActions: Boolean = false,
     ): String {
-        val context = Context(resolveImage, revision)
+        val context =
+            Context(
+                resolveImage,
+                if (stampActions) CardActions.signatures(root) else null,
+                if (stampActions) CardActions.shownInputs(root) else emptyMap(),
+            )
         val body =
             with(context) {
                 when (root) {
@@ -74,7 +79,8 @@ internal object AdaptiveCardRenderer {
 
     private class Context(
         val resolveImage: (String) -> ImageSource,
-        val revision: Long?,
+        val signatures: Map<String, String>?,
+        val shownInputs: Map<String, String>,
     )
 
     private fun Context.items(
@@ -256,7 +262,7 @@ internal object AdaptiveCardRenderer {
         when (action) {
             is ElementAction.Execute ->
                 linkedMapOf<String, Any?>("type" to "Action.Execute", "verb" to action.key).apply {
-                    if (revision != null) put("data", linkedMapOf(REVISION_INPUT to revision))
+                    signatures?.let { put("data", CardActions.stamp(action.key, it, shownInputs)) }
                 }
             is ElementAction.OpenUrl -> linkedMapOf<String, Any?>("type" to "Action.OpenUrl", "url" to action.url)
         }
@@ -274,8 +280,6 @@ internal object AdaptiveCardRenderer {
         return "data:$mimeType;base64," + Base64.getEncoder().encodeToString(bytes)
     }
 
-    /** The action data key carrying the revision of the card that was clicked. */
-    const val REVISION_INPUT = "nucleus.revision"
     private const val VERSION = "1.5"
     private const val ICON_SIZE = "20px"
     private const val BYTES_PER_KB = 1024
