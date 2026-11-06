@@ -187,8 +187,9 @@ nucleus.application {
                 branch = "master"
                 finishArgs = listOf("--share=ipc", "--socket=x11", "--socket=wayland")
             }
-            // Flathub repackages the released GraalVM tar.gz: generateFlathubRepository writes
-            // build/flathub/dev.nucleusframework.Lab, the content of github.com/flathub/dev.nucleusframework.Lab.
+            // Flathub repackages the released GraalVM tar.gz, which packageGraalvmTar fills with the
+            // metadata below (share/); generateFlathubRepository writes the manifest of
+            // github.com/flathub/dev.nucleusframework.Lab.
             flathub {
                 appId = "dev.nucleusframework.Lab"
                 summary = "Explore the Nucleus desktop APIs"
@@ -197,17 +198,8 @@ nucleus.application {
                 developerName = "Nucleus"
                 archiveUrl =
                     "https://github.com/NucleusFramework/Nucleus/releases/download/v{version}/nucleus-lab-{version}-linux-{arch}.tar.gz"
-                finishArgs =
-                    listOf(
-                        "--share=ipc",
-                        "--socket=wayland",
-                        "--socket=fallback-x11",
-                        "--device=dri",
-                        // Updater, network and HTTP probes
-                        "--share=network",
-                        // notification-linux talks to the notification server directly
-                        "--talk-name=org.freedesktop.Notifications",
-                    )
+                // The default finish-args: notifications go through the portal, in-app updates too
+                // (Flatpak.updates), and none of what the Lab shows on Flathub needs the network.
                 description =
                     """
                     Nucleus Lab is the companion app of Nucleus, a toolkit for shipping native JVM desktop applications.
