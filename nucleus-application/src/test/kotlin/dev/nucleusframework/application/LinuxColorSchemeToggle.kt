@@ -3,8 +3,10 @@ package dev.nucleusframework.application
 import java.util.concurrent.TimeUnit
 
 /**
- * Toggles GNOME/portal color-scheme for live E2E tests. No-op helpers when
- * `gsettings` is unavailable (CI without a session bus).
+ * Toggles GNOME/portal color-scheme for live E2E tests. [isAvailable] is false
+ * when the host cannot round-trip a toggle: no `gsettings`, or no XDG Desktop
+ * Portal on the session bus (CI runners ship `gsettings` with its in-memory
+ * backend, but the dark-mode detector only reads through the portal).
  */
 internal object LinuxColorSchemeToggle {
     private const val SCHEMA = "org.gnome.desktop.interface"
@@ -16,23 +18,30 @@ internal object LinuxColorSchemeToggle {
             .orEmpty()
             .lowercase()
             .contains("linux") &&
-            runCatching {
-                ProcessBuilder("gsettings", "get", SCHEMA, KEY)
+            succeeds("gsettings", "get", SCHEMA, KEY) &&
+            succeeds(
+                "gdbus",
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.portal.Desktop",
+                "--object-path",
+                "/org/freedesktop/portal/desktop",
+                "--method",
+                "org.freedesktop.portal.Settings.Read",
+                "org.freedesktop.appearance",
+                KEY,
+            )
+    }
+
+    private fun succeeds(vararg command: String): Boolean =
+        runCatching {
+            val p =
+                ProcessBuilder(*command)
                     .redirectErrorStream(true)
                     .start()
-                    .waitFor(3, TimeUnit.SECONDS)
-            }.getOrDefault(false).let { started ->
-                // waitFor returns true if finished; check exit 0
-                started &&
-                    runCatching {
-                        val p =
-                            ProcessBuilder("gsettings", "get", SCHEMA, KEY)
-                                .redirectErrorStream(true)
-                                .start()
-                        p.waitFor(3, TimeUnit.SECONDS) && p.exitValue() == 0
-                    }.getOrDefault(false)
-            }
-    }
+            p.waitFor(3, TimeUnit.SECONDS) && p.exitValue() == 0
+        }.getOrDefault(false)
 
     fun read(): String {
         val p =
