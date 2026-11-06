@@ -7,10 +7,14 @@ publishes (`nucleus-lab-<version>-linux-{x64,arm64}.tar.gz`, built by `packageGr
 
 ## `linux { flathub { } }` and `generateFlathubRepository`
 
-The plugin writes the Flathub repository of any app from its DSL: `generateFlathubRepository`
-fills `build/flathub/<appId>/` with the manifest, the AppStream metainfo, the desktop entry, the
-icon, the shared-mime-info XML and, for a subset of architectures, `flathub.json` — the content of
-`github.com/flathub/<appId>`. `flathub { }` only holds what Flathub alone needs (`appId`, `summary`,
+The plugin writes the Flathub repository of any app from its DSL. Flathub's review wants nothing
+there but the manifest ("this does not belong here" on everything else, flathub/flathub#10975):
+the AppStream metainfo, the desktop entry, the icon and the shared-mime-info XML ship upstream.
+So `packageTar` / `packageGraalvmTar` write them into the archive under `share/`
+(`FlathubRepository.archiveFiles`) whenever `flathub { appId }` is set, and
+`generateFlathubRepository` fills `build/flathub/<appId>/` with the manifest and, for a subset of
+architectures, `flathub.json` — the content of `github.com/flathub/<appId>`. The manifest copies
+the archive's `share/` to `/app/share` and drops it from `/app/lib/<command>`. `flathub { }` only holds what Flathub alone needs (`appId`, `summary`,
 `projectLicense`, `archiveUrl`, screenshots, finish-args…); the name, description, vendor,
 homepage, categories, icon, `fileAssociation` (MIME types) and `protocol` (`x-scheme-handler`)
 come from the rest of the DSL, the version from `packageVersion`, the executable from the GraalVM
@@ -18,19 +22,23 @@ image name (`bin/<packageName>` for a jpackage build). It is independent of `fla
 builds a `.flatpak` bundle through electron-builder that Flathub does not accept.
 
 - **Sources.** `archiveUrl` is a template (`{version}`, `{arch}` → `x64` / `arm64`); the task
-  downloads each archive once to hash it, so the release must exist first. With
+  downloads each archive once to hash it, so the release must exist first. It reads the tar's
+  entries on the way (`FlathubArchive`) and fails when the metadata is missing: an archive packaged
+  before this, or without `flathub { }`, has to be packaged and published again. With
   `-Pnucleus.flathub.localArchive=<tar.gz>` it uses that file instead (host architecture only),
   copied next to the manifest: the local loop below.
-- **Checks** before writing, failing the task with every problem at once: reverse-DNS app id, a
-  summary of at most 35 characters without a trailing period, description, license, developer,
-  categories, at least one screenshot, `#rrggbb` branding, and a square PNG icon of 256 px or more.
+- **Checks** before writing (the generator) and before packaging (the `Tar` task, the icon
+  included), failing with every problem at once: reverse-DNS app id, a summary of at most 35
+  characters without a trailing period, description, license, developer, categories, at least one
+  screenshot, `#rrggbb` branding, and a square PNG icon of 256 px or more.
   The icon is installed in `hicolor/512x512`, scaled down when larger: `flatpak build-export`
   refuses a 1024 px icon there ("Image too large").
 - `-Pnucleus.flathub.releaseDate=YYYY-MM-DD` pins the metainfo release date (default: today, UTC).
 - **Output.** `flathub { outputDir }` (default `build/flathub/<appId>`), or
   `-Pnucleus.flathub.outputDir=<dir>` for one run, may be a clone of `github.com/flathub/<appId>`:
-  the task only replaces the files it writes and removes `flathub.json` or the MIME file when they
-  no longer apply. It never wipes the directory, so `.git` and files of your own stay.
+  the task only replaces the files it writes, removes `flathub.json` when it no longer applies and
+  the metadata files older plugins wrote next to the manifest. It never wipes the directory, so
+  `.git` and files of your own stay.
 
 The Lab's block is the reference; `packaging/flathub/` keeps only its square icon and the
 screenshots.
@@ -42,9 +50,12 @@ screenshots.
 - The archive goes to `/app/lib/nucleus-lab` unchanged, the executable is symlinked into
   `/app/bin`. The plugin's loose JNI libraries ([native-libraries-layout.md](native-libraries-layout.md))
   are found next to the executable as in any other format.
-- `finish-args` stay minimal (`ipc`, `wayland`, `fallback-x11`, `dri`, `network`, the notification
-  server). The MPRIS name needs no `--own-name`: Flatpak grants `org.mpris.MediaPlayer2.<app id>`
-  by default and the linter rejects the redundant grant.
+- `finish-args` stay minimal: the Lab keeps the DSL default (`ipc`, `wayland`, `fallback-x11`,
+  `dri`). Review asks for each extra one: a demo app has no reason to reach the network, and
+  `--talk-name=org.freedesktop.Notifications` is refused in favour of the portal ("Use the
+  portal."), which `notification-linux` now uses inside a sandbox (below). The MPRIS name needs no
+  `--own-name`: Flatpak grants `org.mpris.MediaPlayer2.<app id>` by default and the linter rejects
+  the redundant grant.
 - An app that may not be redistributed swaps the `archive` source for `extra-data` (downloaded
   from the vendor at install time, unpacked by `apply_extra`); nothing else changes.
 
@@ -78,6 +89,16 @@ Each of these was found by running the Lab from a local Flatpak repository.
   restart, Zayit's `onboarding_finished` included. `GraalVmInitializer.initialize()` sets
   `java.util.prefs.userRoot` to `XDG_CONFIG_HOME` (the app's persisted `~/.var/app/<id>/config`)
   inside a Flatpak, before anything reads the preferences; an explicit `-D` wins.
+
+- **Notifications.** `notification-linux` switches to `org.freedesktop.portal.Notification` when
+  `/.flatpak-info` exists: `Notify` is `AddNotification` (ids are Nucleus's own counter, sent as
+  decimal strings; `replacesId` reuses one), `CloseNotification` is `RemoveNotification`, urgency
+  maps to `priority`, the `default` action to `default-action`, the others to `buttons`, and the
+  portal's `ActionInvoked(s id, s action, av parameter)` feeds the same callbacks (a version 2
+  portal's `activation-token` in the platform data first). An image path (or `file://` URI) goes
+  as a `bytes` icon, anything else as a themed name. The portal has no `NotificationClosed` (so
+  `onDismissed` never fires), no expiry timeout, no sound and no raw `image-data`; capabilities and
+  server information are answered locally (`actions`, `body`; `xdg-desktop-portal`).
 
 ## Local loop
 
