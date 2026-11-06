@@ -24,6 +24,23 @@ internal object MacWidgetsPackaging {
     /** Home-relative directory of the store, when no App Group is set. */
     fun storeHomePath(appBundleId: String): String = "Library/Application Support/$appBundleId/NucleusWidgets"
 
+    /**
+     * Why the app cannot reach the store, or `null`: an [appGroup] the app's own entitlements
+     * ([appEntitlements], the text of `macOS { entitlementsFile }`) do not list. The extension gets
+     * the group from the plugin; the app's entitlements are the app's, so they are only checked.
+     */
+    fun appGroupWarning(
+        appGroup: String?,
+        appEntitlements: String?,
+    ): String? =
+        if (appGroup == null || appEntitlements?.contains("<string>$appGroup</string>") == true) {
+            null
+        } else {
+            "macOS widgets share their files through the App Group '$appGroup', but the app's entitlements " +
+                "(macOS { entitlementsFile }) do not list it under com.apple.security.application-groups: " +
+                "the app will not reach the widget store and every widget stays empty."
+        }
+
     /** The `appExtensions` entry for the bundle [assemble] writes into [outputDir]. */
     fun appExtension(outputDir: File): MacAppExtension =
         MacAppExtension(EXTENSION_NAME).apply {

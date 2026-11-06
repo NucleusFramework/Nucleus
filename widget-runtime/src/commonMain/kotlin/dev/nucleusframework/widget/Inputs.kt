@@ -4,8 +4,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ComposeNode
 
 // Inputs are bound to a widget state key and read back from the state like any other value. Only
-// the inputs every host can draw are here: a switch and a choice. When the host writes their value
-// differs (Windows submits it with the next action that runs app code, WidgetKit when clicked).
+// the inputs every host can draw are here: a switch and a choice. When their value reaches the
+// state depends on the host: Windows submits it with the next action that runs app code, WidgetKit
+// as soon as the input is clicked.
 // Text and number entry exist on Windows alone: `widget-windows` builds them on the Platform*
 // composables below.
 

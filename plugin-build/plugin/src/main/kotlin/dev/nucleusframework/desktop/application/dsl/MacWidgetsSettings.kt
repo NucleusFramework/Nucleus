@@ -31,8 +31,9 @@ class MacWidgetsSettings : Serializable {
     /**
      * The App Group the app and its widget extension share their files through
      * (`TEAMID.com.example.app`). Required when the app itself is sandboxed (Mac App Store), and
-     * then also listed in the app's own `com.apple.security.application-groups` entitlement; the
-     * group must belong to the signing team. Left unset, the files live in
+     * then also listed in the app's own `com.apple.security.application-groups` entitlement
+     * (`macOS { entitlementsFile }`; packaging warns when it is missing); the group must belong to
+     * the signing team. Left unset, the files live in
      * `~/Library/Application Support/<bundle id>/NucleusWidgets`, which the extension's sandbox
      * reaches through a temporary-exception entitlement (Developer ID and ad-hoc builds).
      */

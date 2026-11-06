@@ -95,4 +95,13 @@ class MacWidgetsPackagingTest {
         repeat(16) { many.widget("W$it") { } }
         assertThrows(IllegalArgumentException::class.java) { many.widget("W16") { } }
     }
+
+    @Test
+    fun warnsWhenTheAppEntitlementsMissTheAppGroup() {
+        val listed = "<key>com.apple.security.application-groups</key><array><string>T.com.example</string></array>"
+        assertEquals(null, MacWidgetsPackaging.appGroupWarning(null, null))
+        assertEquals(null, MacWidgetsPackaging.appGroupWarning("T.com.example", listed))
+        assertTrue(MacWidgetsPackaging.appGroupWarning("T.com.example", null)!!.contains("T.com.example"))
+        assertTrue(MacWidgetsPackaging.appGroupWarning("T.com.other", listed) != null)
+    }
 }

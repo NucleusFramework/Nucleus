@@ -148,6 +148,8 @@ jobs:
             "widget-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_widget_macos.dylib"
             "widget-macos/src/main/resources/nucleus/native/darwin-aarch64/nucleus-widget-extension/NucleusWidgets"
             "widget-macos/src/main/resources/nucleus/native/darwin-x64/nucleus-widget-extension/NucleusWidgets"
+            "widget-macos/src/main/resources/nucleus/native/darwin-aarch64/nucleus-widget-extension/Metadata.appintents/extract.actionsdata"
+            "widget-macos/src/main/resources/nucleus/native/darwin-x64/nucleus-widget-extension/Metadata.appintents/extract.actionsdata"
             "global-hotkey/src/main/resources/nucleus/native/win32-x64/nucleus_global_hotkey.dll"
             "global-hotkey/src/main/resources/nucleus/native/win32-aarch64/nucleus_global_hotkey.dll"
             "global-hotkey/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_global_hotkey.dylib"

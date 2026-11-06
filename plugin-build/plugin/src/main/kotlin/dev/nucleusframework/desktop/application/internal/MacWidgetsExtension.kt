@@ -42,6 +42,7 @@ internal fun JvmApplicationContext.macWidgetsExtension(): MacWidgetsExtension? {
                     },
                 )
                 useAppRuntimeFiles { (runtimeJars, _) -> this.runtimeJars.from(runtimeJars) }
+                appEntitlements.set(app.nativeDistributions.macOS.entitlementsFile)
                 this.outputDir.set(outputDir)
             }
         }

@@ -54,6 +54,9 @@ public class MacWidgetHost internal constructor(
 
     /** Ids known to be on screen: a new one is reported as pinned, a vanished one as unpinned. */
     private val known = ConcurrentHashMap.newKeySet<String>()
+
+    /** When each known id was first missing from WidgetKit's list: one empty answer is not a removal. */
+    private val missingSince = ConcurrentHashMap<String, Long>()
     private var observer: AutoCloseable? = null
 
     override fun start() {
@@ -72,17 +75,26 @@ public class MacWidgetHost internal constructor(
         logger.fine { "Widget host started on ${env.store}" }
     }
 
-    override suspend fun pinnedWidgets(): List<PinnedWidget> {
-        val pinned = pinned()
-        val current = pinned.map { it.id.value }.toSet()
-        for (id in known.toList()) {
-            if (id !in current) unpinned(id)
+    // On the engine's thread: a removal deletes files a render may be writing.
+    override suspend fun pinnedWidgets(): List<PinnedWidget> =
+        WidgetEngine.serialized {
+            val pinned = pinned()
+            val current = pinned.map { it.id.value }.toSet()
+            val now = environment?.nowMillis() ?: 0L
+            for (id in known.toList()) {
+                if (id in current) continue
+                // Removing deletes the state: only once WidgetKit no longer lists the widget on
+                // two reads at least UNPIN_CONFIRMATION apart, never on one transient empty answer.
+                val since = missingSince.putIfAbsent(id, now) ?: now
+                if (now - since >= UNPIN_CONFIRMATION) unpinned(id)
+            }
+            pinned.forEach { seen(it.id.value) }
+            pinned.map { PinnedWidget(it.id, it.definitionId, it.size, isActive = true) }
         }
-        pinned.forEach { seen(it.id.value) }
-        return pinned.map { PinnedWidget(it.id, it.definitionId, it.size, isActive = true) }
-    }
 
     override suspend fun refresh(id: WidgetId) {
+        // A widget not on screen keeps no files: rendering it would bring them back.
+        if (id.value !in known) return
         val (kind, family) = split(id) ?: return
         if (!WidgetEngine.isDeclared(kind)) return
         push(kind, family, loadState(id))
@@ -153,7 +165,8 @@ public class MacWidgetHost internal constructor(
             } finally {
                 file.delete()
             }
-        val requestId = request["id"] ?: file.nameWithoutExtension
+        // The answer's file name: the extension's UUID, never a path.
+        val requestId = request["id"]?.takeIf { REQUEST_ID.matches(it) } ?: file.nameWithoutExtension
         try {
             // A click from long ago (the app could not start then) must not run now.
             if (nowMillis - written > STALE_REQUEST_AGE && request["type"] == "action") return
@@ -203,6 +216,7 @@ public class MacWidgetHost internal constructor(
     }
 
     private fun seen(id: String) {
+        missingSince.remove(id)
         if (!known.add(id)) return
         val (kind, family) = split(WidgetId(id)) ?: return
         WidgetEngine.emit(WidgetEvent.Pinned(WidgetId(id), kind, sizeOf(family)))
@@ -211,6 +225,7 @@ public class MacWidgetHost internal constructor(
     // Like Windows, a removed widget takes its state with it: adding it again starts afresh.
     private fun unpinned(id: String) {
         known -= id
+        missingSince.remove(id)
         states.remove(id)
         split(WidgetId(id))?.let { (kind, family) ->
             store.render(kind, family).delete()
@@ -329,11 +344,22 @@ public class MacWidgetHost internal constructor(
         const val CONFIG_HEADER = 3
         const val LAUNCH_MARKER_MAX_AGE = 60_000L
         const val STALE_REQUEST_AGE = 120_000L
+        const val UNPIN_CONFIRMATION = 30_000L
+
+        // Widget ids come from request files: both parts become store paths, so neither may hold
+        // anything but a kind name (the plugin's rule) and a WidgetKit family.
+        val KIND = Regex("[A-Za-z][A-Za-z0-9_]*")
+        val FAMILIES =
+            WidgetFamily.entries
+                .filter { it != WidgetFamily.Unknown }
+                .map { it.rawValue }
+                .toSet()
+        val REQUEST_ID = Regex("[A-Za-z0-9-]{1,64}")
 
         fun split(id: WidgetId): Pair<String, String>? =
             id.value
                 .split('/', limit = 2)
-                .takeIf { it.size == 2 && it[0].isNotEmpty() }
+                .takeIf { it.size == 2 && KIND.matches(it[0]) && it[1] in FAMILIES }
                 ?.let { it[0] to it[1] }
 
         fun sizeOf(family: String): WidgetSize =

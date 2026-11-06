@@ -231,7 +231,7 @@ public object WidgetEngine {
     public val scope: CoroutineScope = CoroutineScope(SupervisorJob() + dispatcher)
 
     /** Runs [block] on the engine's thread, like the host callbacks (no hop when already there). */
-    internal suspend fun <T> serialized(block: suspend () -> T): T = withContext(dispatcher) { block() }
+    public suspend fun <T> serialized(block: suspend () -> T): T = withContext(dispatcher) { block() }
 
     /** Whether [definitionId] was declared with `widgets { widget(definitionId) { … } }`. */
     public fun isDeclared(definitionId: String): Boolean = definitionId in NucleusWidgets.factories

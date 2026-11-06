@@ -77,6 +77,11 @@ private class FakeEnvironment(
     val reloads = mutableListOf<String>()
     var onRequest: (() -> Unit)? = null
 
+    /** Added to the real clock, to step past the host's delays. */
+    var offsetMillis = 0L
+
+    override fun nowMillis(): Long = System.currentTimeMillis() + offsetMillis
+
     override suspend fun pinned(): List<WidgetInfo> = pinnedNow
 
     override fun reload(kind: String) {
@@ -196,8 +201,24 @@ class MacWidgetHostTest {
         request("type" to "action", "widget" to "Counter/systemSmall", "inputs" to "{\"b:done\":\"true\"}")
         environment.pinnedNow = emptyList()
         assertEquals(emptyList(), runBlocking { host.pinnedWidgets() })
+        // One empty answer from WidgetKit is not a removal: the state is still there.
+        assertTrue(store.state("Counter", "systemSmall").isFile)
+        environment.offsetMillis = 31_000
+        assertEquals(emptyList(), runBlocking { host.pinnedWidgets() })
         assertFalse(store.render("Counter", "systemSmall").isFile)
         assertFalse(store.state("Counter", "systemSmall").isFile)
+        // Not on screen any more: an update brings nothing back.
+        runBlocking { host.refresh(WidgetId("Counter/systemSmall")) }
+        assertFalse(store.render("Counter", "systemSmall").isFile)
+    }
+
+    @Test
+    fun widgetIdsFromRequestsCannotLeaveTheStore() {
+        started()
+        request("type" to "render", "widget" to "Counter/systemSmall/../../../escaped")
+        request("type" to "render", "widget" to "../Counter/systemSmall")
+        assertFalse(dir.parentFile.resolve("escaped.json").exists())
+        assertFalse(dir.walkTopDown().any { "escaped" in it.name })
     }
 
     @Test

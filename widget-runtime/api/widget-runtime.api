@@ -498,6 +498,7 @@ public final class dev/nucleusframework/widget/WidgetEngine {
 	public final fun newWidget (Ljava/lang/String;)Ldev/nucleusframework/widget/NucleusWidget;
 	public final fun parseInputs (Ljava/lang/String;)Ljava/util/Map;
 	public final fun render (Ldev/nucleusframework/widget/WidgetInstance;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun serialized (Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public abstract interface class dev/nucleusframework/widget/WidgetEvent {

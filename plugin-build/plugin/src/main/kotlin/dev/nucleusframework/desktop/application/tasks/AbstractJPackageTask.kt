@@ -45,6 +45,7 @@ import dev.nucleusframework.desktop.application.internal.files.mangledName
 import dev.nucleusframework.desktop.application.internal.files.normalizedPath
 import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
 import dev.nucleusframework.desktop.application.internal.files.transformJar
+import dev.nucleusframework.desktop.application.internal.files.nucleusPackagingOnlyEntries
 import dev.nucleusframework.desktop.application.internal.files.unpackNucleusNativeLibs
 import dev.nucleusframework.desktop.application.internal.installInfoPlistLocalizations
 import dev.nucleusframework.desktop.application.internal.plistDocumentTypes
@@ -642,7 +643,14 @@ abstract class AbstractJPackageTask
             // list a dependency's); every other entry, and any JAR without one, stays untouched.
             val nucleusEntries: Set<String> =
                 if (bundleNucleusNatives) jars.flatMapTo(sortedSetOf()) { it.nucleusNativeEntries() } else emptySet()
-            val layout = nucleusEntries.joinToString("\n")
+            // Read by the plugin at packaging only (widget-macos' WidgetKit extension): left out of the JARs.
+            val packagingOnly: Set<String> =
+                if (bundleNucleusNatives) {
+                    jars.flatMapTo(sortedSetOf()) { it.nucleusPackagingOnlyEntries() }
+                } else {
+                    emptySet()
+                }
+            val layout = (nucleusEntries + packagingOnly).joinToString("\n")
             val layoutFile = nucleusNativesLayoutFile.ioFile
             val layoutChanged = !layoutFile.exists() || layoutFile.readText() != layout
 
@@ -656,6 +664,7 @@ abstract class AbstractJPackageTask
                     libsDir = unpackDir,
                     platformDir = nucleusNativeDir.get(),
                     nucleusEntries = nucleusEntries,
+                    packagingOnly = packagingOnly,
                 )
             }
 
