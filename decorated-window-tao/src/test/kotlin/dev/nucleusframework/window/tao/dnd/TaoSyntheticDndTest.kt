@@ -13,6 +13,7 @@ import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.geometry.Offset
 import dev.nucleusframework.window.tao.TaoDragAndDropPayload
 import dev.nucleusframework.window.tao.scene.runTaoSceneTest
+import dev.nucleusframework.window.tao.taoPayload
 import org.junit.Assume.assumeFalse
 import java.awt.GraphicsEnvironment
 import java.awt.Point
@@ -23,6 +24,7 @@ import java.io.File
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -111,10 +113,23 @@ class TaoSyntheticDndTest {
     }
 
     @Test
+    fun `taoPayload exposes the dropped files to application code`() {
+        val files = listOf(File("/tmp/report.pdf"), File("/tmp/photo.png"))
+        val event = makeDropEvent(10, 20, files)
+
+        // #912: nativeEvent is the synthetic AWT event, never the payload itself,
+        // so the formerly documented cast always yielded null.
+        assertNull(event.nativeEvent as? TaoDragAndDropPayload)
+        assertEquals(files.map { it.absolutePath }, event.taoPayload?.files)
+        assertEquals(emptyList(), makeDragEvent(10, 20).taoPayload?.files)
+    }
+
+    @Test
     fun `synthetic drop drives a Compose dragAndDropTarget in a real scene`() =
         runTaoSceneTest(width = 200, height = 200) {
             var entered = 0
             var dropped: List<String>? = null
+            var payloadFiles: List<String>? = null
             val target =
                 object : DragAndDropTarget {
                     override fun onEntered(event: DragAndDropEvent) {
@@ -122,6 +137,7 @@ class TaoSyntheticDndTest {
                     }
 
                     override fun onDrop(event: DragAndDropEvent): Boolean {
+                        payloadFiles = event.taoPayload?.files
                         @Suppress("UNCHECKED_CAST")
                         val files =
                             event.awtTransferable
@@ -159,5 +175,6 @@ class TaoSyntheticDndTest {
             // Compare through absolutePath both ways — the conversion round-trips
             // File objects, and the string form is platform-normalised.
             assertEquals(listOf(droppedFile.absolutePath), dropped)
+            assertEquals(listOf(droppedFile.absolutePath), payloadFiles)
         }
 }

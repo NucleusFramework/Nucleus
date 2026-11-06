@@ -575,6 +575,10 @@ public final class dev/nucleusframework/window/tao/TaoDragAndDropPayload {
 	public final fun getFiles ()Ljava/util/List;
 }
 
+public final class dev/nucleusframework/window/tao/TaoDragAndDropPayloadKt {
+	public static final fun getTaoPayload (Landroidx/compose/ui/draganddrop/DragAndDropEvent;)Ldev/nucleusframework/window/tao/TaoDragAndDropPayload;
+}
+
 public final class dev/nucleusframework/window/tao/TaoEventCode {
 	public static final field $stable I
 	public static final field CLOSE_REQUESTED I
