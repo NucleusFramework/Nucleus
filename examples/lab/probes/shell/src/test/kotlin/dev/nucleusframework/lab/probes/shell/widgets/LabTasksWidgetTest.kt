@@ -22,7 +22,8 @@ import kotlin.test.assertTrue
 /** Drives LabTasksWidget through the engine the way the widgets board does: render, click, render. */
 class LabTasksWidgetTest {
     init {
-        NucleusWidgets.start { widget(LAB_TASKS_WIDGET) { LabTasksWidget() } }
+        // With its add field whatever the OS running the test (Windows-only in the app).
+        NucleusWidgets.start { widget(LAB_TASKS_WIDGET) { LabTasksWidget(textEntry = true) } }
     }
 
     private fun instance(size: WidgetSize) =

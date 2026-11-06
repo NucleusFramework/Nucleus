@@ -142,7 +142,10 @@ private val DoneIcon = ImageProvider.appResource("widget/task-done.png")
  * tabs and more tasks. Customizable (list name, hide completed tasks, order); the Lab adds tasks
  * from the app too (probe `shell.windows-widgets`).
  */
-class LabTasksWidget : NucleusWidget() {
+class LabTasksWidget(
+    /** Whether the widget offers its add field: text entry is a Windows board feature (widget-windows). */
+    private val textEntry: Boolean = Platform.Current == Platform.Windows,
+) : NucleusWidget() {
     override suspend fun provideWidget(id: WidgetId) {
         provideContent {
             if (isCustomizing()) Settings() else Tasks()
@@ -267,8 +270,8 @@ class LabTasksWidget : NucleusWidget() {
             }
         }
         Spacer(WidgetModifier.fillMaxHeight())
-        // Text entry is a Windows board feature (widget-windows): elsewhere tasks come from the app.
-        if (Platform.Current == Platform.Windows) AddTask(state)
+        // Elsewhere tasks come from the app.
+        if (textEntry) AddTask(state)
     }
 
     /** Text tabs, the selected one bold: lighter than a row of buttons, and never disabled-looking. */
