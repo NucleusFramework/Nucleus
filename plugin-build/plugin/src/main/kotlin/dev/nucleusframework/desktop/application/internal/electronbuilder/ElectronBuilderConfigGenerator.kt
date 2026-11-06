@@ -329,6 +329,7 @@ internal class ElectronBuilderConfigGenerator(
     )
 
     // internal (like generateLinuxConfig) so the rendered YAML can be asserted in unit tests
+    @Suppress("LongParameterList") // one YAML section from the packaging settings, one call site
     internal fun generateWindowsConfig(
         yaml: StringBuilder,
         distributions: JvmApplicationDistributions,

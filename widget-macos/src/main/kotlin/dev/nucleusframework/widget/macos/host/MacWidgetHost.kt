@@ -340,11 +340,11 @@ public class MacWidgetHost internal constructor(
 
     private companion object {
         val logger: Logger = Logger.getLogger(MacWidgetHost::class.java.name)
-        const val MIN_MACOS = 14
-        const val CONFIG_HEADER = 3
-        const val LAUNCH_MARKER_MAX_AGE = 60_000L
-        const val STALE_REQUEST_AGE = 120_000L
-        const val UNPIN_CONFIRMATION = 30_000L
+        private const val MIN_MACOS = 14
+        private const val CONFIG_HEADER = 3
+        private const val LAUNCH_MARKER_MAX_AGE = 60_000L
+        private const val STALE_REQUEST_AGE = 120_000L
+        private const val UNPIN_CONFIRMATION = 30_000L
 
         // Widget ids come from request files: both parts become store paths, so neither may hold
         // anything but a kind name (the plugin's rule) and a WidgetKit family.

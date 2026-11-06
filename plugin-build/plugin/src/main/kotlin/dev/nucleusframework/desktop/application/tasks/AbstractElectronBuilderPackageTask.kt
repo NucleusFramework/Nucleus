@@ -630,6 +630,7 @@ abstract class AbstractElectronBuilderPackageTask
             }
         }
 
+        @Suppress("LongParameterList") // the task's inputs, passed from its single action
         private fun generateConfig(
             distributions: JvmApplicationDistributions,
             appDir: File,

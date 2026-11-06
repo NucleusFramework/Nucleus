@@ -54,6 +54,7 @@ internal object WindowsWidgetsPackaging {
      * Copies the widget images into [appImageDir] and writes the manifest template and the
      * extensions XML (followed by the user's own `customExtensions`, if any) into [workDir].
      */
+    @Suppress("LongParameterList") // the app's packaging settings, all passed from one call site
     fun stage(
         widgets: WindowsWidgetsSettings,
         identity: String,
@@ -139,27 +140,28 @@ internal object WindowsWidgetsPackaging {
         warn: (String) -> Unit,
     ): Images {
         fun stage(
-            file: File?,
+            file: File,
             name: String,
-            required: Boolean,
-        ): String? {
-            if (file == null) {
-                if (required) throw GradleException("Windows widget '${widget.id}' needs its $name image")
-                return null
-            }
+        ): String {
             if (!file.isFile) throw GradleException("Windows widget '${widget.id}': $name not found: $file")
             dir.mkdirs()
             file.copyTo(dir.resolve("$name.${file.extension}"), overwrite = true)
             return "app\\$IMAGES_DIR\\${widget.id}\\$name.${file.extension}"
         }
+
+        fun required(
+            file: File?,
+            name: String,
+        ): String = stage(file ?: throw GradleException("Windows widget '${widget.id}' needs its $name image"), name)
+
         listOf(widget.preview, widget.previewDark, widget.previewLight).forEach { property ->
             property.orNull?.asFile?.let { checkPreviewSize(widget.id, it, warn) }
         }
         return Images(
-            icon = stage(widget.icon.orNull?.asFile, "icon", required = true)!!,
-            preview = stage(widget.preview.orNull?.asFile, "preview", required = true)!!,
-            previewDark = stage(widget.previewDark.orNull?.asFile, "preview-dark", required = false),
-            previewLight = stage(widget.previewLight.orNull?.asFile, "preview-light", required = false),
+            icon = required(widget.icon.orNull?.asFile, "icon"),
+            preview = required(widget.preview.orNull?.asFile, "preview"),
+            previewDark = widget.previewDark.orNull?.asFile?.let { stage(it, "preview-dark") },
+            previewLight = widget.previewLight.orNull?.asFile?.let { stage(it, "preview-light") },
         )
     }
 

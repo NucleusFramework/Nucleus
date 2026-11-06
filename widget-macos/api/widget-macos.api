@@ -109,11 +109,6 @@ public final class dev/nucleusframework/widget/macos/WidgetPushInfo {
 
 public final class dev/nucleusframework/widget/macos/host/MacWidgetHost : dev/nucleusframework/widget/WidgetHost {
 	public static final field $stable I
-	public static final field CONFIG_HEADER I
-	public static final field LAUNCH_MARKER_MAX_AGE J
-	public static final field MIN_MACOS I
-	public static final field STALE_REQUEST_AGE J
-	public static final field UNPIN_CONFIRMATION J
 	public fun <init> ()V
 	public fun isLaunchedByHost ()Z
 	public fun isSupported ()Z
