@@ -6,6 +6,7 @@ import java.io.File
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
 import java.util.Base64
+import java.util.concurrent.TimeUnit
 
 private const val TAG = "LinuxCertificateProvider"
 
@@ -27,6 +28,12 @@ private val CERT_DIRS =
         "/etc/pki/tls/certs", // Fedora/RHEL
         "/system/etc/security/cacerts", // Android
     )
+
+// Inside a Flatpak, /etc/ssl is the runtime's static bundle: the host's own anchors (a company or
+// filtering proxy's CA) only reach the sandbox through p11-kit, whose trust module Flatpak swaps for
+// a client of the host's. `trust` ships in the Freedesktop and GNOME runtimes.
+private const val FLATPAK_INFO = "/.flatpak-info"
+private const val TRUST_TIMEOUT_SECONDS = 10L
 
 private const val PEM_BEGIN = "-----BEGIN CERTIFICATE-----"
 private const val PEM_END = "-----END CERTIFICATE-----"
@@ -58,12 +65,56 @@ internal object LinuxCertificateProvider {
             if (count > 0) debugln(TAG) { "Loaded $count certificates from $dirPath" }
         }
 
+        // 3. Inside a Flatpak, the host's anchors through p11-kit
+        if (File(FLATPAK_INFO).exists()) {
+            val count = readHostAnchors(seen, allCerts)
+            if (count > 0) debugln(TAG) { "Loaded $count host certificates through p11-kit" }
+        }
+
         if (allCerts.isEmpty()) {
             debugln(TAG) { "No system certificates found on this Linux distribution" }
         } else {
             debugln(TAG) { "Total: ${allCerts.size} unique certificates" }
         }
         return allCerts
+    }
+
+    /** Extracts the host's server-auth anchors with `trust extract` and appends the new ones. */
+    private fun readHostAnchors(
+        seen: MutableSet<String>,
+        out: MutableList<ByteArray>,
+    ): Int {
+        val bundle = File.createTempFile("nucleus-trust", ".pem")
+        @Suppress("TooGenericExceptionCaught")
+        try {
+            val process =
+                ProcessBuilder(
+                    "trust",
+                    "extract",
+                    "--overwrite",
+                    "--format=pem-bundle",
+                    "--filter=ca-anchors",
+                    "--purpose=server-auth",
+                    bundle.path,
+                ).redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start()
+            if (!process.waitFor(TRUST_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                debugln(TAG) { "trust extract timed out" }
+                return 0
+            }
+            if (process.exitValue() != 0) {
+                debugln(TAG) { "trust extract failed with exit code ${process.exitValue()}" }
+                return 0
+            }
+            return tryReadPemFile(bundle, seen, out)
+        } catch (e: Exception) {
+            debugln(TAG) { "Failed to run trust extract: ${e.message}" }
+            return 0
+        } finally {
+            bundle.delete()
+        }
     }
 
     /** Parses a PEM file and appends new (unseen) DER-encoded certs to [out]. Returns the count added. */

@@ -52,6 +52,9 @@ abstract class AbstractNotarizationTask
 
         init {
             check(targetFormat != TargetFormat.RawAppImage) { "${TargetFormat.RawAppImage} cannot be notarized!" }
+            // Same gate as the package task this one follows: off macOS that task never creates inputDir, and
+            // with credentials set the onlyIf would pass and Gradle would fail validating the missing directory.
+            enabled = targetFormat.isCompatibleWithCurrentOS
         }
 
         /** Submits, staples and updates the update metadata of the package. */

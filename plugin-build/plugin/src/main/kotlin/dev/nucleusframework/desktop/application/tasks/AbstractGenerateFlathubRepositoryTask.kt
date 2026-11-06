@@ -24,6 +24,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.security.MessageDigest
+import java.util.Locale
 
 /**
  * Writes the Flathub repository of the app (`linux { flathub { } }`) into [outputDir]: manifest,
@@ -80,7 +81,7 @@ abstract class AbstractGenerateFlathubRepositoryTask : DefaultTask() {
         dir.resolve(spec.manifestFile).writeText(FlathubRepository.manifest(spec, sources))
         dir.resolve(spec.metainfoFile).writeText(FlathubRepository.metainfo(spec))
         dir.resolve(spec.desktopFile).writeText(FlathubRepository.desktopEntry(spec))
-        icon.copyTo(dir.resolve(spec.iconFile), overwrite = true)
+        dir.resolve(spec.iconFile).writeBytes(FlathubRepository.icon(icon.readBytes()))
         writeOrDelete(dir.resolve(spec.mimeFile), FlathubRepository.mimeInfo(spec))
         writeOrDelete(dir.resolve("flathub.json"), FlathubRepository.flathubJson(spec))
         logger.lifecycle("Flathub repository of ${spec.appId} ${spec.version}: $dir")
@@ -132,7 +133,7 @@ abstract class AbstractGenerateFlathubRepositoryTask : DefaultTask() {
             if (read < 0) break
             digest.update(buffer, 0, read)
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it) }
     }
 
     private fun hostFlatpakArch(): String =

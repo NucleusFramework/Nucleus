@@ -1578,6 +1578,22 @@ internal class TaoComposeSceneHostWindows(
     }
 
     /**
+     * Puts this host's context and window surface back if anything else is
+     * current, mid-frame. Composition and draw run code that is not ours — a
+     * `TextureView` producer creating its textures under its own context, an
+     * interop library — and one that leaves another context, or none, current
+     * sends the rest of the frame nowhere without Skia noticing: its texture
+     * uploads are lost while its bookkeeping records them, so recycled textures
+     * and glyph atlas pages keep their old pixels and the window shows wrong or
+     * missing icons and glyphs until the cache is purged. Skia's GL state cache
+     * is reset too, since its calls in between went elsewhere.
+     */
+    private fun ensureHostCurrent(ctx: DirectContext) {
+        if (attachmentHandle == 0L || !NativeTaoGlBridge.nativeEnsureCurrent(attachmentHandle)) return
+        ctx.resetGLAll()
+    }
+
+    /**
      * Clears, draws the scene into [surface] — only [PartialFrame.frameDamage]
      * of it when the frame can be partial (#755) — and fills in [partial].
      */
@@ -1599,6 +1615,7 @@ internal class TaoComposeSceneHostWindows(
         val sceneCanvas =
             verifyRecorder?.beginRecording(Rect.makeWH(widthPx.toFloat(), heightPx.toFloat())) ?: canvas
         bundle.render(sceneCanvas, now) { _ ->
+            ensureHostCurrent(ctx)
             resolvePartialFrame(bundle, partial, clearArgb)
             canvas.save()
             partial.frameDamage?.let { canvas.clipRect(it.toSkiaRect()) }
@@ -1987,6 +2004,7 @@ internal class TaoComposeSceneHostWindows(
             // `flushAndSubmit` issues the glFlush that commits the frame to
             // the back buffer; the present happens below, after the overlay/
             // popup renderers (they only need the flush, not the present).
+            ensureHostCurrent(ctx)
             surface.flushAndSubmit(syncCpu = false)
         } finally {
             surface.close()

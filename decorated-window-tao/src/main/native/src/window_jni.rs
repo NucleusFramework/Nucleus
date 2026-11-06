@@ -56,6 +56,40 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxIdentityBridge_nativeSetWaylandAppId(
+    mut env: JNIEnv,
+    _class: JClass,
+    app_id: JString,
+) {
+    #[cfg(target_os = "linux")]
+    {
+        let app_id: Option<String> = env.get_string(&app_id).ok().map(Into::into);
+        if let Ok(mut guard) = crate::platform::linux::WAYLAND_APP_ID.lock() {
+            *guard = app_id;
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (&mut env, app_id);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxIdentityBridge_nativeSetX11WmClass(
+    mut env: JNIEnv,
+    _class: JClass,
+    wm_class: JString,
+) {
+    #[cfg(target_os = "linux")]
+    {
+        let wm_class: Option<String> = env.get_string(&wm_class).ok().map(Into::into);
+        if let Ok(mut guard) = crate::platform::linux::X11_WM_CLASS.lock() {
+            *guard = wm_class;
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (&mut env, wm_class);
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeCreateWindow(
     mut env: JNIEnv,
     _class: JClass,

@@ -119,6 +119,8 @@ static PFNEGLCHOOSECONFIGPROC          pEglChooseConfig          = NULL;
 static PFNEGLCREATEWINDOWSURFACEPROC   pEglCreateWindowSurface   = NULL;
 static PFNEGLCREATECONTEXTPROC         pEglCreateContext         = NULL;
 static PFNEGLMAKECURRENTPROC           pEglMakeCurrent           = NULL;
+static PFNEGLGETCURRENTCONTEXTPROC     pEglGetCurrentContext     = NULL;
+static PFNEGLGETCURRENTSURFACEPROC     pEglGetCurrentSurface     = NULL;
 static PFNEGLSWAPBUFFERSPROC           pEglSwapBuffers           = NULL;
 static PFNEGLSWAPINTERVALPROC          pEglSwapInterval          = NULL;
 static PFNEGLDESTROYCONTEXTPROC        pEglDestroyContext        = NULL;
@@ -189,6 +191,8 @@ static void loadEgl(void) {
     pEglCreateWindowSurface = (PFNEGLCREATEWINDOWSURFACEPROC) GetProcAddress(sLibEGL, "eglCreateWindowSurface");
     pEglCreateContext       = (PFNEGLCREATECONTEXTPROC)       GetProcAddress(sLibEGL, "eglCreateContext");
     pEglMakeCurrent         = (PFNEGLMAKECURRENTPROC)         GetProcAddress(sLibEGL, "eglMakeCurrent");
+    pEglGetCurrentContext   = (PFNEGLGETCURRENTCONTEXTPROC)   GetProcAddress(sLibEGL, "eglGetCurrentContext");
+    pEglGetCurrentSurface   = (PFNEGLGETCURRENTSURFACEPROC)   GetProcAddress(sLibEGL, "eglGetCurrentSurface");
     pEglSwapBuffers         = (PFNEGLSWAPBUFFERSPROC)         GetProcAddress(sLibEGL, "eglSwapBuffers");
     pEglSwapInterval        = (PFNEGLSWAPINTERVALPROC)        GetProcAddress(sLibEGL, "eglSwapInterval");
     pEglDestroyContext      = (PFNEGLDESTROYCONTEXTPROC)      GetProcAddress(sLibEGL, "eglDestroyContext");
@@ -988,6 +992,27 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeMakeCurrent(
     GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
     if (!att) return;
     pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
+}
+
+/* Re-binds the host's context and window surface when something else is
+ * current on this thread — another context, a pbuffer, or nothing at all.
+ * Returns JNI_TRUE when it had to, i.e. when GL calls issued since the last
+ * bind may have gone elsewhere (see TaoComposeSceneHostWindows.ensureHostCurrent). */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeEnsureCurrent(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    if (!att) return JNI_FALSE;
+    if (pEglGetCurrentContext && pEglGetCurrentSurface &&
+        pEglGetCurrentContext() == att->eglContext &&
+        pEglGetCurrentSurface(EGL_DRAW) == att->eglSurface &&
+        pEglGetCurrentSurface(EGL_READ) == att->eglSurface) {
+        return JNI_FALSE;
+    }
+    pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
+    return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL

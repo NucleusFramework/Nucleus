@@ -158,6 +158,16 @@ class FlathubRepositoryTest {
         assertEquals(64 to 32, FlathubChecks.pngSize(png(64, 32)))
     }
 
+    @Test
+    fun `an icon larger than 512 px is scaled down, a smaller one is kept as is`() {
+        // flatpak build-export refuses a hicolor/512x512 icon larger than 512 px (Zayit's is 1024 px).
+        val scaled = ImageIO.read(FlathubRepository.icon(png(1024, 1024)).inputStream())
+        assertEquals(512 to 512, scaled.width to scaled.height)
+        val small = png(256, 256)
+        assertTrue(FlathubRepository.icon(small).contentEquals(small))
+        assertTrue(FlathubRepository.manifest(spec, sources).contains("/app/share/icons/hicolor/512x512/apps/"))
+    }
+
     private fun png(
         width: Int,
         height: Int,

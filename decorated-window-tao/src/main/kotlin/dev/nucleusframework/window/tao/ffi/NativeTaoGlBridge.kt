@@ -83,6 +83,15 @@ internal object NativeTaoGlBridge {
     @JvmStatic
     external fun nativeMakeCurrent(handle: Long)
 
+    /**
+     * Re-binds the host's context and window surface if anything else is
+     * current on this thread; returns true when it had to. Composition and
+     * draw run third-party code (GPU producers, interop libraries) that can
+     * leave another context — or none — current in the middle of a frame.
+     */
+    @JvmStatic
+    external fun nativeEnsureCurrent(handle: Long): Boolean
+
     /** Stores the new dimensions and updates the GL viewport. Call on resize
      * or scale-factor change before the next render. */
     @JvmStatic

@@ -24,6 +24,8 @@ builds a `.flatpak` bundle through electron-builder that Flathub does not accept
 - **Checks** before writing, failing the task with every problem at once: reverse-DNS app id, a
   summary of at most 35 characters without a trailing period, description, license, developer,
   categories, at least one screenshot, `#rrggbb` branding, and a square PNG icon of 256 px or more.
+  The icon is installed in `hicolor/512x512`, scaled down when larger: `flatpak build-export`
+  refuses a 1024 px icon there ("Image too large").
 - `-Pnucleus.flathub.releaseDate=YYYY-MM-DD` pins the metainfo release date (default: today, UTC).
 - **Output.** `flathub { outputDir }` (default `build/flathub/<appId>`), or
   `-Pnucleus.flathub.outputDir=<dir>` for one run, may be a clone of `github.com/flathub/<appId>`:
@@ -62,6 +64,20 @@ Each of these was found by running the Lab from a local Flatpak repository.
   vanished on Ubuntu. `nucleus_layout_direction_linux.c` reads and watches the key through
   `org.freedesktop.portal.Settings` (`ReadOne`, then `Read`, `SettingChanged`) inside a sandbox,
   which is also GTK's own path there.
+- **The host's CAs.** `/etc/ssl` inside the sandbox is the runtime's static bundle (118 CAs on
+  GNOME 51): a company or filtering proxy's CA installed on the host (netfree here) is missing, and
+  every TLS connection through it failed with `PKIX path building failed`. Flatpak swaps the
+  runtime's p11-kit trust module for a client of the host's, so `LinuxCertificateProvider` adds
+  the output of `trust extract --filter=ca-anchors --purpose=server-auth` when `/.flatpak-info`
+  exists. A test on the JVM must empty its own trust store first
+  (`-Djavax.net.ssl.trustStore=<empty.p12>`): a host JDK's `cacerts` may already carry the CA, which
+  a native image's does not.
+- **`java.util.prefs`.** Its user tree defaults to `user.home`/`.java/.userPrefs`, and a Flatpak
+  without `--filesystem=home` mounts a tmpfs on the home: every preference written through
+  `Preferences.userRoot()` (multiplatform-settings' `Settings()` on the JVM) was gone after a
+  restart, Zayit's `onboarding_finished` included. `GraalVmInitializer.initialize()` sets
+  `java.util.prefs.userRoot` to `XDG_CONFIG_HOME` (the app's persisted `~/.var/app/<id>/config`)
+  inside a Flatpak, before anything reads the preferences; an explicit `-D` wins.
 
 ## Local loop
 

@@ -231,7 +231,9 @@ nucleus.application {
                 brandingDark = "#242d55"
                 iconFile.set(project.file("packaging/flathub/dev.nucleusframework.Lab.png"))
                 // Served from the release tag: committed before the tag is cut.
-                val shots = "https://raw.githubusercontent.com/NucleusFramework/Nucleus/$labReleaseTag/examples/lab/app/packaging/flathub/screenshots"
+                val shots =
+                    "https://raw.githubusercontent.com/NucleusFramework/Nucleus/$labReleaseTag" +
+                        "/examples/lab/app/packaging/flathub/screenshots"
                 screenshot("$shots/overview.png", "Every probe of the Lab and where this run stands")
                 screenshot("$shots/design-system.png", "The same windows themed by Material 2, Material 3 and Jewel")
                 screenshot("$shots/appearance.png", "Dark mode, accent color and contrast followed live")
