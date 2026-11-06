@@ -91,6 +91,13 @@ internal object AnimatedWindowSizeHeadfulCases {
 
         return TaoWindowTestCase(
             name = "#576 animated WindowState.size height does not tremble TitleBar + content",
+            // Disabled everywhere (backport of nucleus-3.0 73da91fd7): intermittent on CI.
+            // Linux (Xvfb + openbox): the scene-vs-outer check read 2px against its 1px
+            // tolerance, and on ubuntu-22.04 the suite process exits mid-case. macOS (1 of
+            // 7 runs): the scene drifted 3px from the native inner height and the native
+            // height reversed once while the animation only grew. Re-enable once the
+            // resize-report ordering is settled.
+            skip = { "disabled: intermittent on CI (scene vs native height drift during the animation)" },
             timeoutMillis = CASE_TIMEOUT_MILLIS,
             paintDefaultBackground = false,
             windowState = windowState,
