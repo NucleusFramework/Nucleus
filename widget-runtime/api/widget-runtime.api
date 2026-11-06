@@ -1,0 +1,890 @@
+public abstract interface class dev/nucleusframework/widget/Action {
+}
+
+public abstract interface class dev/nucleusframework/widget/ActionCallback {
+	public abstract fun onAction-b_9T3YA (Ljava/lang/String;Ldev/nucleusframework/widget/ActionParameters;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/widget/ActionParameters {
+	public static final field $stable I
+	public final fun contains (Ldev/nucleusframework/widget/ActionParameters$Key;)Z
+	public final fun get (Ldev/nucleusframework/widget/ActionParameters$Key;)Ljava/lang/Object;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/ActionParameters$Key {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun to (Ljava/lang/Object;)Lkotlin/Pair;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/ActionsKt {
+	public static final fun actionOpenUrl (Ljava/lang/String;)Ldev/nucleusframework/widget/Action;
+	public static final fun actionParametersOf ([Lkotlin/Pair;)Ldev/nucleusframework/widget/ActionParameters;
+	public static final fun actionRunCallback (Ldev/nucleusframework/widget/ActionCallback;Ldev/nucleusframework/widget/ActionParameters;)Ldev/nucleusframework/widget/Action;
+	public static synthetic fun actionRunCallback$default (Ldev/nucleusframework/widget/ActionCallback;Ldev/nucleusframework/widget/ActionParameters;ILjava/lang/Object;)Ldev/nucleusframework/widget/Action;
+}
+
+public final class dev/nucleusframework/widget/Alignment {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/Alignment;
+}
+
+public final class dev/nucleusframework/widget/Alignment$Horizontal : java/lang/Enum {
+	public static final field CenterHorizontally Ldev/nucleusframework/widget/Alignment$Horizontal;
+	public static final field End Ldev/nucleusframework/widget/Alignment$Horizontal;
+	public static final field Start Ldev/nucleusframework/widget/Alignment$Horizontal;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/Alignment$Horizontal;
+	public static fun values ()[Ldev/nucleusframework/widget/Alignment$Horizontal;
+}
+
+public final class dev/nucleusframework/widget/Alignment$Vertical : java/lang/Enum {
+	public static final field Bottom Ldev/nucleusframework/widget/Alignment$Vertical;
+	public static final field CenterVertically Ldev/nucleusframework/widget/Alignment$Vertical;
+	public static final field Top Ldev/nucleusframework/widget/Alignment$Vertical;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/Alignment$Vertical;
+	public static fun values ()[Ldev/nucleusframework/widget/Alignment$Vertical;
+}
+
+public final class dev/nucleusframework/widget/Choice {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/widget/Choice;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/Choice;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/Choice;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/ComponentsKt {
+	public static final fun Button (Ljava/lang/String;Ldev/nucleusframework/widget/Action;Ldev/nucleusframework/widget/WidgetModifier;ZLandroidx/compose/runtime/Composer;II)V
+	public static final fun Button (Ljava/lang/String;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/widget/WidgetModifier;ZLandroidx/compose/runtime/Composer;II)V
+	public static final fun Column (Ldev/nucleusframework/widget/WidgetModifier;Ldev/nucleusframework/widget/Spacing;Ldev/nucleusframework/widget/Alignment$Horizontal;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Image (Ldev/nucleusframework/widget/ImageProvider;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetModifier;Ldev/nucleusframework/widget/ImageSize;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Row (Ldev/nucleusframework/widget/WidgetModifier;Ldev/nucleusframework/widget/Spacing;Ldev/nucleusframework/widget/Alignment$Vertical;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Spacer (Ldev/nucleusframework/widget/WidgetModifier;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Text (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetModifier;Ldev/nucleusframework/widget/TextStyle;ILandroidx/compose/runtime/Composer;II)V
+}
+
+public abstract interface class dev/nucleusframework/widget/ElementAction {
+}
+
+public final class dev/nucleusframework/widget/ElementAction$Execute : dev/nucleusframework/widget/ElementAction {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/widget/ElementAction$Execute;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/ElementAction$Execute;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/ElementAction$Execute;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKey ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/ElementAction$OpenUrl : dev/nucleusframework/widget/ElementAction {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/widget/ElementAction$OpenUrl;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/ElementAction$OpenUrl;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/ElementAction$OpenUrl;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUrl ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/FontWeight : java/lang/Enum {
+	public static final field Bold Ldev/nucleusframework/widget/FontWeight;
+	public static final field Light Ldev/nucleusframework/widget/FontWeight;
+	public static final field Normal Ldev/nucleusframework/widget/FontWeight;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/FontWeight;
+	public static fun values ()[Ldev/nucleusframework/widget/FontWeight;
+}
+
+public final class dev/nucleusframework/widget/ImageProvider {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/widget/ImageProvider$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public fun <init> ([BLjava/lang/String;)V
+	public synthetic fun <init> ([BLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> ([BLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getAppResource ()Ljava/lang/String;
+	public final fun getBytes ()[B
+	public final fun getMimeType ()Ljava/lang/String;
+	public final fun getUrl ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/ImageProvider$Companion {
+	public final fun appResource (Ljava/lang/String;)Ldev/nucleusframework/widget/ImageProvider;
+}
+
+public final class dev/nucleusframework/widget/ImageSize : java/lang/Enum {
+	public static final field Auto Ldev/nucleusframework/widget/ImageSize;
+	public static final field Icon Ldev/nucleusframework/widget/ImageSize;
+	public static final field Large Ldev/nucleusframework/widget/ImageSize;
+	public static final field Medium Ldev/nucleusframework/widget/ImageSize;
+	public static final field Small Ldev/nucleusframework/widget/ImageSize;
+	public static final field Stretch Ldev/nucleusframework/widget/ImageSize;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/ImageSize;
+	public static fun values ()[Ldev/nucleusframework/widget/ImageSize;
+}
+
+public final class dev/nucleusframework/widget/InputsKt {
+	public static final fun ChoiceField (Ldev/nucleusframework/widget/WidgetStateKey;Ljava/util/List;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;ZLandroidx/compose/runtime/Composer;II)V
+	public static final fun PlatformNumberField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;Landroidx/compose/runtime/Composer;II)V
+	public static final fun PlatformTextField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Switch (Ldev/nucleusframework/widget/WidgetStateKey;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetModifier;ZLandroidx/compose/runtime/Composer;II)V
+}
+
+public abstract interface annotation class dev/nucleusframework/widget/InternalNucleusWidgetApi : java/lang/annotation/Annotation {
+}
+
+public final class dev/nucleusframework/widget/MutableWidgetState : dev/nucleusframework/widget/WidgetState {
+	public static final field $stable I
+	public fun <init> ()V
+	public final fun clear ()V
+	public final fun remove (Ldev/nucleusframework/widget/WidgetStateKey;)V
+	public final fun set (Ldev/nucleusframework/widget/WidgetStateKey;Ljava/lang/Object;)V
+}
+
+public final class dev/nucleusframework/widget/NucleusApplicationWidgetsKt {
+	public static final fun isWidgetHostOnly-C2H2yOE (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/time/Duration;Landroidx/compose/runtime/Composer;II)Z
+	public static final fun widgets (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function1;)V
+}
+
+public abstract class dev/nucleusframework/widget/NucleusWidget {
+	public static final field $stable I
+	public fun <init> ()V
+	protected final fun provideContent (Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun provideWidget-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun update-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun updateAll (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/widget/NucleusWidgetKt {
+	public static final fun currentState (Ldev/nucleusframework/widget/WidgetStateKey;Landroidx/compose/runtime/Composer;I)Ljava/lang/Object;
+	public static final fun currentWidgetState (Landroidx/compose/runtime/Composer;I)Ldev/nucleusframework/widget/WidgetStateHandle;
+	public static final fun getLocalSize ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+	public static final fun getLocalWidgetId ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+	public static final fun getWidgetState-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun updateWidgetState-b_9T3YA (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/widget/NucleusWidgets {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/NucleusWidgets;
+	public final fun getEvents ()Lkotlinx/coroutines/flow/SharedFlow;
+	public final fun isAvailable ()Z
+	public final fun isLaunchedByWidgetHost ()Z
+	public final fun pinnedWidgets (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun start (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class dev/nucleusframework/widget/PinnedWidget {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;ZLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/nucleusframework/widget/WidgetSize;
+	public final fun component4 ()Z
+	public final fun copy-rTXAoxg (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;Z)Ldev/nucleusframework/widget/PinnedWidget;
+	public static synthetic fun copy-rTXAoxg$default (Ldev/nucleusframework/widget/PinnedWidget;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;ZILjava/lang/Object;)Ldev/nucleusframework/widget/PinnedWidget;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefinitionId ()Ljava/lang/String;
+	public final fun getId-JfwnnfE ()Ljava/lang/String;
+	public final fun getSize ()Ldev/nucleusframework/widget/WidgetSize;
+	public fun hashCode ()I
+	public final fun isActive ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/ResolvedModifier {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun <init> (ZZLjava/lang/Integer;Ldev/nucleusframework/widget/WidgetBackground;Ldev/nucleusframework/widget/ElementAction;)V
+	public synthetic fun <init> (ZZLjava/lang/Integer;Ldev/nucleusframework/widget/WidgetBackground;Ldev/nucleusframework/widget/ElementAction;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Ldev/nucleusframework/widget/WidgetBackground;
+	public final fun component5 ()Ldev/nucleusframework/widget/ElementAction;
+	public final fun copy (ZZLjava/lang/Integer;Ldev/nucleusframework/widget/WidgetBackground;Ldev/nucleusframework/widget/ElementAction;)Ldev/nucleusframework/widget/ResolvedModifier;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/ResolvedModifier;ZZLjava/lang/Integer;Ldev/nucleusframework/widget/WidgetBackground;Ldev/nucleusframework/widget/ElementAction;ILjava/lang/Object;)Ldev/nucleusframework/widget/ResolvedModifier;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBackground ()Ldev/nucleusframework/widget/WidgetBackground;
+	public final fun getFillMaxHeight ()Z
+	public final fun getFillMaxWidth ()Z
+	public final fun getOnClick ()Ldev/nucleusframework/widget/ElementAction;
+	public final fun getWeight ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/Spacing : java/lang/Enum {
+	public static final field Default Ldev/nucleusframework/widget/Spacing;
+	public static final field ExtraLarge Ldev/nucleusframework/widget/Spacing;
+	public static final field Large Ldev/nucleusframework/widget/Spacing;
+	public static final field Medium Ldev/nucleusframework/widget/Spacing;
+	public static final field None Ldev/nucleusframework/widget/Spacing;
+	public static final field Small Ldev/nucleusframework/widget/Spacing;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/Spacing;
+	public static fun values ()[Ldev/nucleusframework/widget/Spacing;
+}
+
+public final class dev/nucleusframework/widget/TextSize : java/lang/Enum {
+	public static final field Default Ldev/nucleusframework/widget/TextSize;
+	public static final field ExtraLarge Ldev/nucleusframework/widget/TextSize;
+	public static final field Large Ldev/nucleusframework/widget/TextSize;
+	public static final field Medium Ldev/nucleusframework/widget/TextSize;
+	public static final field Small Ldev/nucleusframework/widget/TextSize;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/TextSize;
+	public static fun values ()[Ldev/nucleusframework/widget/TextSize;
+}
+
+public final class dev/nucleusframework/widget/TextStyle {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun <init> (Ldev/nucleusframework/widget/TextSize;Ldev/nucleusframework/widget/FontWeight;Ldev/nucleusframework/widget/WidgetColor;)V
+	public synthetic fun <init> (Ldev/nucleusframework/widget/TextSize;Ldev/nucleusframework/widget/FontWeight;Ldev/nucleusframework/widget/WidgetColor;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/TextSize;
+	public final fun component2 ()Ldev/nucleusframework/widget/FontWeight;
+	public final fun component3 ()Ldev/nucleusframework/widget/WidgetColor;
+	public final fun copy (Ldev/nucleusframework/widget/TextSize;Ldev/nucleusframework/widget/FontWeight;Ldev/nucleusframework/widget/WidgetColor;)Ldev/nucleusframework/widget/TextStyle;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/TextStyle;Ldev/nucleusframework/widget/TextSize;Ldev/nucleusframework/widget/FontWeight;Ldev/nucleusframework/widget/WidgetColor;ILjava/lang/Object;)Ldev/nucleusframework/widget/TextStyle;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getColor ()Ldev/nucleusframework/widget/WidgetColor;
+	public final fun getFontSize ()Ldev/nucleusframework/widget/TextSize;
+	public final fun getFontWeight ()Ldev/nucleusframework/widget/FontWeight;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetActionSignatures {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetActionSignatures;
+	public final fun of (Ldev/nucleusframework/widget/WidgetElement;)Ljava/util/Map;
+}
+
+public final class dev/nucleusframework/widget/WidgetBackground : java/lang/Enum {
+	public static final field Accent Ldev/nucleusframework/widget/WidgetBackground;
+	public static final field Attention Ldev/nucleusframework/widget/WidgetBackground;
+	public static final field Default Ldev/nucleusframework/widget/WidgetBackground;
+	public static final field Emphasis Ldev/nucleusframework/widget/WidgetBackground;
+	public static final field Good Ldev/nucleusframework/widget/WidgetBackground;
+	public static final field Warning Ldev/nucleusframework/widget/WidgetBackground;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetBackground;
+	public static fun values ()[Ldev/nucleusframework/widget/WidgetBackground;
+}
+
+public final class dev/nucleusframework/widget/WidgetColor : java/lang/Enum {
+	public static final field Accent Ldev/nucleusframework/widget/WidgetColor;
+	public static final field Attention Ldev/nucleusframework/widget/WidgetColor;
+	public static final field Default Ldev/nucleusframework/widget/WidgetColor;
+	public static final field Good Ldev/nucleusframework/widget/WidgetColor;
+	public static final field Subtle Ldev/nucleusframework/widget/WidgetColor;
+	public static final field Warning Ldev/nucleusframework/widget/WidgetColor;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetColor;
+	public static fun values ()[Ldev/nucleusframework/widget/WidgetColor;
+}
+
+public abstract interface class dev/nucleusframework/widget/WidgetElement {
+	public abstract fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$Button : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/widget/ElementAction;ZLdev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/widget/ElementAction;
+	public final fun component3 ()Z
+	public final fun component4 ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/widget/ElementAction;ZLdev/nucleusframework/widget/ResolvedModifier;)Ldev/nucleusframework/widget/WidgetElement$Button;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetElement$Button;Ljava/lang/String;Ldev/nucleusframework/widget/ElementAction;ZLdev/nucleusframework/widget/ResolvedModifier;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetElement$Button;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAction ()Ldev/nucleusframework/widget/ElementAction;
+	public final fun getEnabled ()Z
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$ChoiceInput : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;ZLdev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;ZLdev/nucleusframework/widget/ResolvedModifier;)Ldev/nucleusframework/widget/WidgetElement$ChoiceInput;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetElement$ChoiceInput;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;ZLdev/nucleusframework/widget/ResolvedModifier;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetElement$ChoiceInput;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChoices ()Ljava/util/List;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isExpanded ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$Column : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ljava/util/List;Ldev/nucleusframework/widget/Spacing;Ldev/nucleusframework/widget/Alignment$Horizontal;Ldev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ldev/nucleusframework/widget/Spacing;
+	public final fun component3 ()Ldev/nucleusframework/widget/Alignment$Horizontal;
+	public final fun component4 ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun copy (Ljava/util/List;Ldev/nucleusframework/widget/Spacing;Ldev/nucleusframework/widget/Alignment$Horizontal;Ldev/nucleusframework/widget/ResolvedModifier;)Ldev/nucleusframework/widget/WidgetElement$Column;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetElement$Column;Ljava/util/List;Ldev/nucleusframework/widget/Spacing;Ldev/nucleusframework/widget/Alignment$Horizontal;Ldev/nucleusframework/widget/ResolvedModifier;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetElement$Column;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChildren ()Ljava/util/List;
+	public final fun getHorizontalAlignment ()Ldev/nucleusframework/widget/Alignment$Horizontal;
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun getSpacing ()Ldev/nucleusframework/widget/Spacing;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$Image : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/ImageProvider;Ljava/lang/String;Ldev/nucleusframework/widget/ImageSize;Ldev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun getContentDescription ()Ljava/lang/String;
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun getProvider ()Ldev/nucleusframework/widget/ImageProvider;
+	public final fun getSize ()Ldev/nucleusframework/widget/ImageSize;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$NumberInput : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;Ldev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Double;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/Double;
+	public final fun component5 ()Ljava/lang/Double;
+	public final fun component6 ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;Ldev/nucleusframework/widget/ResolvedModifier;)Ldev/nucleusframework/widget/WidgetElement$NumberInput;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetElement$NumberInput;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;Ldev/nucleusframework/widget/ResolvedModifier;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetElement$NumberInput;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public final fun getMax ()Ljava/lang/Double;
+	public final fun getMin ()Ljava/lang/Double;
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun getValue ()Ljava/lang/Double;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$Row : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ljava/util/List;Ldev/nucleusframework/widget/Spacing;Ldev/nucleusframework/widget/Alignment$Vertical;Ldev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ldev/nucleusframework/widget/Spacing;
+	public final fun component3 ()Ldev/nucleusframework/widget/Alignment$Vertical;
+	public final fun component4 ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun copy (Ljava/util/List;Ldev/nucleusframework/widget/Spacing;Ldev/nucleusframework/widget/Alignment$Vertical;Ldev/nucleusframework/widget/ResolvedModifier;)Ldev/nucleusframework/widget/WidgetElement$Row;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetElement$Row;Ljava/util/List;Ldev/nucleusframework/widget/Spacing;Ldev/nucleusframework/widget/Alignment$Vertical;Ldev/nucleusframework/widget/ResolvedModifier;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetElement$Row;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChildren ()Ljava/util/List;
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun getSpacing ()Ldev/nucleusframework/widget/Spacing;
+	public final fun getVerticalAlignment ()Ldev/nucleusframework/widget/Alignment$Vertical;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$Spacer : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun copy (Ldev/nucleusframework/widget/ResolvedModifier;)Ldev/nucleusframework/widget/WidgetElement$Spacer;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetElement$Spacer;Ldev/nucleusframework/widget/ResolvedModifier;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetElement$Spacer;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$Text : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/widget/TextStyle;ILdev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/widget/TextStyle;
+	public final fun component3 ()I
+	public final fun component4 ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/widget/TextStyle;ILdev/nucleusframework/widget/ResolvedModifier;)Ldev/nucleusframework/widget/WidgetElement$Text;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetElement$Text;Ljava/lang/String;Ldev/nucleusframework/widget/TextStyle;ILdev/nucleusframework/widget/ResolvedModifier;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetElement$Text;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMaxLines ()I
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun getStyle ()Ldev/nucleusframework/widget/TextStyle;
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$TextInput : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Ldev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/lang/Integer;
+	public final fun component7 ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Ldev/nucleusframework/widget/ResolvedModifier;)Ldev/nucleusframework/widget/WidgetElement$TextInput;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetElement$TextInput;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Ldev/nucleusframework/widget/ResolvedModifier;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetElement$TextInput;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public final fun getMaxLength ()Ljava/lang/Integer;
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun getPlaceholder ()Ljava/lang/String;
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isMultiline ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetElement$Toggle : dev/nucleusframework/widget/WidgetElement {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;ZLdev/nucleusframework/widget/ResolvedModifier;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;ZLdev/nucleusframework/widget/ResolvedModifier;)Ldev/nucleusframework/widget/WidgetElement$Toggle;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetElement$Toggle;Ljava/lang/String;Ljava/lang/String;ZLdev/nucleusframework/widget/ResolvedModifier;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetElement$Toggle;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public fun getModifier ()Ldev/nucleusframework/widget/ResolvedModifier;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getValue ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEngine {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetEngine;
+	public final fun applyInputs (Ldev/nucleusframework/widget/WidgetInstance;Ljava/util/Map;)V
+	public final fun emit (Ldev/nucleusframework/widget/WidgetEvent;)V
+	public final fun getScope ()Lkotlinx/coroutines/CoroutineScope;
+	public final fun invokeAction (Ldev/nucleusframework/widget/WidgetInstance;Ljava/lang/String;Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun invokeAction$default (Ldev/nucleusframework/widget/WidgetEngine;Ldev/nucleusframework/widget/WidgetInstance;Ljava/lang/String;Ljava/util/Map;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun isDeclared (Ljava/lang/String;)Z
+	public final fun newWidget (Ljava/lang/String;)Ldev/nucleusframework/widget/NucleusWidget;
+	public final fun parseInputs (Ljava/lang/String;)Ljava/util/Map;
+	public final fun render (Ldev/nucleusframework/widget/WidgetInstance;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun serialized (Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/nucleusframework/widget/WidgetEvent {
+	public abstract fun getEpochMillis ()J
+	public abstract fun getId-d-GyMs4 ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$ActionDropped : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()J
+	public final fun copy-b_9T3YA (Ljava/lang/String;Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$ActionDropped;
+	public static synthetic fun copy-b_9T3YA$default (Ldev/nucleusframework/widget/WidgetEvent$ActionDropped;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$ActionDropped;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public final fun getKey ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$ActionInvoked : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()J
+	public final fun copy-b_9T3YA (Ljava/lang/String;Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$ActionInvoked;
+	public static synthetic fun copy-b_9T3YA$default (Ldev/nucleusframework/widget/WidgetEvent$ActionInvoked;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$ActionInvoked;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public final fun getKey ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$Activated : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun copy-GcnOI4E (Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$Activated;
+	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$Activated;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Activated;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$CustomizationRequested : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun copy-GcnOI4E (Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$CustomizationRequested;
+	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$CustomizationRequested;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$CustomizationRequested;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$Deactivated : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun copy-GcnOI4E (Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$Deactivated;
+	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$Deactivated;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Deactivated;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$Failed : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-d-GyMs4 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/Throwable;
+	public final fun component4 ()J
+	public final fun copy-Su_clzY (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;J)Ldev/nucleusframework/widget/WidgetEvent$Failed;
+	public static synthetic fun copy-Su_clzY$default (Ldev/nucleusframework/widget/WidgetEvent$Failed;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/lang/Throwable;
+	public fun getEpochMillis ()J
+	public fun getId-d-GyMs4 ()Ljava/lang/String;
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$HostError : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-d-GyMs4 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()J
+	public final fun copy-sc4he_A (Ljava/lang/String;Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$HostError;
+	public static synthetic fun copy-sc4he_A$default (Ldev/nucleusframework/widget/WidgetEvent$HostError;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$HostError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDetails ()Ljava/lang/String;
+	public fun getEpochMillis ()J
+	public fun getId-d-GyMs4 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$Pinned : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/nucleusframework/widget/WidgetSize;
+	public final fun component4 ()J
+	public final fun copy-rTXAoxg (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;J)Ldev/nucleusframework/widget/WidgetEvent$Pinned;
+	public static synthetic fun copy-rTXAoxg$default (Ldev/nucleusframework/widget/WidgetEvent$Pinned;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Pinned;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefinitionId ()Ljava/lang/String;
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public final fun getSize ()Ldev/nucleusframework/widget/WidgetSize;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$Rendered : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;JJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JJLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun copy-b_9T3YA (Ljava/lang/String;JJ)Ldev/nucleusframework/widget/WidgetEvent$Rendered;
+	public static synthetic fun copy-b_9T3YA$default (Ldev/nucleusframework/widget/WidgetEvent$Rendered;Ljava/lang/String;JJILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Rendered;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public final fun getMillis ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$Resized : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/widget/WidgetSize;
+	public final fun component3 ()J
+	public final fun copy-b_9T3YA (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;J)Ldev/nucleusframework/widget/WidgetEvent$Resized;
+	public static synthetic fun copy-b_9T3YA$default (Ldev/nucleusframework/widget/WidgetEvent$Resized;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Resized;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public final fun getSize ()Ldev/nucleusframework/widget/WidgetSize;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetEvent$Unpinned : dev/nucleusframework/widget/WidgetEvent {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-JfwnnfE ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun copy-GcnOI4E (Ljava/lang/String;J)Ldev/nucleusframework/widget/WidgetEvent$Unpinned;
+	public static synthetic fun copy-GcnOI4E$default (Ldev/nucleusframework/widget/WidgetEvent$Unpinned;Ljava/lang/String;JILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetEvent$Unpinned;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getEpochMillis ()J
+	public fun getId-JfwnnfE ()Ljava/lang/String;
+	public synthetic fun getId-d-GyMs4 ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/widget/WidgetHost {
+	public abstract fun isLaunchedByHost ()Z
+	public abstract fun isSupported ()Z
+	public abstract fun loadState-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun pinnedWidgets (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun refresh-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun saveState-b_9T3YA (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetState;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun start ()V
+}
+
+public final class dev/nucleusframework/widget/WidgetId {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetId;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetInstance {
+	public static final field $stable I
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/WidgetSize;Ldev/nucleusframework/widget/MutableWidgetState;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDefinitionId ()Ljava/lang/String;
+	public final fun getId-JfwnnfE ()Ljava/lang/String;
+	public final fun getSize ()Ldev/nucleusframework/widget/WidgetSize;
+	public final fun getState ()Ldev/nucleusframework/widget/MutableWidgetState;
+}
+
+public final class dev/nucleusframework/widget/WidgetJson {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetJson;
+	public final fun write (Ljava/lang/Object;)Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/widget/WidgetModifier {
+	public static final field Companion Ldev/nucleusframework/widget/WidgetModifier$Companion;
+	public fun elements ()Ljava/util/List;
+	public fun then (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+}
+
+public final class dev/nucleusframework/widget/WidgetModifier$Background : dev/nucleusframework/widget/WidgetModifier$Element {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/WidgetBackground;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/WidgetBackground;
+	public final fun copy (Ldev/nucleusframework/widget/WidgetBackground;)Ldev/nucleusframework/widget/WidgetModifier$Background;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetModifier$Background;Ldev/nucleusframework/widget/WidgetBackground;ILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetModifier$Background;
+	public fun elements ()Ljava/util/List;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBackground ()Ldev/nucleusframework/widget/WidgetBackground;
+	public fun hashCode ()I
+	public fun then (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetModifier$Clickable : dev/nucleusframework/widget/WidgetModifier$Element {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/Action;)V
+	public fun elements ()Ljava/util/List;
+	public final fun getAction ()Ldev/nucleusframework/widget/Action;
+	public fun then (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+}
+
+public final class dev/nucleusframework/widget/WidgetModifier$Companion : dev/nucleusframework/widget/WidgetModifier {
+	public fun elements ()Ljava/util/List;
+	public fun then (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+}
+
+public final class dev/nucleusframework/widget/WidgetModifier$DefaultImpls {
+	public static fun elements (Ldev/nucleusframework/widget/WidgetModifier;)Ljava/util/List;
+	public static fun then (Ldev/nucleusframework/widget/WidgetModifier;Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+}
+
+public abstract interface class dev/nucleusframework/widget/WidgetModifier$Element : dev/nucleusframework/widget/WidgetModifier {
+}
+
+public final class dev/nucleusframework/widget/WidgetModifier$Element$DefaultImpls {
+	public static fun elements (Ldev/nucleusframework/widget/WidgetModifier$Element;)Ljava/util/List;
+	public static fun then (Ldev/nucleusframework/widget/WidgetModifier$Element;Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+}
+
+public final class dev/nucleusframework/widget/WidgetModifier$FillMaxHeight : dev/nucleusframework/widget/WidgetModifier$Element {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetModifier$FillMaxHeight;
+	public fun elements ()Ljava/util/List;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun then (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetModifier$FillMaxWidth : dev/nucleusframework/widget/WidgetModifier$Element {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetModifier$FillMaxWidth;
+	public fun elements ()Ljava/util/List;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun then (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetModifier$Weight : dev/nucleusframework/widget/WidgetModifier$Element {
+	public static final field $stable I
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Ldev/nucleusframework/widget/WidgetModifier$Weight;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/WidgetModifier$Weight;IILjava/lang/Object;)Ldev/nucleusframework/widget/WidgetModifier$Weight;
+	public fun elements ()Ljava/util/List;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getWeight ()I
+	public fun hashCode ()I
+	public fun then (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetModifierKt {
+	public static final fun background (Ldev/nucleusframework/widget/WidgetModifier;Ldev/nucleusframework/widget/WidgetBackground;)Ldev/nucleusframework/widget/WidgetModifier;
+	public static final fun clickable (Ldev/nucleusframework/widget/WidgetModifier;Ldev/nucleusframework/widget/Action;)Ldev/nucleusframework/widget/WidgetModifier;
+	public static final fun clickable (Ldev/nucleusframework/widget/WidgetModifier;Lkotlin/jvm/functions/Function0;)Ldev/nucleusframework/widget/WidgetModifier;
+	public static final fun fillMaxHeight (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+	public static final fun fillMaxSize (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+	public static final fun fillMaxWidth (Ldev/nucleusframework/widget/WidgetModifier;)Ldev/nucleusframework/widget/WidgetModifier;
+	public static final fun weight (Ldev/nucleusframework/widget/WidgetModifier;I)Ldev/nucleusframework/widget/WidgetModifier;
+}
+
+public final class dev/nucleusframework/widget/WidgetRender {
+	public static final field $stable I
+	public final fun getInstance ()Ldev/nucleusframework/widget/WidgetInstance;
+	public final fun getRoot ()Ldev/nucleusframework/widget/WidgetElement;
+	public final fun getWidget ()Ldev/nucleusframework/widget/NucleusWidget;
+}
+
+public final class dev/nucleusframework/widget/WidgetSize : java/lang/Enum {
+	public static final field Large Ldev/nucleusframework/widget/WidgetSize;
+	public static final field Medium Ldev/nucleusframework/widget/WidgetSize;
+	public static final field Small Ldev/nucleusframework/widget/WidgetSize;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetSize;
+	public static fun values ()[Ldev/nucleusframework/widget/WidgetSize;
+}
+
+public class dev/nucleusframework/widget/WidgetState {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/widget/WidgetState$Companion;
+	public fun <init> ()V
+	public final fun contains (Ldev/nucleusframework/widget/WidgetStateKey;)Z
+	public final fun encode ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun get (Ldev/nucleusframework/widget/WidgetStateKey;)Ljava/lang/Object;
+	public fun hashCode ()I
+	public final fun toMutable ()Ldev/nucleusframework/widget/MutableWidgetState;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetState$Companion {
+	public final fun decode (Ljava/lang/String;)Ldev/nucleusframework/widget/MutableWidgetState;
+	public final fun getEmpty ()Ldev/nucleusframework/widget/WidgetState;
+}
+
+public final class dev/nucleusframework/widget/WidgetStateHandle {
+	public static final field $stable I
+	public final fun get (Ldev/nucleusframework/widget/WidgetStateKey;)Ljava/lang/Object;
+	public final fun update (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class dev/nucleusframework/widget/WidgetStateKey {
+	public static final field $stable I
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/WidgetStateKt {
+	public static final fun booleanStateKey (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetStateKey;
+	public static final fun doubleStateKey (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetStateKey;
+	public static final fun intStateKey (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetStateKey;
+	public static final fun longStateKey (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetStateKey;
+	public static final fun stringStateKey (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetStateKey;
+}
+
+public final class dev/nucleusframework/widget/WidgetsBuilder {
+	public static final field $stable I
+	public final fun widget (Ljava/lang/String;Lkotlin/jvm/functions/Function0;)V
+}
+

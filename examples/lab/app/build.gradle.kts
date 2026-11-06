@@ -1,5 +1,6 @@
 import dev.nucleusframework.desktop.application.dsl.AppImageCategory
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.MacWidgetFamily
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.ReleaseType
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
@@ -8,6 +9,7 @@ import dev.nucleusframework.desktop.application.dsl.SnapConfinement
 import dev.nucleusframework.desktop.application.dsl.SnapGrade
 import dev.nucleusframework.desktop.application.dsl.SnapPlug
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.WindowsWidgetSize
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Nucleus Lab: the single test bench app. Assembles the Metro graph from every probe module
@@ -43,6 +45,9 @@ dependencies {
     implementation(project(":examples:lab:probes:system"))
     implementation(project(":examples:lab:probes:fixtures"))
     implementation(project(":darkmode-detector"))
+    // widgets { } in main (the Windows 11 widgets board and WidgetKit hosts come with them).
+    implementation(project(":widget-windows"))
+    implementation(project(":widget-macos"))
     implementation(libs.coroutines.swing)
     // The shell's pane layout, saved across launches.
     implementation(libs.kotlinx.serialization.json)
@@ -307,6 +312,34 @@ nucleus.application {
                 square150x150Logo.set(project.file("packaging/icons/appx/Square150x150Logo.png"))
                 wide310x150Logo.set(project.file("packaging/icons/appx/Wide310x150Logo.png"))
             }
+            // Windows 11 widgets board (probe shell.windows-widgets), rendered by widgets { } in main.
+            widgets {
+                widget("LabCounter") {
+                    displayName = "Lab counter"
+                    description = "A counter driven by the Nucleus Lab widget probe"
+                    icon.set(project.file("packaging/widgets/icon.png"))
+                    preview.set(project.file("packaging/widgets/preview.png"))
+                    previewDark.set(project.file("packaging/widgets/preview-dark.png"))
+                    previewLight.set(project.file("packaging/widgets/preview-light.png"))
+                    customizable = true
+                }
+                widget("LabWeb") {
+                    displayName = "Lab web"
+                    description = "A web widget (European Economic Area) with its Adaptive Card fallback"
+                    sizes = listOf(WindowsWidgetSize.Medium, WindowsWidgetSize.Large)
+                    // The page LabWebWidget serves itself (onWebRequest), never fetched from the network.
+                    webRequestFilter = "https://lab.nucleusframework.dev/*"
+                    icon.set(project.file("packaging/widgets/icon.png"))
+                    preview.set(project.file("packaging/widgets/preview.png"))
+                }
+                widget("LabTasks") {
+                    displayName = "Lab tasks"
+                    description = "A to-do list: add, check, filter and clear tasks from the widget or the app"
+                    icon.set(project.file("packaging/widgets/icon.png"))
+                    preview.set(project.file("packaging/widgets/tasks-preview.png"))
+                    customizable = true
+                }
+            }
         }
 
         macOS {
@@ -318,6 +351,20 @@ nucleus.application {
             bundleID = "dev.nucleusframework.demo"
             appCategory = "public.app-category.developer-tools"
             dockName = "Nucleus Lab"
+            // WidgetKit widgets (desktop, Notification Center), rendered by widgets { } in main.
+            // LabWeb stays Windows-only: WidgetKit has no web content.
+            widgets {
+                widget("LabCounter") {
+                    displayName = "Lab counter"
+                    description = "A counter driven by the Nucleus Lab widget probe"
+                    families = listOf(MacWidgetFamily.Small, MacWidgetFamily.Medium)
+                }
+                widget("LabTasks") {
+                    displayName = "Lab tasks"
+                    description = "A to-do list: add, check, filter and clear tasks from the widget or the app"
+                    families = listOf(MacWidgetFamily.Medium, MacWidgetFamily.Large)
+                }
+            }
             dmg {
                 title = $$"${productName} ${version}"
                 iconSize = 128

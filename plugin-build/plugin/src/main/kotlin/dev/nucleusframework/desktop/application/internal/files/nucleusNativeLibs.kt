@@ -14,6 +14,13 @@ import java.util.zip.ZipFile
 private const val NUCLEUS_NATIVE_LIBRARIES_DIR = "META-INF/nucleus/native-libraries/"
 
 /**
+ * Directory a runtime module lists, one per line, the JAR entries only the Gradle plugin reads
+ * while packaging (e.g. `widget-macos`'s prebuilt WidgetKit extension): never read at run time, so
+ * they are left out of the application's JARs. A line ending in `/` stands for everything below it.
+ */
+private const val NUCLEUS_PACKAGING_ONLY_DIR = "META-INF/nucleus/packaging-only/"
+
+/**
  * Resource shipped by `core-runtime` once its `NativeLibraryLoader` reads
  * [NUCLEUS_NATIVE_LIBRARY_PATH]. An older runtime can only extract its libraries from the JARs,
  * so without this marker on the classpath they must stay there.
@@ -84,12 +91,23 @@ internal fun File.hasZipEntry(predicate: (String) -> Boolean): Boolean =
     ZipFile(this).use { zip -> zip.entries().asSequence().any { predicate(it.name) } }
 
 /** The JAR entries the Nucleus modules packed into this JAR declare as their JNI libraries. */
-internal fun File.nucleusNativeEntries(): Set<String> =
+internal fun File.nucleusNativeEntries(): Set<String> = manifestLines(NUCLEUS_NATIVE_LIBRARIES_DIR)
+
+/** The JAR entries (or `/`-ended prefixes) the Nucleus modules packed into this JAR need at packaging only. */
+internal fun File.nucleusPackagingOnlyEntries(): Set<String> = manifestLines(NUCLEUS_PACKAGING_ONLY_DIR)
+
+/** Whether [name] is one of [packagingOnly], or below one of its `/`-ended prefixes. */
+internal fun isPackagingOnly(
+    name: String,
+    packagingOnly: Set<String>,
+): Boolean = packagingOnly.any { if (it.endsWith('/')) name.startsWith(it) else name == it }
+
+private fun File.manifestLines(dir: String): Set<String> =
     ZipFile(this).use { zip ->
         zip
             .entries()
             .asSequence()
-            .filter { !it.isDirectory && it.name.startsWith(NUCLEUS_NATIVE_LIBRARIES_DIR) }
+            .filter { !it.isDirectory && it.name.startsWith(dir) }
             .flatMap { entry -> zip.getInputStream(entry).bufferedReader().use { it.readLines() } }
             .map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") }
@@ -101,8 +119,8 @@ internal fun File.nucleusNativeEntries(): Set<String> =
  * [nucleusEntries] into [libsDir] and dropping the other platforms' listed ones, so the
  * application ships each Nucleus library once, loose, instead of six copies inside the JAR that
  * the runtime would extract to the user's cache on first use. [droppedEntries] are left out too:
- * libraries the packaging ships next to the executable by other means. Every other entry is copied
- * as is.
+ * libraries the packaging ships next to the executable by other means, and [packagingOnly] entries
+ * (see [nucleusPackagingOnlyEntries]). Every other entry is copied as is.
  *
  * @return [targetJar] followed by the extracted libraries
  */
@@ -113,6 +131,7 @@ internal fun unpackNucleusNativeLibs(
     platformDir: String,
     nucleusEntries: Set<String>,
     droppedEntries: Set<String> = emptySet(),
+    packagingOnly: Set<String> = emptySet(),
 ): List<File> {
     val platformRoot = "nucleus/native/$platformDir/"
     val outputFiles = mutableListOf(targetJar)
@@ -123,6 +142,8 @@ internal fun unpackNucleusNativeLibs(
         val name = entry.name
         when {
             name in droppedEntries -> Unit
+            // Read by the plugin from the original JAR while packaging, never by the application.
+            isPackagingOnly(name, packagingOnly) -> Unit
             entry.isDirectory || name !in nucleusEntries -> copyZipEntry(entry, zin, zout)
             name.startsWith(platformRoot) -> {
                 val lib = libsDir.resolve(name.removePrefix(platformRoot))

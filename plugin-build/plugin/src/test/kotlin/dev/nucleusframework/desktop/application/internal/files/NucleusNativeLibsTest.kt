@@ -224,4 +224,54 @@ class NucleusNativeLibsTest {
                 .nucleusNativeEntries(),
         )
     }
+
+    @Test
+    fun `packaging-only entries are left out of the application JAR`() {
+        val source =
+            jar(
+                "META-INF/nucleus/packaging-only/widget-macos",
+                "nucleus/native/darwin-aarch64/libnucleus_widget_macos.dylib",
+                "nucleus/native/darwin-aarch64/nucleus-widget-extension/",
+                "nucleus/native/darwin-aarch64/nucleus-widget-extension/NucleusWidgets",
+                "nucleus/native/darwin-x64/nucleus-widget-extension/NucleusWidgets",
+                "dev/nucleusframework/widget/macos/WidgetCenter.class",
+            )
+        // jar() writes each entry's name as its content: rewrite the manifest with real lines.
+        val manifest =
+            listOf(
+                "nucleus/native/darwin-aarch64/nucleus-widget-extension/",
+                "nucleus/native/darwin-x64/nucleus-widget-extension/",
+            ).joinToString("\n", postfix = "\n")
+        val withManifest = tmp.newFile("widget-macos.jar")
+        ZipOutputStream(withManifest.outputStream()).use { zip ->
+            ZipFile(source).use { original ->
+                for (entry in original.entries()) {
+                    zip.putNextEntry(ZipEntry(entry.name))
+                    if (entry.name == "META-INF/nucleus/packaging-only/widget-macos") {
+                        zip.write(manifest.toByteArray())
+                    } else {
+                        original.getInputStream(entry).use { it.copyTo(zip) }
+                    }
+                    zip.closeEntry()
+                }
+            }
+        }
+        val packagingOnly = withManifest.nucleusPackagingOnlyEntries()
+        assertEquals(2, packagingOnly.size)
+
+        val out = tmp.newFolder("out")
+        val target = out.resolve("widget-macos.jar")
+        unpackNucleusNativeLibs(
+            sourceJar = withManifest,
+            targetJar = target,
+            libsDir = out.resolve("libs"),
+            platformDir = "darwin-aarch64",
+            nucleusEntries = setOf("nucleus/native/darwin-aarch64/libnucleus_widget_macos.dylib"),
+            packagingOnly = packagingOnly,
+        )
+        val names = target.entryNames()
+        assertTrue(names.none { "nucleus-widget-extension" in it })
+        assertTrue("dev/nucleusframework/widget/macos/WidgetCenter.class" in names)
+        assertTrue(out.resolve("libs/libnucleus_widget_macos.dylib").isFile)
+    }
 }
