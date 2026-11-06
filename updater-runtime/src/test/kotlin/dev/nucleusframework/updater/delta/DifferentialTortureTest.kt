@@ -69,6 +69,11 @@ class DifferentialTortureTest {
         val progress = download("1.0.0")
         assertFalse(progress.last().isDifferential)
         assertArtifactIsV2(progress)
+        assertEquals(
+            "the block map the delta fetched is cached without fetching it again",
+            1,
+            feed.requests.count { it.path == "$ARTIFACT.blockmap" },
+        )
     }
 
     @Test

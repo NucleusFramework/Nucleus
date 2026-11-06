@@ -9,6 +9,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.net.URI
@@ -19,6 +20,8 @@ import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.security.DigestInputStream
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /** Everything needed to assemble one artifact from an older copy of it plus ranged requests. */
 internal class DeltaDownload(
@@ -47,7 +50,8 @@ internal class DeltaDownload(
  * `bytes=a-b` requests; the multipart/byteranges form is not used, since GitHub and S3 do not serve it.
  *
  * A range that fails transiently (an I/O error, HTTP 429 or 5xx) is retried with backoff, honouring
- * `Retry-After`; an expired redirect target is re-resolved through the original URL. Any other
+ * `Retry-After`; an expired redirect target is re-resolved through the original URL, and a body that
+ * stops sending data for [stallTimeout] is abandoned and retried. Any other
  * inconsistency — a server that ignores `Range`, a short response, an old file that no longer matches
  * its block map, a final digest mismatch — raises [DeltaUnavailableException] so the caller falls
  * back to a full download. The assembled file is checked against the manifest SHA-512 before it is
@@ -56,6 +60,7 @@ internal class DeltaDownload(
 internal class DifferentialDownloader(
     private val httpClient: HttpClient,
     private val authHeaders: Map<String, String> = emptyMap(),
+    private val stallTimeout: Duration = BODY_STALL_TIMEOUT,
 ) {
     /** An operation and its offset in the new artifact. */
     private class Placed(
@@ -178,7 +183,8 @@ internal class DifferentialDownloader(
                 launch(Dispatchers.IO) { copyFromOldFile(request.oldFile, copies, output) }
                 launch(Dispatchers.IO) {
                     try {
-                        downloadRanges(RangeSource(RangeTarget(URI.create(request.url), authHeaders)), downloads, output, progress)
+                        val source = RangeSource(RangeTarget(URI.create(request.url), authHeaders))
+                        downloadRanges(source, downloads, output, progress)
                     } finally {
                         progress.close()
                     }
@@ -301,28 +307,78 @@ internal class DifferentialDownloader(
             return retryFor(source, target.uri, response, operation)
         }
 
-        var received = 0L
-        response.body().use { input ->
-            val buffer = ByteArray(BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read == -1) break
-                if (received + read > operation.length) {
-                    throw DeltaUnavailableException(
-                        "${describe(operation)} returned more than ${operation.length} bytes",
-                    )
-                }
-                writeFully(output, buffer, read, placed.position + received)
-                received += read
-                onReceived(received)
-            }
-        }
+        val received = readBody(response.body(), placed, output, onReceived)
         if (received != operation.length) {
             throw IOException("${describe(operation)} ended after $received of ${operation.length} bytes")
         }
-        source.target = target.redirectedTo(response.uri())
+        synchronized(source) {
+            // Only from the target this attempt used: if another worker re-resolved an expired
+            // target meanwhile, this attempt's older one must not replace the fresh one.
+            if (source.target === target) source.target = target.redirectedTo(response.uri())
+        }
         return null
     }
+
+    /**
+     * Writes [body] into place and returns how many bytes it held. Nothing else bounds a blocked
+     * read of a response body, so a watchdog closes [body] — which ends the read — once no data has
+     * arrived for [stallTimeout], and also when the download is cancelled.
+     */
+    private suspend fun readBody(
+        body: InputStream,
+        placed: Placed,
+        output: FileChannel,
+        onReceived: suspend (Long) -> Unit,
+    ): Long =
+        coroutineScope {
+            val operation = placed.operation
+            val lastData = AtomicLong(System.nanoTime())
+            val stalled = AtomicBoolean()
+            val watchdog =
+                launch {
+                    try {
+                        while (true) {
+                            val idle = Duration.ofNanos(System.nanoTime() - lastData.get())
+                            if (idle >= stallTimeout) break
+                            delay(stallTimeout.minus(idle).toMillis() + 1)
+                        }
+                        stalled.set(true)
+                    } finally {
+                        body.close()
+                    }
+                }
+            var received = 0L
+            try {
+                body.use { input ->
+                    val buffer = ByteArray(BUFFER_SIZE)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read == -1) break
+                        lastData.set(System.nanoTime())
+                        if (received + read > operation.length) {
+                            throw DeltaUnavailableException(
+                                "${describe(operation)} returned more than ${operation.length} bytes",
+                            )
+                        }
+                        writeFully(output, buffer, read, placed.position + received)
+                        received += read
+                        onReceived(received)
+                    }
+                }
+            } catch (e: IOException) {
+                if (stalled.get()) throw stallException(operation, e)
+                throw e
+            } finally {
+                watchdog.cancel()
+            }
+            if (stalled.get()) throw stallException(operation, cause = null)
+            received
+        }
+
+    private fun stallException(
+        operation: Operation,
+        cause: IOException?,
+    ) = IOException("${describe(operation)} sent no data for ${stallTimeout.toMillis()} ms", cause)
 
     /** Classifies a response other than 206: a retry for transient failures, otherwise a failed delta. */
     private fun retryFor(
@@ -370,7 +426,11 @@ internal class DifferentialDownloader(
             ?.coerceIn(0, MAX_RETRY_AFTER_SECONDS)
             ?.times(MILLIS_PER_SECOND)
 
-    /** Positional write of `bytes[0, length)`; positional writes are safe from concurrent threads. */
+    /**
+     * Positional write of `bytes[0, length)`; positional writes are safe from concurrent threads.
+     * A failed write is a [DeltaUnavailableException], not an [IOException]: the disk is at fault,
+     * not the network, so retrying the range cannot help.
+     */
     private fun writeFully(
         output: FileChannel,
         bytes: ByteArray,
@@ -379,8 +439,12 @@ internal class DifferentialDownloader(
     ) {
         val buffer = ByteBuffer.wrap(bytes, 0, length)
         var offset = position
-        while (buffer.hasRemaining()) {
-            offset += output.write(buffer, offset)
+        try {
+            while (buffer.hasRemaining()) {
+                offset += output.write(buffer, offset)
+            }
+        } catch (e: IOException) {
+            throw DeltaUnavailableException("Could not write the assembled artifact", e)
         }
     }
 
@@ -459,5 +523,8 @@ internal class DifferentialDownloader(
          * answers from hanging the update.
          */
         val RESPONSE_TIMEOUT: Duration = Duration.ofSeconds(30)
+
+        /** Time a range's body may go without sending any data before the attempt is abandoned. */
+        val BODY_STALL_TIMEOUT: Duration = Duration.ofSeconds(30)
     }
 }

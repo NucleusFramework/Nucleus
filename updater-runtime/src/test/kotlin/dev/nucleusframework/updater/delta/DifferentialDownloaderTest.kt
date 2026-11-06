@@ -18,6 +18,8 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.net.http.HttpClient
+import java.time.Duration
+import kotlin.system.measureTimeMillis
 
 /**
  * How a plan is executed against a release host: ranges in parallel, transient failures retried,
@@ -140,6 +142,17 @@ class DifferentialDownloaderTest {
     }
 
     @Test
+    fun `a range whose body stalls is abandoned and retried`() {
+        server.stallNext(PATH, afterBytes = 1000)
+        val request = request()
+
+        val elapsed = measureTimeMillis { download(request, stallTimeout = Duration.ofMillis(500)) }
+
+        assertTrue(artifact.contentEquals(request.target.readBytes()))
+        assertTrue("the stalled body must be abandoned, not waited out ($elapsed ms)", elapsed < 10_000)
+    }
+
+    @Test
     fun `an expired redirect target is re-resolved through the original URL`() {
         val cdnHost = server.baseUrl.replace("127.0.0.1", "localhost")
         // The first pre-signed URL stops working after one range; asking again yields a fresh one.
@@ -162,13 +175,16 @@ class DifferentialDownloaderTest {
         )
     }
 
-    private fun downloader(authHeaders: Map<String, String> = emptyMap()) =
-        DifferentialDownloader(httpClient, authHeaders)
+    private fun downloader(
+        authHeaders: Map<String, String> = emptyMap(),
+        stallTimeout: Duration = Duration.ofSeconds(30),
+    ) = DifferentialDownloader(httpClient, authHeaders, stallTimeout)
 
     private fun download(
         request: DeltaDownload,
         authHeaders: Map<String, String> = emptyMap(),
-    ): Long = runBlocking { downloader(authHeaders).download(request) { _, _ -> } }
+        stallTimeout: Duration = Duration.ofSeconds(30),
+    ): Long = runBlocking { downloader(authHeaders, stallTimeout).download(request) { _, _ -> } }
 
     /** Alternating 32 KiB downloads and copies over the whole artifact. */
     private fun request(): DeltaDownload {

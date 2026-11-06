@@ -29,6 +29,7 @@ internal class RangeHttpServer(
     private val redirects = ConcurrentHashMap<String, ConcurrentLinkedQueue<String>>()
     private val scripted = ConcurrentHashMap<String, ConcurrentLinkedQueue<ScriptedResponse>>()
     private val scriptDelays = ConcurrentHashMap<String, AtomicInteger>()
+    private val stalls = ConcurrentHashMap<String, AtomicInteger>()
     private val inFlight = AtomicInteger()
 
     /** A canned response returned instead of the resource, for simulating failures. */
@@ -79,6 +80,22 @@ internal class RangeHttpServer(
         val queue = scripted.getOrPut(path) { ConcurrentLinkedQueue() }
         repeat(times) { queue += ScriptedResponse(status, retryAfter) }
     }
+
+    /**
+     * Makes the next [times] ranged responses for [path] send their headers and [afterBytes] bytes
+     * of the body, then nothing more while the connection stays open.
+     */
+    fun stallNext(
+        path: String,
+        afterBytes: Int,
+        times: Int = 1,
+    ) {
+        stalls[path] = AtomicInteger(times)
+        stallAfterBytes = afterBytes
+    }
+
+    @Volatile
+    private var stallAfterBytes = 0
 
     /**
      * Redirects requests for [from] with HTTP 302, as a release host does to its CDN: to each of [to]
@@ -161,6 +178,10 @@ internal class RangeHttpServer(
             return
         }
         exchange.responseHeaders.add("Content-Range", "bytes $start-$endInclusive/${body.size}")
+        if ((stalls[path]?.getAndDecrement() ?: 0) > 0) {
+            stall(exchange, body.copyOfRange(start.toInt(), endInclusive.toInt() + 1))
+            return
+        }
         respond(exchange, HTTP_PARTIAL_CONTENT, body.copyOfRange(start.toInt(), endInclusive.toInt() + 1))
     }
 
@@ -172,6 +193,20 @@ internal class RangeHttpServer(
         exchange.sendResponseHeaders(status, body.size.toLong())
         exchange.responseBody.write(body)
         bytesServed.addAndGet(body.size.toLong())
+    }
+
+    private fun stall(
+        exchange: HttpExchange,
+        body: ByteArray,
+    ) {
+        exchange.sendResponseHeaders(HTTP_PARTIAL_CONTENT, body.size.toLong())
+        exchange.responseBody.write(body, 0, minOf(stallAfterBytes, body.size))
+        exchange.responseBody.flush()
+        try {
+            Thread.sleep(STALL_MS)
+        } catch (_: InterruptedException) {
+            // The server is shutting down.
+        }
     }
 
     /** Parses the single-range form the updater sends: `bytes=<start>-<endInclusive>`. */
@@ -195,5 +230,6 @@ internal class RangeHttpServer(
         const val HTTP_FOUND = 302
         const val HTTP_NOT_FOUND = 404
         const val HTTP_RANGE_NOT_SATISFIABLE = 416
+        const val STALL_MS = 60_000L
     }
 }

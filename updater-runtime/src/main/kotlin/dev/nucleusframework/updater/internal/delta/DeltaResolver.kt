@@ -1,11 +1,10 @@
 package dev.nucleusframework.updater.internal.delta
 
 import dev.nucleusframework.updater.UpdateFile
+import dev.nucleusframework.updater.exception.NetworkException
+import dev.nucleusframework.updater.internal.FeedFetcher
 import java.io.File
-import java.net.URI
 import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 
 /** A ready-to-run differential download, plus the block map to cache once it succeeds. */
 internal class ResolvedDelta(
@@ -43,16 +42,21 @@ internal class DeltaResolver(
      */
     private val previousBlockMapUrl: (UpdateFile) -> String? = { null },
 ) {
+    private val fetcher = FeedFetcher(httpClient) { authHeaders }
+
     fun resolve(
         target: UpdateFile,
         blockMapUrl: String,
         destination: File,
     ): ResolvedDelta? {
-        val oldFile = resolveOldArtifact(target) ?: return resolveFromSeededInstaller(target, blockMapUrl, destination)
-        return if (embedsBlockMap(target)) {
-            resolveEmbedded(target, oldFile, destination)
-        } else {
-            resolveStandalone(target, blockMapUrl, oldFile, destination)
+        val oldFile = resolveOldArtifact(target)
+        return when {
+            oldFile == null -> resolveFromSeededInstaller(target, blockMapUrl, destination)
+            embedsBlockMap(target) -> resolveEmbedded(target, oldFile, destination)
+            // A cached artifact without its block map is no basis, but the seeded installer may be.
+            else ->
+                resolveStandalone(target, blockMapUrl, oldFile, destination)
+                    ?: resolveFromSeededInstaller(target, blockMapUrl, destination)
         }
     }
 
@@ -145,20 +149,17 @@ internal class DeltaResolver(
 
     /** Downloads a small resource (a block map) into memory, refusing more than a block map's worth. */
     private fun fetch(url: String): ByteArray {
-        val builder = HttpRequest.newBuilder().uri(URI.create(url)).GET()
-        authHeaders.forEach { (key, value) -> builder.header(key, value) }
-        val response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
-        if (response.statusCode() != HTTP_OK) {
-            response.body().close()
-            throw DeltaUnavailableException("HTTP ${response.statusCode()} for $url")
-        }
-        val body = response.body().use { readAtMost(it, BlockMapCodec.MAX_PAYLOAD_SIZE.toLong()) }
+        val body =
+            try {
+                fetcher.open(url).use { readAtMost(it, BlockMapCodec.MAX_PAYLOAD_SIZE.toLong()) }
+            } catch (e: NetworkException) {
+                throw DeltaUnavailableException("No block map at $url", e)
+            }
         if (body.isEmpty()) throw DeltaUnavailableException("Empty block map at $url")
         return body
     }
 
     internal companion object {
-        private const val HTTP_OK = 200
         private const val APPIMAGE_ENV = "APPIMAGE"
         private const val APPIMAGE_EXTENSION = "appimage"
         private const val NSIS_EXTENSION = "exe"

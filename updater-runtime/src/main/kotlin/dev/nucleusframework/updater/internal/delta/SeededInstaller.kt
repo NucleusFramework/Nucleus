@@ -43,16 +43,18 @@ internal object SeededInstaller {
             .ifBlank { "app" } + "-updater"
 
     /**
-     * The file name the release for [currentVersion] published [newFileName] under, assuming the
-     * version appears in the artifact name as it does in electron-builder's default `artifactName`.
-     * `null` when [newFileName] does not contain [newVersion].
+     * Where the release for [currentVersion] published the artifact found at [newUrl], assuming the
+     * version appears in the URL wherever it differs between releases: the artifact name, as in
+     * electron-builder's default `artifactName`, and the release's tag or folder. Deriving it from the
+     * URL keeps whatever tag scheme the release host uses. `null` when [newUrl] does not contain
+     * [newVersion], as with an API URL that names the asset by id.
      */
-    fun previousArtifactName(
-        newFileName: String,
+    fun previousReleaseUrl(
+        newUrl: String,
         newVersion: String,
         currentVersion: String,
     ): String? =
-        newFileName
+        newUrl
             .takeIf { newVersion.isNotEmpty() && newVersion != currentVersion && it.contains(newVersion) }
             ?.replace(newVersion, currentVersion)
 

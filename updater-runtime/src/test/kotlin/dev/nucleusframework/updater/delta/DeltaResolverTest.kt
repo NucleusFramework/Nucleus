@@ -133,6 +133,22 @@ class DeltaResolverTest {
     }
 
     @Test
+    fun `a cached installer without its block map falls back to the seeded installer`() {
+        val seeded = File(tmp.newFolder("myapp-updater"), "installer.exe").apply { writeBytes(DeltaFixtures.v1()) }
+        val cachedInstaller = File(tmp.newFolder(), "MyApp-1.0.0.exe").apply { writeBytes(DeltaFixtures.v1()) }
+        cache.store(cachedInstaller, cachedInstaller.name, "1.0.0", blockMapGzip = null)
+        val target = publishInstaller()
+        server.put("/MyApp-1.0.0.exe.blockmap", DeltaFixtures.blockMapGzip("v1"))
+
+        val resolved =
+            seededResolver(seeded, previousBlockMapUrl = "${server.baseUrl}/MyApp-1.0.0.exe.blockmap")
+                .resolve(target, blockMapUrl(target), destination())
+
+        assertNotNull("the seeded installer must stand in for the unusable cache", resolved)
+        assertEquals(seeded, resolved!!.download.oldFile)
+    }
+
+    @Test
     fun `a seeded installer whose release is no longer hosted cannot serve a delta`() {
         val seeded = File(tmp.newFolder("myapp-updater"), "installer.exe").apply { writeBytes(DeltaFixtures.v1()) }
         val target = publishInstaller()

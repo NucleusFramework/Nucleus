@@ -47,17 +47,38 @@ class SeededInstallerTest {
     }
 
     @Test
-    fun `the previous artifact name swaps in the installed version`() {
+    fun `the previous release URL swaps in the installed version`() {
         assertEquals(
-            "MyApp-1.0.0-win-x64.exe",
-            SeededInstaller.previousArtifactName(
-                "MyApp-2.0.0-win-x64.exe",
+            "https://example.com/releases/1.0.0/MyApp-1.0.0-win-x64.exe",
+            SeededInstaller.previousReleaseUrl(
+                "https://example.com/releases/2.0.0/MyApp-2.0.0-win-x64.exe",
                 newVersion = "2.0.0",
                 currentVersion = "1.0.0",
             ),
         )
-        assertNull(SeededInstaller.previousArtifactName("MyApp-win-x64.exe", "2.0.0", "1.0.0"))
-        assertNull(SeededInstaller.previousArtifactName("MyApp-2.0.0.exe", "2.0.0", "2.0.0"))
+        assertNull(SeededInstaller.previousReleaseUrl("https://example.com/MyApp-win-x64.exe", "2.0.0", "1.0.0"))
+        assertNull(SeededInstaller.previousReleaseUrl("https://example.com/MyApp-2.0.0.exe", "2.0.0", "2.0.0"))
+    }
+
+    @Test
+    fun `the previous release URL keeps the host's tag scheme`() {
+        // A GitHub release tagged without the v prefix, as GitHubProvider resolves real tags.
+        assertEquals(
+            "https://github.com/acme/app/releases/download/1.0.0/App-1.0.0.exe",
+            SeededInstaller.previousReleaseUrl(
+                "https://github.com/acme/app/releases/download/2.0.0/App-2.0.0.exe",
+                newVersion = "2.0.0",
+                currentVersion = "1.0.0",
+            ),
+        )
+        // A private repository's API URL names the asset by id: there is no previous URL to derive.
+        assertNull(
+            SeededInstaller.previousReleaseUrl(
+                "https://api.github.com/repos/acme/app/releases/assets/123456",
+                newVersion = "2.0.0",
+                currentVersion = "1.0.0",
+            ),
+        )
     }
 
     private fun locate(
