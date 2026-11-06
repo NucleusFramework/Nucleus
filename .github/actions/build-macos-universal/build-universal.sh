@@ -305,24 +305,24 @@ ditto -c -k --keepParent "$UNIVERSAL_APP" "$ZIP_OUT"
 # The universal ZIP is built with ditto, so electron-builder never sees it and emits no
 # .blockmap sidecar; without one, universal installs can only update with full downloads.
 # Generate it with electron-builder's own block map builder (the one it uses for its
-# sidecars), installed from the plugin's pinned lock file (npm ci --ignore-scripts,
-# integrity-checked). The sidecar leaves the ZIP untouched, so the sha512 and size later
+# sidecars), from the toolchain provision-electron-builder.sh installed: the same Node.js and
+# the same lock file. The sidecar leaves the ZIP untouched, so the sha512 and size later
 # written to latest-mac.yml stay correct; the ZIP is never stapled, so the map stays valid.
 #
 # The block map is an optimization — updaters fall back to full downloads without it — so a
-# failure here (no Node.js, a registry hiccup) warns instead of failing the signed release.
+# failure here warns instead of failing the signed release.
 generate_blockmap() {
-  local toolchain_dir workdir
-  toolchain_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../plugin-build/plugin/src/main/resources/nucleus/electron-builder" 2>/dev/null && pwd)" || return 1
-  workdir="$WORK/electron-builder-toolchain"
-  mkdir -p "$workdir" || return 1
-  cp "$toolchain_dir/package.json" "$toolchain_dir/package-lock.json" "$workdir/" || return 1
-  (cd "$workdir" && npm ci --ignore-scripts --no-audit --no-fund --silent) >&2 || return 1
-  (cd "$workdir" && node -e '
-    require("app-builder-lib/out/targets/blockmap/blockmap")
-      .buildBlockMap(process.argv[1], "gzip", process.argv[2])
+  local zip
+  # Absolute, since OUTPUT_DIR may be relative to the workspace.
+  zip="$(cd "$(dirname "$ZIP_OUT")" && pwd)/$(basename "$ZIP_OUT")" || return 1
+  # app-builder-lib is resolved from electron-builder's own location in the provisioned tree.
+  "$NODE_BIN" -e '
+    const [cli, zip] = process.argv.slice(1)
+    const blockmap = require.resolve("app-builder-lib/out/targets/blockmap/blockmap", { paths: [cli] })
+    require(blockmap)
+      .buildBlockMap(zip, "gzip", zip + ".blockmap")
       .catch((e) => { console.error(e); process.exit(1) })
-  ' "$ZIP_OUT" "$ZIP_OUT.blockmap") || return 1
+  ' "$ELECTRON_BUILDER_CLI" "$zip"
 }
 
 echo "==> Generating blockmap: $ZIP_OUT.blockmap"
