@@ -12,7 +12,11 @@ import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
 import dev.nucleusframework.systeminfo.model.OsInfo
 import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
+import dev.nucleusframework.systeminfo.model.RenderTier
 import dev.nucleusframework.systeminfo.model.UserInfo
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 @Suppress("TooManyFunctions")
 internal interface PlatformSystemInfo {
@@ -42,9 +46,19 @@ internal interface PlatformSystemInfo {
 
     fun gpus(): List<GpuInfo>
 
+    fun renderTier(): RenderTier
+
     fun batteryInfo(): BatteryInfo?
 
     fun idleTime(): Long
 
     fun connectivityInfo(): ConnectivityInfo?
+
+    // Platforms without a native change monitor report the current state once.
+    fun connectivityChanges(): Flow<ConnectivityInfo> =
+        flow {
+            val current = connectivityInfo() ?: return@flow
+            emit(current)
+            awaitCancellation()
+        }
 }

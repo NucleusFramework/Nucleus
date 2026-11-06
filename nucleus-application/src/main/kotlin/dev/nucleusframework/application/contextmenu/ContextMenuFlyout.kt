@@ -40,10 +40,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.paint
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
@@ -66,9 +69,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
+import org.jetbrains.skia.FilterBlurMode
+import org.jetbrains.skia.MaskFilter
+import org.jetbrains.skia.RRect
+import org.jetbrains.skia.Paint as SkiaPaint
 
 private const val SUBMENU_OPEN_DELAY_MS = 200L
 private const val SUBMENU_CLOSE_DELAY_MS = 160L
+private val BORDER_WIDTH = 1.dp
 
 internal class ContextMenuFlyoutColors(
     val surface: Color,
@@ -76,38 +84,76 @@ internal class ContextMenuFlyoutColors(
     val textDisabled: Color,
     val hover: Color,
     val separator: Color,
+    /**
+     * The 1 dp ring at the menu's edge. It is painted *outside* the surface,
+     * over whatever is behind the menu — WinUI's `BackgroundSizing =
+     * InnerBorderEdge`, libadwaita's `0 0 0 1px` box-shadow — so a translucent
+     * colour here blends with the backdrop, not with [surface].
+     */
     val border: Color,
+    /** The submenu chevron. */
+    val chevron: Color,
+    /** The keyboard shortcut next to an enabled item's label. */
+    val shortcut: Color,
+)
+
+/**
+ * One CSS `box-shadow` layer under the menu surface: the menu's rounded
+ * rectangle grown by [spread], moved down by [offsetY] and blurred with the
+ * CSS blur radius [blur] — a Gaussian whose standard deviation is half the
+ * radius, as css-backgrounds-3 specifies and as GTK and Breeze both render.
+ *
+ * The OS menus the flyouts imitate all describe their shadow this way
+ * (libadwaita's `_popovers.scss`, Breeze's `ShadowParams`, Fluent 2's shadow
+ * tokens), so the themes carry those declarations verbatim. Compose's own
+ * `Modifier.shadow` is a Material elevation model instead — and on desktop its
+ * `ambientColor` / `spotColor` alphas are further multiplied by fixed 0.039 /
+ * 0.19 factors — so no elevation value reproduces a given `box-shadow`.
+ */
+internal class ContextMenuBoxShadow(
+    val offsetY: Dp,
+    val blur: Dp,
+    val color: Color,
+    val spread: Dp = 0.dp,
 )
 
 internal class ContextMenuFlyoutTheme(
-    val menuShape: RoundedCornerShape,
+    val menuCornerRadius: Dp,
     val itemShape: RoundedCornerShape,
     val uiFont: FontFamily,
     val iconFont: FontFamily,
     val chevron: String,
     val chevronSize: TextUnit,
-    val chevronAlpha: Float,
+    /** Space between the label (or shortcut) and the submenu chevron. */
+    val chevronGap: Dp,
     val minWidth: Dp,
+    /** [Dp.Unspecified] leaves the width to the content, as WinUI's presenter does. */
     val maxWidth: Dp,
+    /** Inside the 1 dp border ring, around the whole item stack. */
     val menuPadding: PaddingValues,
     val itemHeight: Dp,
     val itemHorizontalPadding: Dp,
-    val itemOuterHorizontalPadding: Dp,
+    /** Around each row, outside its hover highlight. */
+    val itemMargin: PaddingValues,
     val separatorPadding: PaddingValues,
     val iconSize: Dp,
     val iconGap: Dp,
-    val shadowElevation: Dp,
     val shadowPad: Dp,
-    val ambientShadow: Color,
-    val spotShadow: Color,
+    val shadows: (dark: Boolean) -> List<ContextMenuBoxShadow>,
     val showIcons: Boolean,
     val shortcutGap: Dp,
     val shortcutSize: TextUnit,
-    val shortcutAlpha: Float,
+    /** Around the shortcut text, inside the row; a top-only value nudges its baseline down. */
+    val shortcutPadding: PaddingValues,
     val colors: (dark: Boolean) -> ContextMenuFlyoutColors,
     val glyph: (ContextMenuIcon) -> String?,
     val vector: (ContextMenuIcon) -> ImageVector? = { null },
 ) {
+    val menuShape: RoundedCornerShape = RoundedCornerShape(menuCornerRadius)
+
+    /** [menuShape] one border ring further in: the surface inside the ring stays concentric with it. */
+    val surfaceShape: RoundedCornerShape = RoundedCornerShape((menuCornerRadius - BORDER_WIDTH).coerceAtLeast(0.dp))
+
     internal fun hasIcon(icon: ContextMenuIcon?): Boolean {
         if (icon == null) return false
         return vector(icon) != null || glyph(icon) != null
@@ -190,21 +236,17 @@ private fun ContextMenuFlyoutSurface(
             entries.any { entry ->
                 entry is ContextMenuEntry.Item && theme.hasIcon(entry.icon)
             }
-    val maxWidth = theme.maxWidth.takeOrElse { 320.dp }
+    val maxWidth = theme.maxWidth.takeOrElse { Dp.Infinity }
     Box(Modifier.padding(theme.shadowPad)) {
         Column(
             Modifier
                 .widthIn(min = theme.minWidth, max = maxWidth)
-                .shadow(
-                    elevation = theme.shadowElevation,
-                    shape = theme.menuShape,
-                    clip = false,
-                    ambientColor = theme.ambientShadow,
-                    spotColor = theme.spotShadow,
-                ).width(IntrinsicSize.Max)
+                .boxShadows(theme.shadows(dark), theme.menuCornerRadius)
+                .width(IntrinsicSize.Max)
                 .clip(theme.menuShape)
-                .border(1.dp, colors.border, theme.menuShape)
-                .background(colors.surface)
+                .border(BORDER_WIDTH, colors.border, theme.menuShape)
+                .padding(BORDER_WIDTH)
+                .background(colors.surface, theme.surfaceShape)
                 .padding(theme.menuPadding),
         ) {
             entries.forEach { entry ->
@@ -246,6 +288,45 @@ private fun ContextMenuFlyoutSurface(
         }
     }
 }
+
+/**
+ * Draws [shadows] behind the content, each as the content's rounded rectangle
+ * of corner radius [cornerRadius] under a blur mask. The content is opaque and
+ * drawn on top, so nothing of the shadow shows through the surface itself, as
+ * with CSS.
+ */
+private fun Modifier.boxShadows(
+    shadows: List<ContextMenuBoxShadow>,
+    cornerRadius: Dp,
+): Modifier =
+    drawWithCache {
+        val radius = cornerRadius.toPx()
+        val layers =
+            shadows.map { shadow ->
+                val sigma = shadow.blur.toPx() / 2f
+                val paint =
+                    SkiaPaint().apply {
+                        color = shadow.color.toArgb()
+                        if (sigma > 0f) maskFilter = MaskFilter.makeBlur(FilterBlurMode.NORMAL, sigma)
+                    }
+                val spread = shadow.spread.toPx()
+                val offsetY = shadow.offsetY.toPx()
+                val rect =
+                    RRect.makeLTRB(
+                        -spread,
+                        offsetY - spread,
+                        size.width + spread,
+                        size.height + offsetY + spread,
+                        radius + spread,
+                    )
+                rect to paint
+            }
+        onDrawBehind {
+            drawIntoCanvas { canvas ->
+                layers.forEach { (rect, paint) -> canvas.nativeCanvas.drawRRect(rect, paint) }
+            }
+        }
+    }
 
 @Composable
 private fun ContextMenuFlyoutSubmenu(
@@ -325,7 +406,7 @@ private fun ContextMenuFlyoutRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = theme.itemOuterHorizontalPadding)
+            .padding(theme.itemMargin)
             .clip(theme.itemShape)
             .hoverable(interactionSource, enabled = enabled)
             .background(if (hovered && enabled) colors.hover else Color.Transparent)
@@ -363,9 +444,10 @@ private fun ContextMenuFlyoutRow(
             Spacer(Modifier.width(theme.shortcutGap))
             BasicText(
                 text = shortcut,
+                modifier = Modifier.padding(theme.shortcutPadding),
                 style =
                     TextStyle(
-                        color = if (enabled) content.copy(alpha = theme.shortcutAlpha) else colors.textDisabled,
+                        color = if (enabled) colors.shortcut else colors.textDisabled,
                         fontSize = theme.shortcutSize,
                         fontFamily = theme.uiFont,
                     ),
@@ -373,12 +455,12 @@ private fun ContextMenuFlyoutRow(
             )
         }
         if (chevron) {
-            Spacer(Modifier.width(theme.iconGap))
+            Spacer(Modifier.width(theme.chevronGap))
             BasicText(
                 text = theme.chevron,
                 style =
                     TextStyle(
-                        color = content.copy(alpha = theme.chevronAlpha),
+                        color = colors.chevron,
                         fontSize = theme.chevronSize,
                         fontFamily = theme.iconFont,
                     ),

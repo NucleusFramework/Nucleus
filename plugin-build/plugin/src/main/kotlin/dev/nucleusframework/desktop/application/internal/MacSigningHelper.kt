@@ -7,13 +7,12 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import java.io.File
-import java.nio.file.*
+import java.nio.file.LinkOption
 import kotlin.io.path.isExecutable
 import kotlin.io.path.isRegularFile
 
 internal class MacSigningHelper(
     private val macSigner: MacSigner,
-    private val runtimeProvisioningProfile: File?,
     private val entitlementsFile: File?,
     private val runtimeEntitlementsFile: File?,
     destinationDir: File,

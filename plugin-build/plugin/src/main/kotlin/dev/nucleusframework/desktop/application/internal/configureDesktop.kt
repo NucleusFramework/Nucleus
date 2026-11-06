@@ -42,6 +42,7 @@ internal fun configureDesktop(
 
         propagateMainClassToHotReloadRun(project, appInternal)
         injectStartOnFirstThreadForTaoHotReload(project)
+        configureHotReloadDependencySnapshots(project = project)
     }
 
     if (nucleusExtension.isNativeApplicationInitialized) {

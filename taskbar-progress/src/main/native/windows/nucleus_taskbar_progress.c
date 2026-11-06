@@ -13,6 +13,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 
 /* ---- /NODEFAULTLIB stubs ----------------------------------------- */
@@ -158,14 +159,14 @@ static HWND GetHwndFromAwtWindow(JNIEnv *env, jobject awtWindow) {
     /* AWTAccessor.getComponentAccessor() */
     awtAccessorClass = (*env)->FindClass(env, "sun/awt/AWTAccessor");
     if (!awtAccessorClass || (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return NULL;
     }
 
     getCompAccessor = (*env)->GetStaticMethodID(env, awtAccessorClass,
         "getComponentAccessor", "()Lsun/awt/AWTAccessor$ComponentAccessor;");
     if (!getCompAccessor || (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, awtAccessorClass);
         return NULL;
     }
@@ -173,14 +174,14 @@ static HWND GetHwndFromAwtWindow(JNIEnv *env, jobject awtWindow) {
     compAccessor = (*env)->CallStaticObjectMethod(env, awtAccessorClass, getCompAccessor);
     (*env)->DeleteLocalRef(env, awtAccessorClass);
     if (!compAccessor || (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return NULL;
     }
 
     /* componentAccessor.getPeer(window) */
     compAccessorClass = (*env)->FindClass(env, "sun/awt/AWTAccessor$ComponentAccessor");
     if (!compAccessorClass || (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, compAccessor);
         return NULL;
     }
@@ -189,7 +190,7 @@ static HWND GetHwndFromAwtWindow(JNIEnv *env, jobject awtWindow) {
         "getPeer", "(Ljava/awt/Component;)Ljava/awt/peer/ComponentPeer;");
     (*env)->DeleteLocalRef(env, compAccessorClass);
     if (!getPeer || (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, compAccessor);
         return NULL;
     }
@@ -197,14 +198,14 @@ static HWND GetHwndFromAwtWindow(JNIEnv *env, jobject awtWindow) {
     peer = (*env)->CallObjectMethod(env, compAccessor, getPeer, awtWindow);
     (*env)->DeleteLocalRef(env, compAccessor);
     if (!peer || (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return NULL;
     }
 
     /* peer.getHWnd() */
     wCompPeerClass = (*env)->FindClass(env, "sun/awt/windows/WComponentPeer");
     if (!wCompPeerClass || (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, peer);
         return NULL;
     }
@@ -212,15 +213,14 @@ static HWND GetHwndFromAwtWindow(JNIEnv *env, jobject awtWindow) {
     getHWnd = (*env)->GetMethodID(env, wCompPeerClass, "getHWnd", "()J");
     (*env)->DeleteLocalRef(env, wCompPeerClass);
     if (!getHWnd || (*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, peer);
         return NULL;
     }
 
     hwnd = (*env)->CallLongMethod(env, peer, getHWnd);
     (*env)->DeleteLocalRef(env, peer);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
+    if (nucleus_jni_clear_exception(env)) {
         return NULL;
     }
 

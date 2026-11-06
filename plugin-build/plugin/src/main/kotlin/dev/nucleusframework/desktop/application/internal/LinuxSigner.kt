@@ -193,7 +193,14 @@ internal class LinuxSigner(
                 tool = gpg,
                 args =
                     gpgBaseArgs(home, passphraseFile) +
-                        listOf("-u", keyId, "--detach-sign", "-o", File(home, "prime.sig").absolutePath, dummy.absolutePath),
+                        listOf(
+                            "-u",
+                            keyId,
+                            "--detach-sign",
+                            "-o",
+                            File(home, "prime.sig").absolutePath,
+                            dummy.absolutePath,
+                        ),
             )
         }
 
@@ -300,7 +307,11 @@ internal class LinuxSigner(
         runCatching {
             Files.setPosixFilePermissions(
                 file.toPath(),
-                EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE),
+                EnumSet.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.OWNER_EXECUTE,
+                ),
             )
         }
     }

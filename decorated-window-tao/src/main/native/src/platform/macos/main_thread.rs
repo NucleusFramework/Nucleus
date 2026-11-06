@@ -36,9 +36,9 @@ pub(crate) fn dispatch_run_event_loop_on_main() {
     }
 }
 
-/// Called from `main_thread_dispatch.m` when the user hits Cmd-Q.
-/// Posts a `UserEvent::Exit` on the running Tao event-loop proxy.
+/// Cmd-Q (`main_thread_dispatch.m`) and `-[TaoApp terminate:]` (vendored tao).
+/// `false` once the event loop is gone, so the caller can fall back to a real quit.
 #[no_mangle]
-pub extern "C" fn nucleus_tao_post_exit() {
-    send_user_event(crate::events::UserEvent::Exit);
+pub extern "C" fn nucleus_tao_post_quit_requested() -> bool {
+    send_user_event(crate::events::UserEvent::QuitRequested)
 }

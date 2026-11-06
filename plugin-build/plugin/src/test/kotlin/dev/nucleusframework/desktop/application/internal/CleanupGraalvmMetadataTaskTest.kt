@@ -38,6 +38,7 @@ class CleanupGraalvmMetadataTaskTest {
         removeUnresolvable: Boolean = false,
         dryRun: Boolean = false,
         exactPackages: List<String> = emptyList(),
+        targetJavaVersion: Int = 25,
     ): CleanupGraalvmMetadataTask {
         val project = ProjectBuilder.builder().withProjectDir(tmp.newFolder()).build()
         return project.tasks
@@ -50,6 +51,7 @@ class CleanupGraalvmMetadataTaskTest {
                 task.removeUnresolvable.set(removeUnresolvable)
                 task.dryRun.set(dryRun)
                 task.exactReachabilityPackages.set(exactPackages)
+                task.targetJavaVersion.set(targetJavaVersion)
             }.get()
     }
 
@@ -211,5 +213,68 @@ class CleanupGraalvmMetadataTaskTest {
         // Agent phantoms are always gone.
         assertFalse(types.contains("kotlin.Int"))
         assertFalse(types.contains("kotlin.Any"))
+    }
+
+    @Test
+    fun `a type only in a higher versions directory of a multi-release JAR is unresolvable`() {
+        val configDir = tmp.newFolder("graalvm-multi-release")
+        val metadata =
+            writeMetadata(
+                configDir,
+                """
+                {
+                  "reflection": [
+                    { "type": "demo.Upcalls" },
+                    { "type": "demo.ffm.UpcallBinder" },
+                    { "type": "demo.next.FutureApi" }
+                  ]
+                }
+                """.trimIndent(),
+            )
+
+        createTask(
+            configDir = configDir,
+            classpath = listOf(multiReleaseJar(tmp.newFile("multi-release.jar"))),
+            removeUnresolvable = true,
+            targetJavaVersion = 25,
+        ).cleanup()
+
+        assertEquals(listOf("demo.Upcalls", "demo.ffm.UpcallBinder"), typeNames(metadata))
+    }
+
+    @Test
+    fun `library metadata counts only from the JAR root META-INF native-image`() {
+        val configDir = tmp.newFolder("graalvm-library-baseline")
+        val metadata =
+            writeMetadata(
+                configDir,
+                """
+                {
+                  "reflection": [
+                    { "type": "acme.app.FromRoot" },
+                    { "type": "acme.app.FromVersioned" }
+                  ]
+                }
+                """.trimIndent(),
+            )
+        val library = tmp.newFile("library.jar")
+        java.util.jar.JarOutputStream(library.outputStream()).use { out ->
+            out.putNextEntry(java.util.jar.JarEntry("META-INF/native-image/acme/lib/reachability-metadata.json"))
+            out.write("""{ "reflection": [ { "type": "acme.app.FromRoot" } ] }""".toByteArray())
+            out.closeEntry()
+            // native-image never discovers this copy, so it covers nothing.
+            out.putNextEntry(
+                java.util.jar.JarEntry("META-INF/versions/25/META-INF/native-image/acme/lib/reachability-metadata.json"),
+            )
+            out.write("""{ "reflection": [ { "type": "acme.app.FromVersioned" } ] }""".toByteArray())
+            out.closeEntry()
+        }
+
+        createTask(
+            configDir = configDir,
+            classpath = listOf(library, classDirWith("acme.app.FromRoot"), classDirWith("acme.app.FromVersioned")),
+        ).cleanup()
+
+        assertEquals(listOf("acme.app.FromVersioned"), typeNames(metadata))
     }
 }

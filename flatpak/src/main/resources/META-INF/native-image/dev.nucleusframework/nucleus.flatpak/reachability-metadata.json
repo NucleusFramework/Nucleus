@@ -1,0 +1,38 @@
+{
+  "reflection": [
+    {
+      "type": "dev.nucleusframework.flatpak.internal.NativeFlatpakBridge",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "onUpdateAvailable",
+          "parameterTypes": [
+            "long",
+            "java.lang.String",
+            "java.lang.String",
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "onProgress",
+          "parameterTypes": [
+            "long",
+            "int",
+            "int",
+            "int",
+            "int",
+            "java.lang.String",
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "onMonitorClosed",
+          "parameterTypes": [
+            "long",
+            "java.lang.String"
+          ]
+        }
+      ]
+    }
+  ]
+}

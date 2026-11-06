@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keyboard accessibility verification for tao-demo (A11y tab).
+"""Keyboard accessibility verification for the Lab a11y-surface fixture (A11y tab).
 
 Linux counterpart of scripts/ci/verify-uia-keyboard.ps1. Drives the app like a
 keyboard user — real X key events through xdotool, never synthetic Compose
@@ -12,7 +12,7 @@ input — and observes every result only through the AT-SPI tree:
   5. Shift+Tab walks the focus chain backwards
   6. Action.doAction baseline still works (pattern path, no keyboard)
 
-Prerequisites: tao-demo on the A11y tab, xdotool installed, and the window
+Prerequisites: the a11y-surface fixture on the A11y tab, xdotool installed, and the window
 reachable on the current DISPLAY.
 """
 
@@ -90,7 +90,7 @@ def keystrokes_reach_app(app, window):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app", default=ap.DEFAULT_APP)
-    parser.add_argument("--window", default="Tao Backend Demo")
+    parser.add_argument("--window", default=ap.DEFAULT_WINDOW)
     parser.add_argument("--timeout", type=int, default=int(os.environ.get("ATSPI_TIMEOUT_S", "300")))
     args = parser.parse_args()
 

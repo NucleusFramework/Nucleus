@@ -168,8 +168,17 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
 
 /* Compose physical pixels (top-left, parent-client) → a mouse message
  * on the embedded child. When [childHwnd] is not a window (WebView2
- * CompositionController, hwnd=0) the message is posted to [parentHwnd]
- * so a parent subclass (sample_webview.cpp SendMouseInput) still sees it. */
+ * CompositionController, hwnd=0) the message is sent to [parentHwnd]
+ * so a parent subclass (sample_webview.cpp SendMouseInput) still sees it.
+ *
+ * A real child gets the message *posted*: its handler may run a modal
+ * loop — an EDIT opens its context menu from WM_RBUTTONUP and does not
+ * return until the menu is dismissed — and that loop must not nest inside
+ * the Compose pointer dispatch this call is made from. Posted messages
+ * keep their order and run before the next input message, so a forwarded
+ * press still reaches the child before the release Win32 delivers to it
+ * directly once it has captured the mouse. The parent keeps SendMessage:
+ * the host guards the synchronous echo through Tao's WndProc. */
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDispatchPointer(
     JNIEnv *env, jclass clazz,
@@ -182,11 +191,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     if (!IsWindow(parent)) return;
     HWND target = IsWindow(child) ? child : parent;
     if (type == 1 && IsWindow(child)) SetFocus(child);
-    if (nucleus_tao_replay_last_native_input(target)) return;
-    POINT pt = { (LONG)xPx, (LONG)yPx };
-    if (target != parent) {
-        MapWindowPoints(parent, target, &pt, 1);
-    }
+    /* A press goes out synchronously so the capture the child takes on it can
+     * be handed straight back (below); everything else is posted, because a
+     * child's handler may run a modal loop — an EDIT opens its context menu
+     * from WM_RBUTTONUP and does not return until it is dismissed — which
+     * must not nest inside the Compose pointer dispatch we are called from.
+     * The parent is always sent to: the host guards that synchronous echo. */
+    BOOL post = (target != parent) && (type != 1);
     UINT msg;
     if (type == 1) {
         msg = (button == 2) ? WM_RBUTTONDOWN :
@@ -197,6 +208,11 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     } else {
         msg = WM_MOUSEMOVE;
     }
+    if (nucleus_tao_replay_last_native_input(target, msg, post)) return;
+    POINT pt = { (LONG)xPx, (LONG)yPx };
+    if (target != parent) {
+        MapWindowPoints(parent, target, &pt, 1);
+    }
     WPARAM mk = 0;
     if (button == 2 || (pressed == JNI_TRUE && button == 2)) mk |= MK_RBUTTON;
     else if (button == 3 || (pressed == JNI_TRUE && button == 3)) mk |= MK_MBUTTON;
@@ -204,7 +220,19 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     if (GetKeyState(VK_SHIFT) & 0x8000) mk |= MK_SHIFT;
     if (GetKeyState(VK_CONTROL) & 0x8000) mk |= MK_CONTROL;
     LPARAM lp = MAKELPARAM((short)pt.x, (short)pt.y);
-    SendMessageW(target, msg, mk, lp);
+    if (post) {
+        PostMessageW(target, msg, mk, lp);
+    } else {
+        SendMessageW(target, msg, mk, lp);
+    }
+    /* Compose routes this pointer, not the embed: a child that captured the
+     * mouse on the press would take every later message off the window —
+     * neither the Compose scene nor its blending overlay would see the
+     * pointer again, and the whole UI reads as dead. */
+    if (type == 1) {
+        HWND capture = GetCapture();
+        if (capture && capture != parent && IsChild(parent, capture)) ReleaseCapture();
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -218,12 +246,343 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     HWND child = hwnd_from_jlong(childHwnd);
     if (!IsWindow(parent)) return;
     HWND target = IsWindow(child) ? child : parent;
-    if (nucleus_tao_replay_last_native_input(target)) return;
-    POINT pt = { (LONG)xPx, (LONG)yPx };
-    ClientToScreen(parent, &pt);
+    BOOL post = (target != parent);
     UINT msg = (dx != 0.0f && (dy == 0.0f || (dx > dy || dx < -dy)))
         ? WM_MOUSEHWHEEL : WM_MOUSEWHEEL;
+    if (nucleus_tao_replay_last_native_input(target, msg, post)) return;
+    POINT pt = { (LONG)xPx, (LONG)yPx };
+    ClientToScreen(parent, &pt);
     /* Compose/AWT deltas are already negated vs Win32. */
     short delta = (short)(msg == WM_MOUSEHWHEEL ? (-dx * 120.0f) : (-dy * 120.0f));
-    SendMessageW(target, msg, MAKEWPARAM(0, delta), MAKELPARAM((short)pt.x, (short)pt.y));
+    if (post) {
+        PostMessageW(target, msg, MAKEWPARAM(0, delta), MAKELPARAM((short)pt.x, (short)pt.y));
+    } else {
+        SendMessageW(target, msg, MAKEWPARAM(0, delta), MAKELPARAM((short)pt.x, (short)pt.y));
+    }
+}
+
+/* Compose kept a press, so the keyboard is Compose's: hands Win32 focus
+ * back to the Tao HWND when an embedded child (an EDIT, WebView2) holds it.
+ * Win32 never moves focus on a click into a plain client area by itself, so
+ * a child clicked into earlier would keep every keystroke while Compose
+ * shows a focused text field. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeClaimKeyboardForCompose(
+    JNIEnv *env, jclass clazz, jlong parentHwnd) {
+    (void)env; (void)clazz;
+    HWND parent = hwnd_from_jlong(parentHwnd);
+    if (!IsWindow(parent)) return JNI_FALSE;
+    HWND focused = GetFocus();
+    if (!focused || focused == parent || !IsChild(parent, focused)) return JNI_FALSE;
+    SetFocus(parent);
+    return JNI_TRUE;
+}
+
+/* The mouse buttons down as this thread's message queue knows them: bit 0
+ * left, bit 1 right, bit 2 middle. A press forwarded to a child HWND makes
+ * the child SetCapture, so the release goes to the child alone and Compose
+ * never hears of it — the host asks Win32 which buttons are really down
+ * instead of trusting the last event it saw. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeQueryPointerButtons(
+    JNIEnv *env, jclass clazz) {
+    (void)env; (void)clazz;
+    jint mask = 0;
+    if (GetKeyState(VK_LBUTTON) & 0x8000) mask |= 1;
+    if (GetKeyState(VK_RBUTTON) & 0x8000) mask |= 2;
+    if (GetKeyState(VK_MBUTTON) & 0x8000) mask |= 4;
+    return mask;
+}
+
+/* A child HWND that captured the mouse on a forwarded press (an EDIT does,
+ * so does WebView2) keeps every later mouse message on itself — the Tao
+ * window and its blending overlay stop hearing from the pointer entirely and
+ * the whole Compose UI reads as dead. Compose owns the pointer, so the host
+ * hands the capture back as soon as the gesture the child was given ends.
+ * Returns whether a capture was taken away. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeReleaseChildCapture(
+    JNIEnv *env, jclass clazz, jlong parentHwnd) {
+    (void)env; (void)clazz;
+    HWND parent = hwnd_from_jlong(parentHwnd);
+    if (!IsWindow(parent)) return JNI_FALSE;
+    HWND capture = GetCapture();
+    if (!capture || capture == parent || !IsChild(parent, capture)) return JNI_FALSE;
+    ReleaseCapture();
+    return JNI_TRUE;
+}
+
+/* The pointer's position in [parentHwnd]'s client pixels, packed as
+ * `(x << 32) | (y & 0xffffffff)`, or LLONG_MIN when it cannot be read.
+ *
+ * Tao reports a button without a position, so the scene places it where the
+ * last `CursorMoved` left the pointer — and Tao drops a `WM_MOUSEMOVE` whose
+ * coordinate equals the last one *it* saw. Every move over a `NativeView`
+ * goes to the blending overlay instead, so Tao's idea of the position goes
+ * stale and a click that comes back to a point it saw before is placed where
+ * the pointer no longer is. The host asks Win32 instead. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeCursorPosInClient(
+    JNIEnv *env, jclass clazz, jlong parentHwnd) {
+    (void)env; (void)clazz;
+    HWND parent = hwnd_from_jlong(parentHwnd);
+    if (!IsWindow(parent)) return MININT64;
+    POINT pt;
+    if (!GetCursorPos(&pt)) return MININT64;
+    if (!ScreenToClient(parent, &pt)) return MININT64;
+    return ((jlong)pt.x << 32) | ((jlong)pt.y & 0xffffffffLL);
+}
+
+/* ── Diagnostics for the headful suite ──────────────────────────────────
+ *
+ * A NativeView case needs a real, focusable child HWND — one that takes
+ * Win32 keyboard focus on click and shows an I-beam — to race against
+ * Compose. The test module cannot create one itself, so these hand out a
+ * plain single-line EDIT control and read the focus and the text back.
+ * Nothing here is used by NativeView proper. */
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagCreateEdit(
+    JNIEnv *env, jclass clazz) {
+    (void)env; (void)clazz;
+    /* Hidden top-level: nativeAttach flips it to WS_CHILD and reparents,
+     * exactly the path a user-created control takes. */
+    HWND edit = CreateWindowExW(
+        0, L"EDIT", L"",
+        WS_POPUP | ES_LEFT | ES_AUTOHSCROLL,
+        0, 0, 64, 24,
+        NULL, NULL, GetModuleHandleW(NULL), NULL);
+    return (jlong)(uintptr_t)edit;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagDestroyWindow(
+    JNIEnv *env, jclass clazz, jlong hwnd) {
+    (void)env; (void)clazz;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (IsWindow(h)) DestroyWindow(h);
+}
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagFocusedHwnd(
+    JNIEnv *env, jclass clazz) {
+    (void)env; (void)clazz;
+    return (jlong)(uintptr_t)GetFocus();
+}
+
+JNIEXPORT jstring JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagWindowText(
+    JNIEnv *env, jclass clazz, jlong hwnd) {
+    (void)clazz;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (!IsWindow(h)) return NULL;
+    WCHAR buf[512];
+    int len = GetWindowTextW(h, buf, 512);
+    if (len < 0) len = 0;
+    return (*env)->NewString(env, (const jchar *)buf, (jsize)len);
+}
+
+/* The control's rectangle in its parent's client coordinates (physical
+ * px, top-left origin) as `[x, y, w, h]`, or null when not a window. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagWindowFrame(
+    JNIEnv *env, jclass clazz, jlong hwnd) {
+    (void)clazz;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (!IsWindow(h)) return NULL;
+    HWND parent = GetParent(h);
+    RECT rect;
+    if (!GetWindowRect(h, &rect)) return NULL;
+    POINT corners[2] = { { rect.left, rect.top }, { rect.right, rect.bottom } };
+    if (parent) MapWindowPoints(NULL, parent, corners, 2);
+    jint out[4] = { corners[0].x, corners[0].y, corners[1].x - corners[0].x, corners[1].y - corners[0].y };
+    jintArray result = (*env)->NewIntArray(env, 4);
+    if (result == NULL) return NULL;
+    (*env)->SetIntArrayRegion(env, result, 0, 4, out);
+    return result;
+}
+
+#ifndef PW_CLIENTONLY
+#define PW_CLIENTONLY 0x00000001
+#endif
+#ifndef PW_RENDERFULLCONTENT
+#define PW_RENDERFULLCONTENT 0x00000002
+#endif
+
+/* The window's client area as DWM holds it, read with
+ * PrintWindow(PW_RENDERFULLCONTENT) — the copy taskbar thumbnails and
+ * Alt+Tab are drawn from, which also covers the parts of the window that
+ * lie outside every display. Returned as `[w, h, argb...]` (rows top-down),
+ * or null when the window cannot be captured. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagPrintClient(
+    JNIEnv *env, jclass clazz, jlong hwnd) {
+    (void)clazz;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (!IsWindow(h)) return NULL;
+    RECT rc;
+    if (!GetClientRect(h, &rc)) return NULL;
+    int w = (int)(rc.right - rc.left);
+    int ht = (int)(rc.bottom - rc.top);
+    if (w <= 0 || ht <= 0) return NULL;
+
+    BITMAPINFO bmi;
+    memset(&bmi, 0, sizeof(bmi));
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = w;
+    bmi.bmiHeader.biHeight = -ht; /* top-down rows */
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC screen = GetDC(NULL);
+    HDC mem = CreateCompatibleDC(screen);
+    void *bits = NULL;
+    HBITMAP dib = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+    ReleaseDC(NULL, screen);
+    if (!mem || !dib || !bits) {
+        if (dib) DeleteObject(dib);
+        if (mem) DeleteDC(mem);
+        return NULL;
+    }
+    HGDIOBJ old = SelectObject(mem, dib);
+    BOOL ok = PrintWindow(h, mem, PW_CLIENTONLY | PW_RENDERFULLCONTENT);
+    GdiFlush();
+
+    jintArray result = NULL;
+    if (ok) {
+        jsize count = (jsize)w * (jsize)ht;
+        result = (*env)->NewIntArray(env, 2 + count);
+        if (result != NULL) {
+            jint dims[2] = { w, ht };
+            (*env)->SetIntArrayRegion(env, result, 0, 2, dims);
+            /* BGRA in memory is 0xAARRGGBB as a little-endian int; force the
+             * alpha opaque, GDI leaves it undefined. */
+            jint *px = (jint *)bits;
+            for (jsize i = 0; i < count; ++i) px[i] |= (jint)0xFF000000;
+            (*env)->SetIntArrayRegion(env, result, 2, count, px);
+        }
+    }
+    SelectObject(mem, old);
+    DeleteObject(dib);
+    DeleteDC(mem);
+    return result;
+}
+
+/* The screen in [x, y, w, h] physical px as DWM composed it, layered
+ * windows included (CAPTUREBLT), as `[w, h, argb...]` (rows top-down), or
+ * null. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagCaptureScreen(
+    JNIEnv *env, jclass clazz, jint x, jint y, jint w, jint h) {
+    (void)clazz;
+    if (w <= 0 || h <= 0) return NULL;
+    BITMAPINFO bmi;
+    memset(&bmi, 0, sizeof(bmi));
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = w;
+    bmi.bmiHeader.biHeight = -h; /* top-down rows */
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC screen = GetDC(NULL);
+    HDC mem = CreateCompatibleDC(screen);
+    void *bits = NULL;
+    HBITMAP dib = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+    jintArray result = NULL;
+    if (mem && dib && bits) {
+        HGDIOBJ old = SelectObject(mem, dib);
+        if (BitBlt(mem, 0, 0, w, h, screen, x, y, SRCCOPY | CAPTUREBLT)) {
+            GdiFlush();
+            jsize count = (jsize)w * (jsize)h;
+            result = (*env)->NewIntArray(env, 2 + count);
+            if (result != NULL) {
+                jint dims[2] = { w, h };
+                (*env)->SetIntArrayRegion(env, result, 0, 2, dims);
+                jint *px = (jint *)bits;
+                for (jsize i = 0; i < count; ++i) px[i] |= (jint)0xFF000000;
+                (*env)->SetIntArrayRegion(env, result, 2, count, px);
+            }
+        }
+        SelectObject(mem, old);
+    }
+    if (dib) DeleteObject(dib);
+    if (mem) DeleteDC(mem);
+    ReleaseDC(NULL, screen);
+    return result;
+}
+
+/* ── Pen injection for the headful suite (#827) ─────────────────────────
+ *
+ * A real pen stroke, through a synthetic PT_PEN pointer device: the system
+ * hit-tests it and posts WM_POINTER* to the window under it, so Tao's
+ * WM_POINTER handler, the JNI loop and the scene host all run, exactly as
+ * for a Surface pen. Resolved at run time (Windows 10 1809+), so the DLL
+ * still loads on older systems, and inert unless the process was started
+ * with NUCLEUS_TAO_INPUT_INJECTION=1 (the taoHeadfulTest task sets it). */
+
+typedef HSYNTHETICPOINTERDEVICE (WINAPI *CreateSyntheticPointerDeviceFn)(
+    POINTER_INPUT_TYPE, ULONG, POINTER_FEEDBACK_MODE);
+typedef BOOL (WINAPI *InjectSyntheticPointerInputFn)(
+    HSYNTHETICPOINTERDEVICE, const POINTER_TYPE_INFO *, UINT32);
+
+/* Actions of nativeDiagInjectPen, mirrored in WindowsPenPointerTypeHeadfulCases. */
+#define PEN_ACTION_HOVER 0
+#define PEN_ACTION_DOWN 1
+#define PEN_ACTION_DRAG 2
+#define PEN_ACTION_UP 3
+#define PEN_ACTION_LEAVE 4
+
+static HSYNTHETICPOINTERDEVICE g_diag_pen_device;
+static InjectSyntheticPointerInputFn g_diag_inject_pointer;
+
+static BOOL diag_input_injection_enabled(void) {
+    char flag[2];
+    return GetEnvironmentVariableA("NUCLEUS_TAO_INPUT_INJECTION", flag, sizeof(flag)) == 1 && flag[0] == '1';
+}
+
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagInjectPen(
+    JNIEnv *env, jclass clazz, jlong hwnd, jint action, jboolean eraser, jint clientX, jint clientY) {
+    (void)env; (void)clazz;
+    if (!diag_input_injection_enabled()) return JNI_FALSE;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (!IsWindow(h)) return JNI_FALSE;
+    if (g_diag_pen_device == NULL) {
+        HMODULE user32 = GetModuleHandleW(L"user32.dll");
+        CreateSyntheticPointerDeviceFn create = (CreateSyntheticPointerDeviceFn)(void *)
+            GetProcAddress(user32, "CreateSyntheticPointerDevice");
+        g_diag_inject_pointer = (InjectSyntheticPointerInputFn)(void *)
+            GetProcAddress(user32, "InjectSyntheticPointerInput");
+        if (create == NULL || g_diag_inject_pointer == NULL) return JNI_FALSE;
+        g_diag_pen_device = create(PT_PEN, 1, POINTER_FEEDBACK_DEFAULT);
+        if (g_diag_pen_device == NULL) return JNI_FALSE;
+    }
+
+    POINT pt = { clientX, clientY };
+    if (!ClientToScreen(h, &pt)) return JNI_FALSE;
+
+    POINTER_FLAGS flags;
+    switch (action) {
+    case PEN_ACTION_HOVER: flags = POINTER_FLAG_INRANGE | POINTER_FLAG_UPDATE; break;
+    case PEN_ACTION_DOWN: flags = POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | POINTER_FLAG_DOWN; break;
+    case PEN_ACTION_DRAG: flags = POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | POINTER_FLAG_UPDATE; break;
+    case PEN_ACTION_UP: flags = POINTER_FLAG_INRANGE | POINTER_FLAG_UP; break;
+    case PEN_ACTION_LEAVE: flags = POINTER_FLAG_UPDATE; break;
+    default: return JNI_FALSE;
+    }
+    BOOL contact = (flags & POINTER_FLAG_INCONTACT) != 0;
+
+    POINTER_TYPE_INFO info;
+    memset(&info, 0, sizeof(info));
+    info.type = PT_PEN;
+    info.penInfo.pointerInfo.pointerType = PT_PEN;
+    info.penInfo.pointerInfo.ptPixelLocation = pt;
+    info.penInfo.pointerInfo.pointerFlags = flags;
+    /* The eraser end: inverted while it hovers, erasing while it touches. */
+    info.penInfo.penFlags = eraser ? (contact ? PEN_FLAG_ERASER : PEN_FLAG_INVERTED) : PEN_FLAG_NONE;
+    info.penInfo.penMask = PEN_MASK_PRESSURE;
+    info.penInfo.pressure = contact ? 512 : 0;
+    return g_diag_inject_pointer(g_diag_pen_device, &info, 1) ? JNI_TRUE : JNI_FALSE;
 }

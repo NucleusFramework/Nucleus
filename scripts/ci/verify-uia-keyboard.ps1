@@ -1,4 +1,4 @@
-﻿# Enterprise keyboard accessibility probe for tao-demo (A11y tab).
+﻿# Enterprise keyboard accessibility probe for the Lab a11y-surface fixture (A11y tab).
 #
 # Drives the app like a keyboard user / screen-reader focus chain:
 #   1. Activate HWND + dismiss system-menu keyboard mode (Escape)
@@ -11,11 +11,11 @@
 # Uses keybd_event / mouse_event (not SendInput) ? SendInput INPUT unions are
 # brittle across PowerShell/CLR packing and silently dropped key/mouse events.
 #
-# Prerequisites: tao-demo running on A11y tab (NUCLEUS_DEMO_TAB=A11y or navigate).
+# Prerequisites: the a11y-surface fixture running on its A11y tab (the default).
 # Exit 0 = all keyboard a11y assertions hold.
 
 param(
-    [string]$Title = "Tao Backend Demo",
+    [string]$Title = "Nucleus A11y Surface",
     [int]$TimeoutSec = 90
 )
 
@@ -299,7 +299,7 @@ Write-Host ("  visited focus names ({0}): {1}" -f $visited.Count, (($visitedList
 Assert ($visited.Count -ge 3) ("Tab traversal visited >= 3 distinct accessible names (got {0})" -f $visited.Count)
 
 $interesting = @("Increment", "Cannot press", "Tri-state checkbox", "Notifications switch",
-    "Volume", "A11y text field", "Update status", "Bare toggleable", "A11y", "Demo", "Complex",
+    "Volume", "A11y text field", "Update status", "Bare toggleable", "A11y", "Complex",
     "Priority Low", "Priority Medium", "Priority High", "Open dialog")
 $hits = @($interesting | Where-Object { $visited.Contains($_) })
 Write-Host ("  interesting hits: {0}" -f ($hits -join ', '))

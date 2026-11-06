@@ -16,7 +16,7 @@
 // placement from the rect itself.
 
 use jni::objects::JClass;
-use jni::sys::{jint, jlong};
+use jni::sys::{jboolean, jint, jlong};
 use jni::JNIEnv;
 
 use tao::dpi::{PhysicalPosition, PhysicalSize};
@@ -48,5 +48,25 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
             PhysicalPosition::new(x_px, y_px),
             PhysicalSize::new(w_px.max(0), h_px.max(0)),
         );
+    }
+}
+
+/// Tells the window whether a text field owns the input (#842). The GTK input
+/// context is focused only while one does: on Wayland, focusing it sends
+/// text-input `enable`, which compositors answer with the on-screen keyboard.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetImeAllowed(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    allowed: jboolean,
+) {
+    let guard = match WINDOWS.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let Some(map) = guard.as_ref() else { return };
+    if let Some(window) = map.get(&(handle as u64)) {
+        window.set_ime_allowed(allowed != 0);
     }
 }

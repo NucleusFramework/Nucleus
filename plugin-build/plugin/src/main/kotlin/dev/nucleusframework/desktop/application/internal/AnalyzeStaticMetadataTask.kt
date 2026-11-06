@@ -17,6 +17,7 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.gradle.jvm.toolchain.JavaLauncher
 import java.io.File
 
 /**
@@ -60,10 +61,22 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
     @get:Input
     abstract val reflectionForProjectClasses: Property<Boolean>
 
+    /**
+     * Feature version of the JDK native-image runs on, read from the resolved GraalVM toolchain
+     * (see [javaFeatureVersion]). Multi-release JARs are analyzed as that JDK reads them.
+     */
+    @get:Input
+    abstract val targetJavaVersion: Property<Int>
+
     /** Output directory where reachability-metadata.json is written. */
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    /**
+     * Scans [runtimeClasspath] and writes the detected reflection, JNI and resource
+     * metadata to `reachability-metadata.json` in [outputDir] (an empty `{}` when there
+     * is nothing to analyze).
+     */
     @TaskAction
     fun analyze() {
         // Always materialize the output directory so consumers can declare it as a
@@ -96,6 +109,7 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
                 projectClassDirs = projectDirs,
                 detectOrphanProjectClasses = orphanEnabled,
                 reflectionForProjectClasses = allProjectEnabled,
+                targetJavaVersion = targetJavaVersion.get(),
             )
 
         val projectEntries = result.projectClassEntries
@@ -135,7 +149,7 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
                 if (entries.size == 1) "y" else "ies",
         )
         // Cap log volume for the sledgehammer path (can register hundreds of types).
-        val limit = if (tag == "project-class") 50 else Int.MAX_VALUE
+        val limit = if (tag == "project-class") MAX_LOGGED_PROJECT_CLASSES else Int.MAX_VALUE
         val sorted = entries.sortedBy { it.type }
         for (entry in sorted.take(limit)) {
             logger.lifecycle("[$tag] ${entry.type}")
@@ -145,6 +159,9 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
         }
     }
 }
+
+/** Number of project classes listed in the log by the `reflectionForProjectClasses` path. */
+private const val MAX_LOGGED_PROJECT_CLASSES = 50
 
 /**
  * Builds a reachability-metadata.json string in the GraalVM format from analysis results.
@@ -173,7 +190,7 @@ internal fun buildReachabilityMetadataJson(
     if (resourcePatterns.isNotEmpty()) {
         root["resources"] =
             resourcePatterns
-                .sortedBy { it.glob ?: it.bundle ?: "" }
+                .sortedBy { (it.glob ?: it.bundle).orEmpty() }
                 .map { it.toJsonMap() }
     }
 
@@ -225,3 +242,10 @@ private fun ResourcePattern.toJsonMap(): Map<String, Any?> {
     if (module != null) map["module"] = module
     return map
 }
+
+/**
+ * Feature version of the JDK behind [launcher]. For the auto-provisioned GraalVM this comes from
+ * the installation's own `release` file, so it follows `toolchain { version / channel }`, a
+ * `GRAALVM_HOME` override and the Liberica NIK fallback rather than `graalvm.javaLanguageVersion`.
+ */
+internal fun javaFeatureVersion(launcher: JavaLauncher): Int = launcher.metadata.languageVersion.asInt()

@@ -1,0 +1,48 @@
+[package]
+name = "nucleus_authentication"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "nucleus_authentication"
+crate-type = ["cdylib"]
+
+[dependencies]
+jni = "0.21"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+    "Foundation",
+    "Security_Credentials_UI",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Authentication_Identity",
+    "Win32_Security_Credentials",
+    "Win32_System_Com",
+    "Win32_System_Threading",
+    "Win32_System_WinRT",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-future = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSError", "NSString"] }
+objc2-local-authentication = { version = "0.3", features = ["block2", "LAContext", "LAError"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+# Not "symbols" (nor "debuginfo"): rustc's own strip pass, run with Xcode 27's toolchain
+# (ld-27037), leaves a mis-aligned LINKEDIT string pool that dyld refuses to load. The
+# macOS and Linux build scripts strip the copied library instead (`strip -x` /
+# `strip --strip-unneeded`); MSVC keeps symbols in the PDB, not the DLL.
+strip = false

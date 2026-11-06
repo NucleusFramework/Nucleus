@@ -162,9 +162,9 @@ public fun rememberTaoGpuRenderContext(): TaoGpuRenderContext? {
     val context =
         remember(metalHost, glHost, windowsHost) {
             when {
-                metalHost != null -> MetalRenderContext(metalHost)
-                glHost != null -> LinuxOpenGlRenderContext(glHost)
-                windowsHost != null -> WindowsOpenGlRenderContext(windowsHost)
+                metalHost != null -> renderContextOf(metalHost, ::MetalRenderContext)
+                glHost != null -> renderContextOf(glHost, ::LinuxOpenGlRenderContext)
+                windowsHost != null -> renderContextOf(windowsHost, ::WindowsOpenGlRenderContext)
                 else -> null
             }
         }
@@ -177,6 +177,29 @@ public fun rememberTaoGpuRenderContext(): TaoGpuRenderContext? {
     }
     return context
 }
+
+/**
+ * The render context of each surface's texture host, so that every call site on
+ * one surface gets the same instance — the identity-stable contract of
+ * [rememberTaoGpuRenderContext], which consumers key their renderer state on
+ * (one engine per surface, not one per composable). A host is replaced with its
+ * GPU context, which yields a new instance as documented.
+ *
+ * Weak keys and values: the context references its host, so a strong value would
+ * pin the key forever. A context no call site holds any more may be dropped and
+ * built again later; nobody kept the old one to tell them apart.
+ */
+private val renderContexts =
+    java.util.WeakHashMap<Any, java.lang.ref.WeakReference<TaoGpuRenderContext>>()
+
+private fun <H : Any> renderContextOf(
+    host: H,
+    create: (H) -> TaoGpuRenderContext,
+): TaoGpuRenderContext =
+    synchronized(renderContexts) {
+        renderContexts[host]?.get()
+            ?: create(host).also { renderContexts[host] = java.lang.ref.WeakReference(it) }
+    }
 
 /**
  * Ledger of the [DirectContext]s whose composition currently holds a

@@ -88,12 +88,16 @@ internal data class D3D11SharedTextureSource(
  * finish their writes (`commit` + `waitUntilCompleted`, or double buffering)
  * *before* calling [TextureViewController.markFrameAvailable]; a producer
  * still writing while the compositor copies can tear, never crash.
+ *
+ * The returned source retains [ioSurface] for as long as it is reachable, so
+ * a producer that releases its own hold (the "close under a live view"
+ * case) cannot free the surface out from under a later remount.
  */
 public fun nucleusIOSurfaceTextureSource(
     ioSurface: Long,
     widthPx: Int,
     heightPx: Int,
-): TextureViewSource = IOSurfaceTextureSource(ioSurface, widthPx, heightPx)
+): TextureViewSource = IOSurfaceTextureSource(ioSurface, widthPx, heightPx).also(::retainIoSurfaceForSource)
 
 internal data class IOSurfaceTextureSource(
     val ioSurface: Long,

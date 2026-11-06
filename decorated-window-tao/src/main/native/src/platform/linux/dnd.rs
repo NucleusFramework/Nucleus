@@ -54,8 +54,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use jni::objects::{GlobalRef, JClass, JObject, JObjectArray, JString, JValue};
-use jni::sys::{jint, jlong, JNI_FALSE, JNI_TRUE};
+use jni::objects::{GlobalRef, JClass, JIntArray, JObject, JObjectArray, JString, JValue};
+use jni::sys::{jfloat, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
 use gtk::gdk::DragAction;
@@ -66,12 +66,23 @@ use tao::platform::unix::WindowExtUnix;
 
 use crate::state::{JAVA_VM, WINDOWS};
 
+use super::drag_data::{DragDataState, DropPosition, ReceivedData};
+
 // ── Drop-effect constants (must match Kotlin DROP_EFFECT_*) ────────────────
 
 const DROP_EFFECT_NONE: jint = 0;
 const DROP_EFFECT_COPY: jint = 1;
 const DROP_EFFECT_MOVE: jint = 2;
 const DROP_EFFECT_LINK: jint = 4;
+
+/// Target for data that never leaves the process: the JVM's cross-window
+/// gestures (satellite docking, tab tear-off) ride the platform DnD session on
+/// native Wayland, where it is the only pointer grab that crosses windows with
+/// coordinates. Advertised and accepted `SAME_APP` only, so a foreign drop
+/// target never sees it and a foreign source can never spoof it. Must match
+/// Kotlin `TaoPrivateTransfer.MIME`.
+const PRIVATE_TARGET: &str = "application/x-nucleus-private";
+const PRIVATE_TARGET_INFO: u32 = 6;
 
 /// Anti-rebound delay for `drag-leave` → `onExited`/`onEnded` dispatch. The
 /// specialist report cites 250 ms as a safe upper bound on GTK 3's spurious
@@ -83,6 +94,27 @@ const LEAVE_DEBOUNCE_MS: u32 = 250;
 /// display's refresh rate, and anything the swap thread cannot absorb is
 /// coalesced by the host's owed-render gate.
 const DRAG_PUMP_INTERVAL_MS: u64 = 8;
+
+/// How many queued GTK events to drain after `drag-end` so the toolkit can
+/// finish releasing the drag's pointer grab. A handful of iterations: the
+/// teardown is a few events, and the loop stops as soon as none are pending.
+const DRAG_TEARDOWN_ITERATIONS: usize = 64;
+
+/// How long the session may run on with no pointer button held before it is
+/// declared dead and cancelled.
+///
+/// A legitimate session ends within a frame or two of the release — `drag-end`
+/// follows the compositor's `dnd_finished` / `cancelled` immediately. Waiting a
+/// full second past the release costs a correct drag nothing and only ever
+/// fires for a session the compositor never took (see [`buttons_held`]).
+const DRAG_DEAD_SESSION_GRACE_MS: u128 = 1_000;
+
+/// Watchdog wake interval while a session is in flight.
+///
+/// `main_iteration_do(true)` blocks until GTK has something to dispatch, so the
+/// deadline check needs a source that wakes the loop on its own — the pump
+/// cannot be relied on for it, since a session may run with `pump = None`.
+const DRAG_WATCHDOG_INTERVAL_MS: u64 = 50;
 
 // ── Per-window registration ────────────────────────────────────────────────
 
@@ -111,8 +143,22 @@ thread_local! {
 struct OutboundSession {
     files: Vec<String>,
     text: Option<String>,
+    private_data: Option<String>,
     result: Rc<Cell<jint>>,
     done: Rc<Cell<bool>>,
+}
+
+/// The drag icon a session shows under the pointer: premultiplied ARGB32 in
+/// native endianness (cairo's own layout), `width × height` device pixels
+/// rendered at `scale` px per logical pixel, with the pointer at
+/// (`hot_x`, `hot_y`) device pixels.
+pub(crate) struct DragIcon {
+    pub argb: Vec<u32>,
+    pub width: i32,
+    pub height: i32,
+    pub scale: f64,
+    pub hot_x: i32,
+    pub hot_y: i32,
 }
 
 thread_local! {
@@ -121,7 +167,7 @@ thread_local! {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-fn target_entries() -> [TargetEntry; 5] {
+fn target_entries() -> [TargetEntry; 6] {
     // Info codes are forwarded to drag-data-get verbatim; we use them to pick
     // the right serialiser. text/uri-list is the primary inbound target for
     // file drops on Linux (Nautilus, Files, Konqueror, Firefox bookmarks…).
@@ -131,7 +177,32 @@ fn target_entries() -> [TargetEntry; 5] {
         TargetEntry::new("UTF8_STRING", TargetFlags::OTHER_APP, 4),
         TargetEntry::new("STRING", TargetFlags::OTHER_APP, 5),
         TargetEntry::new("text/plain", TargetFlags::OTHER_APP, 3),
+        TargetEntry::new(PRIVATE_TARGET, TargetFlags::SAME_APP, PRIVATE_TARGET_INFO),
     ]
+}
+
+/// Builds the GTK drag icon from [`DragIcon`]: a cairo surface at the source's
+/// device scale, so it stays crisp on HiDPI, with the hotspot expressed as the
+/// surface's device offset (the way `gtk_drag_set_icon_surface` reads it).
+fn drag_icon_surface(icon: DragIcon) -> Option<gtk::cairo::ImageSurface> {
+    use gtk::cairo::{Format, ImageSurface};
+    if icon.width <= 0 || icon.height <= 0 {
+        return None;
+    }
+    let stride = Format::ARgb32.stride_for_width(icon.width as u32).ok()?;
+    if stride != icon.width * 4 || icon.argb.len() != (icon.width * icon.height) as usize {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(icon.argb.len() * 4);
+    for px in icon.argb {
+        bytes.extend_from_slice(&px.to_ne_bytes());
+    }
+    let surface =
+        ImageSurface::create_for_data(bytes, Format::ARgb32, icon.width, icon.height, stride).ok()?;
+    let scale = if icon.scale > 0.0 { icon.scale } else { 1.0 };
+    surface.set_device_scale(scale, scale);
+    surface.set_device_offset(-(icon.hot_x as f64), -(icon.hot_y as f64));
+    Some(surface)
 }
 
 fn map_action_to_effect(action: DragAction) -> jint {
@@ -186,6 +257,24 @@ fn translate_to_content_phys(window: &gtk::Window, x: i32, y: i32) -> (i32, i32)
     (lx * scale, ly * scale)
 }
 
+/// Whether the seat still reports a pointer button held down over `widget`.
+///
+/// Read straight off GDK's device state rather than tracked from the events we
+/// forward: it is precisely a *stale* view of the button that this answers,
+/// and only GDK's own state is in step with the serial `gtk_drag_begin` is
+/// about to spend. `None` when the state cannot be read (window not realised,
+/// no seat), which callers treat as "cannot vouch for it" and let through.
+fn buttons_held(widget: &gtk::Window) -> Option<bool> {
+    let gdk_window = WidgetExt::window(widget)?;
+    let pointer = gdk_window.display().default_seat()?.pointer()?;
+    let (_, _, _, mask) = gdk_window.device_position(&pointer);
+    Some(mask.intersects(
+        gtk::gdk::ModifierType::BUTTON1_MASK
+            | gtk::gdk::ModifierType::BUTTON2_MASK
+            | gtk::gdk::ModifierType::BUTTON3_MASK,
+    ))
+}
+
 fn with_window<R, F: FnOnce(&tao::window::Window) -> R>(handle: u64, f: F) -> Option<R> {
     let guard = WINDOWS.lock().ok()?;
     let map = guard.as_ref()?;
@@ -226,6 +315,36 @@ fn dispatch_motion(
         return DROP_EFFECT_NONE;
     }
     res.and_then(|v| v.i()).unwrap_or(DROP_EFFECT_NONE)
+}
+
+fn dispatch_files(handle: u64, callback: &GlobalRef, files: &[String]) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let _ = env.with_local_frame(
+        files.len() as i32 + 6,
+        |env| -> Result<(), jni::errors::Error> {
+            let arr = if files.is_empty() {
+                JObject::null()
+            } else if let Some(arr) = build_string_array(env, files) {
+                arr.into()
+            } else {
+                return Ok(());
+            };
+            let _ = env.call_method(
+                callback.as_obj(),
+                "onDragFiles",
+                "(J[Ljava/lang/String;)V",
+                &[JValue::Long(handle as jlong), JValue::Object(&arr)],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+            }
+            Ok(())
+        },
+    );
 }
 
 fn dispatch_leave(handle: u64, callback: &GlobalRef) {
@@ -324,44 +443,17 @@ fn build_string_array<'a>(
 
 // ── URI ↔ path encoding ────────────────────────────────────────────────────
 
-/// Decodes a `file://` URI to a filesystem path. Non-file schemes are
-/// returned verbatim so the receiver can still inspect them.
 fn uri_to_path(uri: &str) -> String {
-    let rest = match uri.strip_prefix("file://") {
-        Some(r) => r,
-        None => return uri.to_string(),
+    let Ok((path, host)) = glib::filename_from_uri(uri) else {
+        return uri.to_owned();
     };
-    percent_decode(rest)
-}
-
-/// Minimal RFC 3986 percent-decoding for `%XX` sequences in
-/// `text/uri-list` payloads. UTF-8 paths with diacritics decode correctly
-/// because we accumulate bytes and let `String::from_utf8_lossy` reassemble.
-fn percent_decode(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(hi), Some(lo)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
-                out.push((hi << 4) | lo);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i]);
-        i += 1;
+    if host
+        .as_deref()
+        .is_some_and(|host| !host.is_empty() && !host.eq_ignore_ascii_case("localhost"))
+    {
+        return uri.to_owned();
     }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn hex_val(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
+    path.to_string_lossy().into_owned()
 }
 
 fn percent_encode_path(input: &str) -> String {
@@ -400,6 +492,10 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
 
     let accepting = Rc::new(Cell::new(false));
     let entered = Rc::new(Cell::new(false));
+    let active_context = Rc::new(RefCell::new(None::<gtk::gdk::DragContext>));
+    let drag_data = Rc::new(RefCell::new(DragDataState::default()));
+    let last_motion = Rc::new(Cell::new((0, 0, 0)));
+    let preview_ready = Rc::new(Cell::new(false));
     let pending_leave: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
 
     // ── drag-motion ─────────────────────────────────────────────────────
@@ -408,11 +504,26 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     let ent_motion = Rc::clone(&entered);
     let pending_motion = Rc::clone(&pending_leave);
     let widget_motion = widget.clone();
-    let motion_id = widget.connect_drag_motion(move |_w, ctx, x, y, time| {
+    let context_motion = Rc::clone(&active_context);
+    let data_motion = Rc::clone(&drag_data);
+    let position_motion = Rc::clone(&last_motion);
+    let ready_motion = Rc::clone(&preview_ready);
+    let motion_id = widget.connect_drag_motion(move |w, ctx, x, y, time| {
         // Cancel any deferred leave — a fresh motion proves we never left.
         if let Some(src) = pending_motion.borrow_mut().take() {
             src.remove();
         }
+
+        if context_motion.borrow().as_ref() != Some(ctx) {
+            if ent_motion.replace(false) {
+                dispatch_leave(handle, &cb_motion);
+            }
+            *context_motion.borrow_mut() = Some(ctx.clone());
+            *data_motion.borrow_mut() = DragDataState::default();
+            ready_motion.set(false);
+            dispatch_files(handle, &cb_motion, &[]);
+        }
+        position_motion.set((x, y, time));
 
         let has_files = ctx
             .list_targets()
@@ -421,6 +532,17 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
 
         let (px, py) = translate_to_content_phys(&widget_motion, x, y);
 
+        // Defer the enter until the paths arrive so acceptance can inspect them.
+        if has_files && !ready_motion.get() {
+            if data_motion.borrow_mut().request_preview() {
+                let target = gtk::gdk::Atom::intern("text/uri-list");
+                w.drag_get_data(ctx, &target, time);
+            }
+            ctx.drag_status(DragAction::COPY, time);
+            acc_motion.set(true);
+            return true;
+        }
+
         let method = if ent_motion.get() {
             "onDragOver"
         } else {
@@ -428,6 +550,11 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
             "onDragEnter"
         };
         let effect = dispatch_motion(handle, &cb_motion, method, px, py, has_files);
+        let request_preview = has_files && data_motion.borrow_mut().request_preview();
+        if request_preview {
+            let target = gtk::gdk::Atom::intern("text/uri-list");
+            w.drag_get_data(ctx, &target, time);
+        }
         let action = map_effect_to_action(effect);
         if effect == DROP_EFFECT_NONE {
             ctx.drag_status(DragAction::empty(), time);
@@ -445,6 +572,9 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     let acc_leave = Rc::clone(&accepting);
     let ent_leave = Rc::clone(&entered);
     let pending_leave_for_cb = Rc::clone(&pending_leave);
+    let context_leave = Rc::clone(&active_context);
+    let data_leave = Rc::clone(&drag_data);
+    let ready_leave = Rc::clone(&preview_ready);
     let leave_id = widget.connect_drag_leave(move |_w, _ctx, _time| {
         // GTK 3 fires drag-leave between every pair of drag-motion events
         // when the cursor crosses any internal widget boundary — we *cannot*
@@ -458,13 +588,20 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
         let ent = Rc::clone(&ent_leave);
         let cb = cb_leave.clone();
         let slot = Rc::clone(&pending_leave_for_cb);
+        let context = Rc::clone(&context_leave);
+        let data = Rc::clone(&data_leave);
+        let ready = Rc::clone(&ready_leave);
         let id = glib::timeout_add_local_once(
             std::time::Duration::from_millis(LEAVE_DEBOUNCE_MS as u64),
             move || {
                 slot.borrow_mut().take();
                 acc.set(false);
-                ent.set(false);
-                dispatch_leave(handle, &cb);
+                context.borrow_mut().take();
+                *data.borrow_mut() = DragDataState::default();
+                ready.set(false);
+                if ent.replace(false) {
+                    dispatch_leave(handle, &cb);
+                }
             },
         );
         *pending_leave_for_cb.borrow_mut() = Some(id);
@@ -472,7 +609,9 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
 
     // ── drag-drop ───────────────────────────────────────────────────────
     let pending_drop = Rc::clone(&pending_leave);
-    let drop_id = widget.connect_drag_drop(move |w, ctx, _x, _y, time| {
+    let data_drop = Rc::clone(&drag_data);
+    let context_drop = Rc::clone(&active_context);
+    let drop_id = widget.connect_drag_drop(move |w, ctx, x, y, time| {
         if let Some(src) = pending_drop.borrow_mut().take() {
             src.remove();
         }
@@ -482,7 +621,16 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
         // `ctx.list_targets()` ourselves with name comparisons.
         let target = w.drag_dest_find_target(ctx, None);
         if let Some(target) = target {
-            w.drag_get_data(ctx, &target, time);
+            if context_drop.borrow().as_ref() != Some(ctx) {
+                *context_drop.borrow_mut() = Some(ctx.clone());
+                *data_drop.borrow_mut() = DragDataState::default();
+            }
+            let request_drop = data_drop
+                .borrow_mut()
+                .request_drop(DropPosition { x, y, time });
+            if request_drop {
+                w.drag_get_data(ctx, &target, time);
+            }
             true
         } else {
             ctx.drag_status(DragAction::empty(), time);
@@ -493,21 +641,81 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
     // ── drag-data-received ──────────────────────────────────────────────
     let cb_received = callback.clone();
     let ent_received = Rc::clone(&entered);
+    let acc_received = Rc::clone(&accepting);
+    let context_received = Rc::clone(&active_context);
+    let data_received = Rc::clone(&drag_data);
+    let position_received = Rc::clone(&last_motion);
+    let pending_received = Rc::clone(&pending_leave);
+    let ready_received = Rc::clone(&preview_ready);
     let widget_received = widget.clone();
     let received_id =
-        widget.connect_drag_data_received(move |_w, ctx, x, y, data, _info, time| {
-            let mut paths: Vec<String> = Vec::new();
-            let uris = data.uris();
-            if !uris.is_empty() {
-                paths.extend(uris.iter().map(|u| uri_to_path(u.as_str())));
-            } else if let Some(text) = data.text() {
-                paths.push(text.to_string());
+        widget.connect_drag_data_received(move |w, ctx, _x, _y, data, _info, _time| {
+            if context_received.borrow().as_ref() != Some(ctx) {
+                return;
             }
-            let (px, py) = translate_to_content_phys(&widget_received, x, y);
-            let effect = dispatch_drop(handle, &cb_received, px, py, &paths);
-            let success = effect != DROP_EFFECT_NONE;
-            ctx.drag_finish(success, false, time);
-            ent_received.set(false);
+            let received = data_received.borrow_mut().receive();
+            if let ReceivedData::RequestDrop(position) = received {
+                if let Some(target) = w.drag_dest_find_target(ctx, None) {
+                    w.drag_get_data(ctx, &target, position.time);
+                } else {
+                    ctx.drag_finish(false, false, position.time);
+                    ent_received.set(false);
+                    acc_received.set(false);
+                    context_received.borrow_mut().take();
+                    *data_received.borrow_mut() = DragDataState::default();
+                    dispatch_leave(handle, &cb_received);
+                }
+                return;
+            }
+            let mut paths: Vec<String> = Vec::new();
+            if data.length() >= 0 {
+                let uris = data.uris();
+                if !uris.is_empty() {
+                    paths.extend(uris.iter().map(|uri| uri_to_path(uri.as_str())));
+                } else if let Some(text) = data.text() {
+                    paths.push(text.to_string());
+                }
+            }
+            match received {
+                ReceivedData::Preview => {
+                    ready_received.set(true);
+                    dispatch_files(handle, &cb_received, &paths);
+                    if pending_received.borrow().is_some() {
+                        return;
+                    }
+                    let (x, y, time) = position_received.get();
+                    let (px, py) = translate_to_content_phys(&widget_received, x, y);
+                    let method = if ent_received.replace(true) {
+                        "onDragOver"
+                    } else {
+                        "onDragEnter"
+                    };
+                    let effect = dispatch_motion(handle, &cb_received, method, px, py, true);
+                    acc_received.set(effect != DROP_EFFECT_NONE);
+                    let action = if effect == DROP_EFFECT_NONE {
+                        DragAction::empty()
+                    } else {
+                        map_effect_to_action(effect)
+                    };
+                    ctx.drag_status(action, time);
+                }
+                ReceivedData::Drop(position) => {
+                    let (px, py) =
+                        translate_to_content_phys(&widget_received, position.x, position.y);
+                    // Released before the preview arrived: enter with the real payload first.
+                    if !ent_received.replace(true) {
+                        dispatch_files(handle, &cb_received, &paths);
+                        dispatch_motion(handle, &cb_received, "onDragEnter", px, py, true);
+                    }
+                    let effect = dispatch_drop(handle, &cb_received, px, py, &paths);
+                    ctx.drag_finish(effect != DROP_EFFECT_NONE, false, position.time);
+                    ent_received.set(false);
+                    acc_received.set(false);
+                    context_received.borrow_mut().take();
+                    *data_received.borrow_mut() = DragDataState::default();
+                }
+                ReceivedData::Ignore | ReceivedData::RequestDrop(_) => {}
+            }
         });
 
     let registration = Registration {
@@ -549,15 +757,38 @@ fn start_outbound(
     handle: u64,
     files: Vec<String>,
     text: Option<String>,
+    private_data: Option<String>,
     allowed: jint,
+    icon: Option<DragIcon>,
     pump: Option<GlobalRef>,
 ) -> jint {
-    if files.is_empty() && text.as_deref().map(str::is_empty).unwrap_or(true) {
+    if files.is_empty()
+        && text.as_deref().map(str::is_empty).unwrap_or(true)
+        && private_data.is_none()
+    {
         return DROP_EFFECT_NONE;
     }
     let Some(widget) = with_window(handle, |w| w.gtk_window().clone()) else {
         return DROP_EFFECT_NONE;
     };
+
+    // Refuse a session the compositor is guaranteed to drop on the floor.
+    //
+    // `wl_data_device.start_drag` is validated against the serial of the last
+    // input event *and* a still-pressed button (Mutter:
+    // `meta_wayland_pointer_get_grab_info(require_pressed = TRUE)`). With the
+    // button already up it is silently ignored — no protocol error, no grab,
+    // and therefore no `cancelled` / `dnd_finished` on the source, so GTK
+    // never emits `drag-end` and the cooperative pump below would spin for the
+    // rest of the process's life with the pointer frozen mid-gesture.
+    //
+    // We get there whenever the client falls behind the compositor: Compose
+    // crosses the touch slop on a *queued* motion that tao dispatches after
+    // the real release has already been delivered. A maximized window with
+    // satellites is the easy way to see it, since it is the slowest to render.
+    if buttons_held(&widget) == Some(false) {
+        return DROP_EFFECT_NONE;
+    }
 
     let target_list = TargetList::new(&[]);
     if !files.is_empty() {
@@ -567,6 +798,13 @@ fn start_outbound(
         target_list.add(&gtk::gdk::Atom::intern("text/plain;charset=utf-8"), 0, 2);
         target_list.add(&gtk::gdk::Atom::intern("UTF8_STRING"), 0, 4);
     }
+    if private_data.is_some() {
+        target_list.add(
+            &gtk::gdk::Atom::intern(PRIVATE_TARGET),
+            TargetFlags::SAME_APP.bits(),
+            PRIVATE_TARGET_INFO,
+        );
+    }
 
     let result = Rc::new(Cell::new(DROP_EFFECT_NONE));
     let done = Rc::new(Cell::new(false));
@@ -574,6 +812,7 @@ fn start_outbound(
     let session = OutboundSession {
         files: files.clone(),
         text: text.clone(),
+        private_data: private_data.clone(),
         result: Rc::clone(&result),
         done: Rc::clone(&done),
     };
@@ -609,6 +848,11 @@ fn start_outbound(
                         let _ = data.set_text(&joined);
                     }
                 }
+                PRIVATE_TARGET_INFO => {
+                    if let Some(p) = s.private_data.as_deref() {
+                        data.set(&gtk::gdk::Atom::intern(PRIVATE_TARGET), 8, p.as_bytes());
+                    }
+                }
                 _ => {}
             }
         });
@@ -639,7 +883,10 @@ fn start_outbound(
         return DROP_EFFECT_NONE;
     }
     if let Some(ref c) = ctx {
-        c.drag_set_icon_default();
+        match icon.and_then(drag_icon_surface) {
+            Some(surface) => c.drag_set_icon_surface(&surface),
+            None => c.drag_set_icon_default(),
+        }
     }
 
     // Keep the host alive for the session, the Linux counterpart of the Windows
@@ -674,11 +921,71 @@ fn start_outbound(
         )
     });
 
+    // Wakes the blocking loop below so its deadline check runs even while the
+    // compositor sends nothing at all — which is the state a dead session is
+    // in. Does no work of its own; the check itself stays in the loop body,
+    // where cancelling is safe (a `gtk_drag_cancel` from inside a glib
+    // callback would re-enter GTK's drag teardown under our own pump).
+    let watchdog = glib::timeout_add_local(
+        std::time::Duration::from_millis(DRAG_WATCHDOG_INTERVAL_MS),
+        || glib::ControlFlow::Continue,
+    );
+
     // Cooperatively pump the GTK main loop until drag-end fires. The session
     // runs through the same loop we're already on; drag_begin returned
     // immediately. Mirrors Win32 `DoDragDrop`'s nested message pump.
+    //
+    // Bounded past the release, never during the drag: the user may hold a
+    // legitimate drag for as long as they like, so the deadline only starts
+    // once no button is held any more. A session still alive then is one the
+    // compositor never took, and spinning on it is the freeze this guards.
+    let mut released_at: Option<std::time::Instant> = None;
     while !done.get() {
         gtk::main_iteration_do(true);
+        if done.get() {
+            break;
+        }
+        if buttons_held(&widget) == Some(false) {
+            let since = released_at.get_or_insert_with(std::time::Instant::now);
+            if since.elapsed().as_millis() >= DRAG_DEAD_SESSION_GRACE_MS {
+                // Emits drag-failed + drag-end synchronously, which sets
+                // `done` through our own handlers and lets the ordinary
+                // teardown below run. A no-op if GTK already dropped the
+                // session's source info.
+                if let Some(ref c) = ctx {
+                    unsafe {
+                        gtk::ffi::gtk_drag_cancel(
+                            glib::translate::ToGlibPtr::to_glib_none(c).0,
+                        );
+                    }
+                }
+                break;
+            }
+        } else {
+            // A button came back down (a second gesture, or a state we simply
+            // could not read): the grace period is not running.
+            released_at = None;
+        }
+    }
+    watchdog.remove();
+
+    // `drag-end` is emitted *before* GTK has finished tearing the drag down —
+    // in particular before it releases the implicit pointer grab
+    // `gtk_drag_begin` took on the seat. Returning the instant our own handler
+    // sets the flag (and then disconnecting GTK's handlers underneath it)
+    // leaves that grab in place, and every window of the application goes
+    // deaf to the pointer for good. So drain what GTK still has queued, then
+    // make sure the seat is ungrabbed either way.
+    for _ in 0..DRAG_TEARDOWN_ITERATIONS {
+        if !gtk::events_pending() {
+            break;
+        }
+        gtk::main_iteration_do(false);
+    }
+    if let Some(gdk_window) = WidgetExt::window(&widget) {
+        if let Some(seat) = gdk_window.display().default_seat() {
+            seat.ungrab();
+        }
     }
 
     if let Some(src) = pump_source {
@@ -736,7 +1043,14 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxDn
     handle: jlong,
     files: JObjectArray,
     text: JString,
+    private_data: JString,
     allowed_effects: jint,
+    icon_argb: JIntArray,
+    icon_width: jint,
+    icon_height: jint,
+    icon_scale: jfloat,
+    icon_hot_x: jint,
+    icon_hot_y: jint,
     pump: JObject,
 ) -> jint {
     if handle == 0 {
@@ -773,6 +1087,31 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxDn
     // GlobalRef, unlike the macOS timer's raw jobject: the timeout closure is
     // `'static`, so it cannot borrow this frame's local ref. It fires on this
     // same already-attached thread either way.
+    let private_opt: Option<String> = if !private_data.is_null() {
+        env.get_string(&private_data)
+            .ok()
+            .map(|s| s.to_str().unwrap_or("").to_string())
+    } else {
+        None
+    };
+    let icon: Option<DragIcon> = if icon_argb.is_null() || icon_width <= 0 || icon_height <= 0 {
+        None
+    } else {
+        let len = env.get_array_length(&icon_argb).unwrap_or(0) as usize;
+        let mut buf: Vec<jint> = vec![0; len];
+        if env.get_int_array_region(&icon_argb, 0, &mut buf).is_ok() {
+            Some(DragIcon {
+                argb: buf.into_iter().map(|v| v as u32).collect(),
+                width: icon_width,
+                height: icon_height,
+                scale: icon_scale as f64,
+                hot_x: icon_hot_x,
+                hot_y: icon_hot_y,
+            })
+        } else {
+            None
+        }
+    };
     let pump_ref: Option<GlobalRef> = if pump.is_null() {
         None
     } else {
@@ -782,7 +1121,9 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxDn
         handle as u64,
         files_vec,
         text_opt,
+        private_opt,
         allowed_effects,
+        icon,
         pump_ref,
     )
 }

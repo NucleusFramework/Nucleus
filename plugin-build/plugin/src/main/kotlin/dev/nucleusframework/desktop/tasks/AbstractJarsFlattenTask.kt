@@ -57,6 +57,7 @@ abstract class AbstractJarsFlattenTask : AbstractNucleusTask() {
     @get:Internal
     val serviceFileContents = linkedMapOf<String, StringBuilder>()
 
+    /** Writes every input JAR's entries (and plain input files) into [flattenedJar], merging service files. */
     @TaskAction
     fun execute() {
         seenEntryNames.clear()
@@ -108,7 +109,9 @@ abstract class AbstractJarsFlattenTask : AbstractNucleusTask() {
     }
 
     private fun isServiceFile(name: String): Boolean =
-        name.startsWith(SERVICES_PREFIX) && name.length > SERVICES_PREFIX.length && '/' !in name.substring(SERVICES_PREFIX.length)
+        name.startsWith(SERVICES_PREFIX) &&
+            name.length > SERVICES_PREFIX.length &&
+            '/' !in name.substring(SERVICES_PREFIX.length)
 
     private fun mergeServiceFile(
         name: String,

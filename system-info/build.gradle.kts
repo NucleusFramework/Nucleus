@@ -15,6 +15,7 @@ val publishVersion =
 
 dependencies {
     implementation(project(":core-runtime"))
+    api(libs.coroutines.core)
     testImplementation(kotlin("test"))
 }
 

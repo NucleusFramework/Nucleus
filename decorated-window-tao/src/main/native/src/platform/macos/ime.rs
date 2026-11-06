@@ -3,16 +3,17 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use jni::objects::{JClass, JLongArray, JString};
-use jni::sys::{jboolean, jint, jlong, jlongArray, JNI_FALSE, JNI_TRUE};
+use jni::objects::{JClass, JDoubleArray, JLongArray, JString};
+use jni::sys::{jboolean, jdoubleArray, jint, jlong, jlongArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
 use tao::platform::macos::WindowExtMacOS;
 
 use crate::platform::macos::ffi::{
     nucleus_tao_activate_input_context, nucleus_tao_current_input_source_id,
-    nucleus_tao_inject_insert_text, nucleus_tao_inject_marked_text, nucleus_tao_kotoeri_available,
-    nucleus_tao_kotoeri_restore, nucleus_tao_kotoeri_select, nucleus_tao_post_key_to_view,
+    nucleus_tao_deactivate_input_context, nucleus_tao_inject_insert_text,
+    nucleus_tao_inject_marked_text, nucleus_tao_kotoeri_available, nucleus_tao_kotoeri_restore,
+    nucleus_tao_kotoeri_select, nucleus_tao_post_key_to_view, nucleus_tao_query_ime_rect,
     nucleus_tao_query_text_input_client, nucleus_tao_set_ime_document,
     nucleus_tao_set_ime_local_rect,
 };
@@ -25,21 +26,34 @@ fn ns_view_for_handle(handle: jlong) -> Option<i64> {
     Some(window.ns_view() as i64)
 }
 
+/// Opens a text-input session on [handle]'s view and returns its token, to be
+/// handed back to `nativeDeactivateInputContext` when the session ends. Returns
+/// 0 when the window is gone.
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeActivateInputContext(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
-) {
-    let guard = match WINDOWS.lock() {
-        Ok(g) => g,
-        Err(_) => return,
+) -> jlong {
+    let Some(ns_view) = ns_view_for_handle(handle) else {
+        return 0;
     };
-    let Some(map) = guard.as_ref() else { return };
-    if let Some(window) = map.get(&(handle as u64)) {
-        let ns_view = window.ns_view() as i64;
-        unsafe { nucleus_tao_activate_input_context(ns_view) };
-    }
+    unsafe { nucleus_tao_activate_input_context(ns_view) }
+}
+
+/// Ends the session [token] opened. The window is often already gone by then
+/// (a closing window tears its focused field down with it), which is not a
+/// reason to leave the caret rect cached — native is handed 0 and drops the
+/// cached state without touching the dead view.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeDeactivateInputContext(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    token: jlong,
+) {
+    let ns_view = ns_view_for_handle(handle).unwrap_or(0);
+    unsafe { nucleus_tao_deactivate_input_context(ns_view, token) };
 }
 
 /// Pushes the caret rectangle in *window-local physical pixels* (top-left origin)
@@ -266,6 +280,36 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     env.new_string(&text)
         .map(|s| s.into_raw())
         .unwrap_or(std::ptr::null_mut())
+}
+
+/// Headful e2e: the caret rect TaoView publishes to AppKit, as 4×double
+/// (x, y, w, h) in Cocoa screen coordinates. An all-zero rect means the view
+/// has no insertion point to anchor the IME candidate window — or the
+/// input-source indicator — to.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMacOsQueryImeRect(
+    env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    rect_out: jdoubleArray,
+) -> jboolean {
+    let mut rect = [0f64; 4];
+    let Some(ns_view) = ns_view_for_handle(handle) else {
+        return JNI_FALSE;
+    };
+    let ok = unsafe { nucleus_tao_query_ime_rect(ns_view, rect.as_mut_ptr()) };
+    let arr = unsafe { JDoubleArray::from_raw(rect_out) };
+    if env.get_array_length(&arr).unwrap_or(0) < 4 {
+        return JNI_FALSE;
+    }
+    if env.set_double_array_region(&arr, 0, &rect).is_err() {
+        return JNI_FALSE;
+    }
+    if ok != 0 {
+        JNI_TRUE
+    } else {
+        JNI_FALSE
+    }
 }
 
 /// Headful e2e: `setMarkedText:selectedRange:replacementRange:` on TaoView.

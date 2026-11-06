@@ -12,6 +12,10 @@ import org.gradle.api.model.ObjectFactory
 import java.util.*
 import javax.inject.Inject
 
+/**
+ * Settings shared by every application distribution: identity metadata (name, version, vendor...),
+ * bundled resources and the package formats to build.
+ */
 abstract class AbstractDistributions {
     @get:Inject
     internal abstract val objects: ObjectFactory
@@ -37,6 +41,7 @@ abstract class AbstractDistributions {
 
     var targetFormats: Set<TargetFormat> = EnumSet.noneOf(TargetFormat::class.java)
 
+    /** Sets the package formats to build, replacing any previously configured ones. */
     open fun targetFormats(vararg formats: TargetFormat) {
         targetFormats = EnumSet.copyOf(formats.toList())
     }

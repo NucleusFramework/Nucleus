@@ -1,7 +1,6 @@
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.State
-import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.DpSize
 import dev.nucleusframework.window.DecoratedWindowState
@@ -111,7 +110,6 @@ internal class TaoNucleusWindow(
 
     override val unsafe: NucleusWindowUnsafe =
         object : NucleusWindowUnsafe {
-            override val awtWindow: ComposeWindow? = null
             override val taoWindow: TaoWindow = this@TaoNucleusWindow.taoWindow
             override val taoHandle: Long = this@TaoNucleusWindow.taoWindow.handle
         }

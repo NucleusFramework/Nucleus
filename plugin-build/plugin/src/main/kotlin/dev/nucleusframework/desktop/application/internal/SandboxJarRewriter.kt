@@ -56,54 +56,73 @@ internal object SandboxJarRewriter {
             return RewriteResult(emptyMap(), 0, 0)
         }
 
+        return ZipInputStream(BufferedInputStream(inputJar.inputStream())).use { zis ->
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(outputFile))).use { zos ->
+                rewriteEntries(zis, zos, inputJar.name, jarMangledName, logger)
+            }
+        }
+    }
+
+    private fun rewriteEntries(
+        zis: ZipInputStream,
+        zos: ZipOutputStream,
+        inputJarName: String,
+        jarMangledName: String,
+        logger: Logger?,
+    ): RewriteResult {
         val manifest = LinkedHashMap<String, String>()
         var markedLibs = 0
         var rewrittenClasses = 0
-        ZipInputStream(BufferedInputStream(inputJar.inputStream())).use { zis ->
-            ZipOutputStream(BufferedOutputStream(FileOutputStream(outputFile))).use { zos ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory && NativeLibArchDetector.isNativeLib(entry.name)) {
-                        val marker = SandboxMarkers.markerBytes(jarMangledName, entry.name)
-                        val sha = SandboxMarkers.sha256Hex(marker)
-                        val bundledName = SandboxMarkers.bundledLibName(entry.name)
-                        // Last-write-wins is fine: duplicate filenames across JARs dedup at
-                        // extraction time, and the bundled filename is identical for them.
-                        manifest[sha] = bundledName
-                        markedLibs++
-                        zos.putNextEntry(ZipEntry(entry.name).withTimeOf(entry))
-                        zos.write(marker)
-                        zos.closeEntry()
-                        logger?.lifecycle("Sandboxing: marked '{}' from {}", entry.name, inputJar.name)
-                    } else if (!entry.isDirectory && entry.name.endsWith(".class") && entry.name != "module-info.class") {
-                        val original = zis.readBytes()
-                        val rewritten = SandboxBytecodeRewriter.rewriteSystemLoadCalls(original)
-                        if (rewritten !== original) rewrittenClasses++
-                        zos.putNextEntry(ZipEntry(entry.name).withTimeOf(entry))
-                        zos.write(rewritten)
-                        zos.closeEntry()
-                    } else {
-                        zos.putNextEntry(
-                            ZipEntry(entry.name).apply {
-                                time = entry.time
-                                if (entry.method == ZipEntry.STORED) {
-                                    method = ZipEntry.STORED
-                                    size = entry.size
-                                    compressedSize = entry.compressedSize
-                                    crc = entry.crc
-                                }
-                            },
-                        )
-                        if (!entry.isDirectory) {
-                            zis.copyTo(zos)
-                        }
-                        zos.closeEntry()
-                    }
-                    entry = zis.nextEntry
+        var entry = zis.nextEntry
+        while (entry != null) {
+            when {
+                entry.isDirectory -> copyVerbatim(entry, zis, zos)
+                NativeLibArchDetector.isNativeLib(entry.name) -> {
+                    val marker = SandboxMarkers.markerBytes(jarMangledName, entry.name)
+                    // Last-write-wins is fine: duplicate filenames across JARs dedup at
+                    // extraction time, and the bundled filename is identical for them.
+                    manifest[SandboxMarkers.sha256Hex(marker)] = SandboxMarkers.bundledLibName(entry.name)
+                    markedLibs++
+                    zos.putNextEntry(ZipEntry(entry.name).withTimeOf(entry))
+                    zos.write(marker)
+                    zos.closeEntry()
+                    logger?.lifecycle("Sandboxing: marked '{}' from {}", entry.name, inputJarName)
                 }
+                entry.name.endsWith(".class") && entry.name != "module-info.class" -> {
+                    val original = zis.readBytes()
+                    val rewritten = SandboxBytecodeRewriter.rewriteSystemLoadCalls(original)
+                    if (rewritten !== original) rewrittenClasses++
+                    zos.putNextEntry(ZipEntry(entry.name).withTimeOf(entry))
+                    zos.write(rewritten)
+                    zos.closeEntry()
+                }
+                else -> copyVerbatim(entry, zis, zos)
             }
+            entry = zis.nextEntry
         }
         return RewriteResult(manifest, markedLibs, rewrittenClasses)
+    }
+
+    private fun copyVerbatim(
+        entry: ZipEntry,
+        zis: ZipInputStream,
+        zos: ZipOutputStream,
+    ) {
+        zos.putNextEntry(
+            ZipEntry(entry.name).apply {
+                time = entry.time
+                if (entry.method == ZipEntry.STORED) {
+                    method = ZipEntry.STORED
+                    size = entry.size
+                    compressedSize = entry.compressedSize
+                    crc = entry.crc
+                }
+            },
+        )
+        if (!entry.isDirectory) {
+            zis.copyTo(zos)
+        }
+        zos.closeEntry()
     }
 
     /** Copies the embedded shim JAR resource into [outDir] under its fixed name. */

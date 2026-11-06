@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -413,6 +416,43 @@ class TitleBarLayoutPolicyTest {
             }
             waitForIdle()
             assertTrue(heightPx > 0)
+        }
+
+    @Test
+    fun `collapseWhenEmpty takes no height until content appears and again once it leaves`() =
+        runComposeUiTest {
+            var heightPx = -1
+            var appliedHeight = -1f
+            var hasContent by mutableStateOf(false)
+            setContent {
+                WithTitleBarInfo {
+                    GenericTitleBarImpl(
+                        state = DecoratedWindowState.of(active = true),
+                        modifier = Modifier.onSizeChanged { heightPx = it.height },
+                        layoutPolicy = TitleBarLayoutPolicy.Default,
+                        applyTitleBar = { height, _ ->
+                            appliedHeight = height.value
+                            PaddingValues(0.dp)
+                        },
+                        collapseWhenEmpty = true,
+                    ) {
+                        if (hasContent) Box(Modifier.size(10.dp).align(Alignment.Start))
+                    }
+                }
+            }
+            waitForIdle()
+            assertEquals(0, heightPx, "empty bar")
+            assertEquals(0f, appliedHeight, "applyTitleBar of the empty bar")
+
+            hasContent = true
+            waitForIdle()
+            assertTrue(heightPx > 0, "bar with content was $heightPx")
+            assertTrue(appliedHeight > 0f, "applyTitleBar with content was $appliedHeight")
+
+            hasContent = false
+            waitForIdle()
+            assertEquals(0, heightPx, "bar emptied again")
+            assertEquals(0f, appliedHeight, "applyTitleBar once emptied again")
         }
 }
 

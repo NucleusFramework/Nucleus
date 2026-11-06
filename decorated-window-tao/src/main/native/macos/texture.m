@@ -256,6 +256,30 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsTextureBridge_nativeDestr
     free(t);
 }
 
+/* Extra retain on an IOSurface held by a TextureViewSource, so a producer
+ * close (its own CFRelease) cannot free the surface while the source is
+ * still reachable. Remounting TextureView after CloseProducerUnderView
+ * would otherwise call IOSurfaceGetPixelFormat on a dangling pointer.
+ * The matching release is the source's Cleaner. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsTextureBridge_nativeRetainIOSurface(
+        JNIEnv *env, jclass clazz, jlong ioSurfacePtr) {
+    (void)env; (void)clazz;
+    if (ioSurfacePtr == 0) return JNI_FALSE;
+    CFTypeRef ref = (CFTypeRef)(uintptr_t)ioSurfacePtr;
+    if (CFGetTypeID(ref) != IOSurfaceGetTypeID()) return JNI_FALSE;
+    CFRetain(ref);
+    return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsTextureBridge_nativeReleaseIOSurface(
+        JNIEnv *env, jclass clazz, jlong ioSurfacePtr) {
+    (void)env; (void)clazz;
+    if (ioSurfacePtr == 0) return;
+    CFRelease((CFTypeRef)(uintptr_t)ioSurfacePtr);
+}
+
 /* ================================================================== */
 /*  Metal test producer (demos / smoke tests)                          */
 /* ================================================================== */

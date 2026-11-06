@@ -2,6 +2,7 @@ package dev.nucleusframework.desktop.application.dsl
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,12 +15,12 @@ class NativeImageGarbageCollectorIdsTest {
     }
 
     @Test
-    fun `only G1 is restricted to Oracle GraalVM on Linux`() {
+    fun `only G1 is restricted to Oracle GraalVM, and off Linux to 25_4`() {
         assertTrue(NativeImageGarbageCollector.G1.isOracleOnly)
-        assertTrue(NativeImageGarbageCollector.G1.isLinuxOnly)
+        assertEquals("25.4", NativeImageGarbageCollector.G1.nonLinuxMinVersion)
         listOf(NativeImageGarbageCollector.SERIAL, NativeImageGarbageCollector.EPSILON).forEach { gc ->
             assertFalse("$gc should be unrestricted", gc.isOracleOnly)
-            assertFalse("$gc should be unrestricted", gc.isLinuxOnly)
+            assertNull("$gc should be unrestricted", gc.nonLinuxMinVersion)
         }
     }
 

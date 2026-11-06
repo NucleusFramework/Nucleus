@@ -8,6 +8,9 @@ package dev.nucleusframework.internal
 import dev.nucleusframework.internal.ComposeCompilerArtifactProvider.DefaultCompiler.pluginArtifact
 import org.jetbrains.kotlin.gradle.plugin.SubpluginArtifact
 
+// `<GROUP_ID>:<ARTIFACT_ID>:<VERSION>`
+private const val FULL_COORDINATES_SIZE = 3
+
 internal class ComposeCompilerArtifactProvider(
     private val customPluginString: () -> String,
 ) {
@@ -20,7 +23,7 @@ internal class ComposeCompilerArtifactProvider(
                 check(customVersion.isNotBlank()) { "'compose.kotlinCompilerPlugin' cannot be blank!" }
                 pluginArtifact(version = customVersion)
             }
-            3 ->
+            FULL_COORDINATES_SIZE ->
                 pluginArtifact(
                     version = customCoordinates[2],
                     groupId = customCoordinates[0],

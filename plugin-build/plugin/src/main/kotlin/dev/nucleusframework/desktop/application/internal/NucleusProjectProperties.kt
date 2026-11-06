@@ -3,6 +3,9 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
+// File name kept from the upstream Compose Multiplatform sources this object derives from.
+@file:Suppress("MatchingDeclarationName")
+
 package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.internal.utils.findLocalOrGlobalProperty
@@ -12,6 +15,8 @@ import org.gradle.api.Project
 import org.gradle.api.provider.Provider
 import org.gradle.api.provider.ProviderFactory
 
+// One accessor per Gradle property: a flat catalog, splitting it would only scatter the lookups.
+@Suppress("TooManyFunctions")
 internal object NucleusProperties {
     internal const val VERBOSE = "compose.desktop.verbose"
     internal const val PRESERVE_WD = "compose.preserve.working.dir"
@@ -35,7 +40,8 @@ internal object NucleusProperties {
     internal const val CHECK_JDK_VENDOR = "compose.desktop.packaging.checkJdkVendor"
     internal const val DISABLE_MULTIMODULE_RESOURCES = "org.jetbrains.compose.resources.multimodule.disable"
     internal const val SYNC_RESOURCES_PROPERTY = "compose.ios.resources.sync"
-    internal const val DISABLE_RESOURCE_CONTENT_HASH_GENERATION = "org.jetbrains.compose.resources.content.hash.generation.disable"
+    internal const val DISABLE_RESOURCE_CONTENT_HASH_GENERATION =
+        "org.jetbrains.compose.resources.content.hash.generation.disable"
     internal const val ELECTRON_BUILDER_NODE_PATH = "compose.electronBuilder.nodePath"
     internal const val ELECTRON_BUILDER_PUBLISH_MODE = "compose.electronBuilder.publishMode"
 
@@ -66,11 +72,14 @@ internal object NucleusProperties {
      */
     internal const val GRAALVM_CLEANUP_DRY_RUN = "nucleus.graalvm.cleanup.dryRun"
 
-    fun isVerbose(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(VERBOSE).toBooleanProvider(false)
+    fun isVerbose(providers: ProviderFactory): Provider<Boolean> =
+        providers.valueOrNull(VERBOSE).toBooleanProvider(false)
 
-    fun preserveWorkingDir(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(PRESERVE_WD).toBooleanProvider(false)
+    fun preserveWorkingDir(providers: ProviderFactory): Provider<Boolean> =
+        providers.valueOrNull(PRESERVE_WD).toBooleanProvider(false)
 
-    fun macSign(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(MAC_SIGN).toBooleanProvider(false)
+    fun macSign(providers: ProviderFactory): Provider<Boolean> =
+        providers.valueOrNull(MAC_SIGN).toBooleanProvider(false)
 
     fun macSignIdentity(providers: ProviderFactory): Provider<String> = providers.valueOrNull(MAC_SIGN_ID)
 
@@ -102,7 +111,8 @@ internal object NucleusProperties {
     @Suppress("MaxLineLength")
     fun macNotarizationApiIssuer(providers: ProviderFactory): Provider<String> = providers.valueOrNull(MAC_NOTARIZATION_API_ISSUER)
 
-    fun linuxSign(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(LINUX_SIGN).toBooleanProvider(false)
+    fun linuxSign(providers: ProviderFactory): Provider<Boolean> =
+        providers.valueOrNull(LINUX_SIGN).toBooleanProvider(false)
 
     fun linuxSignKeyId(providers: ProviderFactory): Provider<String> = providers.valueOrNull(LINUX_SIGN_KEY_ID)
 
@@ -114,7 +124,8 @@ internal object NucleusProperties {
     @Suppress("MaxLineLength")
     fun linuxSignSilentUpdate(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(LINUX_SIGN_SILENT_UPDATE).toBooleanProvider(false)
 
-    fun checkJdkVendor(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(CHECK_JDK_VENDOR).toBooleanProvider(true)
+    fun checkJdkVendor(providers: ProviderFactory): Provider<Boolean> =
+        providers.valueOrNull(CHECK_JDK_VENDOR).toBooleanProvider(true)
 
     fun disableMultimoduleResources(providers: ProviderFactory): Provider<Boolean> =
         providers.valueOrNull(DISABLE_MULTIMODULE_RESOURCES).toBooleanProvider(false)

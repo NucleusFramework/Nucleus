@@ -15,16 +15,19 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
 #import <Metal/Metal.h>
+#import <IOSurface/IOSurface.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Carbon/Carbon.h>
 #import <mach/mach_time.h>
 #import <objc/runtime.h>
+#import <dlfcn.h>
 #import <stdatomic.h>
 #import <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
 #import <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 // Diagnostic logging for the title-bar / fullscreen / menu-bar paths. Off by
 // default (no-op) so production apps stay silent; opt in by launching with
@@ -95,6 +98,16 @@ static const char kTaoNsViewPtrKey = 12;
 // changes) dead on anything drawn over the title bar. Mirrors
 // `decorated-window-jni`'s NucleusDragView.
 static const char kTaoPassthroughViewKey = 13;
+// Set by nativeConfigureSystemChrome (#841): the window keeps AppKit's
+// standard title bar, so none of the full-size-content chrome above applies
+// and the fullscreen observer leaves the title bar, the traffic lights, the
+// toolbar and `movable` to AppKit.
+static const char kTaoSystemChromeKey = 20;
+
+static BOOL isSystemChrome(NSWindow *w) {
+    NSNumber *flag = objc_getAssociatedObject(w, &kTaoSystemChromeKey);
+    return flag != nil && flag.boolValue;
+}
 // Last themed fallback background ARGB. Applied to NSWindow and CAMetalLayer so
 // AppKit fullscreen/title-bar animations never reveal the default white window.
 static const char kTaoBackgroundArgbKey = 14;
@@ -168,6 +181,7 @@ static JavaVM *sMetalJVM = NULL;
 static jclass sMetalBridgeClass = NULL;       // global ref
 static jmethodID sMetalOnOffsetChanged = NULL;
 static jmethodID sMetalOnFullscreenPrepare = NULL;
+static jmethodID sMetalOnOcclusionChanged = NULL;
 static atomic_bool sMetalCallbacksEnabled = ATOMIC_VAR_INIT(false);
 static atomic_bool sMetalShutdownInProgress = ATOMIC_VAR_INIT(false);
 
@@ -184,6 +198,8 @@ static void ensureMetalJVMCached(JNIEnv *env) {
                 env, sMetalBridgeClass, "onMenuBarOffsetChanged", "(JF)V");
             sMetalOnFullscreenPrepare = (*env)->GetStaticMethodID(
                 env, sMetalBridgeClass, "onFullscreenPrepare", "(JII)V");
+            sMetalOnOcclusionChanged = (*env)->GetStaticMethodID(
+                env, sMetalBridgeClass, "onOcclusionChanged", "(JZ)V");
             atomic_store(&sMetalCallbacksEnabled, true);
         }
     });
@@ -213,9 +229,7 @@ static void notifyMenuBarOffsetChanged(jlong nsViewPtr, float offset) {
 
     (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnOffsetChanged,
                                  nsViewPtr, (jfloat)offset);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 }
 
 // Calls NativeMetalBridge.onFullscreenPrepare(nsViewPtr, widthPx, heightPx)
@@ -242,10 +256,30 @@ static void notifyFullscreenPrepare(jlong nsViewPtr, jint widthPx, jint heightPx
 
     (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnFullscreenPrepare,
                                  nsViewPtr, widthPx, heightPx);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionDescribe(env);
-        (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
+}
+
+// Calls NativeMetalBridge.onOcclusionChanged(nsViewPtr, visible) from
+// `windowDidChangeOcclusionState:` (macOS main thread): a hidden, covered,
+// other-Space or locked-screen window stops rendering until it shows again.
+static void notifyOcclusionChanged(jlong nsViewPtr, jboolean visible) {
+    if (!atomic_load(&sMetalCallbacksEnabled)) return;
+    if (!sMetalJVM || !sMetalBridgeClass || !sMetalOnOcclusionChanged) return;
+
+    JNIEnv *env = NULL;
+    jint status = (*sMetalJVM)->GetEnv(sMetalJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sMetalJVM)->AttachCurrentThreadAsDaemon(sMetalJVM, (void **)&env, NULL) != JNI_OK) {
+            return;
+        }
+    } else if (status != JNI_OK) {
+        return;
     }
+    if (!env) return;
+
+    (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnOcclusionChanged,
+                                 nsViewPtr, visible);
+    nucleus_jni_clear_exception(env);
 }
 
 static void reinstallToolbarIfNeeded(NSWindow *window) {
@@ -943,8 +977,17 @@ static void removeMenuBarMonitor(NSWindow *window) {
                    name:NSWindowWillExitFullScreenNotification object:view.window];
         [nc addObserver:self selector:@selector(didExitFS:)
                    name:NSWindowDidExitFullScreenNotification object:view.window];
+        [nc addObserver:self selector:@selector(occlusionChanged:)
+                   name:NSWindowDidChangeOcclusionStateNotification object:view.window];
     }
     return self;
+}
+
+- (void)occlusionChanged:(NSNotification *)n {
+    NSWindow *w = _view.window;
+    if (w == nil) return;
+    BOOL visible = (w.occlusionState & NSWindowOcclusionStateVisible) != 0;
+    notifyOcclusionChanged((jlong)(uintptr_t)(__bridge void *) _view, visible ? JNI_TRUE : JNI_FALSE);
 }
 
 - (void)dealloc {
@@ -982,30 +1025,34 @@ static void removeMenuBarMonitor(NSWindow *window) {
     [self setTransition:1];
     NSWindow *w = _view.window;
     if (w == nil) return;
-    // Drop any in-flight menu bar offset so the monitor (re)installed in
-    // didEnterFS starts from a known baseline.
-    removeMenuBarMonitor(w);
-    removeButtonConstraints(w);
-    // Restore the standard chrome so AppKit's fullscreen animation can run.
-    // Tahoe-only: on older macOS this briefly reveals the opaque native
-    // title bar sliding to the top during the transition (issue #310).
-    if (isTahoeOrLater()) {
-        w.titlebarAppearsTransparent = NO;
-        w.titleVisibility = NSWindowTitleVisible;
-    }
-    w.movableByWindowBackground = NO;
-    // Keep the window movable for the whole fullscreen session: the real zoom
-    // button (carrying the hover responder) is hidden in fullscreen, and the
-    // replacement button installed by installFullScreenButtons has none — a
-    // non-movable window would build its hover menu without the tiling
-    // sections again (issue #497). Restored to NO in didExitFS. Mirrors
-    // decorated-window-jni's willEnterFullScreen/didExitFullScreen.
-    [w setMovable:YES];
-    // Drop the invisible toolbar to avoid AppKit's white-band glitch.
-    if (w.toolbar != nil) {
-        objc_setAssociatedObject(w, &kTaoHadToolbarKey, @YES,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        w.toolbar = nil;
+    // System chrome (#841): AppKit owns the title bar through the transition;
+    // only the frame prepare below applies.
+    if (!isSystemChrome(w)) {
+        // Drop any in-flight menu bar offset so the monitor (re)installed in
+        // didEnterFS starts from a known baseline.
+        removeMenuBarMonitor(w);
+        removeButtonConstraints(w);
+        // Restore the standard chrome so AppKit's fullscreen animation can run.
+        // Tahoe-only: on older macOS this briefly reveals the opaque native
+        // title bar sliding to the top during the transition (issue #310).
+        if (isTahoeOrLater()) {
+            w.titlebarAppearsTransparent = NO;
+            w.titleVisibility = NSWindowTitleVisible;
+        }
+        w.movableByWindowBackground = NO;
+        // Keep the window movable for the whole fullscreen session: the real zoom
+        // button (carrying the hover responder) is hidden in fullscreen, and the
+        // replacement button installed by installFullScreenButtons has none — a
+        // non-movable window would build its hover menu without the tiling
+        // sections again (issue #497). Restored to NO in didExitFS. Mirrors
+        // decorated-window-jni's willEnterFullScreen/didExitFullScreen.
+        [w setMovable:YES];
+        // Drop the invisible toolbar to avoid AppKit's white-band glitch.
+        if (w.toolbar != nil) {
+            objc_setAssociatedObject(w, &kTaoHadToolbarKey, @YES,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            w.toolbar = nil;
+        }
     }
     // Render the final fullscreen layout NOW, then let AppKit scale it.
     //
@@ -1073,6 +1120,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
         [CATransaction commit];
     }
     applyStoredWindowBackground(w, _view);
+    if (isSystemChrome(w)) return;
     // Tear down replacement buttons + un-hide the AppKit titlebar container so
     // AppKit can drive the exit animation against its standard chrome.
     removeFullScreenButtons(w);
@@ -1105,6 +1153,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
     NSWindow *w = _view.window;
     if (w == nil) return;
     applyStoredWindowBackground(w, _view);
+    if (isSystemChrome(w)) return;
     // Install replacement traffic-light buttons inside the contentView so
     // they remain visible when AppKit auto-hides the native title bar (and
     // they don't disappear with our custom Compose title bar in fullscreen).
@@ -1170,6 +1219,7 @@ static void removeMenuBarMonitor(NSWindow *window) {
     NSWindow *w = _view.window;
     if (w == nil) return;
     applyStoredWindowBackground(w, _view);
+    if (isSystemChrome(w)) return;
     // Re-show the standard buttons (hidden in willExitFS).
     [[w standardWindowButton:NSWindowCloseButton] setHidden:NO];
     [[w standardWindowButton:NSWindowMiniaturizeButton] setHidden:NO];
@@ -1383,6 +1433,33 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeConfigureChrome
         // after the transition completes (AppKit reparents the contentView,
         // which can otherwise leave the layer detached and crash the next
         // nextDrawable call).
+        NSWindowCollectionBehavior cb = win.collectionBehavior;
+        cb |= NSWindowCollectionBehaviorFullScreenPrimary;
+        win.collectionBehavior = cb;
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+/**
+ * The counterpart of nativeConfigureChrome for a window that keeps AppKit's
+ * standard title bar (#841): no full-size content view, no transparent or
+ * hidden title, AppKit's own window dragging. Marks the window so the
+ * fullscreen observer leaves its chrome alone; keeps the fallback background
+ * and native fullscreen.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeConfigureSystemChrome(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        objc_setAssociatedObject(win, &kTaoSystemChromeKey, @YES,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        applyStoredWindowBackground(win, view);
         NSWindowCollectionBehavior cb = win.collectionBehavior;
         cb |= NSWindowCollectionBehaviorFullScreenPrimary;
         win.collectionBehavior = cb;
@@ -2280,29 +2357,37 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
         att->layer.contentsScale = scale;
         att->layer.drawableSize  = CGSizeMake(widthPx, heightPx);
         att->layer.frame         = att->view.bounds;
-        // During an interactive live-resize the present always lags the
-        // bounds by one frame (the Resized event is queued and processed on
-        // a later runloop turn than the AppKit layout commit). With the
-        // default `kCAGravityResize`, Core Animation stretches the stale
-        // last drawable to the new — oscillating — bounds, which reads as
-        // the whole window trembling when the pointer circles a corner.
-        // Instead anchor the stale drawable to the window's *fixed* corner
-        // for the duration of the drag so it stops rubber-banding around
-        // the layer centre; the render thread still presents crisp frames
-        // at the new size, and `kCAGravityResize` is restored on drag end.
-        // The fixed corner is inferred from the NSWindow frame origin delta
-        // (macOS reports the origin at the bottom-left corner):
-        //   origin.x unchanged -> left edge fixed   (else right edge fixed)
-        //   origin.y unchanged -> bottom edge fixed (else top edge fixed)
-        NSString *gravity = kCAGravityResize;
+        // Outside a programmatic resize (presented in the same turn by the
+        // scene host, #576) the present lags the bounds by one frame: the
+        // Resized event is processed on a later runloop turn than the
+        // AppKit layout commit. With the default `kCAGravityResize`, Core
+        // Animation stretches the stale last drawable to the new bounds —
+        // oscillating under a pointer circling a corner, growing step by
+        // step under the zoom animation a title-bar double-click starts —
+        // which reads as the whole content trembling. So never stretch:
+        // anchor the stale drawable to a corner and let the crisp frame at
+        // the new size land a frame later, the exposed band showing the
+        // window's own background colour meanwhile.
+        //   - interactive live-resize: the window's *fixed* corner, so the
+        //     content holds still on screen instead of rubber-banding
+        //     around the layer centre. Inferred from the NSWindow frame
+        //     origin delta (macOS reports the origin at the bottom-left):
+        //       origin.x unchanged -> left edge fixed   (else right edge)
+        //       origin.y unchanged -> bottom edge fixed (else top edge)
+        //   - anything else (zoom / animator frame changes, #576): the
+        //     top-left, where the next frame lays its content out anyway.
+        // At rest contents and bounds agree, so the anchor is invisible.
+        NSString *gravity = kCAGravityTopLeft;
         NSWindow *win = att->view.window;
         // Never anchor during an AppKit fullscreen transition: the #327
         // snapshot ramp depends on Resize gravity for the whole animation,
         // and AppKit may report inLiveResize while it animates the frame.
-        BOOL liveResize = att->view.inLiveResize &&
-                          atomic_load(&att->in_transition) == 0;
-        if (liveResize && win != nil &&
-            !isnan(att->prev_origin_x) && !isnan(att->prev_origin_y)) {
+        BOOL inTransition = atomic_load(&att->in_transition) != 0;
+        BOOL liveResize = att->view.inLiveResize && !inTransition;
+        if (inTransition) {
+            gravity = kCAGravityResize;
+        } else if (liveResize && win != nil &&
+                   !isnan(att->prev_origin_x) && !isnan(att->prev_origin_y)) {
             NSRect fr = win.frame;
             BOOL leftFixed   = fabs(fr.origin.x - att->prev_origin_x) < 0.5;
             BOOL bottomFixed = fabs(fr.origin.y - att->prev_origin_y) < 0.5;
@@ -2311,11 +2396,6 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
             } else {
                 gravity = bottomFixed ? kCAGravityBottomRight : kCAGravityTopRight;
             }
-        } else if (liveResize) {
-            // First tick of the drag: no prior origin to diff against. Pin
-            // top-left — the common bottom/right case — and let the next
-            // tick self-correct to the proper fixed corner.
-            gravity = kCAGravityTopLeft;
         }
         att->layer.contentsGravity = gravity;
         if (win != nil) {
@@ -2420,6 +2500,51 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresent(
         [commandBuffer presentDrawable:drawable];
     }
     [commandBuffer commit];
+}
+
+// ── Partial redraw (#755) ────────────────────────────────────────────────
+//
+// The layer recycles a few drawables; a partial frame repaints only what the
+// drawable it gets has missed since it last held a frame, which assumes the
+// recycled drawable kept its pixels. These two calls let the Kotlin side tell
+// the buffers apart and notice the one documented way that assumption breaks.
+
+// Identifies the buffer behind an acquired drawable: (IOSurfaceID << 1) | lost,
+// where `lost` means its IOSurface was purged — contents discarded — since it
+// was last drawn. -1 when the drawable has no IOSurface (always repaint).
+// Read by setting NonVolatile, which returns the previous state: a purged
+// surface stays Empty — and volatile, purgeable again — until someone makes
+// it non-volatile, and Core Animation never does, so a KeepCurrent read
+// reported that buffer lost (repainted in full) on every frame after one
+// purge. The drawable is about to be drawn and presented: non-volatile is
+// the state Core Animation keeps its drawables in anyway.
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDrawableBufferState(
+        JNIEnv *env, jclass clazz, jlong drawablePtr) {
+    (void) env; (void) clazz;
+    if (drawablePtr == 0) return -1;
+    id<CAMetalDrawable> drawable = (__bridge id<CAMetalDrawable>)(void *)(uintptr_t) drawablePtr;
+    IOSurfaceRef surface = drawable.texture.iosurface;
+    if (surface == NULL) return -1;
+    uint32_t oldState = kIOSurfacePurgeableNonVolatile;
+    kern_return_t kr = IOSurfaceSetPurgeable(surface, kIOSurfacePurgeableNonVolatile, &oldState);
+    jlong lost = (kr != KERN_SUCCESS || oldState == kIOSurfacePurgeableEmpty) ? 1 : 0;
+    return ((jlong) IOSurfaceGetID(surface) << 1) | lost;
+}
+
+// CAMetalLayer.framebufferOnly. Off only for the partial-redraw oracle, which
+// reads the presented drawable back.
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetFramebufferOnly(
+        JNIEnv *env, jclass clazz, jlong handle, jboolean flag) {
+    (void) env; (void) clazz;
+    if (handle == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    CAMetalLayer *layer = att->layer;
+    BOOL value = flag == JNI_TRUE;
+    dispatch_block_t apply = ^{ layer.framebufferOnly = value; };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
 }
 
 // ── VSync-paced rendering via CVDisplayLink ──────────────────────────────
@@ -2602,10 +2727,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
                 }
                 if (sRunMethod != NULL) {
                     (*menv)->CallVoidMethod(menv, interopGlobal, sRunMethod);
-                    if ((*menv)->ExceptionCheck(menv)) {
-                        (*menv)->ExceptionDescribe(menv);
-                        (*menv)->ExceptionClear(menv);
-                    }
+                    nucleus_jni_clear_exception(menv);
                 }
                 (*menv)->DeleteGlobalRef(menv, interopGlobal);
             }
@@ -2873,6 +2995,19 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewTopLeft
     return packed;
 }
 
+/* Gate of the nativeDiagInject* entries: they DRIVE the app, so they are
+ * inert unless the process was started with NUCLEUS_TAO_INPUT_INJECTION=1
+ * (the taoHeadfulTest Gradle task sets it). Main thread only, so the lazy
+ * flag needs no atomics. */
+static BOOL taoInputInjectionEnabled(void) {
+    static int sEnabled = -1;
+    if (sEnabled < 0) {
+        const char *flag = getenv("NUCLEUS_TAO_INPUT_INJECTION");
+        sEnabled = (flag != NULL && strcmp(flag, "1") == 0) ? 1 : 0;
+    }
+    return sEnabled == 1;
+}
+
 /* macOS only, headful e2e (#652 / #653 / #654): hands a synthetic
  * `scrollWheel:` NSEvent to the tao NSView passed in — the entry point a real
  * trackpad or wheel event takes once the WindowServer has routed it. Skipping
@@ -2911,13 +3046,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectScrol
         jint phase, jint momentumPhase) {
     (void)env; (void)clazz;
     if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
-    // Main thread only from here on, so the lazy flag needs no atomics.
-    static int sEnabled = -1;
-    if (sEnabled < 0) {
-        const char *flag = getenv("NUCLEUS_TAO_INPUT_INJECTION");
-        sEnabled = (flag != NULL && strcmp(flag, "1") == 0) ? 1 : 0;
-    }
-    if (!sEnabled) return JNI_FALSE;
+    if (!taoInputInjectionEnabled()) return JNI_FALSE;
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     NSWindow *window = view.window;
     NSScreen *primary = NSScreen.screens.firstObject;
@@ -2940,6 +3069,161 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectScrol
     CFRelease(cg);
     if (event == nil) return JNI_FALSE;
     [view scrollWheel:event];
+    return JNI_TRUE;
+}
+
+/* macOS only, headful e2e (#660): queues a synthetic magnify / rotate /
+ * smart-magnify NSEvent with `-[NSApplication postEvent:atStart:]`, so the
+ * local monitor in touchpad_gestures.m sees it exactly as it sees a real
+ * trackpad gesture — no WindowServer, Accessibility grant or cursor position
+ * needed. Posted, never sent: the caller runs inside tao's event callback,
+ * and a synchronous `sendEvent:` re-enters that callback from the monitor
+ * (the loop's callback lock is held — deadlock).
+ *
+ * The event is a CGEvent of the WindowServer's gesture type (29) that
+ * `+[NSEvent eventWithCGEvent:]` decodes (verified on macOS 26):
+ *   field 110  gesture HID type: 8 zoom → NSEventTypeMagnify,
+ *              5 rotation → NSEventTypeRotate, 22 → NSEventTypeSmartMagnify
+ *   field 113  zoom value → `magnification`
+ *   field 114  rotation value (degrees) → `rotation`
+ *   field 132  phase, IOHID encoding: 1 began, 2 changed, 4 ended, 8 cancelled
+ *   field 51   window number → `window`
+ * A CGEvent-built NSEvent has no window unless field 51 is set, and with a
+ * window its `locationInWindow` comes from the event's window location (top-
+ * left origin, window frame), which only the private
+ * `CGEventSetWindowLocation` writes — resolved with dlsym so a missing symbol
+ * fails the injection instead of the load.
+ *
+ * kind: 0 magnify, 1 rotate, 2 smart-magnify (the touchpad_gestures.m wire).
+ * (x, y) are view-local points with a top-left origin. `value` is the
+ * magnification delta or the rotation in degrees (ignored for smart-magnify).
+ *
+ * Same gate as nativeDiagInjectScrollWheel. Returns JNI true once the event
+ * is queued; events posted in order are delivered in order. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectTrackpadGesture(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr,
+        jint kind, jint phase, jfloat x, jfloat y, jdouble value) {
+    (void)env; (void)clazz;
+    if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
+    if (!taoInputInjectionEnabled()) return JNI_FALSE;
+    typedef void (*SetWindowLocationFn)(CGEventRef, CGPoint);
+    static SetWindowLocationFn sSetWindowLocation = NULL;
+    static BOOL sResolved = NO;
+    if (!sResolved) {
+        sResolved = YES;
+        sSetWindowLocation = (SetWindowLocationFn) dlsym(RTLD_DEFAULT, "CGEventSetWindowLocation");
+    }
+    if (sSetWindowLocation == NULL) return JNI_FALSE;
+    int64_t hidType;
+    CGEventField valueField = 0;
+    switch (kind) {
+        case 0: hidType = 8;  valueField = (CGEventField) 113; break;
+        case 1: hidType = 5;  valueField = (CGEventField) 114; break;
+        case 2: hidType = 22; break;
+        default: return JNI_FALSE;
+    }
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    NSWindow *window = view.window;
+    if (window == nil) return JNI_FALSE;
+    // View-local top-left → window base (bottom-left) → window top-left.
+    NSPoint local = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height - y);
+    NSPoint inWindow = [view convertPoint:local toView:nil];
+    CGPoint windowTopLeft = CGPointMake(inWindow.x, window.frame.size.height - inWindow.y);
+    CGEventRef cg = CGEventCreate(NULL);
+    if (cg == NULL) return JNI_FALSE;
+    CGEventSetType(cg, (CGEventType) 29);
+    CGEventSetIntegerValueField(cg, (CGEventField) 110, hidType);
+    if (valueField != 0) CGEventSetDoubleValueField(cg, valueField, value);
+    if (phase != 0) CGEventSetIntegerValueField(cg, (CGEventField) 132, phase);
+    CGEventSetIntegerValueField(cg, (CGEventField) 51, window.windowNumber);
+    sSetWindowLocation(cg, windowTopLeft);
+    NSEvent *event = [NSEvent eventWithCGEvent:cg];
+    CFRelease(cg);
+    if (event == nil || event.window != window) return JNI_FALSE;
+    [NSApp postEvent:event atStart:NO];
+    return JNI_TRUE;
+}
+
+/* macOS only, headful e2e (#827): queues a synthetic tablet event with
+ * `-[NSApplication postEvent:atStart:]`, the way a Wacom-class driver delivers
+ * a pen: a proximity event naming the tool when it comes within range, then
+ * ordinary mouse events whose `subtype` is NSEventSubtypeTabletPoint. Posted,
+ * never sent, for the reason given on nativeDiagInjectTrackpadGesture.
+ *
+ * action: 0 proximity enter, 1 proximity leave, 2 move, 3 down, 4 drag, 5 up.
+ * tool:   0 the mouse (plain mouse events, no proximity), 1 pen tip, 2 eraser.
+ * (x, y) are view-local points with a top-left origin (ignored for proximity).
+ *
+ * Field 51 (window number) and the private CGEventSetWindowLocation make the
+ * mouse events land on the view's window at that point, as in the gesture
+ * injector. Same gate as nativeDiagInjectScrollWheel. Returns JNI true once
+ * the event is queued; events posted in order are delivered in order. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectTabletEvent(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr,
+        jint action, jint tool, jfloat x, jfloat y) {
+    (void)env; (void)clazz;
+    if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
+    if (!taoInputInjectionEnabled()) return JNI_FALSE;
+    if (tool < 0 || tool > 2) return JNI_FALSE;
+    typedef void (*SetWindowLocationFn)(CGEventRef, CGPoint);
+    static SetWindowLocationFn sSetWindowLocation = NULL;
+    static BOOL sResolved = NO;
+    if (!sResolved) {
+        sResolved = YES;
+        sSetWindowLocation = (SetWindowLocationFn) dlsym(RTLD_DEFAULT, "CGEventSetWindowLocation");
+    }
+    if (sSetWindowLocation == NULL) return JNI_FALSE;
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    NSWindow *window = view.window;
+    NSScreen *primary = NSScreen.screens.firstObject;
+    if (window == nil || primary == nil) return JNI_FALSE;
+    // CGPointerType of the proximity fields: 1 pen, 3 eraser.
+    int64_t pointerType = tool == 2 ? 3 : 1;
+    CGEventRef cg = NULL;
+    if (action == 0 || action == 1) {
+        if (tool == 0) return JNI_FALSE;
+        cg = CGEventCreate(NULL);
+        if (cg == NULL) return JNI_FALSE;
+        CGEventSetType(cg, kCGEventTabletProximity);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventPointerType, pointerType);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventEnterProximity, action == 0 ? 1 : 0);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventDeviceID, 1);
+        CGEventSetIntegerValueField(cg, kCGTabletProximityEventCapabilityMask, 0x3F);
+        CGEventSetIntegerValueField(cg, (CGEventField) 51, window.windowNumber);
+    } else {
+        CGEventType type;
+        switch (action) {
+            case 2: type = kCGEventMouseMoved; break;
+            case 3: type = kCGEventLeftMouseDown; break;
+            case 4: type = kCGEventLeftMouseDragged; break;
+            case 5: type = kCGEventLeftMouseUp; break;
+            default: return JNI_FALSE;
+        }
+        // View-local top-left → window base (bottom-left) → window top-left.
+        NSPoint local = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height - y);
+        NSPoint inWindow = [view convertPoint:local toView:nil];
+        NSPoint onScreen = [window convertPointToScreen:inWindow];
+        CGPoint global = CGPointMake(onScreen.x, primary.frame.size.height - onScreen.y);
+        cg = CGEventCreateMouseEvent(NULL, type, global, kCGMouseButtonLeft);
+        if (cg == NULL) return JNI_FALSE;
+        if (tool != 0) {
+            CGEventSetIntegerValueField(cg, kCGMouseEventSubtype, kCGEventMouseSubtypeTabletPoint);
+            CGEventSetIntegerValueField(cg, kCGTabletEventDeviceID, 1);
+            CGEventSetDoubleValueField(cg, kCGTabletEventPointPressure,
+                                       (action == 3 || action == 4) ? 0.5 : 0.0);
+        }
+        if (action == 3 || action == 5) {
+            CGEventSetIntegerValueField(cg, kCGMouseEventClickState, 1);
+        }
+        CGEventSetIntegerValueField(cg, (CGEventField) 51, window.windowNumber);
+        sSetWindowLocation(cg, CGPointMake(inWindow.x, window.frame.size.height - inWindow.y));
+    }
+    NSEvent *event = [NSEvent eventWithCGEvent:cg];
+    CFRelease(cg);
+    if (event == nil) return JNI_FALSE;
+    [NSApp postEvent:event atStart:NO];
     return JNI_TRUE;
 }
 

@@ -35,6 +35,13 @@ internal class TaoDragAndDropManager(
     @Suppress("unused") // wired in stage 2+ for inbound proxy through the manager
     private val getRootNode: () -> ComposeSceneDragAndDropNode,
     private val outboundLauncher: OutboundLauncher? = null,
+    /**
+     * Whether [outboundLauncher] can run a session whose only payload is a
+     * [TaoPrivateTransfer] token. Only the Linux host does: the cross-window
+     * gestures ride the DnD session there on native Wayland. Elsewhere such a
+     * request is refused like any other with nothing to export.
+     */
+    private val acceptsPrivateData: Boolean = false,
 ) : PlatformDragAndDropManager {
     /**
      * Per-platform implementation of the actual OS drag session. Receives the
@@ -67,9 +74,18 @@ internal class TaoDragAndDropManager(
     class OutboundRequest internal constructor(
         val files: List<File>,
         val text: String?,
+        /** In-process token, see [TaoPrivateTransfer]; `null` for an ordinary data drag. */
+        val privateData: String?,
         val supportedActions: List<DragAndDropTransferAction>,
         val decorationSize: Size,
         val drawDragDecoration: DrawScope.() -> Unit,
+        /**
+         * Where the pointer sits inside the decoration, in the decoration's
+         * own pixels. Compose (and AWT's `DragSource.startDrag`) place the
+         * decoration's origin at the pointer *plus* the transfer's
+         * `dragDecorationOffset`, so the pointer is at minus that offset.
+         */
+        val decorationHotspot: Offset,
     )
 
     init {
@@ -111,7 +127,8 @@ internal class TaoDragAndDropManager(
                         }
                     val files = awt.extractFiles()
                     val text = awt.extractText()
-                    if (files.isEmpty() && text == null) {
+                    val privateData = TaoPrivateTransfer.tokenOf(awt)?.takeIf { acceptsPrivateData }
+                    if (files.isEmpty() && text == null && privateData == null) {
                         TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — no exportable data")
                         return false
                     }
@@ -120,11 +137,15 @@ internal class TaoDragAndDropManager(
                         OutboundRequest(
                             files = files,
                             text = text,
+                            privateData = privateData,
                             supportedActions = transferData.supportedActions.toList(),
                             decorationSize = decorationSize,
                             drawDragDecoration = drawDragDecoration,
+                            decorationHotspot = -transferData.dragDecorationOffset,
                         )
-                    TaoDnDDiagnostics.log("starting OS drag files=${files.size} text=${text != null}")
+                    TaoDnDDiagnostics.log(
+                        "starting OS drag files=${files.size} text=${text != null} private=${privateData != null}",
+                    )
                     inProgress = true
                     val launched =
                         launcher.launch(request) { result ->

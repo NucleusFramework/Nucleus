@@ -15,6 +15,7 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=Cocoa");
         println!("cargo:rustc-link-lib=framework=Carbon");
         println!("cargo:rerun-if-changed=macos/main_thread_dispatch.m");
+        println!("cargo:rerun-if-changed=macos/nucleus_tao_cursors.h");
         println!("cargo:rerun-if-changed=macos/a11y.m");
         println!("cargo:rerun-if-changed=macos/window_drag.m");
         println!("cargo:rerun-if-changed=macos/touchpad_gestures.m");

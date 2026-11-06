@@ -28,6 +28,12 @@ internal object NativeTaoWindowsDndBridge {
      *   - [DROP_EFFECT_COPY] — accept as a copy
      */
     interface Callback {
+        /** Updates the file preview for this drag; null clears the preview. */
+        fun onDragFiles(
+            hwnd: Long,
+            files: Array<String>?,
+        )
+
         @Suppress("FunctionParameterNaming")
         fun onDragEnter(
             hwnd: Long,

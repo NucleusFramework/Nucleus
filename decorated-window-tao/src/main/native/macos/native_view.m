@@ -32,6 +32,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <math.h>
 #include <stdatomic.h>
 
@@ -167,7 +168,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
     jfloat x, y;
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnPointerMethod, type, x, y, button, [self modifierMaskFor:event]);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* On click, become first responder of the host NSWindow so subsequent
@@ -190,7 +191,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
             JNIEnv *env = attachThread();
             if (env != NULL) {
                 (*env)->CallVoidMethod(env, cb, sOnResignMethod);
-                if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+                nucleus_jni_clear_exception(env);
             }
         }
     }
@@ -211,7 +212,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnScrollMethod,
         x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* Deliberately NOT overriding `keyDown:` / `keyUp:`. AppKit's
@@ -412,6 +413,18 @@ static NSEvent *mouse_event_at(NSView *view, NSEventType type, NSPoint windowPoi
                               pressure:1.0];
 }
 
+/* NSControl.mouseDown: and NSTextView.mouseDown: run
+ * trackMouse:untilMouseUp: (or a selection loop) and do not return
+ * until an AppKit mouse-up is dequeued. Compose pointer dispatch is
+ * on the Tao main thread; the matching up is the *next* event we have
+ * not delivered yet. Calling those selectors from here stalls the loop
+ * forever on a synthetic press, and on a live one steals the up
+ * Compose still needs to see. A right-click handler may also pop an
+ * NSMenu, which is the same kind of nested modal loop. */
+static BOOL view_runs_mouse_tracking(NSView *hit) {
+    return [hit isKindOfClass:[NSControl class]] || [hit isKindOfClass:[NSTextView class]];
+}
+
 /* [type] 1 = down, 2 = up, 3 = move. [button] 0 none, 1 primary, 2 secondary.
  * [pressed] is the Compose pointer-down state (move + pressed → dragged). */
 JNIEXPORT void JNICALL
@@ -426,7 +439,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     if (content == nil || child == nil) return;
     NSPoint windowPoint = window_point_from_compose_px(content, xPx, yPx);
     NSView *hit = hit_native_child(child, windowPoint);
-    if (hit == nil) return;
+    if (hit == nil) {
+        // Press on the slot before the child has a hit-testable frame:
+        // first-responder is still enough for typing.
+        if (type == 1) [child.window makeFirstResponder:child];
+        return;
+    }
 
     NSEventType nsType;
     if (type == 1) {
@@ -438,20 +456,24 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     } else {
         nsType = NSEventTypeMouseMoved;
     }
+    if (type == 1) {
+        [hit.window makeFirstResponder:hit];
+        if (view_runs_mouse_tracking(hit) || nsType == NSEventTypeRightMouseDown) return;
+    } else if (view_runs_mouse_tracking(hit) ||
+               nsType == NSEventTypeRightMouseUp ||
+               nsType == NSEventTypeRightMouseDragged) {
+        return;
+    }
     NSEvent *current = NSApp.currentEvent;
     NSEvent *event = (current != nil && current.type == nsType)
         ? current
         : mouse_event_at(hit, nsType, windowPoint, type == 1 ? 1 : 0);
     if (type == 1) {
-        [hit.window makeFirstResponder:hit];
-        if (nsType == NSEventTypeRightMouseDown) [hit rightMouseDown:event];
-        else [hit mouseDown:event];
+        [hit mouseDown:event];
     } else if (type == 2) {
-        if (nsType == NSEventTypeRightMouseUp) [hit rightMouseUp:event];
-        else [hit mouseUp:event];
+        [hit mouseUp:event];
     } else if (pressed == JNI_TRUE) {
-        if (nsType == NSEventTypeRightMouseDragged) [hit rightMouseDragged:event];
-        else [hit mouseDragged:event];
+        [hit mouseDragged:event];
     } else {
         [hit mouseMoved:event];
     }
@@ -611,6 +633,103 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeMa
     NSView *content = view_from_long(contentPtr);
     if (content == nil) return;
     [content.window makeFirstResponder:content];
+}
+
+/* Whether [first] is some view other than the Tao content view — an
+ * embed, or the field editor working on one. Keys then belong to AppKit,
+ * not Compose. */
+static BOOL first_responder_is_embed(NSView *content) {
+    if (content == nil || content.window == nil) return NO;
+    NSResponder *first = content.window.firstResponder;
+    if (first == nil || first == content) return NO;
+    if ([first isKindOfClass:[NSTextView class]]) {
+        NSTextView *editor = (NSTextView *)first;
+        if (editor.isFieldEditor) return YES;
+    }
+    return [first isKindOfClass:[NSView class]] && ((NSView *)first).window == content.window;
+}
+
+/* Carbon HIToolbox virtual key codes (Events.h). Used only to synthesise
+ * a caret-key NSEvent onto the first responder; we do not link Carbon. */
+#define NUCLEUS_VK_LEFT_ARROW  0x7B
+#define NUCLEUS_VK_RIGHT_ARROW 0x7C
+#define NUCLEUS_VK_DOWN_ARROW  0x7D
+#define NUCLEUS_VK_UP_ARROW    0x7E
+#define NUCLEUS_VK_DELETE      0x33
+#define NUCLEUS_VK_RETURN      0x24
+#define NUCLEUS_VK_FORWARD_DEL 0x75
+#define NUCLEUS_VK_TAB         0x30
+#define NUCLEUS_VK_ESCAPE      0x35
+
+/* AWT VK_* → Carbon kVK_* for the caret / editing keys the host forwards
+ * when Compose did not consume them and an embed holds first responder. */
+static unsigned short carbon_key_code_for_awt(jint vkCode) {
+    switch (vkCode) {
+        case 37:  return NUCLEUS_VK_LEFT_ARROW;   /* VK_LEFT */
+        case 39:  return NUCLEUS_VK_RIGHT_ARROW;  /* VK_RIGHT */
+        case 40:  return NUCLEUS_VK_DOWN_ARROW;   /* VK_DOWN */
+        case 38:  return NUCLEUS_VK_UP_ARROW;     /* VK_UP */
+        case 8:   return NUCLEUS_VK_DELETE;       /* VK_BACK_SPACE */
+        case 10:  return NUCLEUS_VK_RETURN;       /* VK_ENTER */
+        case 127: return NUCLEUS_VK_FORWARD_DEL;  /* VK_DELETE */
+        case 9:   return NUCLEUS_VK_TAB;          /* VK_TAB */
+        case 27:  return NUCLEUS_VK_ESCAPE;       /* VK_ESCAPE */
+        default:  return 0xFFFF;
+    }
+}
+
+/* Tao KEY_DOWN / KEY_UP / KEY_TYPED onto the current first responder when
+ * that responder is an embed. Synthetic Compose keys never enter AppKit's
+ * responder chain (they are posted into the Tao window), so without this
+ * an NSTextField that holds first responder never sees a letter typed
+ * through the in-process driver. Returns JNI_TRUE when the embed took it. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDispatchKeyToFirstResponder(
+    JNIEnv *env, jclass clazz,
+    jlong contentPtr, jint type, jint vkCode, jint codePoint)
+{
+    (void)env; (void)clazz;
+    NSView *content = view_from_long(contentPtr);
+    if (!first_responder_is_embed(content)) return JNI_FALSE;
+    NSResponder *first = content.window.firstResponder;
+    const jint kTaoKeyDown = 14;
+    const jint kTaoKeyUp = 15;
+    const jint kTaoKeyTyped = 19;
+    if (type == kTaoKeyTyped) {
+        if (codePoint <= 0) return JNI_FALSE;
+        unichar ch = (unichar)codePoint;
+        NSString *text = [NSString stringWithCharacters:&ch length:1];
+        if ([first conformsToProtocol:@protocol(NSTextInputClient)]) {
+            [(id<NSTextInputClient>)first insertText:text
+                                    replacementRange:NSMakeRange(NSNotFound, 0)];
+            return JNI_TRUE;
+        }
+        if ([first isKindOfClass:[NSTextField class]]) {
+            NSTextField *field = (NSTextField *)first;
+            NSString *current = field.stringValue ?: @"";
+            field.stringValue = [current stringByAppendingString:text];
+            return JNI_TRUE;
+        }
+        return JNI_FALSE;
+    }
+    if (type != kTaoKeyDown && type != kTaoKeyUp) return JNI_FALSE;
+    unsigned short keyCode = carbon_key_code_for_awt(vkCode);
+    if (keyCode == 0xFFFF) return JNI_FALSE;
+    NSEventType nsType = (type == kTaoKeyDown) ? NSEventTypeKeyDown : NSEventTypeKeyUp;
+    NSEvent *event = [NSEvent keyEventWithType:nsType
+                                      location:NSZeroPoint
+                                 modifierFlags:0
+                                     timestamp:[NSProcessInfo processInfo].systemUptime
+                                  windowNumber:content.window.windowNumber
+                                       context:nil
+                                    characters:@""
+                   charactersIgnoringModifiers:@""
+                                     isARepeat:NO
+                                       keyCode:keyCode];
+    if (event == nil) return JNI_FALSE;
+    if (type == kTaoKeyDown) [first keyDown:event];
+    else [first keyUp:event];
+    return JNI_TRUE;
 }
 
 /* ================================================================== */
@@ -775,4 +894,102 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeRe
         objc_setAssociatedObject(overlay, &kOverlayCallbackKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     [overlay removeFromSuperview];
+}
+
+// ── Diagnostics for the headful suite ──────────────────────────────────
+//
+// A NativeView case needs a real, focusable AppKit view — one that takes
+// first responder on click and shows an I-beam — to race against Compose.
+// The test module cannot allocate one itself, so these hand out a plain
+// NSTextField and read the responder chain and the text back. Nothing here
+// is used by NativeView proper.
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagCreateTextField(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    NSTextField *field = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 64, 24)];
+    field.editable = YES;
+    field.selectable = YES;
+    field.bezeled = YES;
+    field.wantsLayer = YES;
+    return (jlong)(uintptr_t)(__bridge_retained void *)field;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagReleaseView(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    if (viewPtr == 0) return;
+    NSView *view = (__bridge_transfer NSView *)(void *)(uintptr_t)viewPtr;
+    [view removeFromSuperview];
+}
+
+/* An NSTextField never is the first responder itself while edited: the
+ * window's shared field editor (an NSTextView whose delegate is the
+ * field) is. Both shapes mean "keystrokes go to the embed". */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagViewIsEditing(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (view == nil || view.window == nil) return JNI_FALSE;
+    NSResponder *first = view.window.firstResponder;
+    if (first == view) return JNI_TRUE;
+    if ([first isKindOfClass:[NSTextView class]]) {
+        NSTextView *editor = (NSTextView *)first;
+        if (editor.isFieldEditor && editor.delegate == (id<NSTextViewDelegate>)view) return JNI_TRUE;
+    }
+    return JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagViewIsFirstResponder(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (view == nil || view.window == nil) return JNI_FALSE;
+    return view.window.firstResponder == view ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagTextFieldString(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (![view isKindOfClass:[NSTextField class]]) return NULL;
+    NSString *value = ((NSTextField *)view).stringValue ?: @"";
+    return (*env)->NewStringUTF(env, value.UTF8String);
+}
+
+/* The view's frame in its superview, converted to Compose's convention:
+ * physical pixels, top-left origin, as `[x, y, w, h]`. Null without a
+ * superview or a window. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagViewFrame(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (view == nil || view.superview == nil || view.window == nil) return NULL;
+    CGFloat scale = view.window.backingScaleFactor;
+    if (scale <= 0) scale = 1.0;
+    NSRect frame = view.frame;
+    CGFloat parentHeight = view.superview.bounds.size.height;
+    CGFloat topLeftY = view.superview.isFlipped ? frame.origin.y : parentHeight - frame.origin.y - frame.size.height;
+    jint out[4] = {
+        (jint)lround(frame.origin.x * scale),
+        (jint)lround(topLeftY * scale),
+        (jint)lround(frame.size.width * scale),
+        (jint)lround(frame.size.height * scale),
+    };
+    jintArray result = (*env)->NewIntArray(env, 4);
+    if (result == NULL) return NULL;
+    (*env)->SetIntArrayRegion(env, result, 0, 4, out);
+    return result;
 }

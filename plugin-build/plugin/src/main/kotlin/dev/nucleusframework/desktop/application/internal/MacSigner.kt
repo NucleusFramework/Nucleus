@@ -52,7 +52,7 @@ internal class NoCertificateSigner(
                 args.add(entitlements.absolutePath)
             }
             args.add(file.absolutePath)
-            runTool.codesign(*args.toTypedArray())
+            runTool.codesign(args)
         }
     }
 
@@ -90,7 +90,7 @@ internal class MacSignerImpl(
                         ),
                     processStdout = { signKeyValue = matchCertificates(it) },
                 )
-                signKeyValue!!
+                checkNotNull(signKeyValue) { "No signing certificate matched '${settings.fullDeveloperID}'" }
             }
         runTool.unsign(file)
         runTool.sign(
@@ -129,18 +129,21 @@ internal class MacSignerImpl(
             return result
         } else {
             return hexEncoded
-                .substring(2)
-                .chunked(2)
-                .map { it.toInt(16).toByte() }
+                .removePrefix("0x")
+                .chunked(HEX_DIGITS_PER_BYTE)
+                .map { it.toInt(HEX_RADIX).toByte() }
                 .toByteArray()
                 .toString(Charsets.UTF_8)
         }
     }
 }
 
-private fun ExternalToolRunner.codesign(vararg args: String) = this(MacUtils.codesign, args.toList())
+private const val HEX_DIGITS_PER_BYTE = 2
+private const val HEX_RADIX = 16
 
-private fun ExternalToolRunner.unsign(file: File) = codesign("-vvvv", "--remove-signature", file.absolutePath)
+private fun ExternalToolRunner.codesign(args: List<String>) = this(MacUtils.codesign, args)
+
+private fun ExternalToolRunner.unsign(file: File) = codesign(listOf("-vvvv", "--remove-signature", file.absolutePath))
 
 private fun ExternalToolRunner.sign(
     file: File,
@@ -149,23 +152,18 @@ private fun ExternalToolRunner.sign(
     prefix: String?,
     keychain: File?,
 ) = codesign(
-    "-vvvv",
-    "--timestamp",
-    "--options",
-    "runtime",
-    "--force",
-    *optionalArg("--prefix", prefix),
-    "--sign",
-    signKey,
-    *optionalArg("--keychain", keychain?.absolutePath),
-    *optionalArg("--entitlements", entitlements?.absolutePath),
-    file.absolutePath,
+    listOf("-vvvv", "--timestamp", "--options", "runtime", "--force") +
+        optionalArg("--prefix", prefix) +
+        listOf("--sign", signKey) +
+        optionalArg("--keychain", keychain?.absolutePath) +
+        optionalArg("--entitlements", entitlements?.absolutePath) +
+        file.absolutePath,
 )
 
 private fun optionalArg(
     arg: String,
     value: String?,
-): Array<String> = if (value != null) arrayOf(arg, value) else emptyArray()
+): List<String> = if (value != null) listOf(arg, value) else emptyList()
 
 private val File.isExecutable: Boolean
     get() = toPath().isExecutable()

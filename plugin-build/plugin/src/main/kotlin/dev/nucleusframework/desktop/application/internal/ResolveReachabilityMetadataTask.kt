@@ -49,6 +49,11 @@ abstract class ResolveReachabilityMetadataTask : DefaultTask() {
     @get:Input
     abstract val extractionDir: Property<File>
 
+    /**
+     * Extracts the repository entries matching the runtime dependencies into [extractionDir]
+     * and writes their directories, one absolute path per line, to [outputDirsFile] (empty
+     * when the repository is disabled, missing, or nothing matches).
+     */
     @TaskAction
     fun resolve() {
         val outFile = outputDirsFile.get()
@@ -114,24 +119,19 @@ internal data class ArtifactCoordinates(
     val version: String,
 )
 
-internal fun parseArtifactsFromClasspath(files: Set<File>): List<ArtifactCoordinates> {
-    val artifacts = mutableListOf<ArtifactCoordinates>()
-    val seen = mutableSetOf<String>()
+internal fun parseArtifactsFromClasspath(files: Set<File>): List<ArtifactCoordinates> =
+    files
+        .asSequence()
+        .filter { it.name.endsWith(".jar") }
+        .mapNotNull { parseGradleCacheCoordinates(it) ?: parseMavenLocalCoordinates(it) }
+        .distinctBy { "${it.group}:${it.name}" }
+        .toList()
 
-    for (file in files) {
-        if (!file.name.endsWith(".jar")) continue
-        val coords =
-            parseGradleCacheCoordinates(file)
-                ?: parseMavenLocalCoordinates(file)
-                ?: continue
-        val key = "${coords.group}:${coords.name}"
-        if (key !in seen) {
-            artifacts.add(coords)
-            seen.add(key)
-        }
-    }
-    return artifacts
-}
+/** Index of the `<hash>` segment relative to `files-2.1` in the Gradle cache layout. */
+private const val GRADLE_CACHE_HASH_OFFSET = 4
+
+/** Trailing `<name>/<version>/<file>` segments of the Maven local layout. */
+private const val MAVEN_TRAILING_SEGMENTS = 3
 
 /**
  * Gradle cache layout: `<cache-root>/modules-2/files-2.1/<group>/<name>/<version>/<hash>/<file>`
@@ -139,7 +139,7 @@ internal fun parseArtifactsFromClasspath(files: Set<File>): List<ArtifactCoordin
 private fun parseGradleCacheCoordinates(file: File): ArtifactCoordinates? {
     val parts = file.absolutePath.replace('\\', '/').split('/')
     val filesIdx = parts.indexOfLast { it == "files-2.1" }
-    if (filesIdx < 0 || filesIdx + 4 >= parts.size) return null
+    if (filesIdx < 0 || filesIdx + GRADLE_CACHE_HASH_OFFSET >= parts.size) return null
     return ArtifactCoordinates(
         group = parts[filesIdx + 1],
         name = parts[filesIdx + 2],
@@ -154,10 +154,10 @@ private fun parseGradleCacheCoordinates(file: File): ArtifactCoordinates? {
 private fun parseMavenLocalCoordinates(file: File): ArtifactCoordinates? {
     val parts = file.absolutePath.replace('\\', '/').split('/')
     val repoIdx = parts.indexOfLast { it == "repository" }
-    if (repoIdx < 0 || repoIdx + 3 >= parts.size) return null
+    if (repoIdx < 0 || repoIdx + MAVEN_TRAILING_SEGMENTS >= parts.size) return null
     val version = parts[parts.size - 2]
-    val name = parts[parts.size - 3]
-    val groupParts = parts.subList(repoIdx + 1, parts.size - 3)
+    val name = parts[parts.size - MAVEN_TRAILING_SEGMENTS]
+    val groupParts = parts.subList(repoIdx + 1, parts.size - MAVEN_TRAILING_SEGMENTS)
     if (groupParts.isEmpty()) return null
     return ArtifactCoordinates(
         group = groupParts.joinToString("."),

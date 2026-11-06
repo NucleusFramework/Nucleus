@@ -26,7 +26,7 @@ package dev.nucleusframework.hidpi
 public fun getLinuxNativeScaleFactor(): Double {
     if (!System.getProperty("os.name").contains("Linux", ignoreCase = true)) return 0.0
     return try {
-        HiDpiLinuxBridge.nativeGetScaleFactor()
+        LinuxStartupBridge.nativeGetScaleFactor()
     } catch (_: Throwable) {
         // JNI unavailable — fall back to environment variables only
         System.getenv("J2D_UISCALE")?.toDoubleOrNull()?.takeIf { it > 0 }
@@ -66,7 +66,7 @@ public fun applyLinuxHiDpiScale() {
     // Step 1: set GDK_SCALE in the process env so the JDK's native
     // detection path picks it up → full scaling (rendering + input)
     try {
-        HiDpiLinuxBridge.nativeApplyScaleToEnv(scale.toInt())
+        LinuxStartupBridge.nativeApplyScaleToEnv(scale.toInt())
     } catch (_: Throwable) {
         // JNI unavailable — continue with property-only approach
     }

@@ -54,6 +54,14 @@ internal fun NotarizationAuth.toNotaryToolArgs(): Pair<List<String>, String?> =
             ) to null
     }
 
+/** Every credential value of [toNotaryToolArgs], masked when a failed command line is reported. */
+internal fun NotarizationAuth.toNotaryToolCredentialValues(): Set<String> =
+    when (this) {
+        is NotarizationAuth.AppleId -> setOf(appleID, password, teamID)
+        is NotarizationAuth.KeychainProfile -> setOfNotNull(profileName, keychainPath)
+        is NotarizationAuth.ApiKey -> setOf(keyPath, keyId, issuerId)
+    }
+
 internal fun MacOSNotarizationSettings?.validate(): ValidatedMacOSNotarizationSettings {
     checkNotNull(this) {
         ERR_NOTARIZATION_SETTINGS_ARE_NOT_PROVIDED

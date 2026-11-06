@@ -3,7 +3,7 @@
 # then dump-uia-tree (or visual inspection) confirms Compose received the click.
 #
 # Usage:
-#   pwsh scripts/uia-invoke.ps1 -Title "Tao Backend Demo" -Name "Clear"
+#   pwsh scripts/uia-invoke.ps1 -Title "Nucleus A11y Surface" -Name "Clear"
 
 param(
     [Parameter(Mandatory)] [string]$Title,

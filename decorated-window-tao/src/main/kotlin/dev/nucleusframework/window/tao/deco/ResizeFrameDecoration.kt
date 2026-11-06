@@ -131,7 +131,7 @@ internal class ResizeFrameDecoration(
      */
     fun onMove(direction: Direction?): Boolean {
         if (direction != null) {
-            NativeTaoBridge.nativeSetCursorIcon(windowHandle, direction.cursorIcon)
+            NativeTaoBridge.setCursorIcon(windowHandle, direction.cursorIcon)
             inBand = true
             return true
         }
@@ -139,7 +139,7 @@ internal class ResizeFrameDecoration(
             inBand = false
             // Restore the default cursor immediately; Compose will overwrite
             // it on the next motion if a `PointerIcon` modifier is in scope.
-            NativeTaoBridge.nativeSetCursorIcon(windowHandle, TaoCursorIcon.DEFAULT)
+            NativeTaoBridge.setCursorIcon(windowHandle, TaoCursorIcon.DEFAULT)
         }
         return false
     }

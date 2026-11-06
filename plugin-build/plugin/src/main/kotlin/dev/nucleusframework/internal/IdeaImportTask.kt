@@ -20,6 +20,8 @@ internal abstract class IdeaImportTask : DefaultTask() {
     @get:Input
     val ideaIsInSync: Provider<Boolean> = project.ideaIsInSyncProvider()
 
+    // Any failure must be reported, and swallowed during an IDE sync, so a broad catch is intended.
+    @Suppress("TooGenericExceptionCaught")
     @TaskAction
     fun run() {
         try {

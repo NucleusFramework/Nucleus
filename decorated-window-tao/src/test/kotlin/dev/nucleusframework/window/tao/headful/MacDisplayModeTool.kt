@@ -33,6 +33,12 @@ internal object MacDisplayModeTool {
 
     /** `mode` is `1x`, `2x` or `query`; returns the helper's one-line report. */
     fun run(mode: String): String {
+        // Two cases in one process can flip the display back to back — one
+        // restoring its original mode, the next asking for the other one. The
+        // WindowServer is still reconfiguring from the first flip and the
+        // second is applied without the JVM ever seeing a scale change, so the
+        // waiting case times out. Space the flips out; a query never waits.
+        if (mode != QUERY_MODE) awaitModeCooldown()
         val process =
             ProcessBuilder(binary.absolutePath, mode)
                 .redirectErrorStream(true)
@@ -43,8 +49,23 @@ internal object MacDisplayModeTool {
                 .readText()
                 .trim()
         val code = process.waitFor()
+        if (mode != QUERY_MODE) lastModeChangeNanos = System.nanoTime()
         return if (code == 0) out else "exit $code: $out"
     }
+
+    private var lastModeChangeNanos = 0L
+
+    private fun awaitModeCooldown() {
+        if (lastModeChangeNanos == 0L) return
+        val sinceMillis = (System.nanoTime() - lastModeChangeNanos) / NANOS_PER_MILLI
+        if (sinceMillis < MODE_COOLDOWN_MILLIS) Thread.sleep(MODE_COOLDOWN_MILLIS - sinceMillis)
+    }
+
+    private const val QUERY_MODE = "query"
+    private const val NANOS_PER_MILLI = 1_000_000L
+
+    /** Long enough for the WindowServer to finish one reconfiguration before the next. */
+    private const val MODE_COOLDOWN_MILLIS = 2_500L
 
     private fun compile(): Boolean {
         val source = File(binary.parentFile, "${binary.name}.swift")

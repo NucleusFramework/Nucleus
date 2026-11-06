@@ -41,6 +41,41 @@ import java.io.File
  */
 @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
 internal object TaoSceneDnD {
+    class InboundState {
+        private var hoverFiles: Array<String>? = null
+
+        fun onDragFiles(files: Array<String>?) {
+            hoverFiles = files?.takeIf { it.isNotEmpty() }
+        }
+
+        fun onDragEnter(
+            node: ComposeSceneDragAndDropNode?,
+            x: Int,
+            y: Int,
+        ): Boolean = TaoSceneDnD.onDragEnter(node = node, x = x, y = y, files = hoverFiles)
+
+        fun onDragOver(
+            node: ComposeSceneDragAndDropNode?,
+            x: Int,
+            y: Int,
+        ): Boolean = TaoSceneDnD.onDragOver(node = node, x = x, y = y, files = hoverFiles)
+
+        fun onDragLeave(node: ComposeSceneDragAndDropNode?) {
+            hoverFiles = null
+            TaoSceneDnD.onDragLeave(node = node)
+        }
+
+        fun onDrop(
+            node: ComposeSceneDragAndDropNode?,
+            x: Int,
+            y: Int,
+            files: Array<String>?,
+        ): Boolean {
+            hoverFiles = null
+            return TaoSceneDnD.onDrop(node = node, x = x, y = y, files = files)
+        }
+    }
+
     private fun makeDragEvent(
         xPx: Int,
         yPx: Int,
@@ -93,13 +128,21 @@ internal object TaoSceneDnD {
         node: ComposeSceneDragAndDropNode?,
         x: Int,
         y: Int,
+        files: Array<String>? = null,
     ): Boolean {
         if (node == null) return false
-        val ev = makeDragEvent(x, y, null)
+        val ev = makeDragEvent(x, y, files)
         val accepted = node.acceptDragAndDropTransfer(ev)
         if (accepted) {
             node.onStarted(ev)
             node.onEntered(ev)
+            // The entry event carries a position, and only `onMoved` makes the
+            // root resolve the target under it. Without this, the target the
+            // pointer entered on is not entered until the next motion event —
+            // so its highlight lags a frame, and a platform that delivers
+            // enter → drop with no motion in between (or a drop right after a
+            // re-entry) finds no target and refuses perfectly good files.
+            node.onMoved(ev)
         }
         return accepted
     }
@@ -109,9 +152,10 @@ internal object TaoSceneDnD {
         node: ComposeSceneDragAndDropNode?,
         x: Int,
         y: Int,
+        files: Array<String>? = null,
     ): Boolean {
         if (node == null) return false
-        val ev = makeDragEvent(x, y, null)
+        val ev = makeDragEvent(x, y, files)
         node.onMoved(ev)
         return node.hasEligibleDropTarget
     }

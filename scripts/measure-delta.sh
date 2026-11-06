@@ -5,11 +5,11 @@
 set -u
 
 OUT="${1:-/tmp/delta-measure}"
-NUCLEUS_MAIN=examples/nucleus-demo/src/main/kotlin/com/example/demo/Main.kt
-JEWEL_MAIN=examples/jewel-demo/src/main/kotlin/jewelsample/Main.kt
+# Any one-line change will do: it only has to make v2 differ from v1.
+LAB_MAIN=examples/lab/app/src/main/kotlin/dev/nucleusframework/lab/app/LabCli.kt
 
 restore() {
-    git checkout -- "$NUCLEUS_MAIN" "$JEWEL_MAIN" 2>/dev/null || true
+    git checkout -- "$LAB_MAIN" 2>/dev/null || true
 }
 trap restore EXIT
 
@@ -51,12 +51,12 @@ collect() {
 pair() {
     local project="$1" task="$2" main="$3" needle="$4" dir="$5"
     restore
-    build ":examples:$project:$task" || return 1
+    build ":examples:${project//\//:}:$task" || return 1
     collect "$project" "$OUT/$dir" v1 || return 1
 
     sed -i "s/$needle/$needle patched/" "$main"
     grep -q "$needle patched" "$main" || { echo "!! patch did not apply to $main"; return 1; }
-    build ":examples:$project:$task" || return 1
+    build ":examples:${project//\//:}:$task" || return 1
     collect "$project" "$OUT/$dir" v2 || return 1
     restore
 
@@ -70,11 +70,9 @@ pair() {
 
 mkdir -p "$OUT"
 
-# GraalVM native image, -O3 (jewel-demo).
-pair jewel-demo packageGraalvmNsis "$JEWEL_MAIN" 'Jewel standalone sample' native
-
-# JVM without ProGuard, to isolate what obfuscation costs (nucleus-demo).
-pair nucleus-demo packageNsis "$NUCLEUS_MAIN" 'Nucleus Demo' jvm-no-proguard
+# JVM without ProGuard, to isolate what obfuscation costs (the Lab; no native-image app is
+# measured until the Lab is validated on GraalVM).
+pair lab/app packageNsis "$LAB_MAIN" 'Usage: nucleus-lab-cli' jvm-no-proguard
 
 echo "=== done ==="
 find "$OUT" -type f -printf '%s\t%p\n' | sort -k2

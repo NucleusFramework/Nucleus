@@ -24,10 +24,7 @@ internal object ServiceLoaderDetector {
         val resourcePatterns = mutableSetOf<ResourcePattern>()
 
         for (entry in jarFile.entries()) {
-            if (!entry.name.startsWith("META-INF/services/") || entry.isDirectory) continue
-
-            val serviceName = entry.name.removePrefix("META-INF/services/")
-            if (serviceName.isEmpty() || serviceName.contains('/')) continue
+            if (entry.isDirectory || !isServiceFile(entry.name)) continue
 
             resourcePatterns.add(ResourcePattern(glob = entry.name))
 
@@ -43,6 +40,13 @@ internal object ServiceLoaderDetector {
         }
 
         return ServiceResult(reflectionEntries, resourcePatterns)
+    }
+
+    // A file directly under META-INF/services/, named after the service interface.
+    private fun isServiceFile(entryName: String): Boolean {
+        if (!entryName.startsWith("META-INF/services/")) return false
+        val serviceName = entryName.removePrefix("META-INF/services/")
+        return serviceName.isNotEmpty() && !serviceName.contains('/')
     }
 
     /**

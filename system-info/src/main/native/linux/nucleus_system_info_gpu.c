@@ -811,3 +811,156 @@ Java_dev_nucleusframework_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeGpu
     (*env)->SetFloatArrayRegion(env, arr, 0, gpu_count, vals);
     return arr;
 }
+
+// ============================================================================
+// Render tier — what the default GL ES driver offers for 3D (RenderTier ordinal)
+// ============================================================================
+// A throwaway GLES context on Mesa's surfaceless platform (no window system,
+// the default render node), else on the default display. libEGL is dlopen'd
+// RTLD_LOCAL: no hard dependency, and no symbol interposition into the app.
+
+#define RENDER_TIER_UNKNOWN  0
+#define RENDER_TIER_SOFTWARE 1
+#define RENDER_TIER_LEGACY   2
+#define RENDER_TIER_CAPABLE  3
+
+// The EGL / GL ES values used below (headers not required at build time)
+#define NUC_EGL_NONE                    0x3038
+#define NUC_EGL_EXTENSIONS              0x3055
+#define NUC_EGL_SURFACE_TYPE            0x3033
+#define NUC_EGL_RENDERABLE_TYPE         0x3040
+#define NUC_EGL_OPENGL_ES2_BIT          0x0004
+#define NUC_EGL_OPENGL_ES3_BIT          0x0040
+#define NUC_EGL_OPENGL_ES_API           0x30A0
+#define NUC_EGL_CONTEXT_MAJOR_VERSION   0x3098
+#define NUC_EGL_DRAW                    0x3059
+#define NUC_EGL_READ                    0x305A
+#define NUC_EGL_PLATFORM_SURFACELESS    0x31DD
+#define NUC_GL_RENDERER                 0x1F01
+
+typedef void *(*pfn_eglGetProcAddress)(const char *);
+typedef void *(*pfn_eglGetDisplay)(void *);
+typedef void *(*pfn_eglGetPlatformDisplay)(unsigned int, void *, const intptr_t *);
+typedef void *(*pfn_eglGetPlatformDisplayEXT)(unsigned int, void *, const int *);
+typedef unsigned int (*pfn_eglInitialize)(void *, int *, int *);
+typedef unsigned int (*pfn_eglTerminate)(void *);
+typedef const char *(*pfn_eglQueryString)(void *, int);
+typedef unsigned int (*pfn_eglBindAPI)(unsigned int);
+typedef unsigned int (*pfn_eglQueryAPI)(void);
+typedef unsigned int (*pfn_eglChooseConfig)(void *, const int *, void **, int, int *);
+typedef void *(*pfn_eglCreateContext)(void *, void *, void *, const int *);
+typedef unsigned int (*pfn_eglDestroyContext)(void *, void *);
+typedef unsigned int (*pfn_eglMakeCurrent)(void *, void *, void *, void *);
+typedef void *(*pfn_eglGetCurrentContext)(void);
+typedef void *(*pfn_eglGetCurrentDisplay)(void);
+typedef void *(*pfn_eglGetCurrentSurface)(int);
+typedef const unsigned char *(*pfn_glGetString)(unsigned int);
+
+static int has_word(const char *list, const char *word) {
+    if (!list) return 0;
+    size_t len = strlen(word);
+    for (const char *p = list; (p = strstr(p, word)) != NULL; p += len) {
+        if ((p == list || p[-1] == ' ') && (p[len] == ' ' || p[len] == '\0')) return 1;
+    }
+    return 0;
+}
+
+static int has_config(pfn_eglChooseConfig choose, void *dpy, int renderable, void **config) {
+    // EGL_SURFACE_TYPE 0: any surface type, the context is only made current surfaceless
+    const int attribs[] = { NUC_EGL_SURFACE_TYPE, 0, NUC_EGL_RENDERABLE_TYPE, renderable, NUC_EGL_NONE };
+    int count = 0;
+    return choose(dpy, attribs, config, 1, &count) && count > 0;
+}
+
+static int probe_render_tier(void) {
+    void *egl = dlopen("libEGL.so.1", RTLD_NOW | RTLD_LOCAL);
+    if (!egl) return RENDER_TIER_UNKNOWN;
+    pfn_eglGetProcAddress getProc = (pfn_eglGetProcAddress)dlsym(egl, "eglGetProcAddress");
+    pfn_eglGetDisplay getDisplay = (pfn_eglGetDisplay)dlsym(egl, "eglGetDisplay");
+    pfn_eglInitialize initialize = (pfn_eglInitialize)dlsym(egl, "eglInitialize");
+    pfn_eglTerminate terminate = (pfn_eglTerminate)dlsym(egl, "eglTerminate");
+    pfn_eglQueryString queryString = (pfn_eglQueryString)dlsym(egl, "eglQueryString");
+    pfn_eglBindAPI bindApi = (pfn_eglBindAPI)dlsym(egl, "eglBindAPI");
+    pfn_eglQueryAPI queryApi = (pfn_eglQueryAPI)dlsym(egl, "eglQueryAPI");
+    pfn_eglChooseConfig chooseConfig = (pfn_eglChooseConfig)dlsym(egl, "eglChooseConfig");
+    pfn_eglCreateContext createContext = (pfn_eglCreateContext)dlsym(egl, "eglCreateContext");
+    pfn_eglDestroyContext destroyContext = (pfn_eglDestroyContext)dlsym(egl, "eglDestroyContext");
+    pfn_eglMakeCurrent makeCurrent = (pfn_eglMakeCurrent)dlsym(egl, "eglMakeCurrent");
+    pfn_eglGetCurrentContext currentContext = (pfn_eglGetCurrentContext)dlsym(egl, "eglGetCurrentContext");
+    pfn_eglGetCurrentDisplay currentDisplay = (pfn_eglGetCurrentDisplay)dlsym(egl, "eglGetCurrentDisplay");
+    pfn_eglGetCurrentSurface currentSurface = (pfn_eglGetCurrentSurface)dlsym(egl, "eglGetCurrentSurface");
+    if (!getProc || !getDisplay || !initialize || !terminate || !queryString || !bindApi || !queryApi ||
+        !chooseConfig || !createContext || !destroyContext || !makeCurrent || !currentContext || !currentDisplay ||
+        !currentSurface) {
+        dlclose(egl);
+        return RENDER_TIER_UNKNOWN;
+    }
+
+    // Surfaceless display: our own, so it can be terminated. The default one may be the app's (Tao's): left alone.
+    void *dpy = NULL;
+    int ownDisplay = 0;
+    if (has_word(queryString(NULL, NUC_EGL_EXTENSIONS), "EGL_MESA_platform_surfaceless")) {
+        pfn_eglGetPlatformDisplay platformDisplay = (pfn_eglGetPlatformDisplay)dlsym(egl, "eglGetPlatformDisplay");
+        pfn_eglGetPlatformDisplayEXT platformDisplayExt =
+            (pfn_eglGetPlatformDisplayEXT)getProc("eglGetPlatformDisplayEXT");
+        if (platformDisplay) dpy = platformDisplay(NUC_EGL_PLATFORM_SURFACELESS, NULL, NULL);
+        else if (platformDisplayExt) dpy = platformDisplayExt(NUC_EGL_PLATFORM_SURFACELESS, NULL, NULL);
+        ownDisplay = dpy != NULL;
+    }
+    int major = 0, minor = 0;
+    if (dpy && !initialize(dpy, &major, &minor)) { dpy = NULL; ownDisplay = 0; }
+    if (!dpy) {
+        dpy = getDisplay(NULL);
+        if (dpy && !initialize(dpy, &major, &minor)) dpy = NULL;
+    }
+    if (!dpy) return RENDER_TIER_UNKNOWN;
+
+    // The calling thread may hold the app's context (Tao's event loop, desktop GL): its bound API and its
+    // current context are both put back after. Read before eglBindAPI, the current context is per API.
+    unsigned int prevApi = queryApi();
+    void *prevDpy = currentDisplay(), *prevCtx = currentContext();
+    void *prevDraw = currentSurface(NUC_EGL_DRAW), *prevRead = currentSurface(NUC_EGL_READ);
+
+    int tier = RENDER_TIER_UNKNOWN;
+    void *config = NULL;
+    if (bindApi(NUC_EGL_OPENGL_ES_API)) {
+        if (has_config(chooseConfig, dpy, NUC_EGL_OPENGL_ES3_BIT, &config)) {
+            const int ctxAttribs[] = { NUC_EGL_CONTEXT_MAJOR_VERSION, 3, NUC_EGL_NONE };
+            void *ctx = createContext(dpy, config, NULL, ctxAttribs);
+            if (ctx) {
+                tier = RENDER_TIER_CAPABLE;
+                pfn_glGetString getString = (pfn_glGetString)getProc("glGetString");
+                if (getString && makeCurrent(dpy, NULL, NULL, ctx)) {
+                    const char *renderer = (const char *)getString(NUC_GL_RENDERER);
+                    if (renderer && (strstr(renderer, "llvmpipe") || strstr(renderer, "softpipe") ||
+                                     strstr(renderer, "swrast") || strstr(renderer, "SWR"))) {
+                        tier = RENDER_TIER_SOFTWARE;
+                    }
+                    // Released with GL ES still bound, then the caller's context made current under its own API
+                    makeCurrent(dpy, NULL, NULL, NULL);
+                    bindApi(prevApi);
+                    if (prevCtx) makeCurrent(prevDpy, prevDraw, prevRead, prevCtx);
+                }
+                destroyContext(dpy, ctx);
+            } else {
+                tier = RENDER_TIER_LEGACY;
+            }
+        } else if (has_config(chooseConfig, dpy, NUC_EGL_OPENGL_ES2_BIT, &config)) {
+            // GL ES 2 only: a GPU too old for GL ES 3 (Intel Ironlake and earlier, …)
+            tier = RENDER_TIER_LEGACY;
+        }
+    }
+    bindApi(prevApi);
+    if (ownDisplay) terminate(dpy);
+    // Not dlclose'd: EGL drivers do not support being unloaded
+    return tier;
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeRenderTier(
+    JNIEnv *env, jclass clazz) {
+    // The default GL driver does not change while the app runs
+    static volatile int cached = -1;
+    if (cached < 0) cached = probe_render_tier();
+    return (jint)cached;
+}

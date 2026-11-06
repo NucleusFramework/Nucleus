@@ -23,12 +23,16 @@ import androidx.compose.runtime.setValue
  * automatically registered with macOS so the system can populate them
  * (see module documentation for details).
  *
+ * An item bound to Cmd+Q, like Quit below, replaces the built-in cancelable quit
+ * that asks each window's `onCloseRequest`, so confirm unsaved work in its action.
+ * Prefer `exitApplication()` to `exitProcess`, which skips closing the windows.
+ *
  * ```kotlin
  * NativeMenuBar {
  *     Menu("MyApp") {
  *         Item("About MyApp", icon = NsMenuItemImage.SystemSymbol("info.circle")) { }
  *         Separator()
- *         Item("Quit", shortcut = NativeKeyShortcut("q")) { exitProcess(0) }
+ *         Item("Quit", shortcut = NativeKeyShortcut("q")) { exitApplication() }
  *     }
  *     Menu("File") {
  *         Item("New", shortcut = NativeKeyShortcut("n")) { println("New") }

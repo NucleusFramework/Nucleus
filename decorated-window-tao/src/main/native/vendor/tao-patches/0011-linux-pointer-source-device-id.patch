@@ -1,0 +1,115 @@
+--- a/src/platform/unix.rs
++++ b/src/platform/unix.rs
+@@ -352,6 +352,22 @@ unsafe extern "C" fn x_error_callback(
+   0
+ }
+ 
++pub use crate::platform_impl::PointerSource;
++
++/// Additional methods on `DeviceId` that are specific to Unix.
++pub trait DeviceIdExtUnix {
++  /// The tool of the pointer event that carried this id: tablet pens and
++  /// erasers are told apart from the mouse (PATCH(nucleus)).
++  fn pointer_source(&self) -> PointerSource;
++}
++
++impl DeviceIdExtUnix for crate::event::DeviceId {
++  #[inline]
++  fn pointer_source(&self) -> PointerSource {
++    self.0.pointer_source()
++  }
++}
++
+ /// Additional methods on `MonitorHandle` that are specific to Unix.
+ pub trait MonitorHandleExtUnix {
+   /// Returns the gdk handle of the monitor.
+--- a/src/platform_impl/linux/event_loop.rs
++++ b/src/platform_impl/linux/event_loop.rs
+@@ -36,7 +36,7 @@ use crate::{
+   event_loop::{ControlFlow, EventLoopClosed, EventLoopWindowTarget as RootELW},
+   keyboard::ModifiersState,
+   monitor::MonitorHandle as RootMonitorHandle,
+-  platform_impl::platform::DEVICE_ID,
++  platform_impl::platform::{pointer_device_id, DEVICE_ID},
+   window::{
+     CursorIcon, Fullscreen, ProgressBarState, ResizeDirection, Theme, WindowId as RootWindowId,
+   },
+@@ -881,7 +881,7 @@ impl<T: 'static> EventLoop<T> {
+                 window_id: RootWindowId(id),
+                 event: WindowEvent::CursorMoved {
+                   position: LogicalPosition::new(x, y).to_physical(scale_factor as f64),
+-                  device_id: DEVICE_ID,
++                  device_id: pointer_device_id(crossing.source_device()),
+                   modifiers: ModifiersState::empty(),
+                 },
+               }) {
+@@ -917,7 +917,7 @@ impl<T: 'static> EventLoop<T> {
+                   window_id: RootWindowId(id),
+                   event: WindowEvent::CursorMoved {
+                     position: LogicalPosition::new(x, y).to_physical(scale_factor as f64),
+-                    device_id: DEVICE_ID,
++                    device_id: pointer_device_id(motion.source_device()),
+                     // this field is depracted so it is fine to pass empty state
+                     modifiers: ModifiersState::empty(),
+                   },
+@@ -960,7 +960,7 @@ impl<T: 'static> EventLoop<T> {
+                     _ => MouseButton::Other(button as u16),
+                   },
+                   state: ElementState::Pressed,
+-                  device_id: DEVICE_ID,
++                  device_id: pointer_device_id(event.source_device()),
+                   // this field is depracted so it is fine to pass empty state
+                   modifiers: ModifiersState::empty(),
+                 },
+@@ -986,7 +986,7 @@ impl<T: 'static> EventLoop<T> {
+                     _ => MouseButton::Other(button as u16),
+                   },
+                   state: ElementState::Released,
+-                  device_id: DEVICE_ID,
++                  device_id: pointer_device_id(event.source_device()),
+                   // this field is depracted so it is fine to pass empty state
+                   modifiers: ModifiersState::empty(),
+                 },
+--- a/src/platform_impl/linux/mod.rs
++++ b/src/platform_impl/linux/mod.rs
+@@ -110,3 +110,40 @@ impl DeviceId {
+ 
+ // FIXME: currently we use a dummy device id, find if we can get device id from gtk
+ pub(crate) const DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(0));
++
++// PATCH(nucleus): tablet tools get device ids of their own, so the embedder
++// can tell a pen (or its eraser end) from the mouse. GDK reports a tablet as
++// ordinary motion / button events whose *source* device is the tool.
++const PEN_DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(1));
++const ERASER_DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(2));
++
++/// The device id a pointer event reports for its GDK source device.
++pub(crate) fn pointer_device_id(source: Option<gtk::gdk::Device>) -> RootDeviceId {
++  use gtk::{gdk::InputSource, prelude::DeviceExt};
++  match source.map(|device| device.source()) {
++    Some(InputSource::Pen) => PEN_DEVICE_ID,
++    Some(InputSource::Eraser) => ERASER_DEVICE_ID,
++    _ => DEVICE_ID,
++  }
++}
++
++/// Tool behind a pointer event; see [`pointer_device_id`].
++#[derive(Debug, Copy, Clone, PartialEq, Eq)]
++pub enum PointerSource {
++  /// A mouse, a touchpad, or any device that is not a tablet tool.
++  Mouse,
++  /// The tip of a tablet pen.
++  Pen,
++  /// The eraser end of a tablet pen.
++  Eraser,
++}
++
++impl DeviceId {
++  pub(crate) fn pointer_source(&self) -> PointerSource {
++    match self.0 {
++      1 => PointerSource::Pen,
++      2 => PointerSource::Eraser,
++      _ => PointerSource::Mouse,
++    }
++  }
++}

@@ -1,9 +1,0 @@
-<resources>
-    <string name="system_info_title">System Info</string>
-    <string name="system_info_app_id">App ID: %1$s</string>
-    <string name="system_info_app_version">App Version: %1$s</string>
-    <string name="system_info_vendor">Vendor: %1$s</string>
-    <string name="system_info_os">OS: %1$s</string>
-    <string name="system_info_java">Java: %1$s</string>
-    <string name="system_info_runtime">Runtime: %1$s</string>
-</resources>

@@ -41,7 +41,7 @@ runs:
         CREATE_FLAGS=("--title" "$TAG" "--generate-notes")
         case "$RELEASE_TYPE" in
           draft)      CREATE_FLAGS+=("--draft") ;;
-          prerelease) CREATE_FLAGS+=("--prerelease") ;;
+          prerelease) CREATE_FLAGS+=("--prerelease" "--latest=false") ;;
           release)    ;; # default, no extra flags
           *)          echo "Unknown release type: $RELEASE_TYPE"; exit 1 ;;
         esac

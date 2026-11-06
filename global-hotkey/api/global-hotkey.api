@@ -5,11 +5,29 @@ public final class dev/nucleusframework/globalhotkey/GlobalHotKeyManager {
 	public final fun initialize ()Z
 	public final fun isAvailable ()Z
 	public final fun portalShortcutId (J)Ljava/lang/String;
+	public final fun register (IILjava/lang/String;Ldev/nucleusframework/globalhotkey/HotKeyEventListener;)J
 	public final fun register (IILjava/lang/String;Ldev/nucleusframework/globalhotkey/HotKeyListener;)J
+	public final fun register (Ldev/nucleusframework/globalhotkey/MediaKey;Ldev/nucleusframework/globalhotkey/HotKeyEventListener;)J
 	public final fun register (Ldev/nucleusframework/globalhotkey/MediaKey;Ldev/nucleusframework/globalhotkey/HotKeyListener;)J
+	public static synthetic fun register$default (Ldev/nucleusframework/globalhotkey/GlobalHotKeyManager;IILjava/lang/String;Ldev/nucleusframework/globalhotkey/HotKeyEventListener;ILjava/lang/Object;)J
 	public static synthetic fun register$default (Ldev/nucleusframework/globalhotkey/GlobalHotKeyManager;IILjava/lang/String;Ldev/nucleusframework/globalhotkey/HotKeyListener;ILjava/lang/Object;)J
 	public final fun shutdown ()V
 	public final fun unregister (J)Z
+}
+
+public final class dev/nucleusframework/globalhotkey/HotKeyEvent {
+	public fun <init> (IILdev/nucleusframework/globalhotkey/HotKeyState;ZJLjava/lang/String;)V
+	public final fun getActivationToken ()Ljava/lang/String;
+	public final fun getKeyCode ()I
+	public final fun getModifiers ()I
+	public final fun getState ()Ldev/nucleusframework/globalhotkey/HotKeyState;
+	public final fun getTimestamp ()J
+	public final fun isRepeat ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/globalhotkey/HotKeyEventListener {
+	public abstract fun onHotKeyEvent (Ldev/nucleusframework/globalhotkey/HotKeyEvent;)V
 }
 
 public abstract interface class dev/nucleusframework/globalhotkey/HotKeyListener {
@@ -29,6 +47,14 @@ public final class dev/nucleusframework/globalhotkey/HotKeyModifier : java/lang/
 
 public final class dev/nucleusframework/globalhotkey/HotKeyModifierKt {
 	public static final fun plus (ILdev/nucleusframework/globalhotkey/HotKeyModifier;)I
+}
+
+public final class dev/nucleusframework/globalhotkey/HotKeyState : java/lang/Enum {
+	public static final field PRESSED Ldev/nucleusframework/globalhotkey/HotKeyState;
+	public static final field RELEASED Ldev/nucleusframework/globalhotkey/HotKeyState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/globalhotkey/HotKeyState;
+	public static fun values ()[Ldev/nucleusframework/globalhotkey/HotKeyState;
 }
 
 public final class dev/nucleusframework/globalhotkey/MediaKey : java/lang/Enum {

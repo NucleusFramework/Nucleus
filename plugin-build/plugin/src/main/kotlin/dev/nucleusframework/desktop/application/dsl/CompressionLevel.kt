@@ -23,8 +23,6 @@ enum class CompressionLevel(
      * `"maximum"`), but additionally enables the plugin's post-processing recompression steps that
      * electron-builder's own `maximum` leaves on the table: LZMA (ULMO) for DMG and `xz -9e` for DEB.
      * These steps are slower and are therefore opt-in via this level rather than [Maximum].
-     *
-     * Not recommended for AppImage: use a format-local override to [Normal] or [Store] instead.
      */
     Ultra("maximum"),
 }

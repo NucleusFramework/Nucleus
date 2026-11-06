@@ -110,8 +110,19 @@ impl AppContext {
         self.adapters.binary_search_by(|adapter| adapter.0.cmp(&id))
     }
 
+    // PATCH(nucleus): keep `adapters` ordered by id. `adapter_index` searches it
+    // with `binary_search_by`, which is only defined on a sorted slice, while
+    // this pushed to the end — so an id registered out of order (adapters are
+    // created on the toolkit thread but registered from the AT-SPI worker) made
+    // every later lookup unreliable, and the two `unwrap()`s on that lookup
+    // aborted the whole process. Inserting at the searched position keeps the
+    // invariant the search assumes; a duplicate id replaces its entry rather
+    // than shadowing it.
     pub(crate) fn push_adapter(&mut self, id: usize, context: &Arc<Context>) {
-        self.adapters.push((id, Arc::clone(context)));
+        match self.adapter_index(id) {
+            Ok(index) => self.adapters[index] = (id, Arc::clone(context)),
+            Err(index) => self.adapters.insert(index, (id, Arc::clone(context))),
+        }
     }
 
     pub(crate) fn remove_adapter(&mut self, id: usize) {

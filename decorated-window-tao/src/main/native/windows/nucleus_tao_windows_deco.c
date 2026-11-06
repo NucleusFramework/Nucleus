@@ -16,6 +16,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 #include <dwmapi.h>
 
@@ -115,6 +116,11 @@ typedef struct {
      * estimate, hence the tolerance at the forward site. */
     int     fsExpectedW;
     int     fsExpectedH;
+    /* Armed by the WM_SHOWWINDOW/SW_PARENTOPENING of an owner's restore,
+     * consumed by the WM_WINDOWPOSCHANGED that actually maps the window:
+     * the JVM is told only once the window is visible, since DWM drops a
+     * present made while it is still hidden. */
+    BOOL    ownerShowPending;
     /* Set when the active backdrop is the Windows 10 accent-policy acrylic
      * rather than a DWM one. DWM tints its own materials from the OS theme,
      * but the accent policy takes an explicit tint colour that has to be
@@ -158,6 +164,14 @@ typedef struct {
      * window still shows a 1px system contour (themed border, often black
      * when the clear colour is alpha-0). */
     BOOL    borderlessChrome;
+    /* System decorations (#841, nativeInstallSystemFrame): the window keeps
+     * the Win32 caption and frame. The subclass then stays out of non-client
+     * work — no caption removal in WM_NCCALCSIZE, default WM_NCHITTEST (so
+     * native Snap Layouts, drag and double-click), no NC-mouse re-posting, no
+     * WS_SYSMENU strip, Alt+Space reaches the system menu, and DWM keeps its
+     * default caption and border colours. Fullscreen, the startup erase and
+     * the immersive dark mode stay. */
+    BOOL    nativeFrame;
 } DecoState;
 
 /* Order inside DecoState.captionButtonRects. */
@@ -416,6 +430,18 @@ static void applyCaptionColors(HWND hwnd, DecoState *state) {
         border = (COLORREF)DWMWA_COLOR_NONE;
         thickness = 0;
         corner = NUCLEUS_DWMWCP_DONOTROUND;
+    } else if (state && state->nativeFrame) {
+        /* System decorations: the caption, border and corners are the
+         * system's own. Only the immersive dark mode (set elsewhere) tints
+         * them, like any native window. */
+        caption = (COLORREF)DWMWA_COLOR_DEFAULT;
+        border = (COLORREF)DWMWA_COLOR_DEFAULT;
+        DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
+        DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
+        int defaultCorner = 0; /* DWMWCP_DEFAULT */
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                              &defaultCorner, sizeof(defaultCorner));
+        return;
     } else if (!backdrop) {
         border = (state && state->hasBorderColor)
             ? state->borderColor
@@ -446,7 +472,10 @@ static void applyFrameMargins(HWND hwnd, DecoState *state) {
     BOOL sheet = state && state->sheetOfGlass && !borderless;
     BOOL fs = state && state->isFullscreen;
     MARGINS margins;
-    if (borderless) {
+    /* A system frame already has its shadow: no 1px bottom band. A backdrop
+     * still takes the sheet of glass, the standard native-frame Mica setup. */
+    BOOL nativeFrame = state && state->nativeFrame;
+    if (borderless || (nativeFrame && !sheet)) {
         margins.cxLeftWidth = margins.cxRightWidth = 0;
         margins.cyTopHeight = margins.cyBottomHeight = 0;
     } else {
@@ -535,6 +564,7 @@ static BOOL isOwnedTaoPopup(HWND root, HWND owner) {
 static JavaVM   *sDecoJVM = NULL;
 static jclass    sDecoBridgeClass = NULL;   /* global ref */
 static jmethodID sDecoOnFullscreenSize = NULL;
+static jmethodID sDecoOnShownWithOwner = NULL;
 
 static void ensureDecoJVMCached(JNIEnv *env) {
     if (sDecoJVM) return;
@@ -546,8 +576,10 @@ static void ensureDecoJVMCached(JNIEnv *env) {
         (*env)->DeleteLocalRef(env, local);
         sDecoOnFullscreenSize = (*env)->GetStaticMethodID(
             env, sDecoBridgeClass, "onFullscreenSizeChanged", "(JII)V");
+        sDecoOnShownWithOwner = (*env)->GetStaticMethodID(
+            env, sDecoBridgeClass, "onShownWithOwner", "(J)V");
     }
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* Calls NativeTaoWindowsDecoBridge.onFullscreenSizeChanged(hwnd, w, h) and
@@ -569,18 +601,86 @@ static void notifyFullscreenSizeChanged(HWND hwnd, int w, int h) {
     if (!env) return;
     (*env)->CallStaticVoidMethod(env, sDecoBridgeClass, sDecoOnFullscreenSize,
         (jlong)(uintptr_t)hwnd, (jint)w, (jint)h);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionDescribe(env);
-        (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
+}
+
+/* Calls NativeTaoWindowsDecoBridge.onShownWithOwner(hwnd). Invoked once
+ * Win32 has re-shown an owned window because its owner was restored — a
+ * show the JVM never asked for (TaoWindow.show), so nothing else tells the
+ * scene host that DWM lost the window's last frame. */
+static void notifyShownWithOwner(HWND hwnd) {
+    if (!sDecoJVM || !sDecoBridgeClass || !sDecoOnShownWithOwner) return;
+    JNIEnv *env = NULL;
+    jint status = (*sDecoJVM)->GetEnv(sDecoJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sDecoJVM)->AttachCurrentThreadAsDaemon(sDecoJVM, (void **)&env, NULL) != JNI_OK) {
+            return;
+        }
+    } else if (status != JNI_OK) {
+        return;
     }
+    if (!env) return;
+    (*env)->CallStaticVoidMethod(env, sDecoBridgeClass, sDecoOnShownWithOwner, (jlong)(uintptr_t)hwnd);
+    nucleus_jni_clear_exception(env);
 }
 
 /* WndProc subclass */
+typedef void (*PFN_size_changing)(void *hwnd);
+
+/* nucleus_tao_gl.dll's mirror hook, resolved on first use (the GL DLL is
+ * loaded before any window is decorated; a miss simply means no mirror). */
+static void notifySizeChanging(HWND hwnd) {
+    static PFN_size_changing fn = NULL;
+    static BOOL resolved = FALSE;
+    if (!resolved) {
+        HMODULE gl = GetModuleHandleW(L"nucleus_tao_gl.dll");
+        if (gl) {
+            fn = (PFN_size_changing)GetProcAddress(gl, "nucleus_tao_window_size_changing");
+            resolved = TRUE;
+        }
+    }
+    if (fn) fn((void *)hwnd);
+}
+
 static LRESULT CALLBACK decoWndProc(
     HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     DecoState *state = getState(hwnd);
     if (!state) return DefWindowProcW(hwnd, msg, wParam, lParam);
+
+    /* System decorations (#841): the non-client area is the system's. Hand it
+     * to Tao's proc (DefWindowProc for a decorated window), which gives the
+     * native caption, drag, double-click, resize frame and Snap Layouts. Only
+     * fullscreen still owns the frame: there the whole window is client. */
+    if (state->nativeFrame) {
+        switch (msg) {
+        case WM_NCCALCSIZE:
+            if (wParam && state->isFullscreen) return 0;
+            return CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+        case WM_NCHITTEST:
+        case WM_NCLBUTTONDOWN:
+        case WM_NCLBUTTONUP:
+        case WM_NCLBUTTONDBLCLK:
+        case WM_NCMOUSEMOVE:
+        case WM_NCMOUSELEAVE:
+        case WM_MENUCHAR:
+            return CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+        case WM_SYSCOMMAND:
+            /* Alt+Space opens the system menu (lParam = the space key). A bare
+             * Alt / F10 (lParam 0) would only enter menu mode for a menu bar
+             * this window does not have, freezing the pump like on the custom
+             * frame below, so it stays suppressed. */
+            if ((wParam & 0xFFF0) == SC_KEYMENU) {
+                if (lParam == ' ') {
+                    return CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+                }
+                return 0;
+            }
+            break;
+        default:
+            break;
+        }
+    }
 
     /* Touch title-bar drag → Aero Snap.
      *
@@ -599,7 +699,7 @@ static LRESULT CALLBACK decoWndProc(
      * interaction is consumed, Compose never receives a touch press for that
      * contact (no stuck pointer); title-bar content/buttons still work via the
      * synthesised mouse click. */
-    if (!state->titleBarDragArmed && msg == WM_POINTERDOWN) {
+    if (!state->nativeFrame && !state->titleBarDragArmed && msg == WM_POINTERDOWN) {
         POINT pt; pt.x = (int)(short)LOWORD(lParam); pt.y = (int)(short)HIWORD(lParam);
         ScreenToClient(hwnd, &pt);
         if (pt.y >= 0 && pt.y < state->titleBarHeightPx) {
@@ -630,8 +730,32 @@ static LRESULT CALLBACK decoWndProc(
      * enough — Tao reapplies its cached window flags on state transitions
      * (maximize, restore, focus), which used to bring the buttons back on the
      * first maximize. Enforcing the invariant here catches every writer. */
+    /* A size change is about to reach DWM: the frame mirror over the render
+     * child (nucleus_tao_gl_mirror.cpp) must step aside first, since only the
+     * blt present under it lands in step with the new geometry. */
+    case WM_WINDOWPOSCHANGING: {
+        const WINDOWPOS *wp = (const WINDOWPOS *)lParam;
+        if (wp && !(wp->flags & SWP_NOSIZE)) {
+            RECT wr;
+            if (GetWindowRect(hwnd, &wr) &&
+                (wp->cx != wr.right - wr.left || wp->cy != wr.bottom - wr.top)) {
+                notifySizeChanging(hwnd);
+            }
+        }
+        break;
+    }
+
+    /* The owner was restored and Win32 is showing its owned windows again
+     * (satellites, dialogs). DWM does not keep a hidden window's last frame,
+     * and the scene has nothing new to draw, so without a forced present the
+     * window comes back blank (white) until something invalidates it. Only
+     * armed here: the window is still hidden, see ownerShowPending. */
+    case WM_SHOWWINDOW:
+        if (wParam && lParam == SW_PARENTOPENING) state->ownerShowPending = TRUE;
+        break;
+
     case WM_STYLECHANGING:
-        if (wParam == GWL_STYLE && state->backdropActive) {
+        if (wParam == GWL_STYLE && state->backdropActive && !state->nativeFrame) {
             STYLESTRUCT *ss = (STYLESTRUCT *)lParam;
             ss->styleNew &= ~(DWORD)WS_SYSMENU;
         }
@@ -692,6 +816,14 @@ static LRESULT CALLBACK decoWndProc(
      * consistent. Only the (near-)final size is forwarded — intermediate
      * frame-recalc geometries live for microseconds inside the win32 call. */
     case WM_WINDOWPOSCHANGED: {
+        /* The owned window re-shown by its owner's restore is now mapped. */
+        const WINDOWPOS *shown = (const WINDOWPOS *)lParam;
+        if (state->ownerShowPending && shown && (shown->flags & SWP_SHOWWINDOW)) {
+            state->ownerShowPending = FALSE;
+            LRESULT result = CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+            notifyShownWithOwner(hwnd);
+            return result;
+        }
         if (state->fsTransitionActive) {
             LRESULT result = CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
             RECT rc;
@@ -955,12 +1087,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 /*  Class:   NativeTaoWindowsDecoBridge                                */
 /* ================================================================== */
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
-    JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
+static void installDecoration(JNIEnv *env, HWND hwnd, int titleBarHeightPx, BOOL nativeFrame)
 {
-    (void)clazz;
-    HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd || !IsWindow(hwnd)) return;
 
     /* Prime the native → JVM upcall for the fullscreen-transition prepare:
@@ -969,7 +1097,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
 
     DecoState *existing = getState(hwnd);
     if (existing) {
-        existing->titleBarHeightPx = (int)titleBarHeightPx;
+        existing->titleBarHeightPx = existing->nativeFrame ? 0 : titleBarHeightPx;
         return;
     }
 
@@ -977,7 +1105,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
         GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(DecoState));
     if (!state) return;
 
-    state->titleBarHeightPx = (int)titleBarHeightPx;
+    state->nativeFrame = nativeFrame;
+    state->titleBarHeightPx = nativeFrame ? 0 : titleBarHeightPx;
     state->bgColor = RGB(255, 255, 255);
     state->startupBackgroundErase = TRUE;
 
@@ -987,16 +1116,62 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
         hwnd, GWLP_WNDPROC, (LONG_PTR)decoWndProc);
     state->originalWndProc = (WNDPROC)prevWndProc;
 
-    /* Extend bottom by 1px to keep DWM shadow without enabling glass over the
-     * client area. With {0,0,0,1} DWM treats the client area as opaque, so
-     * transparent pixels render as black (invisible on dark themes). */
-    MARGINS margins = {0, 0, 0, 1};
-    DwmExtendFrameIntoClientArea(hwnd, &margins);
+    /* Custom frame: extend bottom by 1px to keep DWM shadow without enabling
+     * glass over the client area. With {0,0,0,1} DWM treats the client area as
+     * opaque, so transparent pixels render as black (invisible on dark
+     * themes). A system frame has its own shadow (applyFrameMargins). */
+    applyFrameMargins(hwnd, state);
     applyCaptionColors(hwnd, state);
 
     SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
         SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
         SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
+{
+    (void)clazz;
+    installDecoration(env, (HWND)(uintptr_t)hwndLong, (int)titleBarHeightPx, FALSE);
+}
+
+/* The client size of the window once maximized, in physical pixels as
+ * [width, height], or NULL. A maximized system-framed window (#841) keeps its
+ * caption, so its client is not the work area the custom-frame path assumes
+ * for the first frame. Computed rather than read: the first frame renders
+ * before show(), while the hidden window is not maximized yet and
+ * GetClientRect still returns the restored size. A maximized frame overhangs
+ * the work area on every side by exactly its sizing border, so the client is
+ * the work area minus the caption. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetMaximizedClientSize(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return NULL;
+    MONITORINFO mi;
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi)) return NULL;
+    int w = mi.rcWork.right - mi.rcWork.left;
+    int h = mi.rcWork.bottom - mi.rcWork.top - getSystemMetrics(SM_CYCAPTION, getDpi(hwnd));
+    if (w <= 0 || h <= 0) return NULL;
+    jint size[2] = { (jint)w, (jint)h };
+    jintArray out = (*env)->NewIntArray(env, 2);
+    if (!out) return NULL;
+    (*env)->SetIntArrayRegion(env, out, 0, 2, size);
+    return out;
+}
+
+/* System decorations (#841): the subclass for a window that keeps the Win32
+ * caption and frame. See DecoState.nativeFrame. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallSystemFrame(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)clazz;
+    installDecoration(env, (HWND)(uintptr_t)hwndLong, 0, TRUE);
 }
 
 JNIEXPORT void JNICALL
@@ -1030,7 +1205,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetTit
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd) return;
     DecoState *state = getState(hwnd);
-    if (state) state->titleBarHeightPx = (int)heightPx;
+    /* A system frame has no Compose caption zone. */
+    if (state && !state->nativeFrame) state->titleBarHeightPx = (int)heightPx;
 }
 
 /**
@@ -1056,6 +1232,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBor
     if (!hwnd) return;
     DecoState *state = getState(hwnd);
     if (!state) return;
+    /* A system frame (#841) is real non-client area, never a contour to hide. */
+    if (state->nativeFrame) return;
     BOOL wanted = borderless ? TRUE : FALSE;
     state->borderlessChrome = wanted;
     /* Backdrop sheet-of-glass would re-arm frame extension + shadow. */
@@ -1280,7 +1458,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBac
      * offset from the app-drawn ones, and intercepts their hover; stripping
      * the bit removes them while the backdrop keeps showing. Restored when
      * the backdrop goes. Costs the system menu (Alt+Space) while active. */
-    if (state) {
+    /* A system frame (#841) draws real caption buttons from WS_SYSMENU: keep it. */
+    if (state && !state->nativeFrame) {
         LONG_PTR winStyle = GetWindowLongPtrW(hwnd, GWL_STYLE);
         if (sheetOfGlass && (winStyle & WS_SYSMENU)) {
             SetWindowLongPtrW(hwnd, GWL_STYLE, winStyle & ~(LONG_PTR)WS_SYSMENU);
@@ -1389,22 +1568,26 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetSta
  * normal case (WM_NCCALCSIZE keeps the full top and the default side/bottom
  * frame); the maximized case approximates with the work area. */
 static void estimateRestoredClientSize(HWND hwnd, DecoState *state, int *w, int *h) {
+    UINT dpi = getDpi(hwnd);
+    /* A system frame (#841) keeps its caption above the client. */
+    int caption = state->nativeFrame ? getSystemMetrics(SM_CYCAPTION, dpi) : 0;
     if (state->savedPlacement.showCmd == SW_SHOWMAXIMIZED) {
         HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi;
         mi.cbSize = sizeof(mi);
         GetMonitorInfoW(hMon, &mi);
         *w = mi.rcWork.right - mi.rcWork.left;
-        *h = mi.rcWork.bottom - mi.rcWork.top;
+        *h = mi.rcWork.bottom - mi.rcWork.top - caption;
     } else {
-        UINT dpi = getDpi(hwnd);
         int fx = getSystemMetrics(SM_CXSIZEFRAME, dpi)
                + getSystemMetrics(SM_CXPADDEDBORDERWIDTH, dpi);
         int fy = getSystemMetrics(SM_CYSIZEFRAME, dpi)
                + getSystemMetrics(SM_CXPADDEDBORDERWIDTH, dpi);
         RECT nr = state->savedPlacement.rcNormalPosition;
         *w = (nr.right - nr.left) - 2 * fx;
-        *h = (nr.bottom - nr.top) - fy;
+        /* The custom frame keeps the full top (no top frame, no caption); a
+         * system frame has both. */
+        *h = (nr.bottom - nr.top) - (state->nativeFrame ? 2 * fy + caption : fy);
     }
 }
 
@@ -1632,6 +1815,42 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetOwn
 #else
     SetWindowLongW(child, GWLP_HWNDPARENT, (LONG)(LONG_PTR)owner);
 #endif
+    if (!owner) return;
+    /* Re-stack the child above its owner. Win32 only enforces "owned windows
+     * sit above their owner" when the owner gets *activated*; SW_MAXIMIZE /
+     * SW_RESTORE / a fullscreen SetWindowPos on an already-active owner puts
+     * it at HWND_TOP, above its own satellites. Re-setting the same
+     * GWLP_HWNDPARENT alone moves nothing. Async: this often runs from inside
+     * the owner's WM_SIZE, i.e. nested in its own SetWindowPos. */
+    SetWindowPos(child, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+}
+
+/* Enables or disables mouse and keyboard input to an HWND (issue #832). A
+ * modal DecoratedDialog disables its owner the way DialogBox does: the
+ * system then refuses input to the owner, beeps and flashes the dialog on a
+ * click there, and routes the owner's activation (taskbar, Alt+Tab) to it.
+ * The owner must be enabled again *before* the dialog is hidden or
+ * destroyed, so Windows hands it the activation. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetWindowEnabled(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean enabled)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return;
+    EnableWindow(hwnd, enabled ? TRUE : FALSE);
+}
+
+/* E2E probe (issue #832): whether the HWND currently accepts input. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsWindowEnabled(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
+    return IsWindowEnabled(hwnd) ? JNI_TRUE : JNI_FALSE;
 }
 
 /* Returns the primary monitor's scale factor as `(scale * 1000)`. Falls back
@@ -1707,6 +1926,135 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeOwnerM
     values[2] = (jlong)(r.right - r.left);
     values[3] = (jlong)(r.bottom - r.top);
     (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
+    return arr;
+}
+
+/* ---------------- Multi-monitor enumeration ----------------
+ *
+ * One tab-separated descriptor per monitor:
+ *   id \t name \t x \t y \t w \t h \t workX \t workY \t workW \t workH
+ *      \t scaleMilli \t primary
+ * Geometry is physical pixels in virtual-screen space (the process is
+ * per-monitor-v2 DPI aware, so GetMonitorInfo already reports physical).
+ * `id` is the GDI device name (\\.\DISPLAY1) — stable across enumerations for
+ * as long as the monitor stays attached; `name` is the friendly device string.
+ *
+ * No CRT here (/NODEFAULTLIB), so formatting goes through user32's wsprintfW.
+ */
+
+#define NUCLEUS_MAX_MONITORS 32
+#define NUCLEUS_MONITOR_ROW_CHARS 512
+
+typedef struct {
+    WCHAR rows[NUCLEUS_MAX_MONITORS][NUCLEUS_MONITOR_ROW_CHARS];
+    int count;
+} MonitorRows;
+
+/* Replaces the row separators in-place so a display name can't corrupt the
+ * encoding. */
+static void sanitizeRowField(WCHAR *text) {
+    if (!text) return;
+    for (; *text; text++) {
+        if (*text == L'\t' || *text == L'\n' || *text == L'\r') *text = L' ';
+    }
+}
+
+static UINT getMonitorDpi(HMONITOR mon) {
+    typedef HRESULT (WINAPI *PFN_GetDpiForMonitor)(HMONITOR, int, UINT *, UINT *);
+    static PFN_GetDpiForMonitor pGetDpiForMonitor = NULL;
+    static BOOL resolved = FALSE;
+    if (!resolved) {
+        resolved = TRUE;
+        HMODULE shcore = LoadLibraryW(L"shcore.dll");
+        if (shcore) {
+            pGetDpiForMonitor =
+                (PFN_GetDpiForMonitor)GetProcAddress(shcore, "GetDpiForMonitor");
+        }
+    }
+    if (pGetDpiForMonitor && mon) {
+        UINT dpiX = 0, dpiY = 0;
+        /* MDT_EFFECTIVE_DPI */
+        if (pGetDpiForMonitor(mon, 0, &dpiX, &dpiY) == S_OK && dpiX > 0) return dpiX;
+    }
+    HDC hdc = GetDC(NULL);
+    UINT dpi = 96;
+    if (hdc) {
+        int caps = GetDeviceCaps(hdc, LOGPIXELSX);
+        if (caps > 0) dpi = (UINT)caps;
+        ReleaseDC(NULL, hdc);
+    }
+    return dpi;
+}
+
+static BOOL CALLBACK collectMonitorProc(HMONITOR mon, HDC hdc, LPRECT clip, LPARAM data) {
+    (void)hdc; (void)clip;
+    MonitorRows *out = (MonitorRows *)data;
+    if (!out || out->count >= NUCLEUS_MAX_MONITORS) return FALSE;
+
+    MONITORINFOEXW mi;
+    memset(&mi, 0, sizeof(mi));
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(mon, (LPMONITORINFO)&mi)) return TRUE;
+
+    DISPLAY_DEVICEW dd;
+    memset(&dd, 0, sizeof(dd));
+    dd.cb = sizeof(dd);
+    WCHAR name[128];
+    name[0] = L'\0';
+    if (EnumDisplayDevicesW(mi.szDevice, 0, &dd, 0)) {
+        lstrcpynW(name, dd.DeviceString, 128);
+    }
+    if (name[0] == L'\0') lstrcpynW(name, mi.szDevice, 128);
+    sanitizeRowField(name);
+    sanitizeRowField(mi.szDevice);
+
+    UINT dpi = getMonitorDpi(mon);
+    if (dpi == 0) dpi = 96;
+
+    wsprintfW(out->rows[out->count],
+        L"%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d",
+        mi.szDevice,
+        name,
+        (int)mi.rcMonitor.left,
+        (int)mi.rcMonitor.top,
+        (int)(mi.rcMonitor.right - mi.rcMonitor.left),
+        (int)(mi.rcMonitor.bottom - mi.rcMonitor.top),
+        (int)mi.rcWork.left,
+        (int)mi.rcWork.top,
+        (int)(mi.rcWork.right - mi.rcWork.left),
+        (int)(mi.rcWork.bottom - mi.rcWork.top),
+        (int)((dpi * 1000) / 96),
+        (mi.dwFlags & MONITORINFOF_PRIMARY) ? 1 : 0);
+    out->count++;
+    return TRUE;
+}
+
+/* Returns one descriptor String per attached monitor, or NULL when the
+ * enumeration fails. See the format comment above. */
+JNIEXPORT jobjectArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetMonitors(
+    JNIEnv *env, jclass clazz)
+{
+    (void)clazz;
+    /* Static, not stack: 32 KB of locals would need the CRT's __chkstk probe,
+     * which /NODEFAULTLIB doesn't link. Safe because every entry point of this
+     * bridge is called from the Tao event-loop thread. */
+    static MonitorRows rows;
+    rows.count = 0;
+    EnumDisplayMonitors(NULL, NULL, collectMonitorProc, (LPARAM)&rows);
+    if (rows.count <= 0) return NULL;
+
+    jclass stringClass = (*env)->FindClass(env, "java/lang/String");
+    if (!stringClass) return NULL;
+    jobjectArray arr = (*env)->NewObjectArray(env, rows.count, stringClass, NULL);
+    if (!arr) return NULL;
+    for (int i = 0; i < rows.count; i++) {
+        jstring row = (*env)->NewString(env,
+            (const jchar *)rows.rows[i], (jsize)lstrlenW(rows.rows[i]));
+        if (!row) return NULL;
+        (*env)->SetObjectArrayElement(env, arr, i, row);
+        (*env)->DeleteLocalRef(env, row);
+    }
     return arr;
 }
 
@@ -1817,6 +2165,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsMaxi
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
     return IsZoomed(hwnd) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* DwmFlush: blocks until DWM's next composition — the display-paced wake of a
+ * frame held inside the modal size/move loop (#484). Any thread. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeDwmFlush(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    return SUCCEEDED(DwmFlush()) ? JNI_TRUE : JNI_FALSE;
 }
 
 /* Atomic unmaximize + reposition under the finger when a touch drag starts
@@ -1938,7 +2296,48 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetWin
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+#ifndef SPI_GETFONTSMOOTHINGTYPE
+#define SPI_GETFONTSMOOTHINGTYPE 0x200A
+#endif
+#ifndef FE_FONTSMOOTHINGCLEARTYPE
+#define FE_FONTSMOOTHINGCLEARTYPE 0x0002
+#endif
+#ifndef SPI_GETFONTSMOOTHINGORIENTATION
+#define SPI_GETFONTSMOOTHINGORIENTATION 0x2012
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONBGR
+#define FE_FONTSMOOTHINGORIENTATIONBGR 0x0000
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONRGB
+#define FE_FONTSMOOTHINGORIENTATIONRGB 0x0001
+#endif
 
+/* 0 = grayscale / unknown, 1 = RGB_H, 2 = BGR_H. Used by Tao LCD text. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeFontSmoothingPixelGeometry(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    BOOL smoothing = FALSE;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHING, 0, &smoothing, 0) || !smoothing) {
+        return 0;
+    }
+    UINT type = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &type, 0) ||
+        type != FE_FONTSMOOTHINGCLEARTYPE) {
+        return 0;
+    }
+    UINT orientation = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGORIENTATION, 0, &orientation, 0)) {
+        /* Unknown stripe order: degrade to grayscale, never assume RGB —
+         * a wrong guess on a BGR panel inverts every fringe. */
+        return 0;
+    }
+    if (orientation == FE_FONTSMOOTHINGORIENTATIONBGR) {
+        return 2;
+    }
+    return 1;
+}
 /* Issue #631: apply the requested topmost z-order directly and synchronously.
  * tao caches its WindowFlags and only issues the z-order SetWindowPos when a
  * flag *diff* appears (and then with SWP_ASYNCWINDOWPOS), so a WS_EX_TOPMOST
@@ -1971,3 +2370,4 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsTopm
     LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
     return (ex & WS_EX_TOPMOST) ? JNI_TRUE : JNI_FALSE;
 }
+

@@ -22,6 +22,10 @@ internal inline fun <reified T : Task> Project.registerTask(
         task.fn()
     }
 
+/**
+ * Returns the task named [taskName], registering it with type [T] if it does not exist yet,
+ * and applies [configureFn] to it lazily.
+ */
 @Suppress("UNCHECKED_CAST")
 inline fun <reified T : Task> TaskContainer.registerOrConfigure(
     taskName: String,

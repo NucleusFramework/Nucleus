@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exact expected-vs-measured AT-SPI tree verification for tao-demo.
+"""Exact expected-vs-measured AT-SPI tree verification for the Lab a11y-surface fixture.
 
 Linux counterpart of scripts/ci/verify-uia-tree-golden.ps1.
 

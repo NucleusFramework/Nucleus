@@ -26,6 +26,10 @@ internal inline fun Logger.debug(fn: () -> String) {
 
 val Project.localPropertiesFile get() = project.rootProject.file("local.properties")
 
+/**
+ * Reads [key] from the root project's `local.properties`, or returns `null` when it is absent.
+ * Creates an empty `local.properties` when the file does not exist.
+ */
 fun Project.getLocalProperty(key: String): String? {
     if (localPropertiesFile.exists()) {
         val properties = Properties()
@@ -42,7 +46,12 @@ fun Project.getLocalProperty(key: String): String? {
 internal fun Project.detachedComposeGradleDependency(
     artifactId: String,
     groupId: String = "org.jetbrains.compose",
-): Configuration = detachedDependency(groupId = groupId, artifactId = artifactId, version = NucleusBuildConfig.composeGradlePluginVersion)
+): Configuration =
+    detachedDependency(
+        groupId = groupId,
+        artifactId = artifactId,
+        version = NucleusBuildConfig.composeGradlePluginVersion,
+    )
 
 internal fun Project.detachedComposeDependency(
     artifactId: String,

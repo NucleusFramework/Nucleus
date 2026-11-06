@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Entitlements that belong to the EXTENSION, not the host app.
+      This is the whole point of the issue: the .appex needs its own, distinct
+      entitlements (and, for real distribution, its own provisioning profile).
+    -->
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>content-filter-provider</string>
+    </array>
+    <!-- Shared App Group used to talk to the host app (IPC / shared container). -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.dev.nucleusframework.appexdemo</string>
+    </array>
+</dict>
+</plist>

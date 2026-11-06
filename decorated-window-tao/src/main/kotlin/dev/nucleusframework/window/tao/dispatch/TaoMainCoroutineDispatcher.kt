@@ -99,7 +99,7 @@ internal object ImmediateTaoMainDispatcher : TaoMainCoroutineDispatcher() {
  * thread via [TaoMainCoroutineDispatcher.dispatch]. The scheduler thread
  * itself only schedules — it never runs user code.
  */
-private object DelayScheduler {
+internal object DelayScheduler {
     private val executor: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor { r ->
             Thread(r, "Nucleus-Tao-Delay").apply { isDaemon = true }

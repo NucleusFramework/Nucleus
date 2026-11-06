@@ -19,6 +19,7 @@
 #import <Cocoa/Cocoa.h>
 #import <MediaPlayer/MediaPlayer.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <stdatomic.h>
 
 // ============================================================================
@@ -88,7 +89,7 @@ static int ensureCallbackIds(JNIEnv *env) {
     if (g_bridge_class != NULL) return 1;
     jclass cls = (*env)->FindClass(env, BRIDGE_CLASS);
     if (!cls) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return 0;
     }
     g_bridge_class = (jclass)(*env)->NewGlobalRef(env, cls);
@@ -96,7 +97,7 @@ static int ensureCallbackIds(JNIEnv *env) {
     g_on_event_method = (*env)->GetStaticMethodID(env, g_bridge_class,
         "onMediaControlEvent", "(Ljava/lang/String;)V");
     if (!g_on_event_method) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, g_bridge_class);
         g_bridge_class = NULL;
         return 0;
@@ -114,7 +115,7 @@ static void dispatchJson(NSString *json) {
     const char *utf = [json UTF8String];
     jstring js = (*env)->NewStringUTF(env, utf ? utf : "{}");
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
     releaseEnv(didAttach);
 }

@@ -14,6 +14,7 @@ import dev.nucleusframework.desktop.application.internal.files.checkExistingFile
 import dev.nucleusframework.desktop.application.internal.files.findOutputFileOrDir
 import dev.nucleusframework.desktop.application.internal.validation.ValidatedMacOSNotarizationSettings
 import dev.nucleusframework.desktop.application.internal.validation.toNotaryToolArgs
+import dev.nucleusframework.desktop.application.internal.validation.toNotaryToolCredentialValues
 import dev.nucleusframework.desktop.application.internal.validation.validate
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
 import dev.nucleusframework.internal.utils.MacUtils
@@ -30,6 +31,11 @@ import org.gradle.work.DisableCachingByDefault
 import java.io.File
 import javax.inject.Inject
 
+/**
+ * Notarizes the [targetFormat] package found in [inputDir] with `xcrun notarytool submit --wait`, staples the
+ * ticket (except on ZIP update artifacts) and refreshes the package's size and SHA-512 in the update manifests
+ * next to it. On failure the Apple notarization log is fetched and included in the error.
+ */
 @DisableCachingByDefault(because = "Depends on external Apple notarization service")
 abstract class AbstractNotarizationTask
     @Inject
@@ -47,8 +53,12 @@ abstract class AbstractNotarizationTask
 
         init {
             check(targetFormat != TargetFormat.RawAppImage) { "${TargetFormat.RawAppImage} cannot be notarized!" }
+            // Same gate as the package task this one follows: off macOS that task never creates inputDir, and
+            // with credentials set the onlyIf would pass and Gradle would fail validating the missing directory.
+            enabled = targetFormat.isCompatibleWithCurrentOS
         }
 
+        /** Submits, staples and updates the update metadata of the package. */
         @TaskAction
         fun run() {
             val notarization = nonValidatedNotarizationSettings.validate()
@@ -89,29 +99,14 @@ abstract class AbstractNotarizationTask
                     },
                 )
 
-            if (submissionId != null) {
-                logger.lifecycle("Notarization submission ID: $submissionId (file: ${packageFile.name})")
-                saveNotarizationRequestInfo(submissionId!!)
+            submissionId?.let { id ->
+                logger.lifecycle("Notarization submission ID: $id (file: ${packageFile.name})")
+                saveNotarizationRequestInfo(id)
             }
 
             if (result.exitValue != 0 || stdout.contains("status: Invalid")) {
                 val appleLog = fetchNotarizationLog(notarization, submissionId)
-                val errMsg =
-                    buildString {
-                        appendLine("Notarization failed for '${packageFile.name}'")
-                        if (submissionId != null) {
-                            appendLine("Submission ID: $submissionId")
-                        }
-                        appendLine("Exit code: ${result.exitValue}")
-                        if (appleLog != null) {
-                            appendLine("Apple notarization log:")
-                            appendLine(appleLog)
-                        } else if (submissionId != null) {
-                            appendLine("To fetch the log manually run:")
-                            appendLine("  xcrun notarytool log $submissionId ${authArgs.joinToString(" ")}")
-                        }
-                    }
-                error(errMsg)
+                error(notarizationFailureMessage(packageFile.name, submissionId, result.exitValue, appleLog))
             }
         }
 
@@ -146,6 +141,8 @@ abstract class AbstractNotarizationTask
                         },
                     stdinStr = stdin,
                     processStdout = { logContent = it },
+                    // A failure throws the command line back at us, and that message is logged below.
+                    sensitiveArgs = notarization.auth.toNotaryToolCredentialValues(),
                 )
                 logContent.ifEmpty { null }
             } catch (e: IllegalStateException) {
@@ -187,7 +184,31 @@ abstract class AbstractNotarizationTask
             }
         }
 
+        /** Holds the `notarytool` output parser. */
         companion object {
             private val SUBMISSION_ID_REGEX = Regex("""^\s*id:\s*([0-9a-fA-F-]+)\s*$""", RegexOption.MULTILINE)
+        }
+    }
+
+internal fun notarizationFailureMessage(
+    packageFileName: String,
+    submissionId: String?,
+    exitCode: Int,
+    appleLog: String?,
+): String =
+    buildString {
+        appendLine("Notarization failed for '$packageFileName'")
+        if (submissionId != null) {
+            appendLine("Submission ID: $submissionId")
+        }
+        appendLine("Exit code: $exitCode")
+        if (appleLog != null) {
+            appendLine("Apple notarization log:")
+            appendLine(appleLog)
+        } else if (submissionId != null) {
+            // Spelled out rather than filled in: the auth arguments carry the Apple ID, team,
+            // keychain profile and API key identifiers, and build logs are kept.
+            appendLine("To fetch the log manually run:")
+            appendLine("  xcrun notarytool log $submissionId <the credentials this build notarizes with>")
         }
     }

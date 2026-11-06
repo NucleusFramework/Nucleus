@@ -2,6 +2,13 @@
 -keep class org.jetbrains.skia.** { *; }
 -keep class org.jetbrains.skiko.** { *; }
 
+# ProGuard 7.10 return-type specialization can emit a method copy that fails verification:
+# `ParagraphKt__ActualParagraph_skikoKt.Paragraph-czeN-Hc$<n>` is declared to return
+# `SkiaParagraph` but still returns a value it checkcasts to `Paragraph`, so the first text
+# layout throws `VerifyError: Bad return type`. Whether ProGuard specializes depends on the
+# whole program, so a small app may never hit it.
+-optimizations !method/specialization/returntype
+
 -assumenosideeffects public class androidx.compose.runtime.ComposerKt {
     void sourceInformation(androidx.compose.runtime.Composer,java.lang.String);
     void sourceInformationMarkerStart(androidx.compose.runtime.Composer,int,java.lang.String);
@@ -9,6 +16,14 @@
     boolean isTraceInProgress();
     void traceEventStart(int, java.lang.String);
     void traceEventEnd();
+}
+
+# Enum.valueOf / EnumMap / EnumSet reach values() reflectively (Class.getEnumConstants): without it
+# every EnumMap of a shrunk enum fails with "keyUniverse is null" (Jackson, httpclient5, snakeyaml,
+# OSHI, JLine…). Android's default configuration has carried the same rule forever.
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
 }
 
 # Kotlinx Coroutines Rules
@@ -66,6 +81,13 @@
 # Androidx
 -keep,allowshrinking,allowobfuscation class androidx.compose.runtime.SnapshotStateKt__DerivedStateKt { *; }
 -keep class androidx.compose.material3.SliderDefaults { *; }
+# ProGuard (7.10.0) recomputes this method's stack map frames wrongly once it touches its code: the
+# Kotlin compiler reuses overlapping long slots (74 / 75 / 76) on different branches, ProGuard merges
+# them into "long at 74", and the class fails verification ("Inconsistent stackmap frames at branch
+# target 2414") as soon as ListItemDefaults loads. includecode leaves the method's code untouched.
+-keepclassmembers,includecode,allowshrinking,allowobfuscation class androidx.compose.material3.ListItemKt {
+    *** InteractiveListItem(...);
+}
 -dontnote androidx.**
 
 # Kotlinx serialization, included by androidx.navigation
@@ -146,6 +168,14 @@
 # false-positive ProGuard failures. The classes are present at runtime.
 -dontwarn dev.nucleusframework.**
 -dontnote dev.nucleusframework.**
+
+# Partial redraw (#755): `decorated-window-tao` reads layer versions through
+# `NucleusLayerDamage` and installs `NucleusGraphicsLayerHooks`, classes the
+# Nucleus plugin generates into Compose's ui / ui-graphics jars only with
+# `nucleusOptimization { partialRedraw }`. Without it they are absent and the
+# runtime repaints whole frames.
+-dontwarn androidx.compose.ui.node.NucleusLayerDamage
+-dontwarn androidx.compose.ui.graphics.layer.NucleusGraphicsLayerHooks
 
 # ── Nucleus JNI bridges ─────────────────────────────────────────────
 # Native entry points are resolved by symbol name (Java_<pkg>_<class>_<method>),

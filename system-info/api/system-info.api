@@ -2,6 +2,7 @@ public final class dev/nucleusframework/systeminfo/SystemInfo {
 	public static final field INSTANCE Ldev/nucleusframework/systeminfo/SystemInfo;
 	public final fun batteryInfo ()Ldev/nucleusframework/systeminfo/model/BatteryInfo;
 	public final fun components ()Ljava/util/List;
+	public final fun connectivityFlow ()Lkotlinx/coroutines/flow/Flow;
 	public final fun connectivityInfo ()Ldev/nucleusframework/systeminfo/model/ConnectivityInfo;
 	public final fun cpuInfo ()Ldev/nucleusframework/systeminfo/model/CpuGlobalInfo;
 	public final fun disks ()Ljava/util/List;
@@ -15,6 +16,7 @@ public final class dev/nucleusframework/systeminfo/SystemInfo {
 	public final fun process (J)Ldev/nucleusframework/systeminfo/model/ProcessInfo;
 	public final fun processes ()Ljava/util/List;
 	public final fun product ()Ldev/nucleusframework/systeminfo/model/ProductInfo;
+	public final fun renderTier ()Ldev/nucleusframework/systeminfo/model/RenderTier;
 	public final fun users ()Ljava/util/List;
 }
 
@@ -87,16 +89,31 @@ public final class dev/nucleusframework/systeminfo/model/ComponentInfo {
 }
 
 public final class dev/nucleusframework/systeminfo/model/ConnectivityInfo {
-	public fun <init> (ZLdev/nucleusframework/systeminfo/model/MeteredStatus;)V
+	public fun <init> (ZLdev/nucleusframework/systeminfo/model/MeteredStatus;Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;)V
+	public synthetic fun <init> (ZLdev/nucleusframework/systeminfo/model/MeteredStatus;Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Z
 	public final fun component2 ()Ldev/nucleusframework/systeminfo/model/MeteredStatus;
-	public final fun copy (ZLdev/nucleusframework/systeminfo/model/MeteredStatus;)Ldev/nucleusframework/systeminfo/model/ConnectivityInfo;
-	public static synthetic fun copy$default (Ldev/nucleusframework/systeminfo/model/ConnectivityInfo;ZLdev/nucleusframework/systeminfo/model/MeteredStatus;ILjava/lang/Object;)Ldev/nucleusframework/systeminfo/model/ConnectivityInfo;
+	public final fun component3 ()Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
+	public final fun copy (ZLdev/nucleusframework/systeminfo/model/MeteredStatus;Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;)Ldev/nucleusframework/systeminfo/model/ConnectivityInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/systeminfo/model/ConnectivityInfo;ZLdev/nucleusframework/systeminfo/model/MeteredStatus;Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;ILjava/lang/Object;)Ldev/nucleusframework/systeminfo/model/ConnectivityInfo;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLevel ()Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
 	public final fun getMeteredStatus ()Ldev/nucleusframework/systeminfo/model/MeteredStatus;
 	public fun hashCode ()I
 	public final fun isConnected ()Z
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/systeminfo/model/ConnectivityLevel : java/lang/Enum {
+	public static final field CAPTIVE_PORTAL Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
+	public static final field FULL Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
+	public static final field LIMITED Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
+	public static final field LOCAL Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
+	public static final field NONE Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
+	public static final field UNKNOWN Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
+	public static fun values ()[Ldev/nucleusframework/systeminfo/model/ConnectivityLevel;
 }
 
 public final class dev/nucleusframework/systeminfo/model/CpuGlobalInfo {
@@ -358,6 +375,16 @@ public final class dev/nucleusframework/systeminfo/model/ProductInfo {
 	public final fun getVersion ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/systeminfo/model/RenderTier : java/lang/Enum {
+	public static final field CAPABLE Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static final field LEGACY Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static final field SOFTWARE Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static final field UNKNOWN Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/systeminfo/model/RenderTier;
+	public static fun values ()[Ldev/nucleusframework/systeminfo/model/RenderTier;
 }
 
 public final class dev/nucleusframework/systeminfo/model/UserInfo {

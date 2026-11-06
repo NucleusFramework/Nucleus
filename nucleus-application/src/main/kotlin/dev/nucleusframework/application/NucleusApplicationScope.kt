@@ -6,34 +6,30 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import dev.nucleusframework.aot.runtime.AotRuntime
 import dev.nucleusframework.aot.runtime.AotRuntimeMode
 import dev.nucleusframework.core.runtime.DeepLinkHandler
+import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
 import java.net.URI
-import androidx.compose.ui.window.ApplicationScope as AwtApplicationScope
+import androidx.compose.ui.window.ApplicationScope as ComposeApplicationScope
 import dev.nucleusframework.window.tao.ApplicationScope as TaoApplicationScope
 
 /**
- * Backend-agnostic scope exposed by [nucleusApplication]. The two concrete
- * subtypes wrap the AWT / Tao application scopes so [DecoratedWindow] can
- * dispatch on `when (this)` without leaking backend types into user code.
+ * Scope exposed by [nucleusApplication], wrapping the Tao application scope so
+ * [DecoratedWindow] never leaks backend types into user code.
  *
- * Extends Compose's [AwtApplicationScope] so libraries scoped to the plain
+ * Extends Compose's [ComposeApplicationScope] so libraries scoped to the plain
  * Compose application scope (e.g. tray composables) work inside
  * [nucleusApplication] blocks without Nucleus-specific overloads.
  *
  * Composables that rely on AWT under the hood (Compose's `Tray`, `Window`, …)
- * are only supported on the AWT backends (JNI / JBR). On the Tao backend the
- * process runs without an AWT event loop and the native event loop owns the
- * main thread, so calling them compiles but is unsupported — AWT would
- * initialize off-thread (deadlock-prone on macOS). Use AWT-free alternatives
- * (e.g. ComposeNativeTray) with Tao.
+ * are **not** supported: the process runs without an AWT event loop and the
+ * native Tao event loop owns the main thread, so calling them compiles but AWT
+ * would initialize off-thread (deadlock-prone on macOS). Use AWT-free
+ * alternatives (e.g. ComposeNativeTray, [HostedWindow]).
  */
 @Stable
-public sealed interface NucleusApplicationScope : AwtApplicationScope {
+public sealed interface NucleusApplicationScope : ComposeApplicationScope {
     /** Posts an exit request to the underlying event loop. */
     override fun exitApplication()
-
-    /** The backend currently driving this scope. Never [NucleusBackend.Auto]. */
-    public val backend: NucleusBackend
 
     /** Current AOT runtime mode, resolved from the `nucleus.aot.mode` system property. */
     public val aotMode: AotRuntimeMode get() = AotRuntime.mode()
@@ -45,16 +41,71 @@ public sealed interface NucleusApplicationScope : AwtApplicationScope {
     public val isAotRuntime: Boolean get() = aotMode == AotRuntimeMode.RUNTIME
 
     /**
-     * Registers [block] as the deep-link callback. Picks the right path for
-     * the active backend:
-     *  - AWT: installs the macOS Apple Events handler via `java.awt.Desktop`
-     *    and parses the CLI [args] passed to [nucleusApplication].
-     *  - Tao: registers the block as the sink for the native macOS Apple
-     *    Events handler (installed pre-launch by `TaoLauncher`) and parses
-     *    the CLI [args]. Any deep link delivered before this call is buffered
-     *    and replayed.
+     * `true` while a system quit (macOS Cmd+Q, Dock → Quit, logout) is asking
+     * the windows to close — see [TaoApplication.isQuitting]. A hide-to-tray
+     * `onCloseRequest` checks it to let the quit through.
+     */
+    public val isQuitting: Boolean get() = TaoApplication.isQuitting
+
+    /**
+     * Registers [block] as the deep-link callback: the sink for the native
+     * macOS Apple Events handler (installed pre-launch by `TaoLauncher`), plus
+     * the CLI [args] passed to [nucleusApplication]. Any deep link delivered
+     * before this call is buffered and replayed.
      */
     public fun onDeepLink(block: (URI) -> Unit)
+
+    /**
+     * Registers [block] for "the UI stopped responding" — Electron's
+     * `unresponsive` event on a `webContents`, and the counterpart of
+     * [onResponsive].
+     *
+     * Nucleus detects the stall by asking the OS (Windows `IsHungAppWindow`;
+     * other platforms have no non-perturbing probe yet) and logs `SEVERE` with
+     * a thread dump, but shows nothing: what the user sees is the app's
+     * decision, exactly as in Electron. A crash-reporting hook, or the
+     * browsers' "wait or quit" prompt, both belong here.
+     *
+     * ```kotlin
+     * nucleusApplication(args) {
+     *     onUnresponsive { crashReporter.reportHang() }
+     *     onResponsive { crashReporter.hangEnded() }
+     * }
+     * ```
+     *
+     * **[block] runs on `nucleus-tao-watchdog-events`, not the UI thread** —
+     * the UI thread is the stuck one, so anything it posts there (Compose
+     * state, `Dispatchers.Main`) would only run once the stall ends, if ever.
+     * That thread is the callbacks' own, so blocking in it (a "wait or quit"
+     * prompt) delays only the next callback, never the detection.
+     */
+    public fun onUnresponsive(block: () -> Unit): Unit = TaoApplication.onUnresponsive(block)
+
+    /**
+     * Registers [block] for "the UI is responding again" — Electron's
+     * `responsive` event. Fired only after a stall that was reported through
+     * [onUnresponsive]; same threading rules.
+     */
+    public fun onResponsive(block: () -> Unit): Unit = TaoApplication.onResponsive(block)
+
+    /**
+     * Runs [block] with the hang watchdog told that a stall is *expected* —
+     * Chromium's `HangWatcher::InvalidateActiveExpectations()`.
+     *
+     * An operation the app knows is long and synchronous on the UI thread
+     * looks exactly like a freeze from the outside, so wrap it and neither the
+     * `SEVERE` report nor [onUnresponsive] fires for it. Everything else stays
+     * watched, unlike `-Dnucleus.tao.watchdog=false`, which gives up on the
+     * whole process.
+     *
+     * ```kotlin
+     * expectUnresponsive { importHugeProjectSynchronously() }
+     * ```
+     *
+     * Reentrant and thread-safe. Prefer moving the work off the UI thread;
+     * this is for when that is not an option, not a way to silence a slow UI.
+     */
+    public fun <T> expectUnresponsive(block: () -> T): T = TaoApplication.expectUnresponsive(block)
 }
 
 /**
@@ -80,39 +131,22 @@ public sealed interface NucleusApplicationScope : AwtApplicationScope {
  * Libraries and navigation that must open a secondary window or dialog without
  * hard-coding Material/Jewel chrome should use [LocalNucleusWindowHost] /
  * [HostedWindow] and [LocalNucleusDialogHost] / [HostedDialog] instead of
- * Compose Desktop's AWT `Window` / `Dialog` (unsupported on Tao). Apps may
- * override either host to inject themed wrappers.
+ * Compose Desktop's AWT `Window` / `Dialog` (unsupported). Apps may override
+ * either host to inject themed wrappers.
  *
- * Provided by [nucleusApplication] on both backends. On Tao each window owns
- * its own `ComposeScene`, but the whole parent local context is bridged into
- * it, so the scope (and the window/dialog hosts) stay reachable from nested
- * window content too.
+ * Provided by [nucleusApplication]. Each window owns its own `ComposeScene`,
+ * but the whole parent local context is bridged into it, so the scope (and the
+ * window/dialog hosts) stay reachable from nested window content too.
  */
 public val LocalNucleusApplicationScope: ProvidableCompositionLocal<NucleusApplicationScope> =
     staticCompositionLocalOf<NucleusApplicationScope> {
         error("LocalNucleusApplicationScope not provided — use it inside a nucleusApplication { … } block.")
     }
 
-internal class AwtNucleusApplicationScope(
-    val composeScope: AwtApplicationScope,
-    private val args: Array<String>,
-) : NucleusApplicationScope {
-    override val backend: NucleusBackend = NucleusBackend.Awt
-
-    override fun exitApplication() = composeScope.exitApplication()
-
-    override fun onDeepLink(block: (URI) -> Unit) {
-        DeepLinkHandler.installAwtAppleEventHandler()
-        DeepLinkHandler.setHandler(args, block)
-    }
-}
-
 internal class TaoNucleusApplicationScope(
     val taoScope: TaoApplicationScope,
     private val args: Array<String>,
 ) : NucleusApplicationScope {
-    override val backend: NucleusBackend = NucleusBackend.Tao
-
     override fun exitApplication() = taoScope.exitApplication()
 
     override fun onDeepLink(block: (URI) -> Unit) {

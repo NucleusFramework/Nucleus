@@ -1,5 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 static JavaVM *g_jvm = NULL;
 static id g_colorObserver = nil;
@@ -56,9 +57,7 @@ static void notifyAccentColorChanged(void) {
         }
     }
 
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
     if (didAttach) {
         (*g_jvm)->DetachCurrentThread(g_jvm);
     }
@@ -91,9 +90,7 @@ static void notifyContrastChanged(void) {
         }
     }
 
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
     if (didAttach) {
         (*g_jvm)->DetachCurrentThread(g_jvm);
     }

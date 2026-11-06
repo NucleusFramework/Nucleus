@@ -48,7 +48,8 @@ internal class ExternalJavaLauncher(
         val vendor = releaseProps["IMPLEMENTOR"] ?: "Unknown"
         val installation: Directory = objects.directoryProperty().also { it.set(javaHome) }.get()
         return object : JavaInstallationMetadata {
-            override fun getLanguageVersion(): JavaLanguageVersion = JavaLanguageVersion.of(languageMajor.coerceAtLeast(1))
+            override fun getLanguageVersion(): JavaLanguageVersion =
+                JavaLanguageVersion.of(languageMajor.coerceAtLeast(1))
             override fun getJavaRuntimeVersion(): String = runtimeVersion
             override fun getJvmVersion(): String = jvmVersion
             override fun getVendor(): String = vendor

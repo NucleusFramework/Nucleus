@@ -3,3 +3,8 @@ public final class dev/nucleusframework/hidpi/LinuxHiDpiKt {
 	public static final fun getLinuxNativeScaleFactor ()D
 }
 
+public final class dev/nucleusframework/hidpi/LinuxMallocArenasKt {
+	public static final field MALLOC_ARENA_MAX_PROPERTY Ljava/lang/String;
+	public static final fun capLinuxMallocArenas ()V
+}
+

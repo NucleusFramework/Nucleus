@@ -400,18 +400,29 @@ impl MonitorHandleExtWindows for MonitorHandle {
   }
 }
 
+pub use crate::platform_impl::PointerSource;
+
 /// Additional methods on `DeviceId` that are specific to Windows.
 pub trait DeviceIdExtWindows {
   /// Returns an identifier that persistently refers to this specific device.
   ///
   /// Will return `None` if the device is no longer available.
   fn persistent_identifier(&self) -> Option<String>;
+
+  /// The tool of the `WindowEvent::Touch` that carried this id: a pen and
+  /// its eraser end are told apart from a finger (PATCH(nucleus)).
+  fn pointer_source(&self) -> PointerSource;
 }
 
 impl DeviceIdExtWindows for DeviceId {
   #[inline]
   fn persistent_identifier(&self) -> Option<String> {
     self.0.persistent_identifier()
+  }
+
+  #[inline]
+  fn pointer_source(&self) -> PointerSource {
+    self.0.pointer_source()
   }
 }
 
@@ -491,6 +502,32 @@ pub fn set_magnify_hook(hook: fn(crate::window::WindowId, f32)) {
   let _ = MAGNIFY_HOOK.set(hook);
 }
 
+// PATCH(nucleus): session-end hooks (#751).
+//
+// Upstream tao answers `WM_QUERYENDSESSION` with `DefWindowProc` (TRUE) — the
+// app agrees to logoff / restart / shutdown / a Restart Manager close without
+// being asked, so no window gets a close request it could veto. Every tao
+// window's procedure calls `QUERY_END_SESSION_HOOK` instead and returns its
+// answer (`true` = the session may end), and `END_SESSION_HOOK` on
+// `WM_ENDSESSION` (`true` = the session is ending, `false` = it was cancelled)
+// instead of tao's own handling. Both get `(hwnd, …, nested)`: `hwnd` is the thread
+// target window whatever window received the message (the one to hang a
+// shutdown block reason on), `nested` is `true` when the event handler is
+// already running further up this thread's stack.
+// Idempotent: the first installed hooks win.
+pub(crate) static QUERY_END_SESSION_HOOK: std::sync::OnceLock<fn(isize, isize, bool) -> bool> =
+  std::sync::OnceLock::new();
+pub(crate) static END_SESSION_HOOK: std::sync::OnceLock<fn(isize, bool, bool)> =
+  std::sync::OnceLock::new();
+
+/// Install the hooks every tao window calls on `WM_QUERYENDSESSION`
+/// (`(hwnd, lParam, nested) -> may end`) and `WM_ENDSESSION`
+/// (`(hwnd, ending, nested)`). See [`QUERY_END_SESSION_HOOK`].
+pub fn set_end_session_hooks(query: fn(isize, isize, bool) -> bool, end: fn(isize, bool, bool)) {
+  let _ = QUERY_END_SESSION_HOOK.set(query);
+  let _ = END_SESSION_HOOK.set(end);
+}
+
 // PATCH(nucleus): modal size/move loop hook.
 //
 // Windows runs a modal message loop between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE
@@ -510,4 +547,40 @@ pub(crate) static SIZE_MOVE_HOOK: std::sync::OnceLock<fn(crate::window::WindowId
 /// See [`SIZE_MOVE_HOOK`].
 pub fn set_size_move_hook(hook: fn(crate::window::WindowId, bool)) {
   let _ = SIZE_MOVE_HOOK.set(hook);
+}
+
+// PATCH(nucleus): screen position of the last mouse button release (#837).
+//
+// A window that follows the pointer (a tab or a satellite dragged by its own
+// strip) is moved by the drag one sample late. When the cursor has already
+// moved on by the time the window moves, the one WM_MOUSEMOVE Windows
+// generates for both lands at the client position of the sample before: a
+// step equal to the window's own reads as no move at all to everything keyed
+// on client coordinates (the WM_MOUSEMOVE dedupe here, the embedder's
+// deadband, Compose's hit path), and a drop resolves one sample short. The
+// window procedure records the screen point of every button release,
+// converted while the window still sits where that message was hit-tested,
+// and the embedder takes it back when its drag ends.
+//
+// Only releases are recorded, and taking one clears it: a drag that reads
+// the slot gets the release that ended it or nothing, never the point of a
+// move that came after it or of a release from an earlier gesture.
+static MOUSE_RELEASE_SCREEN_POSITION: std::sync::Mutex<Option<(i32, i32)>> =
+  std::sync::Mutex::new(None);
+
+pub(crate) fn record_mouse_release_screen_position(x: i32, y: i32) {
+  if let Ok(mut position) = MOUSE_RELEASE_SCREEN_POSITION.lock() {
+    *position = Some((x, y));
+  }
+}
+
+/// Takes the screen position, in physical pixels, of the last mouse button
+/// release any window of this process received, leaving `None` behind;
+/// `None` when there was none since the last take.
+/// See [`MOUSE_RELEASE_SCREEN_POSITION`].
+pub fn take_mouse_release_screen_position() -> Option<(i32, i32)> {
+  MOUSE_RELEASE_SCREEN_POSITION
+    .lock()
+    .ok()
+    .and_then(|mut position| position.take())
 }

@@ -12,6 +12,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -19,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.isRepeat
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -204,5 +207,42 @@ class TaoSceneKeyboardTest {
             )
             frame()
             assertEquals(1, fallback)
+        }
+
+    @Test
+    fun `a held key's repeats reach the key handlers as repeats`() =
+        runTaoSceneTest {
+            val seen = mutableListOf<Pair<KeyEventType, Boolean>>()
+            setContent { Box(Modifier.fillMaxSize()) }
+            val record: (KeyEvent) -> Boolean = {
+                if (it.type != KeyEventType.Unknown) seen += it.type to it.isRepeat
+                false
+            }
+
+            fun send(
+                type: Int,
+                isRepeat: Boolean,
+            ) = scene.dispatchNativeKeyEvent(
+                type,
+                'W'.code,
+                'w'.code,
+                TaoNativeWireFormat.MOD_CTRL,
+                isRepeat = isRepeat,
+                onPreviewKeyEvent = record,
+            )
+            send(TaoNativeWireFormat.KEY_DOWN, isRepeat = false)
+            send(TaoNativeWireFormat.KEY_DOWN, isRepeat = true)
+            send(TaoNativeWireFormat.KEY_DOWN, isRepeat = true)
+            send(TaoNativeWireFormat.KEY_UP, isRepeat = false)
+            frame()
+            assertEquals(
+                listOf(
+                    KeyEventType.KeyDown to false,
+                    KeyEventType.KeyDown to true,
+                    KeyEventType.KeyDown to true,
+                    KeyEventType.KeyUp to false,
+                ),
+                seen,
+            )
         }
 }

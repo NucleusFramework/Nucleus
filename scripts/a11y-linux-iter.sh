@@ -2,12 +2,12 @@
 # Linux a11y iteration helper.
 #
 # Usage:
-#   scripts/a11y-linux-iter.sh           # build native + run tao-demo
+#   scripts/a11y-linux-iter.sh           # build native + run the Lab a11y-surface fixture
 #   scripts/a11y-linux-iter.sh build     # only rebuild the Rust crate
-#   scripts/a11y-linux-iter.sh run       # only run tao-demo
+#   scripts/a11y-linux-iter.sh run       # only run the a11y-surface fixture
 #   scripts/a11y-linux-iter.sh check     # cargo check (faster than build)
 #   scripts/a11y-linux-iter.sh accerciser # launch accerciser inspector alongside the app
-#   scripts/a11y-linux-iter.sh orca      # start Orca, then run tao-demo
+#   scripts/a11y-linux-iter.sh orca      # start Orca, then run the a11y-surface fixture
 #
 # Logs are filtered with NUCLEUS_A11Y=trace so AccessKit + bridge messages
 # surface to the console. The build path mirrors decorated-window-tao/src/main/
@@ -32,9 +32,9 @@ mkdir -p "$ARCH_DIR"
 cmd="${1:-all}"
 
 build_rust() {
-    # Always kill any prior tao-demo instance first — they hold the .so
+    # Always kill any prior fixture instance first — they hold the .so
     # mapped, which prevents `cp` from atomically replacing it.
-    pkill -f "tao-demo" 2>/dev/null || true
+    pkill -f "lab.fixture=a11y-surface" 2>/dev/null || true
     sleep 1
     echo "[a11y-iter] cargo build --release --target $CARGO_TARGET"
     pushd "$NATIVE_DIR" >/dev/null
@@ -44,7 +44,7 @@ build_rust() {
     popd >/dev/null
     # Critical sync: Gradle's processResources copies src/main/resources →
     # build/resources/main/. If we only update src/, the JAR Gradle bundles
-    # for `:examples:tao-demo:run` keeps the stale .so. NativeLibraryLoader extracts
+    # for `:examples:lab:app:run` keeps the stale .so. NativeLibraryLoader extracts
     # from the JAR (loaded via classpath), so the running JVM sees the old
     # binary — we lose every iteration of debug logging until processResources
     # is forced to rerun. Just copy directly to bypass the cache.
@@ -68,7 +68,7 @@ teardown() {
     # Kill the app, gradle, and the at-spi daemons that cache our app's
     # registration. Without this, successive runs accumulate stale "java"
     # entries in the AT-SPI registry and pyatspi probes the wrong process.
-    pkill -9 -f "MainKt|tao-demo" 2>/dev/null || true
+    pkill -9 -f "MainKt|lab.fixture=a11y-surface" 2>/dev/null || true
     pkill -9 -f "GradleWrapperMain|GradleDaemon" 2>/dev/null || true
     sleep 2
     killall -9 at-spi2-registryd at-spi-bus-launcher 2>/dev/null || true
@@ -86,7 +86,7 @@ run_sample() {
     GDK_BACKEND=x11 \
     NUCLEUS_A11Y=trace \
     RUST_LOG="${RUST_LOG:-info,accesskit_unix=debug,nucleus_tao=debug}" \
-        ./gradlew :examples:tao-demo:run --no-daemon --console=plain
+        ./gradlew :examples:lab:app:run -Dlab.fixture=a11y-surface --no-daemon --console=plain
     teardown
 }
 

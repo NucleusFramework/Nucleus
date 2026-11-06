@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao.event
 
 import androidx.compose.ui.input.pointer.PointerIcon
 import dev.nucleusframework.window.tao.TaoCursorIcon
+import dev.nucleusframework.window.tao.TaoPointerIcon
 import java.awt.Cursor
 
 /**
@@ -15,6 +16,9 @@ import java.awt.Cursor
  * trick.
  */
 internal fun PointerIcon.toTaoCursorIconCode(): Int {
+    // Nucleus' own icons ([TaoPointerIcons]) carry the native code directly;
+    // everything else is a Compose singleton or an AWT-backed cursor.
+    if (this is TaoPointerIcon) return code
     when (this) {
         PointerIcon.Default -> return TaoCursorIcon.DEFAULT
         PointerIcon.Text -> return TaoCursorIcon.TEXT

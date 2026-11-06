@@ -1,0 +1,2 @@
+# Tells the Nucleus Gradle plugin that NativeLibraryLoader reads nucleus.native.libraryPath,
+# so a packaged application may ship its native libraries next to its JARs instead of inside them.

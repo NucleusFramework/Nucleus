@@ -400,6 +400,9 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
                 heightPx = heightPx,
                 directContext = ctx,
                 clearColorArgb = 0x00000000,
+                // Per-pixel-alpha popup surface (no-op on Linux today, but the
+                // alpha mode must be stated — see renderGlFrame).
+                windowTransparent = true,
                 present = { NativeTaoEglBridge.nativePresent(attachment) },
             ) { canvas, _ ->
                 bundle.render(canvas, frameNs)
@@ -470,6 +473,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
+            isRepeat: Boolean,
         ) {
             TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
                 if (disposed) return@dispatch
@@ -479,6 +483,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
                         vkCode = vkCode,
                         codePoint = codePoint,
                         modifiers = modifiers,
+                        isRepeat = isRepeat,
                         onPreviewKeyEvent = onPreviewKeyEvent,
                         onKeyEvent = onKeyEvent,
                     )

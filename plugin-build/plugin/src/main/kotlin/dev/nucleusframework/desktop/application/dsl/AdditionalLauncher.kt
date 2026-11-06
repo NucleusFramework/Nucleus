@@ -51,6 +51,8 @@ abstract class AdditionalLauncher @Inject constructor(
     /**
      * The JVM arguments to be passed when launching the application.
      */
+    // Public DSL property: a `var` of a mutable list is kept for source compatibility.
+    @Suppress("DoubleMutabilityForCollection")
     @get:Input
     @get:Optional
     abstract var jvmArgs: MutableList<String>?
@@ -68,6 +70,8 @@ abstract class AdditionalLauncher @Inject constructor(
     /**
      * The application arguments to be passed to the main class when launching.
      */
+    // Public DSL property: a `var` of a mutable list is kept for source compatibility.
+    @Suppress("DoubleMutabilityForCollection")
     @get:Input
     @get:Optional
     abstract var args: MutableList<String>?

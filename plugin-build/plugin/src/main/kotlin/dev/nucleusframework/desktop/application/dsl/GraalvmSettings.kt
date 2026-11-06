@@ -1,5 +1,6 @@
 package dev.nucleusframework.desktop.application.dsl
 
+import dev.nucleusframework.desktop.application.internal.MsvcRedistLocator
 import dev.nucleusframework.internal.utils.new
 import dev.nucleusframework.internal.utils.notNullProperty
 import dev.nucleusframework.internal.utils.nullableProperty
@@ -14,6 +15,13 @@ import org.gradle.api.provider.SetProperty
 import org.gradle.jvm.toolchain.JvmVendorSpec
 import javax.inject.Inject
 
+// Same share of physical RAM as HotSpot's default MaxRAMPercentage.
+private const val DEFAULT_MAX_HEAP_SIZE_PERCENT = 25
+
+/**
+ * The `graalvm { }` block: builds the application as a GraalVM native image (opt in with [isEnabled])
+ * and configures the toolchain, `native-image` options, heap and GC defaults, and reachability metadata.
+ */
 abstract class GraalvmSettings
     @Inject
     constructor(
@@ -95,13 +103,14 @@ abstract class GraalvmSettings
         // when set. Both are only defaults — overridable at runtime via `-Xmx` /
         // `-XX:MaximumHeapSizePercent`. Set percent to 80 to restore native-image's own default.
         val maxHeapSize: Property<String> = objects.nullableProperty()
-        val maxHeapSizePercent: Property<Int> = objects.notNullProperty(25)
+        val maxHeapSizePercent: Property<Int> = objects.notNullProperty(DEFAULT_MAX_HEAP_SIZE_PERCENT)
 
         // Garbage collector baked into the image (`--gc=`). Unlike the JVM, the collector is fixed
         // at build time. Leave unset to keep native-image's default (Serial GC, the right fit for a
         // desktop app's small heap). [NativeImageGarbageCollector.G1] is for heaps that outgrow it,
-        // and is Oracle GraalVM + Linux only — elsewhere it degrades to a warning instead of
-        // failing the build. [maxHeapSizePercent] follows the selected collector: it is baked as
+        // requires Oracle GraalVM — plus, outside Linux, GraalVM 25.4 or newer. An unsupported
+        // combination degrades to a warning instead of failing the build.
+        // [maxHeapSizePercent] follows the selected collector: it is baked as
         // `-R:MaximumHeapSizePercent` under Serial/Epsilon and as `-R:MaxRAMPercentage` under G1,
         // which does not know the former option.
         val garbageCollector: Property<NativeImageGarbageCollector> = objects.nullableProperty()
@@ -160,22 +169,27 @@ abstract class GraalvmSettings
         val metadataRepository: MetadataRepositorySettings = objects.new()
         val pgo: GraalvmPgoSettings = objects.new()
 
+        /** Configures how the GraalVM JDK used by `native-image` is acquired. */
         fun toolchain(fn: Action<GraalvmToolchainSettings>) {
             fn.execute(toolchain)
         }
 
+        /** Configures the macOS-specific native image settings. */
         fun macOS(fn: Action<GraalvmMacOSSettings>) {
             fn.execute(macOS)
         }
 
+        /** Configures the Windows-specific native image settings. */
         fun windows(fn: Action<GraalvmWindowsSettings>) {
             fn.execute(windows)
         }
 
+        /** Configures the GraalVM Reachability Metadata Repository lookup for classpath dependencies. */
         fun metadataRepository(fn: Action<MetadataRepositorySettings>) {
             fn.execute(metadataRepository)
         }
 
+        /** Configures profile-guided optimization (Oracle GraalVM only). */
         fun pgo(fn: Action<GraalvmPgoSettings>) {
             fn.execute(pgo)
         }
@@ -202,7 +216,7 @@ abstract class GraalvmSettings
  * [distribution] still declares intent in that case, since it also gates the Oracle-only
  * tasks (`runWithPgoInstrument`).
  *
- * "latest" versions ("25", "25i3") are sticky once downloaded; delete the corresponding
+ * "latest" versions ("25", "25i4") are sticky once downloaded; delete the corresponding
  * directory under [installDir] to pick up a newer build.
  */
 abstract class GraalvmToolchainSettings
@@ -227,7 +241,7 @@ abstract class GraalvmToolchainSettings
 
         /**
          * Explicit GraalVM version, overriding [channel]: an innovation release
-         * (`"25i3"`), a feature version tracking the latest CPU (`"25"`), or a pinned
+         * (`"25i4"`), a feature version tracking the latest CPU (`"25"`), or a pinned
          * patch release (`"25.0.1"`).
          */
         val version: Property<String> = objects.nullableProperty()
@@ -278,6 +292,10 @@ abstract class GraalvmPgoSettings
         val profile: RegularFileProperty = objects.fileProperty()
     }
 
+/**
+ * macOS-specific settings for GraalVM native images: an optional replacement for the built-in C stubs
+ * source, and the minimum system / SDK versions written into the binary.
+ */
 abstract class GraalvmMacOSSettings
     @Inject
     constructor(
@@ -297,8 +315,8 @@ abstract class GraalvmWindowsSettings
         objects: ObjectFactory,
     ) {
         /**
-         * Whether to bundle the MSVC C/C++ runtime DLLs (vcruntime140.dll, vcruntime140_1.dll,
-         * msvcp140.dll) next to the produced native executable.
+         * Whether to bundle the MSVC C/C++ runtime DLLs ([dlls]) next to the produced native
+         * executable.
          *
          * GraalVM native images on Windows are dynamically linked against the Visual C++
          * runtime, which is **not** part of a clean Windows install (it ships with the
@@ -312,19 +330,25 @@ abstract class GraalvmWindowsSettings
 
         /**
          * The DLL file names copied next to the executable when [bundleCRuntime] is enabled.
-         * Only files that actually exist in [sourceDir] are copied; missing ones are reported
-         * as a warning at packaging time.
+         *
+         * Defaults to the whole C++ runtime (~1.4 MB), not only what the executable imports:
+         * JNI libraries loaded at run time import the rest (e.g. ONNX Runtime needs
+         * msvcp140_1.dll), and without it they fail to load (`UnsatisfiedLinkError`) only on
+         * machines lacking the Visual C++ Redistributable. Only files that actually exist in the
+         * source directories are copied; missing ones are reported as a warning at packaging
+         * time.
          */
         val dlls: ListProperty<String> =
             objects
                 .listProperty(String::class.java)
-                .convention(listOf("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"))
+                .convention(MsvcRedistLocator.CPP_RUNTIME_DLLS)
 
         /**
-         * Directory the runtime DLLs are copied from. Defaults to the GraalVM toolchain's
-         * `bin` directory, which ships these DLLs. Override it to point at the MSVC
-         * redistributable directory (e.g. `VC\Redist\MSVC\<version>\x64\Microsoft.VC143.CRT`)
-         * if one of the requested DLLs is not present in the toolchain.
+         * Directory the runtime DLLs are copied from. When unset, they come from the newest
+         * MSVC redistributable (`VC\Redist\MSVC\<version>\<arch>\Microsoft.VC14x.CRT`, found
+         * through `VCToolsRedistDir` or the Visual Studio installs native-image builds with),
+         * else from the GraalVM toolchain's `bin` directory, which only ships vcruntime140.dll,
+         * vcruntime140_1.dll and msvcp140.dll.
          */
         val sourceDir: DirectoryProperty = objects.directoryProperty()
     }

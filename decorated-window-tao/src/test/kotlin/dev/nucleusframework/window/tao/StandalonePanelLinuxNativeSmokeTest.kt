@@ -134,6 +134,7 @@ class StandalonePanelLinuxNativeSmokeTest {
                         vkCode: Int,
                         codePoint: Int,
                         modifiers: Int,
+                        isRepeat: Boolean,
                     ) = Unit
                 },
             )

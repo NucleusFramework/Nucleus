@@ -1,0 +1,90 @@
+--- a/src/platform_impl/linux/event_loop.rs
++++ b/src/platform_impl/linux/event_loop.rs
+@@ -357,11 +357,11 @@ impl<T: 'static> EventLoop<T> {
+           WindowRequest::Size((w, h)) => {
+             // Nucleus patch: `gtk_window_resize` is a no-op on non-resizable
+             // windows (GTK follows the content's natural size instead); route
+-            // the request through the widget size request in that case.
++            // the request through the content's size request in that case.
+             if window.is_resizable() {
+               window.resize(w, h);
+             } else {
+-              window.set_size_request(w, h);
++              util::set_content_size_request(&window, w, h);
+             }
+           }
+           WindowRequest::SizeConstraints(constraints) => {
+--- a/src/platform_impl/linux/util.rs
++++ b/src/platform_impl/linux/util.rs
+@@ -10,6 +10,7 @@ use gtk::{
+     Display,
+   },
+   glib::{self},
++  prelude::BinExt,
+   traits::{GtkWindowExt, WidgetExt},
+ };
+ use std::{cell::RefCell, rc::Rc};
+@@ -74,6 +75,29 @@ pub fn set_size_constraints<W: GtkWindowExt + WidgetExt>(
+   )
+ }
+ 
++// PATCH(nucleus): pin the size of a non-resizable window. GTK sizes such a
++// window to what its widgets request, so a size request is the channel that
++// counts — but on the window itself it covers the client-side decorations
++// too: a CSD toplevel on Wayland lost its theme shadow margins (52 px per
++// axis on Adwaita/Yaru) off the requested content size. Requesting it on the
++// content child leaves GTK to add the decorations, whatever they are (none on
++// X11 or on an undecorated window).
++pub fn set_content_size_request(window: &gtk::Window, width: i32, height: i32) {
++  match window.child() {
++    Some(content) => {
++      content.set_size_request(width, height);
++      // GTK measures a hidden child as nothing, and the content stays hidden
++      // until the window's own `show_all`: a window sized before it is shown
++      // (wrap content, #532) would otherwise map at a stale size.
++      content.show();
++      // GTK still applies the last `gtk_window_resize` when a non-resizable
++      // window maps: keep it in step, or the creation size wins.
++      window.resize(width, height);
++    }
++    None => window.set_size_request(width, height),
++  }
++}
++
+ // PATCH(nucleus): fetch a real X server timestamp for activation requests.
+ // gtk_window_present with GDK_CURRENT_TIME (0) is dropped by Mutter's
+ // focus-stealing prevention (X11 and XWayland): the window is neither raised,
+--- a/src/platform_impl/linux/window.rs
++++ b/src/platform_impl/linux/window.rs
+@@ -269,14 +269,6 @@ impl Window {
+       .unwrap_or((800, 600));
+     window.set_default_size(1, 1);
+     window.resize(width, height);
+-    // Nucleus patch: `gtk_window_resize` has no effect on a non-resizable
+-    // window — GTK sizes it to the content's natural size instead, so a
+-    // 200×40 overlay came up 200×200. Pin the requested size through the
+-    // widget size request (the only sizing channel GTK honours when
+-    // `resizable == false`). Applies to both X11 and Wayland.
+-    if !attributes.resizable && !attributes.maximized {
+-      window.set_size_request(width, height);
+-    }
+ 
+     if attributes.maximized {
+       // Nucleus patch: apply `maximize()` synchronously, before the GTK window
+@@ -347,6 +339,16 @@ impl Window {
+       None
+     };
+ 
++    // Nucleus patch: `gtk_window_resize` has no effect on a non-resizable
++    // window — GTK sizes it to the content's natural size instead, so a
++    // 200×40 overlay came up 200×200. Pin the requested size through the
++    // content's size request (the only sizing channel GTK honours when
++    // `resizable == false`), once the content box exists so the client-side
++    // decorations stay outside it. Applies to both X11 and Wayland.
++    if !attributes.resizable && !attributes.maximized {
++      util::set_content_size_request(&window, width, height);
++    }
++
+     // Rest attributes
+     window.set_title(&attributes.title);
+     if let Some(Fullscreen::Borderless(m)) = &attributes.fullscreen {

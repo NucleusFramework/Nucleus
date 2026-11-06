@@ -1,0 +1,116 @@
+public final class dev/nucleusframework/authentication/AuthenticationAvailability {
+	public fun <init> (Ldev/nucleusframework/authentication/BiometryType;Ldev/nucleusframework/authentication/AuthenticationError;Ljava/lang/String;)V
+	public synthetic fun <init> (Ldev/nucleusframework/authentication/BiometryType;Ldev/nucleusframework/authentication/AuthenticationError;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/authentication/BiometryType;
+	public final fun component2 ()Ldev/nucleusframework/authentication/AuthenticationError;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ldev/nucleusframework/authentication/BiometryType;Ldev/nucleusframework/authentication/AuthenticationError;Ljava/lang/String;)Ldev/nucleusframework/authentication/AuthenticationAvailability;
+	public static synthetic fun copy$default (Ldev/nucleusframework/authentication/AuthenticationAvailability;Ldev/nucleusframework/authentication/BiometryType;Ldev/nucleusframework/authentication/AuthenticationError;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/authentication/AuthenticationAvailability;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBiometry ()Ldev/nucleusframework/authentication/BiometryType;
+	public final fun getError ()Ldev/nucleusframework/authentication/AuthenticationError;
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isAvailable ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/authentication/AuthenticationError : java/lang/Enum {
+	public static final field AppCanceled Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field Busy Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field DisabledByPolicy Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field Failed Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field InvalidPrompt Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field Lockout Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field NoCredential Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field NotEnrolled Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field NotInteractive Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field Platform Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field SystemCanceled Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field Unavailable Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field Unsupported Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field UnsupportedPolicy Ldev/nucleusframework/authentication/AuthenticationError;
+	public static final field UserCanceled Ldev/nucleusframework/authentication/AuthenticationError;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/authentication/AuthenticationError;
+	public static fun values ()[Ldev/nucleusframework/authentication/AuthenticationError;
+}
+
+public final class dev/nucleusframework/authentication/AuthenticationException : java/lang/Exception {
+	public fun <init> (Ldev/nucleusframework/authentication/AuthenticationError;Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ldev/nucleusframework/authentication/AuthenticationError;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getError ()Ldev/nucleusframework/authentication/AuthenticationError;
+}
+
+public abstract interface class dev/nucleusframework/authentication/AuthenticationParent {
+}
+
+public final class dev/nucleusframework/authentication/AuthenticationParent$Auto : dev/nucleusframework/authentication/AuthenticationParent {
+	public static final field INSTANCE Ldev/nucleusframework/authentication/AuthenticationParent$Auto;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/authentication/AuthenticationParent$Windows : dev/nucleusframework/authentication/AuthenticationParent {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Ldev/nucleusframework/authentication/AuthenticationParent$Windows;
+	public static synthetic fun copy$default (Ldev/nucleusframework/authentication/AuthenticationParent$Windows;JILjava/lang/Object;)Ldev/nucleusframework/authentication/AuthenticationParent$Windows;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHwnd ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/authentication/AuthenticationPolicy : java/lang/Enum {
+	public static final field Biometrics Ldev/nucleusframework/authentication/AuthenticationPolicy;
+	public static final field DeviceOwner Ldev/nucleusframework/authentication/AuthenticationPolicy;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/authentication/AuthenticationPolicy;
+	public static fun values ()[Ldev/nucleusframework/authentication/AuthenticationPolicy;
+}
+
+public final class dev/nucleusframework/authentication/AuthenticationPrompt {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/authentication/AuthenticationPrompt;
+	public static synthetic fun copy$default (Ldev/nucleusframework/authentication/AuthenticationPrompt;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/authentication/AuthenticationPrompt;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCancelLabel ()Ljava/lang/String;
+	public final fun getLinuxActionId ()Ljava/lang/String;
+	public final fun getReason ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/authentication/Authenticator {
+	public static final field INSTANCE Ldev/nucleusframework/authentication/Authenticator;
+	public final fun authenticate (Ldev/nucleusframework/authentication/AuthenticationPrompt;Ldev/nucleusframework/authentication/AuthenticationPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun authenticate$default (Ldev/nucleusframework/authentication/Authenticator;Ldev/nucleusframework/authentication/AuthenticationPrompt;Ldev/nucleusframework/authentication/AuthenticationPolicy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun availability (Ldev/nucleusframework/authentication/AuthenticationPolicy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun availability$default (Ldev/nucleusframework/authentication/Authenticator;Ldev/nucleusframework/authentication/AuthenticationPolicy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun isSupported ()Z
+}
+
+public final class dev/nucleusframework/authentication/Authenticator_jvmKt {
+	public static final fun authenticate (Ldev/nucleusframework/authentication/Authenticator;Ldev/nucleusframework/authentication/AuthenticationPrompt;Ldev/nucleusframework/authentication/AuthenticationPolicy;Ldev/nucleusframework/authentication/AuthenticationParent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun authenticate$default (Ldev/nucleusframework/authentication/Authenticator;Ldev/nucleusframework/authentication/AuthenticationPrompt;Ldev/nucleusframework/authentication/AuthenticationPolicy;Ldev/nucleusframework/authentication/AuthenticationParent;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/authentication/BiometryType : java/lang/Enum {
+	public static final field Face Ldev/nucleusframework/authentication/BiometryType;
+	public static final field Fingerprint Ldev/nucleusframework/authentication/BiometryType;
+	public static final field Iris Ldev/nucleusframework/authentication/BiometryType;
+	public static final field None Ldev/nucleusframework/authentication/BiometryType;
+	public static final field Unknown Ldev/nucleusframework/authentication/BiometryType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/authentication/BiometryType;
+	public static fun values ()[Ldev/nucleusframework/authentication/BiometryType;
+}
+

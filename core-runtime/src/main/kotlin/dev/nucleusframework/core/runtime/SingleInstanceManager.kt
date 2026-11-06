@@ -55,9 +55,19 @@ public object SingleInstanceManager {
             field = value
         }
 
+    /**
+     * Watches a directory and calls `onCreated` with the name of each file created in it. Replaces
+     * the JDK `WatchService`, which has no native backend on macOS and polls the directory (the
+     * system temp dir by default) for as long as the app runs. Set before [isSingleInstance].
+     */
+    public var directoryWatcher: ((dir: Path, onCreated: (fileName: String) -> Unit) -> Unit)? = null
+
     private var fileChannel: FileChannel? = null
     private var fileLock: FileLock? = null
     private var isWatching = false
+
+    @Volatile
+    private var handedOff = false
 
     /**
      * Checks if the current process is the single running instance.
@@ -112,6 +122,8 @@ public object SingleInstanceManager {
         }
         Runtime.getRuntime().addShutdownHook(
             Thread {
+                // After a handoff the lock file belongs to the new instance.
+                if (handedOff) return@Thread
                 releaseLock()
                 lockFile.delete()
                 deleteRestoreRequestFile()
@@ -160,8 +172,30 @@ public object SingleInstanceManager {
         return lockFile
     }
 
+    private fun onFileCreated(
+        fileName: String,
+        onRestoreRequest: Path.() -> Unit,
+    ) {
+        if (handedOff || fileName != configuration.restoreRequestFileName) return
+        if (!Files.exists(configuration.restoreRequestFilePath)) return
+        debugLog { "Restore request file detected" }
+        configuration.restoreRequestFilePath.onRestoreRequest()
+        // Remove the request file after processing
+        deleteRestoreRequestFile()
+    }
+
     @Suppress("TooGenericExceptionCaught")
     private fun watchForRestoreRequests(onRestoreRequest: Path.() -> Unit) {
+        val watcher = directoryWatcher
+        if (watcher != null) {
+            try {
+                watcher(configuration.lockFilesDir) { onFileCreated(it, onRestoreRequest) }
+                debugLog { "Watching directory: ${configuration.lockFilesDir} with the external watcher" }
+                return
+            } catch (e: Exception) {
+                errorLog { "External watcher failed, falling back to WatchService: $e" }
+            }
+        }
         Thread {
             try {
                 val watchService = FileSystems.getDefault().newWatchService()
@@ -174,13 +208,7 @@ public object SingleInstanceManager {
                         if (kind == StandardWatchEventKinds.OVERFLOW) {
                             continue
                         }
-                        val filename = event.context() as Path
-                        if (filename.toString() == configuration.restoreRequestFileName) {
-                            debugLog { "Restore request file detected" }
-                            configuration.restoreRequestFilePath.onRestoreRequest()
-                            // Remove the request file after processing
-                            deleteRestoreRequestFile()
-                        }
+                        onFileCreated((event.context() as Path).toString(), onRestoreRequest)
                     }
                     val valid = key.reset()
                     if (!valid) {
@@ -223,6 +251,21 @@ public object SingleInstanceManager {
         } catch (e: IOException) {
             errorLog { "Error while deleting restore request file: $e" }
         }
+    }
+
+    /**
+     * Gives up the lock while this process keeps running, so the instance it is about to launch
+     * becomes the single instance — the seamless restart after a hot update, where the old version
+     * stays on screen until the new one is. From then on this process ignores restore requests and
+     * leaves the lock file to its successor. No-op when the lock is not held.
+     */
+    public fun releaseForHandoff() {
+        if (fileLock == null) return
+        handedOff = true
+        releaseLock()
+        fileLock = null
+        fileChannel = null
+        debugLog { "Lock released for an update handoff" }
     }
 
     private fun releaseLock() {

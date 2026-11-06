@@ -3,10 +3,10 @@
 package dev.nucleusframework.notification.windows
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import dev.nucleusframework.core.runtime.NucleusUiThread
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
-import javax.swing.SwingUtilities
 
 private const val LIBRARY_NAME = "nucleus_notification_windows"
 
@@ -259,7 +259,7 @@ internal object NativeWindowsNotificationBridge {
         inputValues: Array<String>,
     ) {
         val inputs = inputKeys.indices.associate { inputKeys[it] to inputValues[it] }
-        SwingUtilities.invokeLater {
+        NucleusUiThread.post {
             for (listener in listeners) {
                 listener.onActivated(tag, group, arguments, inputs)
             }
@@ -274,7 +274,7 @@ internal object NativeWindowsNotificationBridge {
         reason: Int,
     ) {
         val dismissalReason = DismissalReason.fromRawValue(reason)
-        SwingUtilities.invokeLater {
+        NucleusUiThread.post {
             for (listener in listeners) {
                 listener.onDismissed(tag, group, dismissalReason)
             }
@@ -288,7 +288,7 @@ internal object NativeWindowsNotificationBridge {
         group: String,
         errorCode: Int,
     ) {
-        SwingUtilities.invokeLater {
+        NucleusUiThread.post {
             for (listener in listeners) {
                 listener.onFailed(tag, group, errorCode)
             }

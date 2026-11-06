@@ -11,6 +11,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
+#import "nucleus_tao_cursors.h"
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -44,10 +45,30 @@ int nucleus_tao_is_main_thread(void) {
     return [NSThread isMainThread] ? 1 : 0;
 }
 
-extern void nucleus_tao_post_exit(void);
+extern bool nucleus_tao_post_quit_requested(void);
 
 static id sCmdQMonitor = nil;
 
+static const NSEventModifierFlags kKeyEquivalentModifierFlags =
+    NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption | NSEventModifierFlagControl;
+
+// YES when an item of [menu] or of its submenus is bound to [event]'s key equivalent,
+// enabled or not: in AppKit a disabled item still owns its shortcut.
+static BOOL nucleus_menu_binds_key_equivalent(NSMenu *menu, NSEvent *event) {
+    NSEventModifierFlags mods = event.modifierFlags & kKeyEquivalentModifierFlags;
+    for (NSMenuItem *item in menu.itemArray) {
+        if (item.submenu != nil && nucleus_menu_binds_key_equivalent(item.submenu, event)) return YES;
+        if ([item.keyEquivalent isEqualToString:event.charactersIgnoringModifiers] &&
+            (item.keyEquivalentModifierMask & kKeyEquivalentModifierFlags) == mods) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+// Offer Cmd+Q to the menu bar first, so a NativeMenuBar item bound to it runs, or beeps
+// while disabled (#749). The default Quit item (a11y.m) sends `terminate:`, which TaoApp routes
+// to this same quit; only when no item is bound to Cmd+Q is the quit requested here.
 void nucleus_tao_install_cmd_q_handler(void) {
     if (sCmdQMonitor != nil) return;
     sCmdQMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
@@ -55,7 +76,14 @@ void nucleus_tao_install_cmd_q_handler(void) {
             NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
             if ((mods & NSEventModifierFlagCommand) &&
                 [event.charactersIgnoringModifiers isEqualToString:@"q"]) {
-                nucleus_tao_post_exit();
+                NSMenu *menu = [NSApp mainMenu];
+                if (![menu performKeyEquivalent:event]) {
+                    if (nucleus_menu_binds_key_equivalent(menu, event)) {
+                        NSBeep();
+                    } else {
+                        nucleus_tao_post_quit_requested();
+                    }
+                }
                 return nil;
             }
             return event;
@@ -77,8 +105,14 @@ void nucleus_tao_install_cmd_q_handler(void) {
 // ── IME caret rect plumbing (used by `firstRectForCharacterRange:` swizzle) ──
 //
 // Stored in screen coords (Cocoa bottom-up Y) so the swizzled getter can hand
-// it back unchanged. Updated from the JVM side via `nativeSetImeRect`.
+// it back unchanged. Updated from the JVM side via `nativeSetImeRect`, and
+// scoped to the view that pushed it: the rect is an *insertion point*, so it
+// only exists while that view hosts a live text-input session. A rect kept
+// past the session anchors AppKit's input-source indicator — the badge a
+// Caps Lock bound to "switch input source" raises — over the caret of a field
+// that no longer exists. With no rect, AppKit leaves the badge off.
 
+static _Atomic int64_t g_ime_rect_view = 0;
 static _Atomic CGFloat g_ime_screen_x = 0;
 static _Atomic CGFloat g_ime_screen_y = 0;
 static _Atomic CGFloat g_ime_w = 1;
@@ -87,9 +121,12 @@ static _Atomic CGFloat g_ime_h = 18;
 static NSRect tao_view_first_rect_for_character_range(
     id self, SEL _cmd, NSRange range, NSRangePointer actual_range
 ) {
-    (void)self; (void)_cmd; (void)range;
+    (void)_cmd; (void)range;
     if (actual_range) {
         *actual_range = range;
+    }
+    if (atomic_load(&g_ime_rect_view) != (int64_t)(intptr_t)(__bridge void *)self) {
+        return NSZeroRect;
     }
     return NSMakeRect(g_ime_screen_x, g_ime_screen_y, g_ime_w, g_ime_h);
 }
@@ -355,64 +392,88 @@ static void nucleus_tao_swizzle_view_methods_once(void) {
     });
 }
 
-void nucleus_tao_activate_input_context(long ns_view_handle) {
+/// Installs the `NSTextInputClient` overrides on TaoView. Called once per
+/// window creation (the class only exists once a window has been built), not
+/// only when a text-input session starts: tao's own
+/// `firstRectForCharacterRange:` answers the window corner with a *top-down*
+/// y read back as a Cocoa coordinate, which parks the input-source indicator
+/// in the bottom-left corner of an app that has never shown a text field.
+/// Ours answers `NSZeroRect` until a session publishes a caret, and that is
+/// the one shape AppKit reads as "no insertion point".
+void nucleus_tao_install_ime_client_overrides(void) {
+    nucleus_tao_swizzle_view_methods_once();
+}
+
+// Session tokens for the input-context activation. `g_ime_token_seq` never
+// repeats a value, so a token identifies one text-input session for the whole
+// process lifetime; `g_ime_active_token` is the live one (0 = none).
+static _Atomic int64_t g_ime_token_seq = 0;
+static _Atomic int64_t g_ime_active_token = 0;
+
+int64_t nucleus_tao_activate_input_context(long ns_view_handle) {
     nucleus_tao_swizzle_view_methods_once();
     NSView *view = (__bridge NSView *)(void *)ns_view_handle;
     NSTextInputContext *ctx = view.inputContext;
     if (ctx) {
         [ctx activate];
     }
+    int64_t token = atomic_fetch_add(&g_ime_token_seq, 1) + 1;
+    atomic_store(&g_ime_active_token, token);
+    return token;
 }
 
-static NSCursor *nucleus_tao_cursor_from_selector(NSString *selectorName) {
-    SEL selector = NSSelectorFromString(selectorName);
-    if (![NSCursor respondsToSelector:selector]) return nil;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    return [NSCursor performSelector:selector];
-#pragma clang diagnostic pop
-}
-
-static NSCursor *nucleus_tao_cursor_for_code(int code) {
-    switch (code) {
-        case 1:  return [NSCursor IBeamCursor];
-        case 2:  return [NSCursor pointingHandCursor];
-        case 3:  return [NSCursor crosshairCursor];
-        case 4:
-        case 8: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"busyButClickableCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        case 5: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"_moveCursor");
-            return cursor ?: [NSCursor openHandCursor];
-        }
-        case 6:  return [NSCursor operationNotAllowedCursor];
-        case 7: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(@"_helpCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        case 9:  return [NSCursor resizeLeftRightCursor];
-        case 10: return [NSCursor resizeUpDownCursor];
-        case 11: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(
-                @"_windowResizeNorthEastSouthWestCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        case 12: {
-            NSCursor *cursor = nucleus_tao_cursor_from_selector(
-                @"_windowResizeNorthWestSouthEastCursor");
-            return cursor ?: [NSCursor arrowCursor];
-        }
-        default: return [NSCursor arrowCursor];
+/// Ends the session [token] identifies: deactivates TaoView's input context
+/// and drops the cached caret rect. Deactivating is what takes the focused
+/// field's insertion point off AppKit's books — a still-active context keeps
+/// the input-source indicator (Caps Lock layout switching) anchored to it.
+///
+/// [ns_view_handle] is 0 when the window is already gone; the cached state is
+/// still dropped, only the AppKit call is skipped.
+void nucleus_tao_deactivate_input_context(long ns_view_handle, int64_t token) {
+    // Focus moving between fields (or windows) starts the incoming session
+    // *before* the outgoing one is torn down, so only the newest activation
+    // may be undone — same ordering trap as the document cache above.
+    if (token == 0 || token != atomic_load(&g_ime_active_token)) {
+        return;
     }
+    atomic_store(&g_ime_active_token, 0);
+    atomic_store(&g_ime_rect_view, 0);
+    if (ns_view_handle == 0) {
+        return;
+    }
+    NSView *view = (__bridge NSView *)(void *)ns_view_handle;
+    NSTextInputContext *ctx = view.inputContext;
+    if (ctx) {
+        [ctx deactivate];
+    }
+}
+
+/// `nucleus_tao_cursor_for_code` for Rust: the `NSCursor *` (+0, cached for
+/// the process) Tao's cursor rects use (`tao::platform::macos::set_cursor_hook`).
+void *nucleus_tao_cursor_ptr(int code) {
+    return (__bridge void *)nucleus_tao_cursor_for_code(code);
+}
+
+/// Headful-suite diagnostic: the signature of the cursor for [code], or of
+/// `[NSCursor currentCursor]` when [code] is negative.
+void nucleus_tao_diag_cursor_signature(int code, char *out, size_t capacity) {
+    if (capacity == 0) return;
+    __block NSString *signature = nil;
+    void (^read)(void) = ^{
+        signature = nucleus_tao_cursor_signature(
+            code < 0 ? [NSCursor currentCursor] : nucleus_tao_cursor_for_code(code));
+    };
+    if ([NSThread isMainThread]) {
+        read();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), read);
+    }
+    if (![signature getCString:out maxLength:capacity encoding:NSUTF8StringEncoding]) out[0] = '\0';
 }
 
 void nucleus_tao_set_cursor_icon(int code) {
     void (^apply)(void) = ^{
-        NSCursor *cursor = nucleus_tao_cursor_for_code(code);
-        if (cursor) [cursor set];
+        [nucleus_tao_cursor_for_code(code) set];
     };
 
     if ([NSThread isMainThread]) {
@@ -440,4 +501,5 @@ void nucleus_tao_set_ime_local_rect(long ns_view_handle,
     atomic_store(&g_ime_screen_y, rectOnScreen.origin.y);
     atomic_store(&g_ime_w, rectOnScreen.size.width > 0 ? rectOnScreen.size.width : 1);
     atomic_store(&g_ime_h, rectOnScreen.size.height > 0 ? rectOnScreen.size.height : 18);
+    atomic_store(&g_ime_rect_view, (int64_t)ns_view_handle);
 }

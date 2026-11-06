@@ -1,19 +1,10 @@
 {
-  "_comment": "Golden AT-SPI projection of tao-demo's A11y tab (Linux / accesskit_unix). Verified by scripts/ci/verify-atspi-tree-golden.py --fixture a11y-tab. Volatile names (counters, timestamps, typed text) use prefix/contains matching.",
-  "appName": "Sample Tao",
+  "_comment": "Golden AT-SPI projection of the Lab a11y-surface fixture's A11y tab (Linux / accesskit_unix). Verified by scripts/ci/verify-atspi-tree-golden.py --fixture a11y-tab. Volatile names (counters, timestamps, typed text) use prefix/contains matching.",
+  "appName": "Nucleus Lab",
   "tab": "A11y",
   "tabs": [
-    { "name": "Demo", "role": "page tab", "actionsAll": ["click"], "statesAll": ["enabled", "focusable", "sensitive"] },
-    { "name": "Scroll", "role": "page tab", "actionsAll": ["click"] },
-    { "name": "Zoom", "role": "page tab", "actionsAll": ["click"] },
-    { "name": "Window actions", "role": "page tab", "actionsAll": ["click"] },
     { "name": "A11y", "role": "page tab", "actionsAll": ["click"], "statesAll": ["selected", "selectable"] },
-    { "name": "Complex", "role": "page tab", "actionsAll": ["click"] },
-    { "name": "Events", "role": "page tab", "actionsAll": ["click"] },
-    { "name": "WebView", "role": "page tab", "actionsAll": ["click"] },
-    { "name": "SwiftUI", "role": "page tab", "actionsAll": ["click"] },
-    { "name": "Texture", "role": "page tab", "actionsAll": ["click"] },
-    { "name": "Spellcheck", "role": "page tab", "actionsAll": ["click"] }
+    { "name": "Complex", "role": "page tab", "actionsAll": ["click"], "statesAll": ["enabled", "focusable", "sensitive"] }
   ],
   "nodes": [
     {

@@ -1,6 +1,7 @@
 """Shared AT-SPI probing helpers for the Linux a11y verification suite.
 
-The scripts in this directory talk to the running tao-demo through pyatspi —
+The scripts in this directory talk to the running Lab `a11y-surface` fixture
+(`./gradlew :examples:lab:app:run -Dlab.fixture=a11y-surface`) through pyatspi —
 the same client stack Orca and Accerciser use — so everything they assert is
 observable by a real assistive technology.
 
@@ -14,7 +15,10 @@ import time
 
 import pyatspi
 
-DEFAULT_APP = "Sample Tao"
+# AT-SPI application name = NucleusApp.appName of the Lab (examples/lab/app).
+DEFAULT_APP = "Nucleus Lab"
+# Window title of the a11y-surface fixture (A11ySurfaceFixture.WINDOW_TITLE).
+DEFAULT_WINDOW = "Nucleus A11y Surface"
 MAX_DEPTH = 16
 MAX_NODES = 4000
 
@@ -255,7 +259,7 @@ def click_counter(app):
         return -1
 
 
-def activate_window(title="Tao Backend Demo", settle_s=1.0):
+def activate_window(title=DEFAULT_WINDOW, settle_s=1.0):
     """Give the demo window X input focus (xdotool).
 
     AccessKit only emits focus events while the toplevel is focused
