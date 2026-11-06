@@ -475,6 +475,7 @@ fn show_error_dialog(title: &str, message: &str, detail: &str) {
     // recursive `gtk_dialog_run` main loop works here. Guard anyway — a
     // fatal reached before the loop ever initialized GTK (or a torn-down
     // display) must not turn the fatal path into a second crash.
+    crate::platform::linux::init_xlib_threads();
     if !gtk::is_initialized() && gtk::init().is_err() {
         return;
     }
