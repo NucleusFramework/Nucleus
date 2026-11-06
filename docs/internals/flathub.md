@@ -99,6 +99,14 @@ Each of these was found by running the Lab from a local Flatpak repository.
   as a `bytes` icon, anything else as a themed name. The portal has no `NotificationClosed` (so
   `onDismissed` never fires), no expiry timeout, no sound and no raw `image-data`; capabilities and
   server information are answered locally (`actions`, `body`; `xdg-desktop-portal`).
+  Actions carry no `app.` prefix: GNOME Shell then emits `org.gtk.Notifications.ActionInvoked`
+  (with an activation token) instead of activating the app over D-Bus, `xdg-desktop-portal-gnome`
+  turns it into the impl signal and `xdg-desktop-portal` into the app's. A version 1 frontend drops
+  the token on the way. The frontend only forwards actions of notifications it still holds, and it
+  forgets **every** notification of an app as soon as any D-Bus connection of that app disconnects
+  (`on_peer_disconnect`, 1.21.1): a helper process of the same app id that quits, or a second
+  instance killed while testing, silently cuts the actions of the others. Verified on GNOME 50.1 /
+  xdg-desktop-portal 1.21.1 by activating a real notification (uinput `Super+V`, `Enter`).
 
 ## Local loop
 
