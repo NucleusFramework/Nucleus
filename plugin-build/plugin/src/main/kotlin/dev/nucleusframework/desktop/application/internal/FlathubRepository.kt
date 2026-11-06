@@ -57,12 +57,15 @@ data class FlathubSpec(
     /** The command, `/app/bin/<command>`, and the directory under `/app/lib` holding the archive. */
     val command: String get() = executable.substringAfterLast('/')
 
-    /** File names of the repository, all named after [appId] as Flathub expects. */
+    /** The manifest, the only file of the Flathub repository besides `flathub.json`. */
     val manifestFile: String get() = "$appId.yml"
-    val metainfoFile: String get() = "$appId.metainfo.xml"
-    val desktopFile: String get() = "$appId.desktop"
-    val iconFile: String get() = "$appId.png"
-    val mimeFile: String get() = "$appId.mime.xml"
+
+    /** Paths of the metadata inside the archive, under its top directory: named after [appId] as Flathub expects. */
+    val metainfoPath: String get() = "share/metainfo/$appId.metainfo.xml"
+    val desktopPath: String get() = "share/applications/$appId.desktop"
+    val iconPath: String
+        get() = "share/icons/hicolor/${FlathubRepository.ICON_SIZE}x${FlathubRepository.ICON_SIZE}/apps/$appId.png"
+    val mimePath: String get() = "share/mime/packages/$appId.xml"
 
     /** Serialization constants. */
     companion object {
@@ -79,9 +82,11 @@ internal data class FlathubSource(
 )
 
 /**
- * Writes the files of a Flathub repository (`github.com/flathub/<appId>`) for an app Flathub
- * repackages from its released `tar.gz`: the manifest, the AppStream metainfo, the desktop entry
- * and the shared-mime-info XML. Pure functions, so the content is testable without Gradle.
+ * The content of a Flathub repository (`github.com/flathub/<appId>`) for an app Flathub repackages
+ * from its released `tar.gz`. Flathub wants nothing but the manifest there: the AppStream metainfo,
+ * the desktop entry, the icon and the shared-mime-info XML ship upstream, inside the archive under
+ * `share/` ([archiveFiles], written by the `Tar` packaging), and the manifest installs them from it.
+ * Pure functions, so the content is testable without Gradle.
  */
 internal object FlathubRepository {
     /** The installed icon's size: the largest raster icon `flatpak build-export` accepts. */
@@ -99,6 +104,18 @@ internal object FlathubRepository {
                 .asBufferedImage()
         return ByteArrayOutputStream().also { ImageIO.write(scaled, "png", it) }.toByteArray()
     }
+
+    /** The metadata a `tar.gz` carries for Flathub, by path under its top directory. */
+    fun archiveFiles(
+        spec: FlathubSpec,
+        iconPng: ByteArray,
+    ): Map<String, ByteArray> =
+        buildMap {
+            put(spec.desktopPath, desktopEntry(spec).toByteArray())
+            put(spec.metainfoPath, metainfo(spec).toByteArray())
+            put(spec.iconPath, icon(iconPng))
+            mimeInfo(spec)?.let { put(spec.mimePath, it.toByteArray()) }
+        }
 
     private val PLAIN_YAML = Regex("[A-Za-z0-9_./:=+@-]+")
 
@@ -129,18 +146,12 @@ internal object FlathubRepository {
             appendLine("  - name: ${yaml(spec.command)}")
             appendLine("    buildsystem: simple")
             appendLine("    build-commands:")
-            appendLine("      - mkdir -p $lib /app/bin")
+            appendLine("      - mkdir -p $lib /app/bin /app/share")
             appendLine("      - cp -a app/. $lib/")
             appendLine("      - ln -s $lib/${spec.executable} /app/bin/${spec.command}")
-            appendLine("      - install -Dm644 ${spec.desktopFile} -t /app/share/applications")
-            appendLine("      - install -Dm644 ${spec.metainfoFile} -t /app/share/metainfo")
-            appendLine(
-                "      - install -Dm644 ${spec.iconFile} " +
-                    "/app/share/icons/hicolor/${ICON_SIZE}x$ICON_SIZE/apps/${spec.iconFile}",
-            )
-            if (spec.mimeTypes.isNotEmpty()) {
-                appendLine("      - install -Dm644 ${spec.mimeFile} /app/share/mime/packages/${spec.appId}.xml")
-            }
+            // The archive's own metadata (archiveFiles), where Flatpak exports it from.
+            appendLine("      - cp -a $lib/share/. /app/share/")
+            appendLine("      - rm -r $lib/share")
             appendLine("    sources:")
             for (source in sources) {
                 appendLine("      - type: archive")
@@ -148,15 +159,6 @@ internal object FlathubRepository {
                 appendLine("        ${if (source.isUrl) "url" else "path"}: ${yaml(source.location)}")
                 appendLine("        sha256: ${source.sha256}")
                 appendLine("        dest: app")
-            }
-            listOfNotNull(
-                spec.desktopFile,
-                spec.metainfoFile,
-                spec.iconFile,
-                spec.mimeFile.takeIf { spec.mimeTypes.isNotEmpty() },
-            ).forEach {
-                appendLine("      - type: file")
-                appendLine("        path: $it")
             }
         }
 
@@ -226,7 +228,7 @@ internal object FlathubRepository {
             }
             appendLine("  </screenshots>")
             appendLine()
-            appendLine("""  <launchable type="desktop-id">${xml(spec.desktopFile)}</launchable>""")
+            appendLine("""  <launchable type="desktop-id">${xml(spec.appId)}.desktop</launchable>""")
             val urls =
                 listOf(
                     "homepage" to spec.homepage,
@@ -367,5 +369,63 @@ internal object FlathubChecks {
             width < MIN_ICON_SIZE -> "the icon must be at least ${MIN_ICON_SIZE}px (it is ${width}px)"
             else -> null
         }
+    }
+}
+
+/**
+ * Reads the entry names of a `tar.gz`, enough to check that a released archive carries the
+ * metadata of [FlathubRepository.archiveFiles]. Handles ustar prefixes and GNU long names, the two
+ * ways electron-builder's tar spells a path longer than 100 bytes.
+ */
+internal object FlathubArchive {
+    private const val BLOCK = 512
+    private const val NAME_LENGTH = 100
+    private const val SIZE_OFFSET = 124
+    private const val SIZE_LENGTH = 12
+    private const val TYPE_OFFSET = 156
+    private const val MAGIC_OFFSET = 257
+    private const val PREFIX_OFFSET = 345
+    private const val PREFIX_LENGTH = 155
+    private const val GNU_LONG_NAME = 'L'.code.toByte()
+    private const val MAGIC = "ustar"
+    private const val READ_BLOCKS = 64
+
+    /** The paths of every entry of the gzipped tar [input], under the archive's top directory. */
+    fun entries(input: java.io.InputStream): List<String> {
+        val tar = java.util.zip.GZIPInputStream(input, BLOCK * READ_BLOCKS)
+        val names = mutableListOf<String>()
+        val header = ByteArray(BLOCK)
+        var longName: String? = null
+        while (tar.readNBytes(header, 0, BLOCK) == BLOCK && header.any { it != 0.toByte() }) {
+            val size = field(header, SIZE_OFFSET, SIZE_LENGTH).trim().ifEmpty { "0" }.toLong(radix = 8)
+            val padded = (size + BLOCK - 1) / BLOCK * BLOCK
+            if (header[TYPE_OFFSET] == GNU_LONG_NAME) {
+                longName = String(tar.readNBytes(size.toInt()), Charsets.UTF_8).trimEnd('\u0000')
+                tar.skipNBytes(padded - size)
+                continue
+            }
+            val name =
+                longName ?: run {
+                    val base = field(header, 0, NAME_LENGTH)
+                    val ustar = field(header, MAGIC_OFFSET, MAGIC.length) == MAGIC
+                    val prefix = if (ustar) field(header, PREFIX_OFFSET, PREFIX_LENGTH) else ""
+                    if (prefix.isEmpty()) base else "$prefix/$base"
+                }
+            longName = null
+            name.removePrefix("./").substringAfter('/', "").takeIf { it.isNotEmpty() }?.let(names::add)
+            tar.skipNBytes(padded)
+        }
+        // Drain the stream, so a caller digesting it sees every byte.
+        input.transferTo(java.io.OutputStream.nullOutputStream())
+        return names
+    }
+
+    private fun field(
+        header: ByteArray,
+        offset: Int,
+        length: Int,
+    ): String {
+        val end = (offset until offset + length).firstOrNull { header[it] == 0.toByte() } ?: (offset + length)
+        return String(header, offset, end - offset, Charsets.UTF_8)
     }
 }

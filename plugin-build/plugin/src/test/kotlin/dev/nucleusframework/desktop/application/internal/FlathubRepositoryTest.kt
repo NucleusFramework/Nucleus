@@ -65,7 +65,7 @@ class FlathubRepositoryTest {
     }
 
     @Test
-    fun `manifest repackages each archive and installs the metadata`() {
+    fun `manifest repackages each archive and installs the metadata the archive carries`() {
         val manifest = FlathubRepository.manifest(spec, sources)
         assertTrue(manifest.contains("runtime-version: '51'"))
         assertTrue(manifest.contains("command: example-app"))
@@ -73,8 +73,46 @@ class FlathubRepositoryTest {
         assertTrue(manifest.contains("      - ln -s /app/lib/example-app/example-app /app/bin/example-app"))
         val arm64 = "only-arches: [aarch64]\n        url: $BASE/app-1.2.3-linux-arm64.tar.gz\n        sha256: bb"
         assertTrue(manifest.contains(arm64))
-        assertTrue(manifest.contains("install -Dm644 com.example.App.mime.xml /app/share/mime/packages/"))
-        assertTrue(manifest.contains("        path: com.example.App.metainfo.xml"))
+        // Flathub's review wants nothing but the manifest in its repository: the metadata comes from the archive.
+        assertTrue(manifest.contains("      - cp -a /app/lib/example-app/share/. /app/share/\n      - rm -r /app/lib/example-app/share"))
+        assertTrue(!manifest.contains("type: file"))
+    }
+
+    @Test
+    fun `the archive carries the metadata under share`() {
+        val files = FlathubRepository.archiveFiles(spec, png(1024, 1024))
+        assertEquals(
+            setOf(
+                "share/applications/com.example.App.desktop",
+                "share/metainfo/com.example.App.metainfo.xml",
+                "share/icons/hicolor/512x512/apps/com.example.App.png",
+                "share/mime/packages/com.example.App.xml",
+            ),
+            files.keys,
+        )
+        val icon = ImageIO.read(files.getValue("share/icons/hicolor/512x512/apps/com.example.App.png").inputStream())
+        assertEquals(512, icon.width)
+        assertTrue(String(files.getValue(spec.metainfoPath)).contains("<launchable type=\"desktop-id\">com.example.App.desktop</launchable>"))
+        assertEquals(3, FlathubRepository.archiveFiles(spec.copy(mimeTypes = emptyList()), png(256, 256)).size)
+    }
+
+    @Test
+    fun `archive entries are read under the top directory, long names included`() {
+        val long = "share/icons/hicolor/512x512/apps/" + "a".repeat(120) + ".png"
+        val tar =
+            ByteArrayOutputStream().also { out ->
+                java.util.zip.GZIPOutputStream(out).use { gz ->
+                    tarEntry(gz, "app-1.2.3-linux-x64/", ByteArray(0), '5')
+                    tarEntry(gz, "././@LongLink", "app-1.2.3-linux-x64/$long".toByteArray(), 'L')
+                    tarEntry(gz, "app-1.2.3-linux-x64/" + long.take(90), ByteArray(3), '0')
+                    tarEntry(gz, "app-1.2.3-linux-x64/share/metainfo/com.example.App.metainfo.xml", ByteArray(700), '0')
+                    gz.write(ByteArray(1024))
+                }
+            }.toByteArray()
+        val raw = java.io.ByteArrayInputStream(tar)
+        assertEquals(listOf(long, "share/metainfo/com.example.App.metainfo.xml"), FlathubArchive.entries(raw))
+        // Drained: a digest over the stream sees the whole archive.
+        assertEquals(0, raw.available())
     }
 
     @Test
@@ -165,7 +203,22 @@ class FlathubRepositoryTest {
         assertEquals(512 to 512, scaled.width to scaled.height)
         val small = png(256, 256)
         assertTrue(FlathubRepository.icon(small).contentEquals(small))
-        assertTrue(FlathubRepository.manifest(spec, sources).contains("/app/share/icons/hicolor/512x512/apps/"))
+    }
+
+    private fun tarEntry(
+        out: java.io.OutputStream,
+        name: String,
+        content: ByteArray,
+        type: Char,
+    ) {
+        val header = ByteArray(512)
+        name.toByteArray().copyInto(header, 0, 0, minOf(name.length, 100))
+        "%011o".format(content.size).toByteArray().copyInto(header, 124)
+        header[156] = type.code.toByte()
+        "ustar".toByteArray().copyInto(header, 257)
+        out.write(header)
+        out.write(content)
+        out.write(ByteArray((512 - content.size % 512) % 512))
     }
 
     private fun png(

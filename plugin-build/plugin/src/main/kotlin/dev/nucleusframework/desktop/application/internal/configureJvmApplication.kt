@@ -442,6 +442,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                         createDistributable = createDistributable,
                         unpackDefaultResources = commonTasks.unpackDefaultResources,
                     )
+                    configureFlathubMetadata(this, targetFormat)
                     generateAotCache?.let { dependsOn(it) }
                 }
 
@@ -1540,75 +1541,93 @@ private fun JvmApplicationContext.registerPatchMacJvmTask(
 }
 
 /**
- * Registers `generateFlathubRepository` when `linux { flathub { appId } }` is set: the Flathub
- * repository of the app, built from its released `tar.gz` (see [AbstractGenerateFlathubRepositoryTask]).
- * Every value is resolved when the task runs, from the DSL as a whole.
+ * `linux { flathub { } }` resolved for the generator and the `Tar` packaging, or `null` without an
+ * `appId`. Every value is read when the task runs, from the DSL as a whole.
  */
-private fun JvmApplicationContext.registerFlathubRepositoryIfNeeded() {
+internal fun JvmApplicationContext.flathubSpecOrNull(): Provider<FlathubSpec>? {
     val distributions = app.nativeDistributions
     val linux = distributions.linux
     val flathub = linux.flathub
-    val appId = flathub.appId ?: return
+    val appId = flathub.appId ?: return null
     val version = packageVersionFor(TargetFormat.Tar)
     val graalvm = app.graalvm
     val imageName = graalvm.imageName.orElse(packageNameProvider)
+    return project.provider {
+        val packageName = packageNameProvider.get()
+        FlathubSpec(
+            appId = appId,
+            name = distributions.appName ?: packageName,
+            version =
+                project.findProperty("nucleus.flathub.releaseVersion")?.toString()
+                    ?: flathub.releaseVersion
+                    ?: version.get(),
+            archiveVersion = version.get(),
+            releaseDate =
+                project.findProperty("nucleus.flathub.releaseDate")?.toString()
+                    ?: java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString(),
+            runtime = flathub.runtime,
+            runtimeVersion = flathub.runtimeVersion,
+            sdk = flathub.sdk,
+            finishArgs = flathub.finishArgs,
+            executable =
+                flathub.executable
+                    ?: if (graalvm.isEnabled.get()) imageName.get() else "bin/$packageName",
+            summary = flathub.summary.orEmpty(),
+            description = flathub.description ?: distributions.description.orEmpty(),
+            projectLicense = flathub.projectLicense.orEmpty(),
+            developerId = flathub.developerId ?: appId.substringBeforeLast('.'),
+            developerName = flathub.developerName ?: distributions.vendor.orEmpty(),
+            homepage = distributions.homepage,
+            bugtrackerUrl = flathub.bugtrackerUrl,
+            vcsBrowserUrl = flathub.vcsBrowserUrl,
+            categories =
+                flathub.categories.ifEmpty {
+                    (linux.appCategory ?: linux.menuGroup)
+                        ?.split(';')
+                        ?.map(String::trim)
+                        ?.filter(String::isNotEmpty)
+                        .orEmpty()
+                },
+            keywords = flathub.keywords,
+            brandingLight = flathub.brandingLight,
+            brandingDark = flathub.brandingDark,
+            screenshots = flathub.screenshots.toList(),
+            mimeTypes = linux.fileAssociations.map { FlathubMimeType(it.mimeType, it.extension, it.description) },
+            urlSchemes = distributions.protocols.flatMap { it.schemes },
+            arches = flathub.arches.sortedBy { it.ordinal },
+        )
+    }
+}
+
+/** Gives a `Tar` package task the Flathub metadata to bundle under `share/` when `flathub { }` is set. */
+internal fun JvmApplicationContext.configureFlathubMetadata(
+    task: AbstractElectronBuilderPackageTask,
+    targetFormat: TargetFormat,
+) {
+    if (targetFormat != TargetFormat.Tar) return
+    val spec = flathubSpecOrNull() ?: return
+    val linux = app.nativeDistributions.linux
+    task.flathubSpec.set(spec)
+    task.flathubIcon.set(linux.flathub.iconFile.orElse(linux.iconFile))
+}
+
+/**
+ * Registers `generateFlathubRepository` when `linux { flathub { appId } }` is set: the Flathub
+ * repository of the app, built from its released `tar.gz` (see [AbstractGenerateFlathubRepositoryTask]).
+ */
+private fun JvmApplicationContext.registerFlathubRepositoryIfNeeded() {
+    val flathub = app.nativeDistributions.linux.flathub
+    val spec = flathubSpecOrNull() ?: return
+    val appId = flathub.appId
 
     tasks.register<AbstractGenerateFlathubRepositoryTask>(
         taskNameAction = "generate",
         taskNameObject = "flathubRepository",
     ) {
-        description = "Writes the Flathub repository of the app (manifest, metainfo, desktop entry, icon)"
-        spec.set(
-            project.provider {
-                val packageName = packageNameProvider.get()
-                FlathubSpec(
-                    appId = appId,
-                    name = distributions.appName ?: packageName,
-                    version =
-                        project.findProperty("nucleus.flathub.releaseVersion")?.toString()
-                            ?: flathub.releaseVersion
-                            ?: version.get(),
-                    archiveVersion = version.get(),
-                    releaseDate =
-                        project.findProperty("nucleus.flathub.releaseDate")?.toString()
-                            ?: java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString(),
-                    runtime = flathub.runtime,
-                    runtimeVersion = flathub.runtimeVersion,
-                    sdk = flathub.sdk,
-                    finishArgs = flathub.finishArgs,
-                    executable =
-                        flathub.executable
-                            ?: if (graalvm.isEnabled.get()) imageName.get() else "bin/$packageName",
-                    summary = flathub.summary.orEmpty(),
-                    description = flathub.description ?: distributions.description.orEmpty(),
-                    projectLicense = flathub.projectLicense.orEmpty(),
-                    developerId = flathub.developerId ?: appId.substringBeforeLast('.'),
-                    developerName = flathub.developerName ?: distributions.vendor.orEmpty(),
-                    homepage = distributions.homepage,
-                    bugtrackerUrl = flathub.bugtrackerUrl,
-                    vcsBrowserUrl = flathub.vcsBrowserUrl,
-                    categories =
-                        flathub.categories.ifEmpty {
-                            (linux.appCategory ?: linux.menuGroup)
-                                ?.split(';')
-                                ?.map(String::trim)
-                                ?.filter(String::isNotEmpty)
-                                .orEmpty()
-                        },
-                    keywords = flathub.keywords,
-                    brandingLight = flathub.brandingLight,
-                    brandingDark = flathub.brandingDark,
-                    screenshots = flathub.screenshots.toList(),
-                    mimeTypes =
-                        linux.fileAssociations.map { FlathubMimeType(it.mimeType, it.extension, it.description) },
-                    urlSchemes = distributions.protocols.flatMap { it.schemes },
-                    arches = flathub.arches.sortedBy { it.ordinal },
-                )
-            },
-        )
+        description = "Writes the Flathub manifest of the app, which repackages its released tar.gz"
+        this.spec.set(spec)
         flathub.archiveUrl?.let(archiveUrl::set)
         project.findProperty("nucleus.flathub.localArchive")?.let { localArchive.set(project.file(it)) }
-        iconFile.set(flathub.iconFile.orElse(linux.iconFile))
         outputDir.set(flathub.outputDir.orElse(project.layout.buildDirectory.dir("flathub/$appId")))
         // A clone of github.com/flathub/<appId> to update in place, without touching the build script.
         project.findProperty("nucleus.flathub.outputDir")?.let { outputDir.set(project.file(it)) }
