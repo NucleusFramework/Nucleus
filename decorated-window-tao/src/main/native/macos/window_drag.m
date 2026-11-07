@@ -57,8 +57,12 @@ void nucleus_tao_install_drag_monitor(void) {
 // Posts `performWindowDragWithEvent:` to the next main-runloop tick using the
 // most recently captured NSLeftMouseDown event. Falls back to the current
 // event if no mouseDown has been captured yet.
+int nucleus_tao_begin_touch_window_drag(long ns_window_ptr); // direct_touch.m
+
 void nucleus_tao_start_window_drag(long ns_window_ptr) {
     if (ns_window_ptr == 0) return;
+    // A finger on the title bar (#892): the touch forwarder moves the window.
+    if ([NSThread isMainThread] && nucleus_tao_begin_touch_window_drag(ns_window_ptr)) return;
     ensure_lock();
 
     [sLock lock];

@@ -9,6 +9,8 @@
 //   - `ime`           — caret rectangle / input-context activation.
 //   - `apple_events`  — `kAEGetURL` deep-link bridge.
 //   - `a11y`          — VoiceOver bridge (snapshot push + action callbacks).
+//   - `trackpad`      — trackpad pinch / rotate monitor callback.
+//   - `touch`         — direct touch (touchscreen, Sidecar) forwarder (#892).
 
 pub(crate) mod a11y;
 pub(crate) mod apple_events;
@@ -16,7 +18,9 @@ pub(crate) mod ffi;
 pub(crate) mod handles;
 pub(crate) mod ime;
 pub(crate) mod main_thread;
+pub(crate) mod touch;
 pub(crate) mod trackpad;
 
 pub(crate) use main_thread::{dispatch_run_event_loop_on_main, is_main_thread};
+pub(crate) use touch::direct_touch_callback;
 pub(crate) use trackpad::trackpad_gesture_callback;
