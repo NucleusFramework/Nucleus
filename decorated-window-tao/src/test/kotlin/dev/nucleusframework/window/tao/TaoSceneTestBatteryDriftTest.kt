@@ -156,6 +156,8 @@ class TaoSceneTestBatteryDriftTest {
                 "reads the source tree's metadata file and resolves its classes reflectively",
             TaoScrollWireDriftTest::class.java to
                 "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
+            TaoArchitectureComponentsWiringTest::class.java to
+                "reads the three scene hosts from the repo; wire guard, not a scene behaviour",
             TaoMouseButtonWireDriftTest::class.java to
                 "reads events.rs from the repo; wire guard, not a scene behaviour",
             TaoPointerKindWireDriftTest::class.java to
@@ -165,6 +167,8 @@ class TaoSceneTestBatteryDriftTest {
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
+            dev.nucleusframework.window.tao.scene.TaoArchitectureComponentsTest::class.java to
+                "owner plumbing guard; viewModel { } comes from test-only lifecycle-viewmodel-compose",
             EventLoopHangDetectorTest::class.java to
                 "pure-function hang state machine (#643); no ComposeScene",
             TaoEventLoopWatchdogMonkeyTest::class.java to
