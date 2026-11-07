@@ -82,7 +82,10 @@ internal class TabScopeImpl(
  * not exist yet — else the window that was focused last, else a new one. After
  * that the workspace owns its placement, so an id already known only has its
  * title and body refreshed. `rememberSaveable` state inside [content] survives
- * every move between windows; plain `remember` state does not.
+ * every move between windows; plain `remember` state does not. View models
+ * from `viewModel { }` inside [content] belong to the tab, not to the window
+ * showing it: they survive moves too, and are cleared when the tab is closed
+ * or this declaration leaves the composition.
  *
  * @param id stable identity within the workspace.
  * @param title shown on the tab and, for the selected tab, as the window title.
@@ -108,6 +111,9 @@ public fun ApplicationScope.Tab(
         entry.content = content
     }
     DisposableEffect(workspace, entry) {
+        // Re-declared (a new call site) in the frame the old one left: the
+        // old one's clear is still pending while the content is on screen.
+        entry.stateSlot.cancelPendingClear()
         onDispose { workspace.unregister(entry) }
     }
 }

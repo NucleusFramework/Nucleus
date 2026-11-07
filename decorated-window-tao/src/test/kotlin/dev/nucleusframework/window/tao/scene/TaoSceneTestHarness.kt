@@ -71,9 +71,10 @@ internal fun runTaoSceneTest(
     width: Int = 400,
     height: Int = 300,
     density: Float = 1f,
+    architectureComponents: TaoArchitectureComponents? = null,
     block: TaoSceneTestScope.() -> Unit,
 ) {
-    val scope = TaoSceneTestScope(width, height, density)
+    val scope = TaoSceneTestScope(width, height, density, architectureComponents)
     try {
         scope.block()
     } finally {
@@ -215,6 +216,11 @@ internal class TaoSceneTestScope(
     val width: Int,
     val height: Int,
     val density: Float,
+    /**
+     * The window's owner, wired like the hosts wire theirs; null leaves the
+     * scene on Compose's process-wide fallback, as the hosts once did.
+     */
+    private val architectureComponents: TaoArchitectureComponents? = null,
 ) {
     private val dispatcher = QueueDispatcher()
     private var timeNanos = 0L
@@ -239,6 +245,9 @@ internal class TaoSceneTestScope(
             override val sceneScale: Float get() = this@TaoSceneTestScope.density
 
             override val windowInfo: TaoWindowInfo = this@TaoSceneTestScope.windowInfo
+
+            override val architectureComponentsOwner =
+                this@TaoSceneTestScope.architectureComponents?.owner ?: super.architectureComponentsOwner
 
             // Mirrors `TaoPlatformContext.startInputMethod`: publish the text-input
             // session request so IME callbacks can edit the focused field, clear it
