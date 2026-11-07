@@ -97,6 +97,19 @@ internal object NativeWindowsSystemInfoBridge {
 
     @JvmStatic external fun nativeDiskReadOnly(): BooleanArray?
 
+    @JvmStatic external fun nativeDiskVolumeIds(): Array<String>?
+
+    // DiskConnection ordinals, mirrored in nucleus_system_info_disk.c.
+    @JvmStatic external fun nativeDiskConnections(): IntArray?
+
+    @JvmStatic external fun nativeStartDiskMonitor(): Boolean
+
+    @JvmStatic external fun nativeStopDiskMonitor()
+
+    @JvmStatic external fun nativeStartEjectApproval(): Boolean
+
+    @JvmStatic external fun nativeStopEjectApproval()
+
     // Components (temperature sensors)
     @JvmStatic external fun nativeComponentCount(): Int
 
@@ -287,4 +300,16 @@ internal object NativeWindowsSystemInfoBridge {
     ) {
         WindowsSystemInfo.connectivityMonitor.onChanged(connectivityInfoOf(available, metered, level))
     }
+
+    // Called from the volume window's thread whenever a volume appeared, disappeared or
+    // changed media.
+    @JvmStatic
+    fun onDisksChanged() {
+        WindowsSystemInfo.diskMonitor.onChanged()
+    }
+
+    // Called from a thread-pool thread when a watched volume is about to be removed;
+    // returns whether the removal may proceed.
+    @JvmStatic
+    fun onEjectRequest(mountPoint: String): Boolean = WindowsSystemInfo.onEjectRequest(mountPoint)
 }

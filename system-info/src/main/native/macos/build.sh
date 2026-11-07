@@ -52,6 +52,7 @@ COMMON_FLAGS=(
     -fvisibility=hidden
     -framework IOKit
     -framework CoreFoundation
+    -framework DiskArbitration
     -framework Network
 )
 

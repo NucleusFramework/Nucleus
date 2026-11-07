@@ -100,6 +100,15 @@ internal object NativeLinuxSystemInfoBridge {
 
     @JvmStatic external fun nativeDiskReadOnly(): BooleanArray?
 
+    @JvmStatic external fun nativeDiskVolumeIds(): Array<String>?
+
+    // DiskConnection ordinals, mirrored in nucleus_system_info_disk.c.
+    @JvmStatic external fun nativeDiskConnections(): IntArray?
+
+    @JvmStatic external fun nativeStartDiskMonitor(): Boolean
+
+    @JvmStatic external fun nativeStopDiskMonitor()
+
     // Components (temperature sensors)
     @JvmStatic external fun nativeComponentCount(): Int
 
@@ -290,5 +299,11 @@ internal object NativeLinuxSystemInfoBridge {
         level: Int,
     ) {
         LinuxSystemInfo.connectivityMonitor.onChanged(connectivityInfoOf(available, metered, level))
+    }
+
+    // Called from the native monitor thread whenever the mount table changed.
+    @JvmStatic
+    fun onDisksChanged() {
+        LinuxSystemInfo.diskMonitor.onChanged()
     }
 }

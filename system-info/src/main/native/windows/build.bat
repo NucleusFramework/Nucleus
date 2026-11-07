@@ -58,7 +58,7 @@ if not exist "%OUT_DIR_X64%" mkdir "%OUT_DIR_X64%"
 if not exist "%OUT_DIR_ARM64%" mkdir "%OUT_DIR_ARM64%"
 
 set "SOURCES=%SCRIPT_DIR%nucleus_system_info_os.c %SCRIPT_DIR%nucleus_system_info_memory.c %SCRIPT_DIR%nucleus_system_info_cpu.c %SCRIPT_DIR%nucleus_system_info_disk.c %SCRIPT_DIR%nucleus_system_info_component.c %SCRIPT_DIR%nucleus_system_info_network.c %SCRIPT_DIR%nucleus_system_info_process.c %SCRIPT_DIR%nucleus_system_info_user.c %SCRIPT_DIR%nucleus_system_info_hardware.c %SCRIPT_DIR%nucleus_system_info_gpu.c %SCRIPT_DIR%nucleus_system_info_battery.c %SCRIPT_DIR%nucleus_system_info_idle.c %SCRIPT_DIR%nucleus_system_info_connectivity.c"
-set "LIBS=kernel32.lib user32.lib advapi32.lib psapi.lib iphlpapi.lib ole32.lib oleaut32.lib pdh.lib netapi32.lib powrprof.lib ws2_32.lib dxgi.lib"
+set "LIBS=kernel32.lib user32.lib advapi32.lib psapi.lib iphlpapi.lib ole32.lib oleaut32.lib pdh.lib netapi32.lib powrprof.lib ws2_32.lib dxgi.lib setupapi.lib cfgmgr32.lib mpr.lib"
 
 REM ---- Compile x64 ----
 REM Use setlocal/endlocal to isolate vcvarsall environment per architecture,

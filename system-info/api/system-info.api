@@ -6,12 +6,14 @@ public final class dev/nucleusframework/systeminfo/SystemInfo {
 	public final fun connectivityInfo ()Ldev/nucleusframework/systeminfo/model/ConnectivityInfo;
 	public final fun cpuInfo ()Ldev/nucleusframework/systeminfo/model/CpuGlobalInfo;
 	public final fun disks ()Ljava/util/List;
+	public final fun disksFlow ()Lkotlinx/coroutines/flow/Flow;
 	public final fun gpus ()Ljava/util/List;
 	public final fun idleTime ()J
 	public final fun isAvailable ()Z
 	public final fun memoryInfo ()Ldev/nucleusframework/systeminfo/model/MemoryInfo;
 	public final fun motherboard ()Ldev/nucleusframework/systeminfo/model/MotherboardInfo;
 	public final fun networks ()Ljava/util/List;
+	public final fun onEjectRequest (Lkotlin/jvm/functions/Function1;)Ljava/lang/AutoCloseable;
 	public final fun osInfo ()Ldev/nucleusframework/systeminfo/model/OsInfo;
 	public final fun process (J)Ldev/nucleusframework/systeminfo/model/ProcessInfo;
 	public final fun processes ()Ljava/util/List;
@@ -150,9 +152,22 @@ public final class dev/nucleusframework/systeminfo/model/CpuInfo {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class dev/nucleusframework/systeminfo/model/DiskConnection : java/lang/Enum {
+	public static final field EXTERNAL Ldev/nucleusframework/systeminfo/model/DiskConnection;
+	public static final field INTERNAL Ldev/nucleusframework/systeminfo/model/DiskConnection;
+	public static final field NETWORK Ldev/nucleusframework/systeminfo/model/DiskConnection;
+	public static final field UNKNOWN Ldev/nucleusframework/systeminfo/model/DiskConnection;
+	public static final field VIRTUAL Ldev/nucleusframework/systeminfo/model/DiskConnection;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/systeminfo/model/DiskConnection;
+	public static fun values ()[Ldev/nucleusframework/systeminfo/model/DiskConnection;
+}
+
 public final class dev/nucleusframework/systeminfo/model/DiskInfo {
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;ZZ)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;ZZLjava/lang/String;Ldev/nucleusframework/systeminfo/model/DiskConnection;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;ZZLjava/lang/String;Ldev/nucleusframework/systeminfo/model/DiskConnection;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ldev/nucleusframework/systeminfo/model/DiskConnection;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()J
@@ -160,15 +175,18 @@ public final class dev/nucleusframework/systeminfo/model/DiskInfo {
 	public final fun component6 ()Ljava/lang/String;
 	public final fun component7 ()Z
 	public final fun component8 ()Z
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;ZZ)Ldev/nucleusframework/systeminfo/model/DiskInfo;
-	public static synthetic fun copy$default (Ldev/nucleusframework/systeminfo/model/DiskInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;ZZILjava/lang/Object;)Ldev/nucleusframework/systeminfo/model/DiskInfo;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;ZZLjava/lang/String;Ldev/nucleusframework/systeminfo/model/DiskConnection;)Ldev/nucleusframework/systeminfo/model/DiskInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/systeminfo/model/DiskInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;ZZLjava/lang/String;Ldev/nucleusframework/systeminfo/model/DiskConnection;ILjava/lang/Object;)Ldev/nucleusframework/systeminfo/model/DiskInfo;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAvailableSpace ()J
+	public final fun getConnection ()Ldev/nucleusframework/systeminfo/model/DiskConnection;
 	public final fun getFileSystem ()Ljava/lang/String;
 	public final fun getKind ()Ljava/lang/String;
 	public final fun getMountPoint ()Ljava/lang/String;
 	public final fun getName ()Ljava/lang/String;
 	public final fun getTotalSpace ()J
+	public final fun getVolumeId ()Ljava/lang/String;
 	public fun hashCode ()I
 	public final fun isReadOnly ()Z
 	public final fun isRemovable ()Z
