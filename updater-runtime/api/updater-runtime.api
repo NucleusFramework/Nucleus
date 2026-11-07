@@ -18,10 +18,26 @@ public final class dev/nucleusframework/updater/DownloadProgress {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class dev/nucleusframework/updater/InstallFailure {
+	public fun <init> (Ljava/lang/String;ILjava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;ILjava/lang/String;)Ldev/nucleusframework/updater/InstallFailure;
+	public static synthetic fun copy$default (Ldev/nucleusframework/updater/InstallFailure;Ljava/lang/String;ILjava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/updater/InstallFailure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExitCode ()I
+	public final fun getOutput ()Ljava/lang/String;
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class dev/nucleusframework/updater/NucleusUpdater {
 	public static final field Companion Ldev/nucleusframework/updater/NucleusUpdater$Companion;
 	public fun <init> (Ldev/nucleusframework/updater/UpdaterConfig;)V
 	public final fun checkForUpdates (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun consumeInstallFailure ()Ldev/nucleusframework/updater/InstallFailure;
 	public final fun consumeUpdateEvent ()Ldev/nucleusframework/updater/UpdateEvent;
 	public final fun downloadUpdate (Ldev/nucleusframework/updater/UpdateInfo;)Lkotlinx/coroutines/flow/Flow;
 	public final fun getCurrentVersion ()Ljava/lang/String;

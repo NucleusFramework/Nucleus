@@ -52,11 +52,18 @@ internal object PlatformInstaller {
     /** Max parents walked from the launcher path when looking for [UPDATE_HELPER_NAME]. */
     internal const val HELPER_SEARCH_MAX_DEPTH = 3
 
+    /**
+     * Installs [file] and exits. [version] is the version being installed and [runningVersion] the
+     * one running now, when known; the Linux package installer records both if the install fails
+     * (see [InstallFailureRecord]).
+     */
     fun install(
         file: File,
         platform: Platform,
         restart: Boolean = true,
         relaunchArguments: List<String> = emptyList(),
+        version: String? = null,
+        runningVersion: String? = null,
     ) {
         val extension = file.name.substringAfterLast('.').lowercase()
 
@@ -65,7 +72,7 @@ internal object PlatformInstaller {
             platform == Platform.Windows -> installWindows(file, extension, restart, relaunchArguments)
             platform == Platform.Linux && extension == "appimage" -> installLinuxAppImage(file, restart)
             platform == Platform.Linux && (extension == "deb" || extension == "rpm") ->
-                installLinuxPackage(file, extension, restart)
+                installLinuxPackage(file, extension, restart, version, runningVersion)
             else -> buildProcessForInstaller(file, platform, extension).start()
         }
         exitProcess(0)
@@ -170,6 +177,8 @@ internal object PlatformInstaller {
         packageFile: File,
         extension: String,
         restart: Boolean,
+        version: String?,
+        runningVersion: String?,
     ) {
         val pid = ProcessHandle.current().pid()
         val launcher =
@@ -193,6 +202,12 @@ internal object PlatformInstaller {
                 helper = silentHelper?.absolutePath,
                 appPid = pid,
                 restart = restart,
+                // Single lines (UpdaterConfig and downloadUpdate reject a version with a line
+                // break), so each fits on one line of the record.
+                version = version?.trim().orEmpty(),
+                runningVersion = runningVersion?.trim().orEmpty(),
+                logFile = InstallFailureRecord.logFile().absolutePath,
+                failureFile = InstallFailureRecord.recordFile().absolutePath,
             ),
         )
         script.setExecutable(true)
