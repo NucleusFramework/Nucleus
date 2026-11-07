@@ -51,7 +51,8 @@ screenshots.
   `/app/bin`. The plugin's loose JNI libraries ([native-libraries-layout.md](native-libraries-layout.md))
   are found next to the executable as in any other format.
 - `finish-args` stay minimal: the Lab keeps the DSL default (`ipc`, `wayland`, `fallback-x11`,
-  `dri`). Review asks for each extra one: a demo app has no reason to reach the network, and
+  `dri`) plus `network`, which its HTTP probes need. Review asks for each extra one ("Why a demo
+  app needs network access?": answer with what uses it), and
   `--talk-name=org.freedesktop.Notifications` is refused in favour of the portal ("Use the
   portal."), which `notification-linux` now uses inside a sandbox (below). The MPRIS name needs no
   `--own-name`: Flatpak grants `org.mpris.MediaPlayer2.<app id>` by default and the linter rejects

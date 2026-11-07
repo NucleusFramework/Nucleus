@@ -198,8 +198,17 @@ nucleus.application {
                 developerName = "Nucleus"
                 archiveUrl =
                     "https://github.com/NucleusFramework/Nucleus/releases/download/v{version}/nucleus-lab-{version}-linux-{arch}.tar.gz"
-                // The default finish-args: notifications go through the portal, in-app updates too
-                // (Flatpak.updates), and none of what the Lab shows on Flathub needs the network.
+                // The default finish-args plus the network, which the Lab's HTTP probes need (native-http,
+                // native-ssl, native-proxy). Notifications and in-app updates (Flatpak.updates) go
+                // through portals and need nothing.
+                finishArgs =
+                    listOf(
+                        "--share=ipc",
+                        "--socket=wayland",
+                        "--socket=fallback-x11",
+                        "--device=dri",
+                        "--share=network",
+                    )
                 description =
                     """
                     Nucleus Lab is the companion app of Nucleus, a toolkit for shipping native JVM desktop applications.
