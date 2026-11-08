@@ -254,8 +254,10 @@ static void dispatch_event_volume(gdouble volume) {
     JNIEnv *env = get_env(&attached);
     if (!env || !ensure_callback_ids(env)) { release_env(attached); return; }
 
-    char buf[64];
-    snprintf(buf, sizeof(buf), "{\"type\":\"set_volume\",\"volume\":%.6f}", volume);
+    char number[G_ASCII_DTOSTR_BUF_SIZE];
+    g_ascii_dtostr(number, sizeof(number), volume);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "{\"type\":\"set_volume\",\"volume\":%s}", number);
 
     jstring js = (*env)->NewStringUTF(env, buf);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
