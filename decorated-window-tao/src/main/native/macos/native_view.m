@@ -12,6 +12,10 @@
 //    `compose.interop.blending=true`. Pointer events that Compose does
 //    not consume are synthesised back onto the native view via
 //    `nativeDispatchPointer` / `nativeDispatchScroll`.
+//    With `placedAsOverlay` the view goes **above** the content view
+//    instead, in a `NucleusTaoNativeClipView` (`nativeAddSubviewAbove` /
+//    `nativeSetSubviewFrameClipped`): nothing is punched or replayed,
+//    AppKit hit-tests the view and delivers its events itself.
 //
 // 2. **Sibling overlay** NSView (`NucleusTaoNativeOverlayView`) — a
 //    leftover second Compose surface used before blending. Kept for
@@ -240,6 +244,55 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
 
 @end
 
+// ── NucleusTaoNativeClipView ────────────────────────────────────────────
+//
+// Holds one `NativeView(placedAsOverlay = true)` child above the Compose
+// surface. Its frame is the part of the child that the child's clipping
+// ancestors in Compose leave visible, so the child is cut where Compose
+// content at its place would be (a scrolling list, a screen sliding out
+// of its container). A click lands on the child or goes through to the
+// Compose view, never on the clip view itself.
+
+@interface NucleusTaoNativeClipView : NSView
+@end
+
+@implementation NucleusTaoNativeClipView
+
+- (BOOL)isFlipped { return YES; }
+
+- (NSView *)hitTest:(NSPoint)point {
+    NSView *hit = [super hitTest:point];
+    return hit == self ? nil : hit;
+}
+
+@end
+
+/* Takes the child out of its superview, and an overlay's clip view with it. */
+static void remove_native_child(NSView *child) {
+    NSView *holder = child.superview;
+    [child removeFromSuperview];
+    if ([holder isKindOfClass:[NucleusTaoNativeClipView class]]) [holder removeFromSuperview];
+}
+
+/* Compose feeds content-view-local pixels (top-left). Converts a rect of
+ * them into [target]'s coordinates — whatever view hosts the child: the
+ * theme frame when it is mounted beside the content view, the content view
+ * itself as a fallback — so a y-flip and any content-view origin inside the
+ * theme frame stay correct. */
+static NSRect rect_from_compose_px(NSView *content, NSView *target,
+                                   jint xPx, jint yPx, jint widthPx, jint heightPx) {
+    CGFloat scale = content.window.backingScaleFactor;
+    if (scale <= 0) scale = 1.0;
+    CGFloat xPt = (CGFloat)xPx     / scale;
+    CGFloat yPt = (CGFloat)yPx     / scale;
+    CGFloat wPt = (CGFloat)widthPx / scale;
+    CGFloat hPt = (CGFloat)heightPx / scale;
+    NSRect contentRect = content.isFlipped
+        ? NSMakeRect(xPt, yPt, wPt, hPt)
+        : NSMakeRect(xPt, content.bounds.size.height - yPt - hPt, wPt, hPt);
+    return [content convertRect:contentRect toView:target];
+}
+
 /* ================================================================== */
 /*  JNI exports — generic NSView interop                               */
 /*  Class: NativeTaoMacOsNativeViewBridge                              */
@@ -273,7 +326,40 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeRe
     (void)env; (void)clazz;
     NSView *child = view_from_long(childPtr);
     if (child == nil) return;
-    [child removeFromSuperview];
+    remove_native_child(child);
+}
+
+/* Mounts the child ABOVE the Tao content view (`placedAsOverlay`), in a
+ * clip view of its own: AppKit hit-tests it and delivers hover, press, drag
+ * and click itself, and nothing Compose draws covers it. The clip view
+ * stays hidden until the first nativeSetSubviewFrameClipped. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeAddSubviewAbove(
+    JNIEnv *env, jclass clazz, jlong parentPtr, jlong childPtr)
+{
+    (void)env; (void)clazz;
+    NSView *parent = view_from_long(parentPtr);
+    NSView *child  = view_from_long(childPtr);
+    if (parent == nil || child == nil) return;
+    remove_native_child(child);
+    NucleusTaoNativeClipView *clip = [[NucleusTaoNativeClipView alloc] initWithFrame:NSZeroRect];
+    clip.wantsLayer = YES;
+    clip.hidden = YES;
+    // The clip view places the child; AppKit must not move it on a resize.
+    child.autoresizingMask = NSViewNotSizable;
+    [clip addSubview:child];
+    NSView *frameView = parent.window.contentView.superview;
+    if (frameView != nil && parent.superview == frameView) {
+        // Above the overlays mounted before it, as a later sibling draws
+        // over an earlier one.
+        NSView *below = parent;
+        for (NSView *sibling in frameView.subviews) {
+            if ([sibling isKindOfClass:[NucleusTaoNativeClipView class]]) below = sibling;
+        }
+        [frameView addSubview:clip positioned:NSWindowAbove relativeTo:below];
+    } else {
+        [parent addSubview:clip positioned:NSWindowAbove relativeTo:nil];
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -287,22 +373,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeSe
     NSView *child  = view_from_long(childPtr);
     if (parent == nil || child == nil) return;
 
-    CGFloat scale = parent.window.backingScaleFactor;
-    if (scale <= 0) scale = 1.0;
-    CGFloat xPt = (CGFloat)xPx     / scale;
-    CGFloat yPt = (CGFloat)yPx     / scale;
-    CGFloat wPt = (CGFloat)widthPx / scale;
-    CGFloat hPt = (CGFloat)heightPx / scale;
-
-    // Compose feeds content-view-local pixels (top-left). Convert into
-    // whatever superview currently hosts the child (the theme frame when
-    // blending, the content view itself as a fallback) so a y-flip and
-    // any content-view origin inside the theme frame stay correct.
-    NSRect contentRect = parent.isFlipped
-        ? NSMakeRect(xPt, yPt, wPt, hPt)
-        : NSMakeRect(xPt, parent.bounds.size.height - yPt - hPt, wPt, hPt);
     NSView *superview = child.superview != nil ? child.superview : parent;
-    NSRect newFrame = [parent convertRect:contentRect toView:superview];
+    NSRect newFrame = rect_from_compose_px(parent, superview, xPx, yPx, widthPx, heightPx);
 
     // Margin-only autoresizing: fixed size, fixed TOP-LEFT anchor. The
     // bottom-left frame above is computed against parentH AT CALL TIME —
@@ -328,6 +400,55 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeSe
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     [child setFrame:newFrame];
+    [CATransaction commit];
+}
+
+/* Frames an overlay child and the clip view around it. Both rects are
+ * content-view-local pixels (top-left): the child's own, and the part of
+ * it that its clipping ancestors in Compose leave visible. The clip view
+ * takes the visible rect and masks only while that is less than the whole
+ * child, so a control nothing clips still draws past its bounds (focus
+ * ring, shadow). An empty visible rect hides the child. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeSetSubviewFrameClipped(
+    JNIEnv *env, jclass clazz,
+    jlong parentPtr, jlong childPtr,
+    jint xPx, jint yPx, jint widthPx, jint heightPx,
+    jint visibleXPx, jint visibleYPx, jint visibleWidthPx, jint visibleHeightPx)
+{
+    (void)env; (void)clazz;
+    NSView *parent = view_from_long(parentPtr);
+    NSView *child  = view_from_long(childPtr);
+    if (parent == nil || child == nil) return;
+    NSView *clip = child.superview;
+    if (![clip isKindOfClass:[NucleusTaoNativeClipView class]] || clip.superview == nil) return;
+
+    // No implicit animation, as in nativeSetSubviewFrame.
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    if (visibleWidthPx <= 0 || visibleHeightPx <= 0) {
+        clip.hidden = YES;
+    } else {
+        BOOL clipped = visibleXPx != xPx || visibleYPx != yPx
+            || visibleWidthPx != widthPx || visibleHeightPx != heightPx;
+        clip.layer.masksToBounds = clipped;
+        if (@available(macOS 14.0, *)) clip.clipsToBounds = clipped;
+        // Margin-only anchoring, for the reason given in nativeSetSubviewFrame.
+        clip.autoresizingMask = clip.superview.isFlipped
+            ? (NSViewMaxXMargin | NSViewMaxYMargin)
+            : (NSViewMaxXMargin | NSViewMinYMargin);
+        [clip setFrame:rect_from_compose_px(parent, clip.superview,
+                                            visibleXPx, visibleYPx, visibleWidthPx, visibleHeightPx)];
+        CGFloat scale = parent.window.backingScaleFactor;
+        if (scale <= 0) scale = 1.0;
+        // The clip view is flipped: the child sits at its offset from the
+        // visible rect's top-left corner.
+        [child setFrame:NSMakeRect((CGFloat)(xPx - visibleXPx) / scale,
+                                   (CGFloat)(yPx - visibleYPx) / scale,
+                                   (CGFloat)widthPx / scale,
+                                   (CGFloat)heightPx / scale)];
+        clip.hidden = NO;
+    }
     [CATransaction commit];
 }
 
@@ -991,5 +1112,37 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     jintArray result = (*env)->NewIntArray(env, 4);
     if (result == NULL) return NULL;
     (*env)->SetIntArrayRegion(env, result, 0, 4, out);
+    return result;
+}
+
+/* The clip view around an overlay child: its frame in content-view-local
+ * pixels (top-left) as `[x, y, w, h]`, then 1 when it is hidden and 1 when
+ * it masks its child. Null when the view is not mounted as an overlay. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagOverlayClip(
+    JNIEnv *env, jclass clazz, jlong contentPtr, jlong viewPtr)
+{
+    (void)clazz;
+    NSView *content = view_from_long(contentPtr);
+    NSView *clip = view_from_long(viewPtr).superview;
+    if (content == nil || ![clip isKindOfClass:[NucleusTaoNativeClipView class]]) return NULL;
+    if (clip.superview == nil || clip.window == nil) return NULL;
+    CGFloat scale = clip.window.backingScaleFactor;
+    if (scale <= 0) scale = 1.0;
+    NSRect frame = [clip.superview convertRect:clip.frame toView:content];
+    CGFloat topLeftY = content.isFlipped
+        ? frame.origin.y
+        : content.bounds.size.height - frame.origin.y - frame.size.height;
+    jint out[6] = {
+        (jint)lround(frame.origin.x * scale),
+        (jint)lround(topLeftY * scale),
+        (jint)lround(frame.size.width * scale),
+        (jint)lround(frame.size.height * scale),
+        clip.hidden ? 1 : 0,
+        clip.layer.masksToBounds ? 1 : 0,
+    };
+    jintArray result = (*env)->NewIntArray(env, 6);
+    if (result == NULL) return NULL;
+    (*env)->SetIntArrayRegion(env, result, 0, 6, out);
     return result;
 }

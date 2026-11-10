@@ -12,7 +12,9 @@ private const val LIBRARY_NAME = "nucleus_tao_macos_native_view"
  *  - **Generic NSView interop** (`nativeAddSubview` /
  *    `nativeRemoveSubview` / `nativeSetSubviewFrame`) — used by the
  *    `NativeView` composable to mount user-supplied NSViews **below**
- *    the host content view so Compose can blend over them.
+ *    the host content view so Compose can blend over them, or **above**
+ *    it in a clip view (`nativeAddSubviewAbove` /
+ *    `nativeSetSubviewFrameClipped`) for `placedAsOverlay`.
  *  - **Pointer redispatch** (`nativeDispatchPointer` /
  *    `nativeDispatchScroll`) — Compose sits on top and forwards events
  *    it does not consume to the embedded view.
@@ -36,6 +38,40 @@ internal object NativeTaoMacOsNativeViewBridge {
 
     @JvmStatic
     external fun nativeRemoveSubview(childNsView: Long)
+
+    /**
+     * Mounts [childNsView] **above** the host content view, inside a clip
+     * view of its own (`NativeView(placedAsOverlay = true)`): AppKit
+     * hit-tests it and delivers its events itself. Hidden until the first
+     * [nativeSetSubviewFrameClipped]; [nativeRemoveSubview] removes both.
+     */
+    @JvmStatic
+    external fun nativeAddSubviewAbove(
+        parentNsView: Long,
+        childNsView: Long,
+    )
+
+    /**
+     * Frames an overlay child and its clip view. Both rects are
+     * content-view-local physical pixels with a top-left origin: the
+     * child's own, and the part of it that its clipping ancestors in
+     * Compose leave visible. The clip view masks only while the two differ;
+     * an empty visible rect hides the child.
+     */
+    @JvmStatic
+    @Suppress("LongParameterList")
+    external fun nativeSetSubviewFrameClipped(
+        parentNsView: Long,
+        childNsView: Long,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int,
+        visibleXPx: Int,
+        visibleYPx: Int,
+        visibleWidthPx: Int,
+        visibleHeightPx: Int,
+    )
 
     @JvmStatic
     external fun nativeSetSubviewFrame(
@@ -250,4 +286,16 @@ internal object NativeTaoMacOsNativeViewBridge {
     /** A subview's frame in physical px with a top-left origin, as `[x, y, w, h]`, or null. */
     @JvmStatic
     external fun nativeDiagViewFrame(nsView: Long): IntArray?
+
+    /**
+     * The clip view around an overlay child, as `[x, y, w, h, hidden, masks]`:
+     * its frame in content-view-local physical px with a top-left origin, 1
+     * when it is hidden and 1 when it masks its child. Null when [nsView] is
+     * not mounted as an overlay.
+     */
+    @JvmStatic
+    external fun nativeDiagOverlayClip(
+        contentNsView: Long,
+        nsView: Long,
+    ): IntArray?
 }
