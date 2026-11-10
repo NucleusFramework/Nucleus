@@ -1861,16 +1861,6 @@ internal class TaoComposeSceneHost(
         displayLinkIdleStop?.cancel()
         NativeMetalBridge.nativeStartDisplayLink(handle) // no-op while running
 
-        // ── interop transaction snapshot (main) ──
-        val tx = retrieveTransaction()
-        val needsTransaction =
-            tx.actions.isNotEmpty() || rendererIsInteropActive != tx.isInteropActive
-        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
-            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
-            layerPresentsWithTransaction = needsTransaction
-        }
-        if (tx.isInteropActive) rendererIsInteropActive = true
-
         // ── record (main) ──
         // Clear to the current themed fallback color, not hard-coded white, so
         // fullscreen/title-bar animation gaps don't flash. The clear itself runs
@@ -1879,6 +1869,20 @@ internal class TaoComposeSceneHost(
         val frameH = heightPx
         val (mainPicture, frameDamage, mainClear) = recordMainScene(bundle, frameW, frameH)
         val popupSurfaces = recordPopupSurfaces()
+
+        // ── interop transaction snapshot (main) ──
+        // After the record: the layout that just ran is what moves the embeds,
+        // and the AppKit mutations it queued must ride on this frame's present,
+        // not the next one's. Compose iOS's MetalRedrawer retrieves its interop
+        // transaction after rendering the scene for the same reason.
+        val tx = retrieveTransaction()
+        val needsTransaction =
+            tx.actions.isNotEmpty() || rendererIsInteropActive != tx.isInteropActive
+        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
+            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
+            layerPresentsWithTransaction = needsTransaction
+        }
+        if (tx.isInteropActive) rendererIsInteropActive = true
         // Drain Compose's async work (sendFrame continuations, recomposer steps)
         // synchronously so their state writes happen now and trigger invalidate →
         // next requestFrame in the same Tao loop iteration. Mirrors Skiko's
