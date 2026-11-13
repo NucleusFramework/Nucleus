@@ -126,4 +126,9 @@ extern "C" {
         ),
     );
     pub(crate) fn nucleus_tao_install_trackpad_gesture_monitor();
+    pub(crate) fn nucleus_tao_register_direct_touch_callback(
+        cb: extern "C" fn(ns_window_ptr: i64, phase: i32, id: i64, x_px: f64, y_px: f64),
+    );
+    pub(crate) fn nucleus_tao_attach_direct_touch(ns_view_ptr: i64);
+    pub(crate) fn nucleus_tao_has_direct_touch(ns_view_ptr: i64) -> i32;
 }

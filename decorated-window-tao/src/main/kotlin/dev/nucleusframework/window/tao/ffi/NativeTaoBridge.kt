@@ -139,9 +139,12 @@ internal object NativeTaoBridge {
         }
 
         /**
-         * Windows touchscreen input. Tao emits one `WindowEvent::Touch` per
-         * finger update (WM_POINTER / WM_TOUCH), forwarded here verbatim.
-         * The JVM side aggregates the active set before issuing
+         * Touchscreen input, one call per finger update. On Windows Tao emits
+         * a `WindowEvent::Touch` (WM_POINTER / WM_TOUCH), forwarded verbatim;
+         * on macOS 27+ the direct touch forwarder (`macos/direct_touch.m`,
+         * #892) reports touchscreen and Sidecar contacts once
+         * [NativeTaoMacOsTouchBridge.nativeAttachDirectTouch] bound it. The
+         * JVM side aggregates the active set before issuing
          * `ComposeScene.sendPointerEvent`.
          *
          * [phase] is one of [TaoTouchEvent.PRESS] / [MOVE] / [RELEASE] / [CANCEL].
@@ -153,7 +156,7 @@ internal object NativeTaoBridge {
          * [kind] is the [TaoPointerKind] of the contact: a finger, or a pen
          * (and its eraser end), which WM_POINTER reports the same way (#827).
          *
-         * Default no-op so non-Windows callers can ignore it.
+         * Default no-op so Linux callers can ignore it.
          */
         @Suppress("LongParameterList", "FunctionParameterNaming")
         fun onTouchInput(

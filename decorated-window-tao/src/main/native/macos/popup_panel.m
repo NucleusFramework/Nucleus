@@ -362,6 +362,7 @@ static jint scrollGesturePhase(NSEvent *event) {
 @property (nonatomic) BOOL isStandalone;
 @property (nonatomic, strong) id outsideMonitor;           // local NSEvent monitor token
 @property (nonatomic, strong) id outsideGlobalMonitor;       // global NSEvent monitor token (standalone only)
+@property (nonatomic, strong) id outsideTouchObserver;       // NSNotificationCenter token (direct touch, #892)
 @property (nonatomic, strong) NSValue *outsideListenerVal;  // jobject global ref boxed
 // Buttons whose press this panel handed to its parent and whose release has
 // not followed. AppKit keeps the whole gesture on the window that took the
@@ -912,6 +913,10 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeInstallOutsideC
         [NSEvent removeMonitor:panel.outsideGlobalMonitor];
         panel.outsideGlobalMonitor = nil;
     }
+    if (panel.outsideTouchObserver != nil) {
+        [[NSNotificationCenter defaultCenter] removeObserver:panel.outsideTouchObserver];
+        panel.outsideTouchObserver = nil;
+    }
     if (panel.outsideListenerVal != nil) {
         jobject prev = (jobject)panel.outsideListenerVal.pointerValue;
         if (prev != NULL) (*env)->DeleteGlobalRef(env, prev);
@@ -950,6 +955,27 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeInstallOutsideC
         (*jenv)->CallVoidMethod(jenv, cb, sOutsideOnClickMethod, type, btn);
         nucleus_jni_clear_exception(jenv);
         return e;
+    }];
+
+    // Direct touch (#892): a finger on a tao window reaches its gesture
+    // recognizer only (direct_touch.m), never this monitor, so the forwarder
+    // announces each new touch sequence. A popup's own content keeps AppKit's
+    // mouse emulation, so a finger inside it is a mouseDown on the panel.
+    panel.outsideTouchObserver = [[NSNotificationCenter defaultCenter]
+        addObserverForName:@"NucleusTaoDirectTouchBegan"
+                    object:nil
+                     queue:nil
+                usingBlock:^(NSNotification *note) {
+        NucleusTaoPopupPanel *p = weakPanel;
+        if (p == nil || note.object == p) return;
+        NSValue *box = p.outsideListenerVal;
+        if (box == nil) return;
+        jobject cb = (jobject)box.pointerValue;
+        if (cb == NULL) return;
+        JNIEnv *jenv = attachThread();
+        if (jenv == NULL) return;
+        (*jenv)->CallVoidMethod(jenv, cb, sOutsideOnClickMethod, EVT_PTR_DOWN, 1);
+        nucleus_jni_clear_exception(jenv);
     }];
 
     // Global monitor — clicks in OTHER apps. Only needed for standalone
@@ -994,6 +1020,10 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeUninstallOutsid
         [NSEvent removeMonitor:panel.outsideGlobalMonitor];
         panel.outsideGlobalMonitor = nil;
     }
+    if (panel.outsideTouchObserver != nil) {
+        [[NSNotificationCenter defaultCenter] removeObserver:panel.outsideTouchObserver];
+        panel.outsideTouchObserver = nil;
+    }
     if (panel.outsideListenerVal != nil) {
         jobject prev = (jobject)panel.outsideListenerVal.pointerValue;
         if (prev != NULL) (*env)->DeleteGlobalRef(env, prev);
@@ -1029,6 +1059,10 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeRelease(
     if (panel.outsideGlobalMonitor != nil) {
         [NSEvent removeMonitor:panel.outsideGlobalMonitor];
         panel.outsideGlobalMonitor = nil;
+    }
+    if (panel.outsideTouchObserver != nil) {
+        [[NSNotificationCenter defaultCenter] removeObserver:panel.outsideTouchObserver];
+        panel.outsideTouchObserver = nil;
     }
     if (panel.outsideListenerVal != nil) {
         jobject prev = (jobject)panel.outsideListenerVal.pointerValue;

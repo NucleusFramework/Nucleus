@@ -363,8 +363,10 @@ public class TaoWindow internal constructor(
     }
 
     /**
-     * Windows-only touchscreen listener (Tao emits `WindowEvent::Touch` via
-     * WM_POINTER / WM_TOUCH). One callback per finger update — the host is
+     * Touchscreen listener: Windows (Tao emits `WindowEvent::Touch` via
+     * WM_POINTER / WM_TOUCH) and macOS 27+ (touchscreen and Sidecar contacts,
+     * once the scene host bound the window's forwarder, #892). One callback
+     * per finger update — the host is
      * responsible for aggregating the active set before issuing a Compose
      * `sendPointerEvent`. See [NativeTaoBridge.EventCallback.onTouchInput].
      *
@@ -1581,7 +1583,7 @@ public class TaoWindow internal constructor(
         trackpadGestureListener = listener
     }
 
-    /** Windows only — see [TouchInputListener]. No-op on Linux / macOS. */
+    /** Windows and macOS — see [TouchInputListener]. No-op on Linux. */
     public fun onTouchInput(listener: TouchInputListener) {
         touchInputListener = listener
     }

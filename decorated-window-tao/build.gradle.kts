@@ -238,6 +238,10 @@ val taoHeadfulTest =
         System.getProperty("nucleus.tao.headful.filter")?.let {
             systemProperty("nucleus.tao.headful.filter", it)
         }
+        // #892: `false` runs the suite on AppKit's mouse emulation for touch.
+        System.getProperty("nucleus.tao.directTouch")?.let {
+            systemProperty("nucleus.tao.directTouch", it)
+        }
         // Out-of-frame executor switch, for OutOfFrameExecutorHeadfulCases' A/B runs.
         System.getProperty("nucleus.tao.outOfFrameExecutor")?.let {
             systemProperty("nucleus.tao.outOfFrameExecutor", it)

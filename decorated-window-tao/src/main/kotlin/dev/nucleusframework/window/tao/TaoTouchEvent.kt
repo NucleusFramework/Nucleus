@@ -6,7 +6,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 /**
  * Touch phase reported by [NativeTaoLinuxTouchBridge.Callback.onTouchEvent]
  * (Linux multi-finger snapshot path) and [NativeTaoBridge.EventCallback.onTouchInput]
- * (Windows per-finger Tao path). Values are shared so JVM-side hosts can map
+ * (Windows and macOS per-finger path). Values are shared so JVM-side hosts can map
  * them with a single `when`.
  */
 @Suppress("MagicNumber")
