@@ -32,6 +32,10 @@ internal class FakeTransport(
         get() = available
 
     var startUpdatesResult = true
+    var forgetAnswer = ok("""{"removed":false,"skipped":"fake"}""")
+    val forgets =
+        java.util.concurrent.atomic
+            .AtomicInteger()
     val startUpdatesCalls =
         java.util.concurrent.atomic
             .AtomicInteger()
@@ -53,6 +57,13 @@ internal class FakeTransport(
         args: String,
     ) {
         val seen = SeenRequest(id, method, Json.parseToJsonElement(args).jsonObject)
+        // The leftover-configuration check that precedes the first call without a .storekit; never
+        // held, and kept out of [requests] so tests see only the calls they make.
+        if (method == "dev.forget") {
+            forgets.incrementAndGet()
+            receiver.onResponse(id, forgetAnswer)
+            return
+        }
         requests += seen
         if (held) waiting[id] = seen else receiver.onResponse(id, answer(seen))
     }

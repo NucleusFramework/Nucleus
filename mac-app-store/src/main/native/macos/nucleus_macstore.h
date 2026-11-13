@@ -31,6 +31,11 @@ void nms_event(const char *json);
  * and its NSError ** methods, which raw Swift function-pointer calls get wrong. */
 NSObject *_Nullable nms_test_session_create(NSString *bundleId, NSURL *configuration, NSError *_Nullable *_Nullable error);
 BOOL nms_test_session_act(NSObject *session, NSString *action, NSString *productId, NSError *_Nullable *_Nullable error);
+/* Removes the StoreKit Testing configuration storekitagent keeps for bundleId, as Xcode does when it
+ * launches an app without one. Only a debuggable process (get-task-allow) is allowed to. */
+BOOL nms_test_configuration_remove(NSString *bundleId, NSError *_Nullable *_Nullable error);
+/* Whether this process carries com.apple.security.get-task-allow. */
+BOOL nms_is_debuggable(void);
 
 #endif
 

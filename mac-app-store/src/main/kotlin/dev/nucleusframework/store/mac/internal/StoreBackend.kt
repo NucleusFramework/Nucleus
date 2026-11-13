@@ -8,10 +8,12 @@ import dev.nucleusframework.store.mac.PurchaseOptions
 import dev.nucleusframework.store.mac.PurchaseResult
 import dev.nucleusframework.store.mac.PurchaseUpdate
 import dev.nucleusframework.store.mac.StoreAvailability
+import dev.nucleusframework.store.mac.StoreEnvironment
 import dev.nucleusframework.store.mac.StoreErrorCode
 import dev.nucleusframework.store.mac.StoreException
 import dev.nucleusframework.store.mac.StoreProduct
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emptyFlow
@@ -121,8 +123,11 @@ internal class NativeStoreBackend(
     // dropped because a collector is slow.
     private val updateFlow = MutableSharedFlow<PurchaseUpdate>(extraBufferCapacity = Int.MAX_VALUE)
 
+    // Without a configuration, the first call still goes through ensureDevSession once, to drop
+    // a configuration a previous runStoreKit left behind.
     @Volatile
-    private var devReady = dev == null
+    private var devReady = false
+    private val warnedLeftover = AtomicBoolean()
 
     init {
         transport.attach(this)
@@ -167,13 +172,52 @@ internal class NativeStoreBackend(
 
     private suspend fun ensureDevSession() {
         if (devReady) return
-        val configuration = dev ?: return
         devMutex.withLock {
             if (devReady) return
-            val args = jsonArgs("configuration" to configuration.configuration, "framework" to configuration.framework)
-            exchange("dev.configure", args)
+            val configuration = dev
+            if (configuration == null) {
+                forgetLeftoverConfiguration()
+            } else {
+                val args =
+                    jsonArgs("configuration" to configuration.configuration, "framework" to configuration.framework)
+                exchange("dev.configure", args)
+            }
             devReady = true
         }
+    }
+
+    // StoreKit Testing keeps a session's configuration per bundle id after the process ends, so a
+    // build launched after runStoreKit would still get the Xcode environment. Best effort: only a
+    // debuggable build may remove it, and the store works either way.
+    private suspend fun forgetLeftoverConfiguration() {
+        try {
+            val result = WireJson.decodeFromJsonElement(WireForget.serializer(), exchange("dev.forget", "{}"))
+            if (result.removed) {
+                logger.info { "Removed the StoreKit Testing configuration a previous runStoreKit left for this app" }
+            } else {
+                logger.fine { "StoreKit Testing configuration not checked: ${result.skipped}" }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            // Never in the way of the call that triggered it.
+            logger.log(Level.FINE, "Could not remove a leftover StoreKit Testing configuration", e)
+        }
+    }
+
+    // The configuration could not be removed (a build without get-task-allow): say why the store
+    // answers from a .storekit file nobody passed.
+    private fun Purchase.checked(): Purchase {
+        if (environment == StoreEnvironment.Xcode && dev == null && warnedLeftover.compareAndSet(false, true)) {
+            logger.warning {
+                "This app is served by a StoreKit Testing configuration left by a previous runStoreKit, " +
+                    "not by the App Store sandbox. Launch a debuggable build of it (get-task-allow) " +
+                    "without a .storekit once to remove it."
+            }
+        }
+        return this
     }
 
     private suspend fun exchange(
@@ -228,7 +272,7 @@ internal class NativeStoreBackend(
             }
         when (event.type) {
             "transaction" -> {
-                val purchase = event.purchase?.toPurchase() ?: return
+                val purchase = event.purchase?.toPurchase()?.checked() ?: return
                 updateFlow.tryEmit(
                     if (purchase.revocationTime !=
                         null
@@ -282,7 +326,7 @@ internal class NativeStoreBackend(
             }
         return when (outcome.status) {
             "success" ->
-                outcome.purchase?.let { PurchaseResult.Success(it.toPurchase()) }
+                outcome.purchase?.let { PurchaseResult.Success(it.toPurchase().checked()) }
                     ?: failed(StoreErrorCode.Internal, "Purchase succeeded without a transaction")
             "pending" -> PurchaseResult.Pending
             "cancelled" -> PurchaseResult.Cancelled
@@ -291,7 +335,7 @@ internal class NativeStoreBackend(
     }
 
     override suspend fun purchases(): List<Purchase> =
-        decode("purchases", "{}", ListSerializer(WirePurchase.serializer())).map { it.toPurchase() }
+        decode("purchases", "{}", ListSerializer(WirePurchase.serializer())).map { it.toPurchase().checked() }
 
     override suspend fun entitlement(productId: String): EntitlementStatus {
         if (productId.isBlank()) throw StoreException(StoreErrorCode.InvalidArgument, "productId must not be blank")

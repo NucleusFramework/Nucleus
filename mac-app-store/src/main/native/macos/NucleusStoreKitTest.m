@@ -4,6 +4,7 @@
 // process when the autorelease pool drained).
 
 #import <Foundation/Foundation.h>
+#import <Security/Security.h>
 #include "nucleus_macstore.h"
 
 @protocol NMSTestSession <NSObject>
@@ -107,4 +108,46 @@ BOOL nms_test_session_act(NSObject *object, NSString *action, NSString *productI
         *error = [NSError errorWithDomain:NMSErrorDomain code:2 userInfo:@{NSLocalizedDescriptionKey : message}];
     }
     return NO;
+}
+
+// StoreKit Testing's configuration service (storekitagent), the one Xcode talks to. Declared here so
+// StoreKitTest needs not be loaded: NSXPC only needs the selector and its signature.
+@protocol NMSConfigurationService
+- (void)removeConfigurationForBundleID:(NSString *)bundleID completion:(void (^)(NSError *_Nullable error))completion;
+@end
+
+static NSString *const NMSConfigurationServiceName = @"com.apple.storekit.configuration.xpc";
+static const int64_t NMSConfigurationTimeout = 3 * NSEC_PER_SEC;
+
+BOOL nms_test_configuration_remove(NSString *bundleId, NSError **error) {
+    NSXPCConnection *connection = [[NSXPCConnection alloc] initWithMachServiceName:NMSConfigurationServiceName options:0];
+    connection.remoteObjectInterface = [NSXPCInterface interfaceWithProtocol:@protocol(NMSConfigurationService)];
+    [connection resume];
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    __block NSError *failure = nil;
+    id<NMSConfigurationService> service = [connection remoteObjectProxyWithErrorHandler:^(NSError *e) {
+        failure = e;
+        dispatch_semaphore_signal(done);
+    }];
+    [service removeConfigurationForBundleID:bundleId completion:^(NSError *e) {
+        failure = e;
+        dispatch_semaphore_signal(done);
+    }];
+    BOOL answered = dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, NMSConfigurationTimeout)) == 0;
+    [connection invalidate];
+    if (!answered) {
+        failure = [NSError errorWithDomain:NMSErrorDomain code:5 userInfo:@{NSLocalizedDescriptionKey : @"storekitagent did not answer"}];
+    }
+    if (failure != nil && error != NULL) *error = failure;
+    return failure == nil;
+}
+
+BOOL nms_is_debuggable(void) {
+    SecTaskRef task = SecTaskCreateFromSelf(NULL);
+    if (task == NULL) return NO;
+    CFTypeRef value = SecTaskCopyValueForEntitlement(task, CFSTR("com.apple.security.get-task-allow"), NULL);
+    CFRelease(task);
+    BOOL debuggable = value != NULL && CFGetTypeID(value) == CFBooleanGetTypeID() && CFBooleanGetValue((CFBooleanRef)value);
+    if (value != NULL) CFRelease(value);
+    return debuggable;
 }

@@ -53,6 +53,32 @@ enum DevSession {
         session = made
     }
 
+    /// What `forget` did: `skipped` names why nothing was attempted.
+    struct ForgetDto: Encodable {
+        let removed: Bool
+        let skipped: String?
+    }
+
+    /// Drops the configuration a previous session left in storekitagent: it outlives the process,
+    /// and every later launch of the bundle id, `.storekit` or not, would keep the Xcode
+    /// environment instead of the Sandbox or the App Store. Xcode does the same when it launches an
+    /// app without one. storekitagent only lets a debuggable process (get-task-allow) do it.
+    static func forget() throws -> ForgetDto {
+        guard session == nil else { return ForgetDto(removed: false, skipped: "a session is active") }
+        guard isAppBundle, let bundleId = Bundle.main.bundleIdentifier else {
+            return ForgetDto(removed: false, skipped: "not an app bundle")
+        }
+        guard nms_is_debuggable() else { return ForgetDto(removed: false, skipped: "not debuggable") }
+        var error: NSError?
+        guard nms_test_configuration_remove(bundleId, &error) else {
+            throw WireError(
+                code: "platform",
+                message: "Cannot remove the StoreKit Testing configuration: \(error?.localizedDescription ?? "unknown error")"
+            )
+        }
+        return ForgetDto(removed: true, skipped: nil)
+    }
+
     // MARK: Properties
 
     /// The session's settings. They outlive the process: StoreKit Testing keeps them per bundle id.

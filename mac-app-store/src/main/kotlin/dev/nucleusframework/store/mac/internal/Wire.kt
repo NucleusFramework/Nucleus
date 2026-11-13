@@ -31,6 +31,13 @@ internal data class WireEnvelope(
     val error: WireError? = null,
 )
 
+/** The answer to `dev.forget`: [skipped] names why nothing was attempted. */
+@Serializable
+internal data class WireForget(
+    val removed: Boolean = false,
+    val skipped: String? = null,
+)
+
 @Serializable
 internal data class WireAvailability(
     val state: String = "",

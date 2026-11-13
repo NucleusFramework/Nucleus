@@ -84,6 +84,7 @@ build_arch() {
         -framework AppKit \
         -framework Foundation \
         -framework StoreKit \
+        -framework Security \
         -Xlinker -dead_strip \
         -Xlinker -install_name -Xlinker "@rpath/$LIB_NAME" \
         -o "$out"

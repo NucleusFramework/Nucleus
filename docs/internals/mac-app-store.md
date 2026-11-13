@@ -136,7 +136,16 @@ process. Verified on macOS 27 / Xcode 27.1:
 - **Only the app itself can configure.** A helper process (even one carrying the app's bundle id
   in an embedded Info.plist) is identified by its own audit token and refused.
 - The configuration persists in storekitagent per bundle id: later launches without a session
-  still get the Xcode environment and its history.
+  still get the Xcode environment and its history, even a dev-signed build pointed at the
+  Sandbox. Xcode removes it when it launches an app without one; the bridge does the same
+  (`dev.forget`, before the first call when no `.storekit` is set): mach service
+  `com.apple.storekit.configuration.xpc`, protocol `ASDOctaneServiceProtocol`,
+  `removeConfigurationForBundleID:completion:`, declared locally so StoreKitTest is not loaded.
+  storekitagent accepts it only from the bundle itself with get-task-allow (a bare binary gets
+  `SKInternalErrorDomain` 4), so a build without it cannot clean up: a transaction in the Xcode
+  environment without a `.storekit` then logs a warning naming the cause. Removing at the end of a
+  session instead would lose what is meant to survive a restart (settings, unconsumed
+  consumables).
 - `AppStore.sync()` raised the system Apple Account sign-in sheet once during these tests even
   in the Xcode environment; a sheet whose app quits stays on screen unresponsive
   (`AKAuthorizationRemoteViewService` / `storeuid`).

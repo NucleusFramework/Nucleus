@@ -80,6 +80,8 @@ private func handle(_ method: String, args: Data) async throws -> AnyEncodable {
         let request = try decode(DevConfigureArgs.self, args)
         try DevSession.configure(request)
         return AnyEncodable(Empty())
+    case "dev.forget":
+        return AnyEncodable(try DevSession.forget())
     case "dev.clearTransactions":
         try DevSession.require().perform(NSSelectorFromString("clearTransactions"))
         return AnyEncodable(Empty())

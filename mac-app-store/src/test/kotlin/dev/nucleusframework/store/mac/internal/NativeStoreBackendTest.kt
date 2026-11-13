@@ -219,4 +219,34 @@ class NativeStoreBackendTest {
             val error = assertFailsWith<StoreException> { backend.products(listOf("pro")) }
             assertEquals(StoreErrorCode.Unsupported, error.code)
         }
+
+    @Test
+    fun `without a storekit file a leftover configuration is forgotten once, before the first call`() =
+        runBlocking {
+            val transport = FakeTransport { ok("[]") }
+            val backend = NativeStoreBackend(transport)
+            backend.products(listOf("pro"))
+            backend.products(listOf("pro"))
+            assertEquals(1, transport.forgets.get())
+            assertEquals(listOf("products", "products"), transport.methods())
+        }
+
+    @Test
+    fun `a failed forget never fails the call`() =
+        runBlocking {
+            val transport = FakeTransport { ok("[]") }
+            transport.forgetAnswer = err("platform", "storekitagent did not answer")
+            assertEquals(emptyList(), NativeStoreBackend(transport).products(listOf("pro")))
+            transport.forgetAnswer = "not json"
+            assertEquals(emptyList(), NativeStoreBackend(transport).products(listOf("pro")))
+        }
+
+    @Test
+    fun `a storekit session is never forgotten`() =
+        runBlocking {
+            val transport = FakeTransport { ok("[]") }
+            NativeStoreBackend(transport, DevConfiguration("/p.storekit", "/x/StoreKitTest")).products(listOf("pro"))
+            assertEquals(0, transport.forgets.get())
+            assertEquals(listOf("dev.configure", "products"), transport.methods())
+        }
 }
