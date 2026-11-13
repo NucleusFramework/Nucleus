@@ -277,6 +277,7 @@ public final class dev/nucleusframework/widget/WidgetActionSignatures {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetActionSignatures;
 	public final fun of (Ldev/nucleusframework/widget/WidgetElement;)Ljava/util/Map;
+	public final fun run (Ldev/nucleusframework/widget/WidgetInstance;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class dev/nucleusframework/widget/WidgetBackground : java/lang/Enum {
@@ -881,6 +882,12 @@ public final class dev/nucleusframework/widget/WidgetStateKt {
 	public static final fun intStateKey (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetStateKey;
 	public static final fun longStateKey (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetStateKey;
 	public static final fun stringStateKey (Ljava/lang/String;)Ldev/nucleusframework/widget/WidgetStateKey;
+}
+
+public final class dev/nucleusframework/widget/WidgetTreeEncoder {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/widget/WidgetTreeEncoder;
+	public final fun encode (Ldev/nucleusframework/widget/WidgetElement;Lkotlin/jvm/functions/Function1;)Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/widget/WidgetsBuilder {

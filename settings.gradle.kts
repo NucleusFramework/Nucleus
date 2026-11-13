@@ -61,6 +61,7 @@ include(":notification-windows")
 include(":widget-runtime")
 include(":widget-windows")
 include(":widget-macos")
+include(":widget-ios")
 include(":notification-common")
 include(":launcher-windows")
 include(":launcher-linux")
@@ -85,6 +86,7 @@ include(":microsoft-store")
 
 // Nucleus Lab: the single test bench app (examples/lab). One module per probe domain;
 // each contributes its probes to the Metro graph assembled by :examples:lab:app.
+include(":examples:widget-ios-demo")
 include(":examples:lab:core")
 include(":examples:lab:designsystem")
 include(":examples:lab:probes:window")

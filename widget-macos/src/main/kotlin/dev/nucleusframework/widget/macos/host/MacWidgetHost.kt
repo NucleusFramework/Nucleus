@@ -11,6 +11,7 @@ import dev.nucleusframework.widget.WidgetId
 import dev.nucleusframework.widget.WidgetInstance
 import dev.nucleusframework.widget.WidgetSize
 import dev.nucleusframework.widget.WidgetState
+import dev.nucleusframework.widget.WidgetTreeEncoder
 import dev.nucleusframework.widget.macos.DarwinNotificationCenter
 import dev.nucleusframework.widget.macos.NativeWidgetKitBridge
 import dev.nucleusframework.widget.macos.WidgetCenter
@@ -204,15 +205,11 @@ public class MacWidgetHost internal constructor(
         instance: WidgetInstance,
         request: Map<String, String>,
     ) {
-        WidgetEngine.applyInputs(instance, WidgetEngine.parseInputs(request["inputs"].orEmpty()))
         val key = request["key"].orEmpty()
-        if (key.isEmpty()) return
-        val clicked = request["signature"].orEmpty()
-        if (clicked.isNotEmpty() && WidgetActionSignatures.of(WidgetEngine.render(instance).root)[key] != clicked) {
-            WidgetEngine.emit(WidgetEvent.ActionDropped(instance.id, key))
-            return
+        val inputs = WidgetEngine.parseInputs(request["inputs"].orEmpty())
+        if (!WidgetActionSignatures.run(instance, key, request["signature"].orEmpty(), inputs) && key.isNotEmpty()) {
+            logger.fine { "Action '$key' on ${instance.id} not run (outdated render)" }
         }
-        if (!WidgetEngine.invokeAction(instance, key)) logger.fine { "Stale action '$key' on ${instance.id}" }
     }
 
     private fun seen(id: String) {

@@ -39,6 +39,14 @@ nucleusNative {
     macos("nucleus_widget_macos")
 }
 
+// The extension is built with the SwiftUI renderer widget-runtime shares with iOS: editing it rebuilds.
+tasks.named("buildNativeMacOs") {
+    inputs
+        .dir(rootProject.layout.projectDirectory.dir("widget-runtime/src/main/native/swiftui"))
+        .withPropertyName("sharedRenderer")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 mavenPublishing {
     coordinates("dev.nucleusframework", "nucleus.widget-macos", publishVersion)
 

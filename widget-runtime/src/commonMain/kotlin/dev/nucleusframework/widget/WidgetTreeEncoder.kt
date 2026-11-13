@@ -1,32 +1,19 @@
-package dev.nucleusframework.widget.macos.host
-
-import dev.nucleusframework.widget.Alignment
-import dev.nucleusframework.widget.ElementAction
-import dev.nucleusframework.widget.FontWeight
-import dev.nucleusframework.widget.ImageProvider
-import dev.nucleusframework.widget.ImageSize
-import dev.nucleusframework.widget.ResolvedModifier
-import dev.nucleusframework.widget.Spacing
-import dev.nucleusframework.widget.TextSize
-import dev.nucleusframework.widget.WidgetActionSignatures
-import dev.nucleusframework.widget.WidgetBackground
-import dev.nucleusframework.widget.WidgetColor
-import dev.nucleusframework.widget.WidgetElement
-import dev.nucleusframework.widget.WidgetJson
+package dev.nucleusframework.widget
 
 /**
- * Turns a composed [WidgetElement] tree into the JSON the Nucleus widget extension draws with
- * SwiftUI (`NucleusWidgets.swift`, `Node`). Short keys, defaults left out: the extension reads the
- * file on every timeline reload.
+ * Turns a composed [WidgetElement] tree into the JSON the SwiftUI renderer of the WidgetKit hosts
+ * (`widget-macos`, `widget-ios`) draws (`src/main/native/swiftui/NucleusWidgetUI.swift`, `Node`).
+ * Short keys, defaults left out: the extension decodes it on every timeline reload.
  *
  * Every action that runs app code carries its element's signature ([WidgetActionSignatures]), so
  * a click on a render older than the state is dropped rather than run on another element. Inputs
  * have no submit step in WidgetKit: a toggle or a choice writes its value when clicked; text and
  * number fields (Windows only) are left out.
  */
-internal object WidgetTreeEncoder {
-    /** [root] as the extension's JSON; [resolveImage] gives a store-relative path, or `null` to leave it out. */
-    fun encode(
+@InternalNucleusWidgetApi
+public object WidgetTreeEncoder {
+    /** [root] as the renderer's JSON; [resolveImage] gives the image's path, or `null` to leave it out. */
+    public fun encode(
         root: WidgetElement,
         resolveImage: (ImageProvider) -> String?,
     ): String {

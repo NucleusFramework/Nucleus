@@ -30,6 +30,10 @@ kotlin {
         }
     }
 
+    // WidgetKit on iOS (widget-ios): the widgets compose inside the app's widget extension.
+    iosArm64()
+    iosSimulatorArm64()
+
     sourceSets {
         commonMain.dependencies {
             api(libs.compose.runtime)

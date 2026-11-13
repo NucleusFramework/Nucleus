@@ -11,6 +11,27 @@ public object WidgetActionSignatures {
     /** The signature of what each action key of [root] stands for: element kind and label. */
     public fun of(root: WidgetElement): Map<String, String> = buildMap { collect(root, this) }
 
+    /**
+     * Runs a click of a WidgetKit host: writes the [inputs] it carries (a toggle, a choice), then
+     * runs the action [key] unless the render it came from is outdated and the key now names
+     * another element than [signature] ([WidgetEvent.ActionDropped]). An empty [key] only writes
+     * the inputs. Returns whether the action ran.
+     */
+    public suspend fun run(
+        instance: WidgetInstance,
+        key: String,
+        signature: String,
+        inputs: Map<String, String>,
+    ): Boolean {
+        WidgetEngine.applyInputs(instance, inputs)
+        if (key.isEmpty()) return false
+        if (signature.isNotEmpty() && of(WidgetEngine.render(instance).root)[key] != signature) {
+            WidgetEngine.emit(WidgetEvent.ActionDropped(instance.id, key))
+            return false
+        }
+        return WidgetEngine.invokeAction(instance, key)
+    }
+
     private fun collect(
         element: WidgetElement,
         out: MutableMap<String, String>,

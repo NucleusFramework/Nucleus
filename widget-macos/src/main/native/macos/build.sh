@@ -35,7 +35,12 @@ XCODE_BUILD="$(xcodebuild -version | awk '/Build version/ { print $3 }')"
 
 LIB_NAME="libnucleus_widget_macos.dylib"
 EXTENSION_NAME="NucleusWidgets"
-EXTENSION_SOURCES=("$SCRIPT_DIR/extension/NucleusWidgets.swift" "$SCRIPT_DIR/extension/NucleusWidgetBundles.swift")
+# The renderer is shared with iOS (widget-ios): widget-runtime owns it, with the tree format.
+EXTENSION_SOURCES=(
+    "$SCRIPT_DIR/../../../../../widget-runtime/src/main/native/swiftui/NucleusWidgetUI.swift"
+    "$SCRIPT_DIR/extension/NucleusWidgets.swift"
+    "$SCRIPT_DIR/extension/NucleusWidgetBundles.swift"
+)
 # Interactive widgets (Button / Toggle with an AppIntent) and containerBackground: macOS 14.
 EXTENSION_MIN_OS="14.0"
 # Swift Concurrency (the async WidgetCenter calls) ships in the OS from macOS 12.
