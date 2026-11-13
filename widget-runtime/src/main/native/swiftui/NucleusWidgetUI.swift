@@ -204,11 +204,18 @@ struct NodeView: View {
         case "img":
             image
         case "toggle":
-            Toggle(
-                isOn: node.on ?? false,
-                intent: NucleusWidgetAction(widget: widget, action: node.a ?? NodeAction(k: nil, sig: nil, in: nil, url: nil))
-            ) { Text(node.s ?? "") }
-                .toggleStyle(.switch)
+            // A button drawn as a switch: the system switch style is a UIKit / AppKit control, which
+            // WidgetKit replaces with its "unsupported view" placeholder. The click writes the
+            // flipped value the tree carries (`a.in`), like a ChoiceField option.
+            Button(intent: NucleusWidgetAction(widget: widget, action: node.a ?? NodeAction(k: nil, sig: nil, in: nil, url: nil))) {
+                HStack(spacing: 8) {
+                    Text(node.s ?? "")
+                    Spacer(minLength: 0)
+                    NucleusSwitch(isOn: node.on ?? false)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         case "choice":
             choice
         default:
@@ -299,6 +306,21 @@ struct NodeView: View {
         } else {
             backed
         }
+    }
+}
+
+/// A switch in plain SwiftUI shapes, the only kind of view WidgetKit draws.
+struct NucleusSwitch: View {
+    let isOn: Bool
+
+    var body: some View {
+        Capsule()
+            .fill(isOn ? AnyShapeStyle(Color.green) : AnyShapeStyle(Color.secondary.opacity(0.3)))
+            .frame(width: 40, height: 24)
+            .overlay(alignment: isOn ? .trailing : .leading) {
+                Circle().fill(Color.white).padding(2).shadow(radius: 1)
+            }
+            .accessibilityLabel(isOn ? "On" : "Off")
     }
 }
 
