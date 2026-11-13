@@ -101,10 +101,21 @@ func appTransaction() async throws -> AppTransactionDto {
         originalAppVersion: app.originalAppVersion,
         originalPurchaseTime: millis(app.originalPurchaseDate),
         preorderTime: millis(app.preorderDate),
-        revocationTime: millis(app.revocationDate),
+        revocationTime: millis(revocationDate(app)),
         environment: environmentName(app.environment.rawValue),
         jws: verification.jwsRepresentation
     )
+}
+
+/// `AppTransaction.revocationDate` is back-deployed to macOS 13 but only declared by the macOS 27
+/// SDK (Swift 6.4): an older Xcode builds without it and reports no revocation.
+@available(macOS 13.0, *)
+private func revocationDate(_ app: AppTransaction) -> Date? {
+    #if compiler(>=6.4)
+    return app.revocationDate
+    #else
+    return nil
+    #endif
 }
 
 // MARK: - Store page
