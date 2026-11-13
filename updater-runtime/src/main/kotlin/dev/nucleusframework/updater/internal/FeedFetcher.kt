@@ -1,6 +1,7 @@
 package dev.nucleusframework.updater.internal
 
 import dev.nucleusframework.updater.exception.NetworkException
+import dev.nucleusframework.updater.internal.delta.readAtMost
 import java.io.File
 import java.io.InputStream
 import java.net.URI
@@ -19,9 +20,15 @@ internal class FeedFetcher(
     /** Reads a whole text resource; anything but a success is a [NetworkException]. */
     fun readText(url: String): String = open(url).use { it.readBytes().toString(Charsets.UTF_8) }
 
-    /** Reads a whole resource, or `null` when it is absent or unreadable — for optional companions. */
-    fun readBytesOrNull(url: String): ByteArray? =
-        runCatching { open(url).use { it.readBytes() } }
+    /**
+     * Reads a whole resource, or `null` when it is absent, unreadable or larger than [maxBytes] — for
+     * optional companions.
+     */
+    fun readBytesOrNull(
+        url: String,
+        maxBytes: Long = Long.MAX_VALUE,
+    ): ByteArray? =
+        runCatching { open(url).use { readAtMost(it, maxBytes) } }
             .getOrNull()
             ?.takeIf { it.isNotEmpty() }
 
