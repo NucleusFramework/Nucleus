@@ -173,11 +173,13 @@ abstract class AbstractRunStoreKitTask : AbstractNucleusTask() {
                 )
             }
         val args = listOfNotNull("/usr/bin/codesign", "--force", "--deep".takeIf { deep }, "--sign", "-")
-        command(*(args + listOf("--entitlements", entitlements.absolutePath, app.absolutePath)).toTypedArray())
+        command(args + listOf("--entitlements", entitlements.absolutePath, app.absolutePath))
     }
 
-    private fun command(vararg args: String) {
-        execOperations.exec { it.commandLine(*args) }.assertNormalExitValue()
+    private fun command(vararg args: String) = command(args.toList())
+
+    private fun command(args: List<String>) {
+        execOperations.exec { it.commandLine(args) }.assertNormalExitValue()
     }
 
     private companion object {
