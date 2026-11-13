@@ -239,6 +239,9 @@ internal class TaoComposeSceneHostLinux(
         LinkedHashMap()
 
     private val windowInfo = TaoWindowInfo()
+
+    /** This window's view-model store, lifecycle and saved state; see [TaoArchitectureComponents]. */
+    private val architectureComponents = TaoArchitectureComponents()
     private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
     private var directContext: DirectContext? = null
@@ -728,6 +731,7 @@ internal class TaoComposeSceneHostLinux(
                 topInsetPx = { 0 },
                 scaleProvider = { scale },
                 windowInfo = windowInfo,
+                architectureComponentsOwner = architectureComponents.owner,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
@@ -774,6 +778,7 @@ internal class TaoComposeSceneHostLinux(
         window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
         registerTouch()
+        architectureComponents.onAttached(focused = window.isFocused, minimized = window.isMinimized)
     }
 
     /**
@@ -1966,6 +1971,7 @@ internal class TaoComposeSceneHostLinux(
      * budget, and a minimized window allocates nothing.
      */
     fun onMinimizedChanged(minimized: Boolean) {
+        architectureComponents.onMinimizedChanged(minimized)
         if (minimized) purgeGpuResourceCacheAtRest(REST_PURGE_SWAP_WAIT_NS)
     }
 
@@ -2012,6 +2018,10 @@ internal class TaoComposeSceneHostLinux(
         // is real pointer input resuming (see [onPointerMove] / [onPointerButton]),
         // which the compositor withholds for the whole grab.
         windowInfo.isWindowFocused = focused
+        // Masked like the chrome is (see [isCompositorGrabActive]): GNOME reports a
+        // focus-out for the whole of a resize or move grab, and the lifecycle must
+        // not pause and resume on every drag.
+        architectureComponents.onFocusChanged(focused || compositorDragActive)
         if (!focused) interruptRotation()
     }
 
@@ -3719,6 +3729,9 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun detach() {
+        // Paused and stopped while the content is still composed, so its
+        // lifecycle observers see the window go; see [TaoArchitectureComponents.onDetaching].
+        architectureComponents.onDetaching()
         liveHosts -= this
         // Layers whose dismiss animation was still running: Compose closes a
         // native popup layer only when its own disappearance finishes, so an
@@ -3761,6 +3774,8 @@ internal class TaoComposeSceneHostLinux(
         sceneBundle?.close()
         window.clearContentMeasurer()
         sceneBundle = null
+        // After the composition is gone, so no onDispose meets a cleared view model.
+        architectureComponents.onDetached()
 
         // Re-bind THIS window's EGL context before tearing down Skia. The
         // GPU-resource releases that follow (glDeleteFramebuffers /
@@ -4100,6 +4115,7 @@ private class LinuxTaoPlatformContext(
     /** Live px-per-dp factor of the owning scene — see [TaoPlatformContextBase.sceneScale]. */
     private val scaleProvider: () -> Float,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
+    override val architectureComponentsOwner: androidx.compose.ui.platform.PlatformArchitectureComponentsOwner,
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener?,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,

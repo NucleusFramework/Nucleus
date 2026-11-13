@@ -196,6 +196,9 @@ internal class TaoComposeSceneHost(
     // collapses the available area to zero and consistently places itself
     // above the click → the "inverted" feel reported by users.
     private val windowInfo = TaoWindowInfo()
+
+    /** This window's view-model store, lifecycle and saved state; see [TaoArchitectureComponents]. */
+    private val architectureComponents = TaoArchitectureComponents()
     private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
     private var nsViewHandle: Long = 0
@@ -477,6 +480,7 @@ internal class TaoComposeSceneHost(
                 topInsetPx = { 0 },
                 scaleProvider = { scale },
                 windowInfo = windowInfo,
+                architectureComponentsOwner = architectureComponents.owner,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
@@ -528,6 +532,7 @@ internal class TaoComposeSceneHost(
         // resolves it through here, and so does an in-process driver.
         window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
+        architectureComponents.onAttached(focused = window.isFocused, minimized = window.isMinimized)
     }
 
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -910,6 +915,7 @@ internal class TaoComposeSceneHost(
      * (#478), whose renderer must not lose its cache mid-frame.
      */
     fun onMinimizedChanged(minimized: Boolean) {
+        architectureComponents.onMinimizedChanged(minimized)
         if (minimized) purgeGpuResourceCacheAtRest()
     }
 
@@ -928,6 +934,7 @@ internal class TaoComposeSceneHost(
 
     fun onFocusChanged(focused: Boolean) {
         windowInfo.isWindowFocused = focused
+        architectureComponents.onFocusChanged(focused)
         if (!focused) interruptRotation()
         if (!focused && isPressed) {
             // Whatever stole focus mid-click (a native context-menu tracking
@@ -2173,6 +2180,9 @@ internal class TaoComposeSceneHost(
     }
 
     fun detach() {
+        // Paused and stopped while the content is still composed, so its
+        // lifecycle observers see the window go; see [TaoArchitectureComponents.onDetaching].
+        architectureComponents.onDetaching()
         // Layers whose dismiss animation was still running: Compose closes a
         // native popup layer only when its own disappearance finishes, so an
         // owner destroyed mid-animation left the layer's popup window mapped
@@ -2203,6 +2213,8 @@ internal class TaoComposeSceneHost(
         window.clearContentMeasurer()
         sceneBundle?.close()
         sceneBundle = null
+        // After the composition is gone, so no onDispose meets a cleared view model.
+        architectureComponents.onDetached()
         // Drop the TextureView handle before the context it points at dies.
         metalTextureHostCache.invalidate()
         // Close the DirectContext on its owning thread (FIFO after any in-flight
@@ -2285,6 +2297,7 @@ private class TaoPlatformContext(
     /** Live px-per-dp factor of the owning scene — see [TaoPlatformContextBase.sceneScale]. */
     private val scaleProvider: () -> Float,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
+    override val architectureComponentsOwner: androidx.compose.ui.platform.PlatformArchitectureComponentsOwner,
     override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
