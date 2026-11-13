@@ -2,14 +2,18 @@ package dev.nucleusframework.systeminfo.windows
 
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.systeminfo.ConnectivityMonitor
+import dev.nucleusframework.systeminfo.DiskMonitor
+import dev.nucleusframework.systeminfo.EjectArbiter
 import dev.nucleusframework.systeminfo.PlatformSystemInfo
 import dev.nucleusframework.systeminfo.connectivityInfoOf
+import dev.nucleusframework.systeminfo.diskScanLock
 import dev.nucleusframework.systeminfo.model.BatteryInfo
 import dev.nucleusframework.systeminfo.model.BatteryState
 import dev.nucleusframework.systeminfo.model.ComponentInfo
 import dev.nucleusframework.systeminfo.model.ConnectivityInfo
 import dev.nucleusframework.systeminfo.model.CpuGlobalInfo
 import dev.nucleusframework.systeminfo.model.CpuInfo
+import dev.nucleusframework.systeminfo.model.DiskConnection
 import dev.nucleusframework.systeminfo.model.DiskInfo
 import dev.nucleusframework.systeminfo.model.GpuInfo
 import dev.nucleusframework.systeminfo.model.MemoryInfo
@@ -99,6 +103,8 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
         val kinds = bridge.nativeDiskKinds() ?: return emptyList()
         val removable = bridge.nativeDiskRemovable() ?: return emptyList()
         val readOnly = bridge.nativeDiskReadOnly() ?: return emptyList()
+        val volumeIds = bridge.nativeDiskVolumeIds() ?: return emptyList()
+        val connections = bridge.nativeDiskConnections() ?: return emptyList()
         return (0 until count).map { i ->
             DiskInfo(
                 name = names.getOrElse(i) { "" },
@@ -109,6 +115,11 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
                 kind = kinds.getOrElse(i) { "Unknown" },
                 isRemovable = removable.getOrElse(i) { false },
                 isReadOnly = readOnly.getOrElse(i) { false },
+                volumeId = volumeIds.getOrElse(i) { "" }.ifEmpty { null },
+                connection =
+                    DiskConnection.entries.getOrElse(
+                        connections.getOrElse(i) { 0 },
+                    ) { DiskConnection.UNKNOWN },
             )
         }
     }
@@ -385,4 +396,39 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
             stop = bridge::nativeStopConnectivityMonitor,
             fallback = ::connectivityInfo,
         )
+
+    override fun diskChanges(): Flow<List<DiskInfo>> = if (ready()) diskMonitor.changes() else emptyFlow()
+
+    val diskMonitor =
+        DiskMonitor(
+            start = bridge::nativeStartDiskMonitor,
+            stop = bridge::nativeStopDiskMonitor,
+            scan = ::disks,
+        )
+
+    override fun ejectRequests(handler: (DiskInfo) -> Boolean): AutoCloseable =
+        if (ready()) ejectArbiter.register(handler) else AutoCloseable { }
+
+    private val ejectArbiter =
+        EjectArbiter(
+            start = bridge::nativeStartEjectApproval,
+            stop = bridge::nativeStopEjectApproval,
+        )
+
+    // The volume is still mounted while the PnP manager waits for the answer.
+    fun onEjectRequest(mountPoint: String): Boolean {
+        val disk =
+            synchronized(diskScanLock) { disks() }.firstOrNull { it.mountPoint == mountPoint }
+                ?: DiskInfo(
+                    name = mountPoint,
+                    fileSystem = "",
+                    mountPoint = mountPoint,
+                    totalSpace = 0,
+                    availableSpace = 0,
+                    kind = "Unknown",
+                    isRemovable = false,
+                    isReadOnly = false,
+                )
+        return ejectArbiter.decide(disk)
+    }
 }

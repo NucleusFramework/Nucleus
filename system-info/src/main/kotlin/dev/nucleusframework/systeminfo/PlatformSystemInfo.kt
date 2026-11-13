@@ -61,4 +61,14 @@ internal interface PlatformSystemInfo {
             emit(current)
             awaitCancellation()
         }
+
+    // Platforms without a native volume monitor report the current volumes once.
+    fun diskChanges(): Flow<List<DiskInfo>> =
+        flow {
+            emit(synchronized(diskScanLock) { disks() })
+            awaitCancellation()
+        }
+
+    // Platforms without a pre-eject hook never call the handler.
+    fun ejectRequests(handler: (DiskInfo) -> Boolean): AutoCloseable = AutoCloseable { }
 }
