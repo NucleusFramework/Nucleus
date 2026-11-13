@@ -19,6 +19,7 @@ val publishVersion =
 kotlin {
     compilerOptions {
         optIn.add("dev.nucleusframework.widget.InternalNucleusWidgetApi")
+        optIn.add("dev.nucleusframework.widget.ExperimentalNucleusWidgetApi")
         optIn.add("kotlinx.cinterop.ExperimentalForeignApi")
     }
 

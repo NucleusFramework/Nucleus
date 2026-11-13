@@ -103,6 +103,9 @@ public final class dev/nucleusframework/widget/ElementAction$OpenUrl : dev/nucle
 	public fun toString ()Ljava/lang/String;
 }
 
+public abstract interface annotation class dev/nucleusframework/widget/ExperimentalNucleusWidgetApi : java/lang/annotation/Annotation {
+}
+
 public final class dev/nucleusframework/widget/FontWeight : java/lang/Enum {
 	public static final field Bold Ldev/nucleusframework/widget/FontWeight;
 	public static final field Light Ldev/nucleusframework/widget/FontWeight;

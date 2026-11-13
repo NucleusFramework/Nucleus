@@ -22,6 +22,7 @@ kotlin {
     compilerOptions {
         // The runtime owns the host contract it marks.
         optIn.add("dev.nucleusframework.widget.InternalNucleusWidgetApi")
+        optIn.add("dev.nucleusframework.widget.ExperimentalNucleusWidgetApi")
     }
 
     jvm {

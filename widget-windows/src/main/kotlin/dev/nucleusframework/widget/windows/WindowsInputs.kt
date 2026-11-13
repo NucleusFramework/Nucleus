@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import dev.nucleusframework.widget.Action
 import dev.nucleusframework.widget.ActionCallback
 import dev.nucleusframework.widget.ActionParameters
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import dev.nucleusframework.widget.InternalNucleusWidgetApi
 import dev.nucleusframework.widget.PlatformNumberField
 import dev.nucleusframework.widget.PlatformTextField
@@ -32,6 +33,7 @@ import dev.nucleusframework.widget.updateWidgetState
  * state before that action runs.
  */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun TextField(
     key: WidgetStateKey<String>,
     modifier: WidgetModifier = WidgetModifier,
@@ -46,6 +48,7 @@ public fun TextField(
  * whole numbers only (a decimal entry leaves it unset), a [doubleStateKey] any number.
  */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun NumberField(
     key: WidgetStateKey<out Number>,
     modifier: WidgetModifier = WidgetModifier,
@@ -68,12 +71,15 @@ public fun NumberField(
  * ```
  */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun isCustomizing(): Boolean = currentState(CustomizingKey) == true
 
 /** Leaves the widget's customization UI (see [isCustomizing]); input values are kept. */
+@ExperimentalNucleusWidgetApi
 public fun actionFinishCustomization(): Action = actionRunCallback(FinishCustomization)
 
 /** Leaves the customization UI the board asked for (see [isCustomizing]). */
+@ExperimentalNucleusWidgetApi
 public fun WidgetStateHandle.finishCustomization() {
     update { it.remove(CustomizingKey) }
 }

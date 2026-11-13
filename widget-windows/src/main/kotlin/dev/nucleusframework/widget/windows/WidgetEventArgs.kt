@@ -1,5 +1,7 @@
 package dev.nucleusframework.widget.windows
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
+
 /**
  * Data for [WidgetProvider.onActionInvoked], raised when an action is invoked on a widget,
  * such as the user clicking an `Action.Execute` button.
@@ -11,6 +13,7 @@ package dev.nucleusframework.widget.windows
  * @property data The `data` of the invoked action, merged with the card's input values, as JSON.
  * @property customState The custom state last set on the widget with [WidgetManager.updateWidget].
  */
+@ExperimentalNucleusWidgetApi
 public data class WidgetActionInvokedArgs(
     val widgetContext: WidgetContext,
     val verb: String,
@@ -26,6 +29,7 @@ public data class WidgetActionInvokedArgs(
  *
  * @property widgetContext The updated widget context.
  */
+@ExperimentalNucleusWidgetApi
 public data class WidgetContextChangedArgs(
     val widgetContext: WidgetContext,
 )
@@ -39,6 +43,7 @@ public data class WidgetContextChangedArgs(
  * @property widgetContext Context of the widget to customize.
  * @property customState The custom state last set on the widget.
  */
+@ExperimentalNucleusWidgetApi
 public data class WidgetCustomizationRequestedArgs(
     val widgetContext: WidgetContext,
     val customState: String,
@@ -53,6 +58,7 @@ public data class WidgetCustomizationRequestedArgs(
  * @property widgetContext Context of the widget the analytics data relates to.
  * @property analyticsJson The analytics payload, as JSON.
  */
+@ExperimentalNucleusWidgetApi
 public data class WidgetAnalyticsInfoReportedArgs(
     val widgetContext: WidgetContext,
     val analyticsJson: String,
@@ -67,6 +73,7 @@ public data class WidgetAnalyticsInfoReportedArgs(
  * @property widgetContext Context of the widget the error relates to.
  * @property errorJson The error payload, as JSON.
  */
+@ExperimentalNucleusWidgetApi
 public data class WidgetErrorInfoReportedArgs(
     val widgetContext: WidgetContext,
     val errorJson: String,
@@ -81,6 +88,7 @@ public data class WidgetErrorInfoReportedArgs(
  * @property widgetContext Context of the widget that posted the message.
  * @property message The posted message.
  */
+@ExperimentalNucleusWidgetApi
 public data class WidgetMessageReceivedArgs(
     val widgetContext: WidgetContext,
     val message: String,

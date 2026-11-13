@@ -37,6 +37,7 @@ import kotlin.coroutines.coroutineContext
  * is a snapshot, not a live UI, so Compose `remember` / `mutableStateOf` do not survive between
  * renders. Keep everything that must last in the widget state.
  */
+@ExperimentalNucleusWidgetApi
 public abstract class NucleusWidget {
     /**
      * Produces the widget [id]'s content by calling [provideContent]. Suspend work (loading data)
@@ -73,6 +74,7 @@ public abstract class NucleusWidget {
  * [NucleusWidget.update] afterwards to show the change. From an [ActionCallback] of that same
  * widget, it changes the state the action runs on, and the widget is rendered with it right after.
  */
+@ExperimentalNucleusWidgetApi
 public suspend fun updateWidgetState(
     id: WidgetId,
     block: (MutableWidgetState) -> Unit,
@@ -91,13 +93,16 @@ public suspend fun updateWidgetState(
 }
 
 /** The state of the pinned widget [id], like Glance's `getAppWidgetState`; empty when no host runs. */
+@ExperimentalNucleusWidgetApi
 public suspend fun getWidgetState(id: WidgetId): WidgetState = NucleusWidgets.host?.loadState(id) ?: WidgetState.Empty
 
 /** The id of the widget being rendered. */
+@ExperimentalNucleusWidgetApi
 public val LocalWidgetId: androidx.compose.runtime.ProvidableCompositionLocal<WidgetId> =
     staticCompositionLocalOf { error("No widget is being rendered") }
 
 /** The size the widget being rendered is pinned at. */
+@ExperimentalNucleusWidgetApi
 public val LocalSize: androidx.compose.runtime.ProvidableCompositionLocal<WidgetSize> =
     staticCompositionLocalOf { WidgetSize.Medium }
 
@@ -105,6 +110,7 @@ public val LocalSize: androidx.compose.runtime.ProvidableCompositionLocal<Widget
  * The state of the widget being rendered, readable during composition and changeable from
  * click handlers. The widget is rendered again after every click, so changes show at once.
  */
+@ExperimentalNucleusWidgetApi
 public class WidgetStateHandle internal constructor(
     private val state: MutableWidgetState,
 ) {
@@ -122,10 +128,12 @@ internal val LocalWidgetStateHandle =
 
 /** The state of the widget being rendered. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun currentWidgetState(): WidgetStateHandle = LocalWidgetStateHandle.current
 
 /** The value of [key] in the state of the widget being rendered, like Glance's `currentState(key)`. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun <T : Any> currentState(key: WidgetStateKey<T>): T? = LocalWidgetStateHandle.current[key]
 
 internal class RenderSession : AbstractCoroutineContextElement(RenderSession) {

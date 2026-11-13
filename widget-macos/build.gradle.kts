@@ -32,6 +32,7 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
         optIn.add("dev.nucleusframework.widget.InternalNucleusWidgetApi")
+        optIn.add("dev.nucleusframework.widget.ExperimentalNucleusWidgetApi")
     }
 }
 

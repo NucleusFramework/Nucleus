@@ -42,6 +42,7 @@ public fun PlatformTextField(
 
 /** An on/off switch labelled [title], showing and editing [key]; [defaultValue] while unset. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun Switch(
     key: WidgetStateKey<Boolean>,
     title: String,
@@ -66,6 +67,7 @@ public fun Switch(
  * or radio buttons when [isExpanded].
  */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun ChoiceField(
     key: WidgetStateKey<String>,
     choices: List<Choice>,

@@ -4,6 +4,7 @@ package dev.nucleusframework.widget
  * Typed key of a [WidgetState] value. Create keys with [intStateKey], [longStateKey],
  * [doubleStateKey], [booleanStateKey] or [stringStateKey].
  */
+@ExperimentalNucleusWidgetApi
 public class WidgetStateKey<T : Any> internal constructor(
     public val name: String,
     internal val type: Char,
@@ -17,25 +18,31 @@ public class WidgetStateKey<T : Any> internal constructor(
 }
 
 /** An `Int` state key. */
+@ExperimentalNucleusWidgetApi
 public fun intStateKey(name: String): WidgetStateKey<Int> = WidgetStateKey(name, 'i', String::toIntOrNull)
 
 /** A `Long` state key. */
+@ExperimentalNucleusWidgetApi
 public fun longStateKey(name: String): WidgetStateKey<Long> = WidgetStateKey(name, 'l', String::toLongOrNull)
 
 /** A `Double` state key. */
+@ExperimentalNucleusWidgetApi
 public fun doubleStateKey(name: String): WidgetStateKey<Double> = WidgetStateKey(name, 'd', String::toDoubleOrNull)
 
 /** A `Boolean` state key. */
+@ExperimentalNucleusWidgetApi
 public fun booleanStateKey(name: String): WidgetStateKey<Boolean> =
     WidgetStateKey(name, 'b', String::toBooleanStrictOrNull)
 
 /** A `String` state key. */
+@ExperimentalNucleusWidgetApi
 public fun stringStateKey(name: String): WidgetStateKey<String> = WidgetStateKey(name, 's') { it }
 
 /**
  * The state of one pinned widget: typed values persisted by the widget host with the widget
  * itself (on Windows, its custom state), so they survive the app being closed or updated.
  */
+@ExperimentalNucleusWidgetApi
 public open class WidgetState internal constructor(
     internal val values: MutableMap<String, String> = mutableMapOf(),
 ) {
@@ -71,6 +78,7 @@ public open class WidgetState internal constructor(
 }
 
 /** A [WidgetState] that can be changed. */
+@ExperimentalNucleusWidgetApi
 public class MutableWidgetState internal constructor(
     values: MutableMap<String, String> = mutableMapOf(),
 ) : WidgetState(values) {

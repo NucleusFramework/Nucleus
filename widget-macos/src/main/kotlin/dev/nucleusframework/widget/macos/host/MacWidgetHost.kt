@@ -1,6 +1,7 @@
 package dev.nucleusframework.widget.macos.host
 
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import dev.nucleusframework.widget.MutableWidgetState
 import dev.nucleusframework.widget.PinnedWidget
 import dev.nucleusframework.widget.WidgetActionSignatures
@@ -34,6 +35,7 @@ import java.util.logging.Logger
  * WidgetKit has no instance identity for a widget without a configuration intent: a [WidgetId] is
  * `<kind>/<family>`, and two widgets of the same kind and size show the same content and state.
  */
+@ExperimentalNucleusWidgetApi
 public class MacWidgetHost internal constructor(
     private val loadEnvironment: () -> Environment?,
 ) : WidgetHost {

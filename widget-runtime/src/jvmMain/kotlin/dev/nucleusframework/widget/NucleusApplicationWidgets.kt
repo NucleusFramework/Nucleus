@@ -34,6 +34,7 @@ import kotlin.time.Duration.Companion.seconds
  * counts, so recompositions are harmless.
  */
 @Suppress("UnusedReceiverParameter")
+@ExperimentalNucleusWidgetApi
 public fun NucleusApplicationScope.widgets(declarations: WidgetsBuilder.() -> Unit): Unit =
     NucleusWidgets.start(declarations)
 
@@ -48,6 +49,7 @@ public fun NucleusApplicationScope.widgets(declarations: WidgetsBuilder.() -> Un
  * `null` to keep it running.
  */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun NucleusApplicationScope.isWidgetHostOnly(idleExit: Duration? = 30.seconds): Boolean {
     var hostOnly by remember { mutableStateOf(NucleusWidgets.isLaunchedByWidgetHost) }
     SingleInstanceRestoreEffect { hostOnly = false }

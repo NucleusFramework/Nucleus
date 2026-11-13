@@ -2,6 +2,7 @@
 
 package dev.nucleusframework.widget.ios
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import dev.nucleusframework.widget.WidgetActionSignatures
 import dev.nucleusframework.widget.WidgetEngine
 import dev.nucleusframework.widget.WidgetId
@@ -74,6 +75,7 @@ internal object WidgetExtensionEntryPoints {
  * - `perform ␟ kind ␟ family ␟ key ␟ signature ␟ inputs` → `"1"` when the action ran, else `"0"`.
  */
 @ObjCName("NucleusWidgetKitEntryPoints", exact = true)
+@ExperimentalNucleusWidgetApi
 public object NucleusWidgetKitEntryPoints {
     /** The field separator of a request (ASCII unit separator): no widget text holds it. */
     public const val SEPARATOR: Char = '\u001F'

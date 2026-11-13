@@ -1,5 +1,6 @@
 package dev.nucleusframework.widget.macos
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.time.Duration
@@ -15,6 +16,7 @@ import kotlin.time.Duration.Companion.seconds
  * anything. `nucleus.widget-macos` ships that extension too (assembled by the Gradle plugin's
  * `macOS { widgets { } }`), driven by the Glance-like API of `nucleus.widget-runtime`.
  */
+@ExperimentalNucleusWidgetApi
 public object WidgetCenter {
     private val defaultTimeout = 10.seconds
 
@@ -112,6 +114,7 @@ public object WidgetCenter {
  * The controls (Control Center, menu bar) WidgetKit offers for the app. Mirrors WidgetKit's
  * `ControlCenter` (`ControlCenter.shared`), macOS 26 and later: see [isAvailable].
  */
+@ExperimentalNucleusWidgetApi
 public object ControlCenter {
     private val defaultTimeout = 10.seconds
 
@@ -152,6 +155,7 @@ public object ControlCenter {
 }
 
 /** A widget of the app the user added. Mirrors WidgetKit's `WidgetInfo`, without its intents. */
+@ExperimentalNucleusWidgetApi
 public data class WidgetInfo(
     /** The kind the widget's configuration declares. */
     val kind: String,
@@ -167,6 +171,7 @@ public data class WidgetInfo(
 }
 
 /** A control of the app the user added. Mirrors WidgetKit's `ControlInfo`, without its intent. */
+@ExperimentalNucleusWidgetApi
 public data class ControlInfo(
     /** The kind the control's configuration declares. */
     val kind: String,
@@ -183,6 +188,7 @@ public data class ControlInfo(
 }
 
 /** The token a server pushes widget updates with. Mirrors WidgetKit's `WidgetPushInfo`. */
+@ExperimentalNucleusWidgetApi
 public class WidgetPushInfo(
     /** The APNs token. */
     public val token: ByteArray,
@@ -195,6 +201,7 @@ public class WidgetPushInfo(
 }
 
 /** The token a server pushes control updates with. Mirrors WidgetKit's `ControlPushInfo`. */
+@ExperimentalNucleusWidgetApi
 public class ControlPushInfo(
     /** The APNs token. */
     public val token: ByteArray,
@@ -207,6 +214,7 @@ public class ControlPushInfo(
 }
 
 /** The sizes of a macOS widget. Mirrors WidgetKit's `WidgetFamily` on macOS. */
+@ExperimentalNucleusWidgetApi
 public enum class WidgetFamily(
     /** WidgetKit's name for the family (`systemSmall`, …). */
     public val rawValue: String,
@@ -238,6 +246,7 @@ public enum class WidgetFamily(
 }
 
 /** A WidgetKit call failed. */
+@ExperimentalNucleusWidgetApi
 public class WidgetKitException(
     message: String,
 ) : Exception(message)

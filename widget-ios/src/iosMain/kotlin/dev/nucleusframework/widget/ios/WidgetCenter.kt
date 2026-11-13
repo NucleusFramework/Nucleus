@@ -1,5 +1,6 @@
 package dev.nucleusframework.widget.ios
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import dev.nucleusframework.widget.ios.objcbridge.nucleus_widgets_call_class
 
 /**
@@ -10,6 +11,7 @@ import dev.nucleusframework.widget.ios.objcbridge.nucleus_widgets_call_class
  * to its targets (`widget-ios/src/swift/NucleusWidgetCenter.swift`), found at run time. Without
  * it, [isAvailable] is `false` and every call is a no-op (an empty list for [currentConfigurations]).
  */
+@ExperimentalNucleusWidgetApi
 public object WidgetCenter {
     /** Whether the Swift bridge (`NucleusWidgetCenter`) is in the app. */
     public val isAvailable: Boolean get() = SwiftBridge.call("available") != null
@@ -48,6 +50,7 @@ public object WidgetCenter {
 }
 
 /** The controls (Control Center, Lock Screen) of the app. Mirrors WidgetKit's `ControlCenter`, iOS 18. */
+@ExperimentalNucleusWidgetApi
 public object ControlCenter {
     /** Whether controls exist here: iOS 18 or later, with the Swift bridge in the app. */
     public val isAvailable: Boolean get() = SwiftBridge.call("controlsAvailable") == "OK\n"
@@ -77,6 +80,7 @@ public object ControlCenter {
 }
 
 /** A widget of the app the user added. Mirrors WidgetKit's `WidgetInfo`, without its intent. */
+@ExperimentalNucleusWidgetApi
 public data class WidgetInfo(
     /** The kind the widget's configuration declares. */
     val kind: String,
@@ -92,6 +96,7 @@ public data class WidgetInfo(
 }
 
 /** The sizes of an iOS widget. Mirrors WidgetKit's `WidgetFamily` on iOS. */
+@ExperimentalNucleusWidgetApi
 public enum class WidgetFamily(
     /** WidgetKit's name for the family (`systemSmall`, …). */
     public val rawValue: String,
@@ -129,6 +134,7 @@ public enum class WidgetFamily(
 }
 
 /** A WidgetKit call failed. */
+@ExperimentalNucleusWidgetApi
 public class WidgetKitException(
     message: String,
 ) : Exception(message)

@@ -4,6 +4,7 @@ package dev.nucleusframework.widget
  * Text size. Widget hosts only offer a fixed scale (Adaptive Cards on Windows), so sizes are
  * steps of that scale rather than `sp`.
  */
+@ExperimentalNucleusWidgetApi
 public enum class TextSize {
     /** Smaller than the body text. */
     Small,
@@ -22,6 +23,7 @@ public enum class TextSize {
 }
 
 /** Text weight. */
+@ExperimentalNucleusWidgetApi
 public enum class FontWeight {
     /** Thinner than the body text. */
     Light,
@@ -37,6 +39,7 @@ public enum class FontWeight {
  * Semantic text color, resolved by the widget host for its current theme (light, dark, high
  * contrast): widget hosts do not take arbitrary colors for text.
  */
+@ExperimentalNucleusWidgetApi
 public enum class WidgetColor {
     /** The host's default text color. */
     Default,
@@ -58,6 +61,7 @@ public enum class WidgetColor {
 }
 
 /** Semantic container background, resolved by the widget host for its current theme. */
+@ExperimentalNucleusWidgetApi
 public enum class WidgetBackground {
     /** The host's default surface. */
     Default,
@@ -79,6 +83,7 @@ public enum class WidgetBackground {
 }
 
 /** Gap between the children of a [Column] or [Row], as a step of the host's spacing scale. */
+@ExperimentalNucleusWidgetApi
 public enum class Spacing {
     /** No gap. */
     None,
@@ -100,6 +105,7 @@ public enum class Spacing {
 }
 
 /** Style of a [Text]. */
+@ExperimentalNucleusWidgetApi
 public data class TextStyle(
     val fontSize: TextSize = TextSize.Default,
     val fontWeight: FontWeight = FontWeight.Normal,
@@ -107,6 +113,7 @@ public data class TextStyle(
 )
 
 /** Horizontal and vertical alignments. */
+@ExperimentalNucleusWidgetApi
 public object Alignment {
     /** Horizontal alignment of a child. */
     public enum class Horizontal {
@@ -134,6 +141,7 @@ public object Alignment {
 }
 
 /** Size of an [Image]. */
+@ExperimentalNucleusWidgetApi
 public enum class ImageSize {
     /** The image's natural size, shrunk to fit. */
     Auto,

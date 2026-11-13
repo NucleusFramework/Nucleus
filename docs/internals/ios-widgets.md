@@ -4,6 +4,8 @@
 
 ## Using it
 
+The whole API is experimental (`@ExperimentalNucleusWidgetApi`, opt-in level ERROR): opt in module-wide with `compilerOptions { optIn.add("dev.nucleusframework.widget.ExperimentalNucleusWidgetApi") }`.
+
 Kotlin (the app's shared module, a framework that **exports** `widget-ios`):
 
 ```kotlin

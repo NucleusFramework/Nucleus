@@ -4,6 +4,8 @@
 
 ## Using it
 
+The whole API is experimental (`@ExperimentalNucleusWidgetApi`, opt-in level ERROR): opt in module-wide with `compilerOptions { optIn.add("dev.nucleusframework.widget.ExperimentalNucleusWidgetApi") }`.
+
 ```kotlin
 fun main(args: Array<String>) = nucleusApplication(args) {
     widgets { widget("Counter") { CounterWidget() } }

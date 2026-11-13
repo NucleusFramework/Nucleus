@@ -6,9 +6,11 @@ package dev.nucleusframework.widget
  * Create one with [actionRunCallback], [actionOpenUrl], or pass a lambda directly to `onClick`.
  * After any action that runs app code, the widget is rendered again.
  */
+@ExperimentalNucleusWidgetApi
 public sealed interface Action
 
 /** Code run by [actionRunCallback]. Like Glance's `ActionCallback`, minus the Android `Context`. */
+@ExperimentalNucleusWidgetApi
 public fun interface ActionCallback {
     /** Called when the action is invoked on the widget [id]. */
     public suspend fun onAction(
@@ -18,6 +20,7 @@ public fun interface ActionCallback {
 }
 
 /** Values handed to an [ActionCallback]; build them with [actionParametersOf]. */
+@ExperimentalNucleusWidgetApi
 public class ActionParameters internal constructor(
     private val values: Map<Key<*>, Any>,
 ) {
@@ -46,6 +49,7 @@ public class ActionParameters internal constructor(
 }
 
 /** Builds [ActionParameters] from `key to value` pairs. */
+@ExperimentalNucleusWidgetApi
 public fun actionParametersOf(vararg pairs: Pair<ActionParameters.Key<*>, Any>): ActionParameters =
     ActionParameters(pairs.toMap())
 
@@ -53,12 +57,14 @@ public fun actionParametersOf(vararg pairs: Pair<ActionParameters.Key<*>, Any>):
  * Runs [callback] with [parameters] when clicked. Unlike Glance's `actionRunCallback<T>()`, the
  * callback is an instance: Nucleus stays reflection-free (GraalVM native image).
  */
+@ExperimentalNucleusWidgetApi
 public fun actionRunCallback(
     callback: ActionCallback,
     parameters: ActionParameters = actionParametersOf(),
 ): Action = RunCallbackAction(callback, parameters)
 
 /** Opens [url] when clicked: a web page or the app's own deep link (`NucleusApp` scheme). */
+@ExperimentalNucleusWidgetApi
 public fun actionOpenUrl(url: String): Action = OpenUrlAction(url)
 
 internal class LambdaAction(

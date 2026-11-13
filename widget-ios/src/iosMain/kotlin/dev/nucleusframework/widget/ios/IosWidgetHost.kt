@@ -1,5 +1,6 @@
 package dev.nucleusframework.widget.ios
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import dev.nucleusframework.widget.ImageProvider
 import dev.nucleusframework.widget.MutableWidgetState
 import dev.nucleusframework.widget.NucleusWidgets
@@ -42,6 +43,7 @@ import kotlin.concurrent.Volatile
  * `NucleusWidgetsAppGroup` key of the main bundle's Info.plist (set it in both). Only the first
  * call counts.
  */
+@ExperimentalNucleusWidgetApi
 public fun startIosWidgets(
     appGroup: String? = null,
     declarations: WidgetsBuilder.() -> Unit,

@@ -7,6 +7,7 @@ package dev.nucleusframework.widget
  * Only what every widget host can render is offered: there is no padding or arbitrary size,
  * since hosts lay widgets out on their own spacing grid.
  */
+@ExperimentalNucleusWidgetApi
 public sealed interface WidgetModifier {
     /** Appends [other] after this modifier. */
     public infix fun then(other: WidgetModifier): WidgetModifier =
@@ -71,6 +72,7 @@ public fun WidgetModifier.fillMaxWidth(): WidgetModifier = then(WidgetModifier.F
 public fun WidgetModifier.fillMaxHeight(): WidgetModifier = then(WidgetModifier.FillMaxHeight)
 
 /** Takes the whole width and height offered by the parent. */
+@ExperimentalNucleusWidgetApi
 public fun WidgetModifier.fillMaxSize(): WidgetModifier = fillMaxWidth().fillMaxHeight()
 
 /** See [WidgetModifier.Weight]; [weight] must be positive. */
@@ -90,4 +92,5 @@ public fun WidgetModifier.background(background: WidgetBackground): WidgetModifi
 public fun WidgetModifier.clickable(action: Action): WidgetModifier = then(WidgetModifier.Clickable(action))
 
 /** Runs [onClick] when the element is clicked; the widget is rendered again afterwards. */
+@ExperimentalNucleusWidgetApi
 public fun WidgetModifier.clickable(onClick: () -> Unit): WidgetModifier = clickable(LambdaAction(onClick))

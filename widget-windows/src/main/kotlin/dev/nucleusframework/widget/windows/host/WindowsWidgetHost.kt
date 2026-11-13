@@ -2,6 +2,7 @@ package dev.nucleusframework.widget.windows.host
 
 import dev.nucleusframework.core.runtime.NucleusApp
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import dev.nucleusframework.widget.MutableWidgetState
 import dev.nucleusframework.widget.PinnedWidget
 import dev.nucleusframework.widget.WidgetEngine
@@ -44,6 +45,7 @@ import dev.nucleusframework.widget.WidgetSize as RuntimeWidgetSize
  * each widget's [WidgetState] in its custom state. Found by `NucleusWidgets` through
  * `ServiceLoader`; apps never use it directly.
  */
+@ExperimentalNucleusWidgetApi
 public class WindowsWidgetHost : WidgetHost {
     // WidgetManager is only activatable with package identity and the Windows App SDK framework.
     override val isSupported: Boolean by lazy {

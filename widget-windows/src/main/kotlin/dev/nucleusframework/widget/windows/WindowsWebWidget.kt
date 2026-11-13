@@ -1,5 +1,6 @@
 package dev.nucleusframework.widget.windows
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import dev.nucleusframework.widget.NucleusWidget
 import dev.nucleusframework.widget.WidgetId
 import dev.nucleusframework.widget.WidgetState
@@ -21,6 +22,7 @@ import kotlinx.coroutines.withContext
  * }
  * ```
  */
+@ExperimentalNucleusWidgetApi
 public interface WindowsWebWidget {
     /** The page widget [id] shows, read on every render; `null` shows the widget's content. */
     public fun webUrl(
@@ -49,6 +51,7 @@ public interface WindowsWebWidget {
 }
 
 /** A request made by the page of a [WindowsWebWidget], as seen by [WindowsWebWidget.onWebRequest]. */
+@ExperimentalNucleusWidgetApi
 public class WebWidgetRequest(
     /** The requested URI. */
     public val uri: String,
@@ -61,6 +64,7 @@ public class WebWidgetRequest(
 )
 
 /** The answer to a [WebWidgetRequest]. */
+@ExperimentalNucleusWidgetApi
 public class WebWidgetResponse(
     /** The response body. */
     public val body: ByteArray?,
@@ -76,6 +80,7 @@ public class WebWidgetResponse(
  * Sends [message] to the page of the [WindowsWebWidget] [id] (its `window.chrome.webview`
  * `message` event). Needs package identity, like every widget call.
  */
+@ExperimentalNucleusWidgetApi
 public suspend fun sendWebWidgetMessage(
     id: WidgetId,
     message: String,

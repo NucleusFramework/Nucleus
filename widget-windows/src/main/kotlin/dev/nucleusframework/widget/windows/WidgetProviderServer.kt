@@ -1,5 +1,6 @@
 package dev.nucleusframework.widget.windows
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -11,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * at startup, both when the app is launched normally and when COM launches it for the host, so a
  * running instance serves the host instead of a second process being spawned.
  */
+@ExperimentalNucleusWidgetApi
 public object WidgetProviderServer {
     /** Conventional `com:ExeServer` argument passed when COM launches the process for the widget host. */
     public const val COM_SERVER_ARGUMENT: String = "-RegisterProcessAsComServer"

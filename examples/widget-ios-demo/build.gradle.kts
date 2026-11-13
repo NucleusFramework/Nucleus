@@ -8,6 +8,7 @@ plugins {
 kotlin {
     compilerOptions {
         optIn.add("dev.nucleusframework.widget.InternalNucleusWidgetApi")
+        optIn.add("dev.nucleusframework.widget.ExperimentalNucleusWidgetApi")
     }
 
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->

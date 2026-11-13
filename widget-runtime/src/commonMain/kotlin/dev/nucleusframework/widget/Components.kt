@@ -5,6 +5,7 @@ import androidx.compose.runtime.ComposeNode
 
 /** Stacks [content] vertically, [spacing] apart. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun Column(
     modifier: WidgetModifier = WidgetModifier,
     spacing: Spacing = Spacing.Default,
@@ -25,6 +26,7 @@ public fun Column(
 
 /** Lays [content] out horizontally, [spacing] apart. Children share the width as [WidgetModifier.weight] says. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun Row(
     modifier: WidgetModifier = WidgetModifier,
     spacing: Spacing = Spacing.Default,
@@ -45,6 +47,7 @@ public fun Row(
 
 /** Displays [text], wrapping to at most [maxLines] lines. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun Text(
     text: String,
     modifier: WidgetModifier = WidgetModifier,
@@ -65,6 +68,7 @@ public fun Text(
 
 /** A button labelled [text] that runs [onClick]. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun Button(
     text: String,
     onClick: Action,
@@ -87,6 +91,7 @@ public fun Button(
 
 /** A button labelled [text] that runs [onClick]; the widget is rendered again afterwards. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun Button(
     text: String,
     onClick: () -> Unit,
@@ -96,6 +101,7 @@ public fun Button(
 
 /** Displays the image of [provider]. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun Image(
     provider: ImageProvider,
     contentDescription: String?,
@@ -116,6 +122,7 @@ public fun Image(
 
 /** Empty space; with [fillMaxHeight] it pushes the following children to the bottom. */
 @Composable
+@ExperimentalNucleusWidgetApi
 public fun Spacer(modifier: WidgetModifier = WidgetModifier) {
     val resolved = LocalActionRegistry.current.resolve(modifier)
     ComposeNode<WidgetNode.Spacer, WidgetApplier>(

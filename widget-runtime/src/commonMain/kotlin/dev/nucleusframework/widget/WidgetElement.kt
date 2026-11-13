@@ -5,6 +5,7 @@ package dev.nucleusframework.widget
  * [bytes] travel inside every card the host receives, while a resource is read by the host from the
  * installed app.
  */
+@ExperimentalNucleusWidgetApi
 public class ImageProvider private constructor(
     /** The encoded image, when built from bytes. */
     public val bytes: ByteArray?,
@@ -34,6 +35,7 @@ public class ImageProvider private constructor(
 }
 
 /** One option of a [ChoiceField]: [title] is shown, [value] is stored in the widget state. */
+@ExperimentalNucleusWidgetApi
 public data class Choice(
     val title: String,
     val value: String,

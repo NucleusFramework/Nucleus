@@ -1,5 +1,7 @@
 package dev.nucleusframework.widget.windows
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
+
 /**
  * Data for [WidgetResourceProvider.onResourceRequested]. Unlike the other event args this object is
  * live: setting [response] or altering [request] is seen by the widget host.
@@ -8,6 +10,7 @@ package dev.nucleusframework.widget.windows
  *
  * @property widgetContext Context of the widget whose content made the request.
  */
+@ExperimentalNucleusWidgetApi
 public class WidgetResourceRequestedArgs internal constructor(
     public val widgetContext: WidgetContext,
     handle: Long,
@@ -49,6 +52,7 @@ public class WidgetResourceRequestedArgs internal constructor(
  *
  * Mirrors `Microsoft.Windows.Widgets.Providers.WidgetResourceRequest` (WidgetContract 6).
  */
+@ExperimentalNucleusWidgetApi
 public class WidgetResourceRequest internal constructor(
     handle: Long,
 ) {
@@ -83,6 +87,7 @@ public class WidgetResourceRequest internal constructor(
  *
  * Mirrors `Microsoft.Windows.Widgets.Providers.WidgetResourceResponse` (WidgetContract 6).
  */
+@ExperimentalNucleusWidgetApi
 public class WidgetResourceResponse internal constructor(
     handle: Long,
 ) {
@@ -120,6 +125,7 @@ public class WidgetResourceResponse internal constructor(
  *
  * Mirrors the `IMap<String, String>` returned by their `Headers` property.
  */
+@ExperimentalNucleusWidgetApi
 public class WidgetHeaders internal constructor(
     handle: Long,
 ) {
@@ -169,6 +175,7 @@ public class WidgetHeaders internal constructor(
  *
  * Mirrors `Windows.Foundation.Deferral`.
  */
+@ExperimentalNucleusWidgetApi
 public class Deferral internal constructor(
     handle: Long,
 ) {

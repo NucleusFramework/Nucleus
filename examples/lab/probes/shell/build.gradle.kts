@@ -11,6 +11,7 @@ kotlin {
     jvmToolchain(25)
     compilerOptions {
         optIn.add("dev.nucleusframework.window.ExperimentalNucleusApi")
+        optIn.add("dev.nucleusframework.widget.ExperimentalNucleusWidgetApi")
     }
 }
 

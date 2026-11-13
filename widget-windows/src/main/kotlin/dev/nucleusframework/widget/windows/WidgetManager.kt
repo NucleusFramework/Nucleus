@@ -1,5 +1,6 @@
 package dev.nucleusframework.widget.windows
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
 import java.time.Instant
 
 /**
@@ -9,6 +10,7 @@ import java.time.Instant
  * framework package: it is only [available][isAvailable] in a process with package identity that
  * declares the Windows App SDK dependency.
  */
+@ExperimentalNucleusWidgetApi
 public class WidgetManager private constructor() {
     /** Pushes a new template, data and/or custom state to a widget. */
     public fun updateWidget(widgetUpdateRequestOptions: WidgetUpdateRequestOptions) {
@@ -92,6 +94,7 @@ public class WidgetManager private constructor() {
  *
  * @property widgetId Id of the widget to update.
  */
+@ExperimentalNucleusWidgetApi
 public class WidgetUpdateRequestOptions(
     public val widgetId: String,
 ) {
@@ -139,6 +142,7 @@ public class WidgetUpdateRequestOptions(
  *   Windows App SDK predates WidgetContract 9.
  * @property rank The content rank; `null` when the installed Windows App SDK predates WidgetContract 11.
  */
+@ExperimentalNucleusWidgetApi
 public data class WidgetInfo(
     val widgetContext: WidgetContext,
     val template: String,

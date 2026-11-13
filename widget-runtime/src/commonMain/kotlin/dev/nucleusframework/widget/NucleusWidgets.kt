@@ -14,6 +14,7 @@ import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
 
 /** Declares the app's widgets, inside `widgets { }`. */
+@ExperimentalNucleusWidgetApi
 public class WidgetsBuilder internal constructor() {
     internal val factories = linkedMapOf<String, () -> NucleusWidget>()
 
@@ -32,6 +33,7 @@ public class WidgetsBuilder internal constructor() {
 }
 
 /** A widget instance pinned in the widget host. */
+@ExperimentalNucleusWidgetApi
 public data class PinnedWidget(
     val id: WidgetId,
     val definitionId: String,
@@ -40,6 +42,7 @@ public data class PinnedWidget(
 )
 
 /** Something the widget host or the runtime did, for logs and diagnostics. */
+@ExperimentalNucleusWidgetApi
 public sealed interface WidgetEvent {
     /** The widget concerned, when there is one. */
     public val id: WidgetId?
@@ -127,6 +130,7 @@ public sealed interface WidgetEvent {
 }
 
 /** The app's widgets: declaration, host state and events. */
+@ExperimentalNucleusWidgetApi
 public object NucleusWidgets {
     @Volatile
     internal var host: WidgetHost? = null

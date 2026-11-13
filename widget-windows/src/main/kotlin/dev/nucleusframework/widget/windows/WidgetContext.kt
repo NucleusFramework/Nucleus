@@ -1,10 +1,13 @@
 package dev.nucleusframework.widget.windows
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
+
 /**
  * Size of a widget in the widget host.
  *
  * Mirrors `Microsoft.Windows.Widgets.WidgetSize`.
  */
+@ExperimentalNucleusWidgetApi
 public enum class WidgetSize {
     /** The small widget size. */
     Small,
@@ -31,6 +34,7 @@ public enum class WidgetSize {
  * @property size Current size of the widget.
  * @property isActive Whether the widget is currently visible in the host and should be kept up to date.
  */
+@ExperimentalNucleusWidgetApi
 public data class WidgetContext(
     val id: String,
     val definitionId: String,

@@ -1,5 +1,7 @@
 package dev.nucleusframework.widget.windows
 
+import dev.nucleusframework.widget.ExperimentalNucleusWidgetApi
+
 /**
  * Receives widget lifetime callbacks from the widget host.
  *
@@ -11,6 +13,7 @@ package dev.nucleusframework.widget.windows
  * Callbacks run on COM RPC threads and must not block for long. A callback that throws is reported
  * to the host as a failure.
  */
+@ExperimentalNucleusWidgetApi
 public interface WidgetProvider {
     /** A new widget was pinned by the user. Push its initial content with [WidgetManager.updateWidget]. */
     public fun createWidget(widgetContext: WidgetContext)
@@ -39,6 +42,7 @@ public interface WidgetProvider {
  *
  * Mirrors `Microsoft.Windows.Widgets.Providers.IWidgetProvider2` (WidgetContract 2).
  */
+@ExperimentalNucleusWidgetApi
 public interface WidgetProvider2 {
     /** The user requested customization of a widget through the host UI. */
     public fun onCustomizationRequested(customizationRequestedArgs: WidgetCustomizationRequestedArgs)
@@ -49,6 +53,7 @@ public interface WidgetProvider2 {
  *
  * Mirrors `Microsoft.Windows.Widgets.Providers.IWidgetProviderAnalytics` (WidgetContract 2).
  */
+@ExperimentalNucleusWidgetApi
 public interface WidgetProviderAnalytics {
     /** The host reported analytics data about a user interaction with a widget. */
     public fun onAnalyticsInfoReported(args: WidgetAnalyticsInfoReportedArgs)
@@ -59,6 +64,7 @@ public interface WidgetProviderAnalytics {
  *
  * Mirrors `Microsoft.Windows.Widgets.Providers.IWidgetProviderErrors` (WidgetContract 2).
  */
+@ExperimentalNucleusWidgetApi
 public interface WidgetProviderErrors {
     /** The host reported a widget error. */
     public fun onErrorInfoReported(args: WidgetErrorInfoReportedArgs)
@@ -69,6 +75,7 @@ public interface WidgetProviderErrors {
  *
  * Mirrors `Microsoft.Windows.Widgets.Providers.IWidgetProviderMessage` (WidgetContract 6).
  */
+@ExperimentalNucleusWidgetApi
 public interface WidgetProviderMessage {
     /** The widget content posted a message with `window.chrome.webview.postMessage`. */
     public fun onMessageReceived(args: WidgetMessageReceivedArgs)
@@ -81,6 +88,7 @@ public interface WidgetProviderMessage {
  * requests matching the `WebRequestFilter` of the widget definition in the package manifest are
  * routed here.
  */
+@ExperimentalNucleusWidgetApi
 public interface WidgetResourceProvider {
     /**
      * The widget content requested a resource. Set [WidgetResourceRequestedArgs.response] to answer
