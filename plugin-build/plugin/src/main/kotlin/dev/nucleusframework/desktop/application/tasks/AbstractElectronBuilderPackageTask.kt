@@ -19,6 +19,9 @@ import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
 import dev.nucleusframework.desktop.application.internal.AppXLogo
 import dev.nucleusframework.desktop.application.internal.WindowsWidgetsPackaging
 import dev.nucleusframework.desktop.application.internal.electronbuilder.AppXWidgetFiles
+import dev.nucleusframework.desktop.application.internal.FlathubChecks
+import dev.nucleusframework.desktop.application.internal.FlathubRepository
+import dev.nucleusframework.desktop.application.internal.FlathubSpec
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxPolkitActions
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
@@ -146,6 +149,20 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Input
         @get:Optional
         val packageVersion: Property<String> = objects.nullableProperty()
+
+        /**
+         * `linux { flathub { } }`, resolved: a Linux `Tar` archive then carries the app's Flathub
+         * metadata under `share/`, which the Flathub manifest installs (Flathub wants it upstream).
+         */
+        @get:Input
+        @get:Optional
+        val flathubSpec: Property<FlathubSpec> = objects.nullableProperty()
+
+        /** The icon of that metadata: `flathub { iconFile }`, else `linux.iconFile`. */
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.NONE)
+        val flathubIcon: RegularFileProperty = objects.fileProperty()
 
         @get:Input
         @get:Optional
@@ -356,6 +373,7 @@ abstract class AbstractElectronBuilderPackageTask
             ensureResourcesDirForElectronBuilder(workingAppDir)
             bundleSilentUpdateArtifacts(workingAppDir, dist)
             bundlePolkitPolicies(workingAppDir, dist)
+            bundleFlathubMetadata(workingAppDir)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir)
@@ -1883,6 +1901,28 @@ abstract class AbstractElectronBuilderPackageTask
         ) {
             if (currentOS != OS.Linux || targetFormat !in POLKIT_FORMATS) return
             LinuxPolkitActions.writePolicies(workingAppDir, dist.linux.polkitActions.actions)
+        }
+
+        /** Writes [FlathubRepository.archiveFiles] into a Linux `Tar` archive when `flathub { }` is set. */
+        private fun bundleFlathubMetadata(workingAppDir: File) {
+            if (currentOS != OS.Linux || targetFormat != TargetFormat.Tar) return
+            val spec = flathubSpec.orNull ?: return
+            val icon =
+                flathubIcon.orNull?.asFile
+                    ?: throw GradleException(
+                        "linux { flathub { } } needs an icon: flathub { iconFile } or linux.iconFile",
+                    )
+            val iconPng = icon.readBytes()
+            val problems = FlathubChecks.problems(spec) + listOfNotNull(FlathubChecks.iconProblem(iconPng))
+            if (problems.isNotEmpty()) {
+                throw GradleException(
+                    "linux { flathub { } } is not ready for Flathub:\n" + problems.joinToString("\n") { "  - $it" },
+                )
+            }
+            FlathubRepository.archiveFiles(spec, iconPng).forEach { (path, content) ->
+                workingAppDir.resolve(path).apply { parentFile.mkdirs() }.writeBytes(content)
+            }
+            logger.info("Bundled the Flathub metadata of ${spec.appId} ${spec.version} under share/")
         }
 
         private fun bundleSilentUpdateArtifacts(

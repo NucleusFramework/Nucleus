@@ -2788,6 +2788,7 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
 
                 executableName.set(imageName)
                 runtimeAppId.set(resolvedAppIdProvider())
+                configureFlathubMetadata(this, targetFormat)
                 customNodePath.set(NucleusProperties.electronBuilderNodePath(project.providers))
                 configureNodeJs(project, app.nativeDistributions.nodejs)
                 publishMode.set(NucleusProperties.electronBuilderPublishMode(project.providers))

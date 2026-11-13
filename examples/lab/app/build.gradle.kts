@@ -193,8 +193,9 @@ nucleus.application {
                 branch = "master"
                 finishArgs = listOf("--share=ipc", "--socket=x11", "--socket=wayland")
             }
-            // Flathub repackages the released GraalVM tar.gz: generateFlathubRepository writes
-            // build/flathub/dev.nucleusframework.Lab, the content of github.com/flathub/dev.nucleusframework.Lab.
+            // Flathub repackages the released GraalVM tar.gz, which packageGraalvmTar fills with the
+            // metadata below (share/); generateFlathubRepository writes the manifest of
+            // github.com/flathub/dev.nucleusframework.Lab.
             flathub {
                 appId = "dev.nucleusframework.Lab"
                 summary = "Explore the Nucleus desktop APIs"
@@ -203,16 +204,16 @@ nucleus.application {
                 developerName = "Nucleus"
                 archiveUrl =
                     "https://github.com/NucleusFramework/Nucleus/releases/download/v{version}/nucleus-lab-{version}-linux-{arch}.tar.gz"
+                // The default finish-args plus the network, which the Lab's HTTP probes need (native-http,
+                // native-ssl, native-proxy). Notifications and in-app updates (Flatpak.updates) go
+                // through portals and need nothing.
                 finishArgs =
                     listOf(
                         "--share=ipc",
                         "--socket=wayland",
                         "--socket=fallback-x11",
                         "--device=dri",
-                        // Updater, network and HTTP probes
                         "--share=network",
-                        // notification-linux talks to the notification server directly
-                        "--talk-name=org.freedesktop.Notifications",
                     )
                 description =
                     """
