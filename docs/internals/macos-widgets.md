@@ -39,10 +39,10 @@ WidgetKit draws widgets in a sandboxed extension process and only runs Swift. Nu
 ## Silent failures (and what each was)
 
 - **The extension crashes at launch in `_EXRunningExtension._shared`** (`Failed to create running extension`). It was entered at `main`; Xcode links app extensions with `-e _NSExtensionMain` (and `-application-extension`), which sets up the ExtensionKit context first. `build.sh` does the same.
-- **Clicks do nothing, chronod logs `There is no metadata for NucleusWidgetAction`** and linkd `Unable to get teamId … Rejecting invalid client due to requiresValidatedBundle`. AppIntents only run in a bundle signed with a Team ID (Developer ID or Apple Development): ad-hoc builds render and update from the app, but on-widget clicks need a real identity. The metadata itself comes from `swiftc -emit-const-values-path` + `appintentsmetadataprocessor` (Xcode only, not the command-line tools).
+- **Clicks do nothing, chronod logs `There is no metadata for NucleusWidgetAction`** and linkd `Unable to get teamId … Rejecting invalid client due to requiresValidatedBundle`. Two causes, often stacked. Signing: AppIntents only run in a bundle signed with a Team ID (Developer ID or Apple Development); ad-hoc builds render and update from the app, but linkd rejects their clicks. Checked on the desktop: the Lab signed Apple Development runs its widget clicks. A shared bundle id (next item) gives the same metadata error once the signature is accepted. The metadata itself comes from `swiftc -emit-const-values-path` + `appintentsmetadataprocessor` (Xcode only, not the command-line tools).
 - **The gallery keeps showing an old widget** after the extension changed: chronod reuses a running extension process and caches descriptors per version. Kill the `NucleusWidgets` process and bump `CFBundleVersion` (or reinstall).
 - **Re-signing a running app kills it** (its pages no longer match the signature).
-- Many builds sharing one bundle id (worktrees) are all registered with LaunchServices; WidgetKit and linkd may pick another copy. `lsregister -f` the one under test.
+- Many builds sharing one bundle id (worktrees) are all registered with LaunchServices, and linkd reads the intent metadata from another copy: clicks fail with `There is no metadata for NucleusWidgetAction in <bundle id>` even in a team-signed build (seen with 15 Lab copies). Test under a unique bundle id, or `lsregister -u` the other copies. Re-registering the one under test (`lsregister -f`) is not enough.
 
 ## Debugging
 
