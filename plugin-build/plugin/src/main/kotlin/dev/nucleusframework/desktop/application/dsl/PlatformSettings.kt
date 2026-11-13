@@ -170,6 +170,14 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
     val runtimeProvisioningProfile: RegularFileProperty = objects.fileProperty()
 
     /**
+     * A StoreKit configuration (`.storekit`, Xcode › File › New › StoreKit Configuration File)
+     * that `runStoreKit` serves to the app through StoreKit Testing, so in-app purchases
+     * (`nucleus.mac-app-store`) work in development without App Store Connect or an Apple
+     * account. Never packaged.
+     */
+    val storeKitConfiguration: RegularFileProperty = objects.fileProperty()
+
+    /**
      * Target macOS SDK version to set in the app launcher's Mach-O headers via vtool.
      * This allows AppKit to enable features gated behind a specific SDK version
      * (e.g. Liquid Glass requires SDK 26.0).

@@ -128,6 +128,8 @@ jobs:
             "notification-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_notification.dylib"
             "service-management-macos/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_service_management.dylib"
             "service-management-macos/src/main/resources/nucleus/native/darwin-x64/libnucleus_service_management.dylib"
+            "mac-app-store/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macstore.dylib"
+            "mac-app-store/src/main/resources/nucleus/native/darwin-x64/libnucleus_macstore.dylib"
             "notification-linux/src/main/resources/nucleus/native/linux-x64/libnucleus_notification_linux.so"
             "notification-linux/src/main/resources/nucleus/native/linux-aarch64/libnucleus_notification_linux.so"
             "launcher-linux/src/main/resources/nucleus/native/linux-x64/libnucleus_launcher_linux.so"
