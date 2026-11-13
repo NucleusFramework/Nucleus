@@ -1,5 +1,7 @@
 package dev.nucleusframework.store.mac.internal
 
+import dev.nucleusframework.store.mac.AppLicense
+import dev.nucleusframework.store.mac.AppLicenseStatus
 import dev.nucleusframework.store.mac.AppTransactionInfo
 import dev.nucleusframework.store.mac.EntitlementStatus
 import dev.nucleusframework.store.mac.ProductType
@@ -57,6 +59,8 @@ internal interface StoreBackend {
 
     suspend fun appTransaction(): AppTransactionInfo
 
+    suspend fun appLicense(): AppLicense
+
     suspend fun openStorePage(appId: Long?)
 
     /** Runs a `dev.*` method of the StoreKit Testing session; its payload. */
@@ -92,6 +96,8 @@ internal class UnsupportedStoreBackend(
     override suspend fun consume(purchase: Purchase): Unit = unsupported()
 
     override suspend fun appTransaction(): AppTransactionInfo = unsupported()
+
+    override suspend fun appLicense(): AppLicense = AppLicense(AppLicenseStatus.Unavailable, reason, null)
 
     override suspend fun openStorePage(appId: Long?): Unit = unsupported()
 
@@ -354,6 +360,13 @@ internal class NativeStoreBackend(
 
     override suspend fun appTransaction(): AppTransactionInfo =
         decode("appTransaction", "{}", WireAppTransaction.serializer()).toInfo()
+
+    override suspend fun appLicense(): AppLicense =
+        try {
+            decode("license", "{}", WireLicense.serializer()).toLicense()
+        } catch (e: StoreException) {
+            AppLicense(AppLicenseStatus.Unavailable, e.message, null)
+        }
 
     override suspend fun openStorePage(appId: Long?) {
         if (appId != null && appId <= 0) throw StoreException(StoreErrorCode.InvalidArgument, "appId must be positive")

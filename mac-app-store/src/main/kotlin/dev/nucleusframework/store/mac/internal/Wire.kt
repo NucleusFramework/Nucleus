@@ -126,6 +126,14 @@ internal data class WireAppTransaction(
     val jws: String = "",
 )
 
+/** The answer to `license`: `status` is valid, revoked, invalid or unavailable. */
+@Serializable
+internal data class WireLicense(
+    val status: String = "",
+    val reason: String? = null,
+    val app: WireAppTransaction? = null,
+)
+
 @Serializable
 internal data class WireOpened(
     val opened: Boolean = false,

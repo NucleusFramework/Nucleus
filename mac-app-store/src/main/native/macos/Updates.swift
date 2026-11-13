@@ -2,6 +2,7 @@
 // its App Store page.
 
 import AppKit
+import CryptoKit
 import Foundation
 import StoreKit
 
@@ -94,7 +95,12 @@ func appTransaction() async throws -> AppTransactionDto {
     guard case .verified(let app) = verification else {
         throw WireError(code: "verificationFailed", message: "StoreKit could not verify the app transaction")
     }
-    return AppTransactionDto(
+    return appTransactionDto(app, verification.jwsRepresentation)
+}
+
+@available(macOS 13.0, *)
+private func appTransactionDto(_ app: AppTransaction, _ jws: String) -> AppTransactionDto {
+    AppTransactionDto(
         bundleId: app.bundleID,
         appId: app.appID.map { String($0) },
         appVersion: app.appVersion,
@@ -103,8 +109,64 @@ func appTransaction() async throws -> AppTransactionDto {
         preorderTime: millis(app.preorderDate),
         revocationTime: millis(revocationDate(app)),
         environment: environmentName(app.environment.rawValue),
-        jws: verification.jwsRepresentation
+        jws: jws
     )
+}
+
+// MARK: - App license
+
+/// `status`: valid, revoked, invalid (a proof that fails a check), unavailable (no proof now).
+struct LicenseDto: Encodable {
+    let status: String
+    let reason: String?
+    let app: AppTransactionDto?
+}
+
+/// Whether this copy of the app was got from the App Store by this customer, for this Mac: the
+/// Mac App Store's counterpart of a license, since it neither encrypts apps nor has one. A copied
+/// bundle runs; only this check tells it apart. Every check Apple documents for an
+/// `AppTransaction`, on the device:
+/// - the signature (StoreKit's `VerificationResult`);
+/// - the bundle id, so a proof made for another app does not count;
+/// - the device: SHA-384 of the proof's nonce and this Mac's `deviceVerificationID`, both as
+///   lowercase UUID strings, must equal `deviceVerification`, so a proof copied from another
+///   Mac (a container copied along with the app) does not count;
+/// - the revocation (a refund).
+/// No proof at all (offline on the first launch, no App Store account) is `unavailable`, not
+/// `invalid`: the app decides how long to trust it.
+func license() async -> LicenseDto {
+    func unavailable(_ reason: String) -> LicenseDto { LicenseDto(status: "unavailable", reason: reason, app: nil) }
+    guard isAppBundle, let bundleId = Bundle.main.bundleIdentifier else { return unavailable("not an app bundle") }
+    guard #available(macOS 13.0, *) else { return unavailable("AppTransaction needs macOS 13") }
+    let verification: VerificationResult<AppTransaction>
+    do {
+        verification = try await AppTransaction.shared
+    } catch {
+        return unavailable("no app transaction: \(error.localizedDescription)")
+    }
+    let app: AppTransaction
+    switch verification {
+    case .unverified(let unsigned, let error):
+        let dto = appTransactionDto(unsigned, verification.jwsRepresentation)
+        return LicenseDto(status: "invalid", reason: "signature: \(error.localizedDescription)", app: dto)
+    case .verified(let signed):
+        app = signed
+    }
+    let dto = appTransactionDto(app, verification.jwsRepresentation)
+    guard app.bundleID == bundleId else {
+        return LicenseDto(status: "invalid", reason: "made for \(app.bundleID), not \(bundleId)", app: dto)
+    }
+    guard let device = AppStore.deviceVerificationID else {
+        return LicenseDto(status: "unavailable", reason: "no device verification id", app: dto)
+    }
+    let text = verification.deviceVerificationNonce.uuidString.lowercased() + device.uuidString.lowercased()
+    guard Data(SHA384.hash(data: Data(text.utf8))) == verification.deviceVerification else {
+        return LicenseDto(status: "invalid", reason: "made for another Mac", app: dto)
+    }
+    if revocationDate(app) != nil {
+        return LicenseDto(status: "revoked", reason: nil, app: dto)
+    }
+    return LicenseDto(status: "valid", reason: nil, app: dto)
 }
 
 /// `AppTransaction.revocationDate` is back-deployed to macOS 13 but only declared by the macOS 27

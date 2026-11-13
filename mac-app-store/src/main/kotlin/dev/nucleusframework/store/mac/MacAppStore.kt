@@ -73,6 +73,24 @@ public object MacAppStore {
     public suspend fun appTransaction(): AppTransactionInfo = backend.appTransaction()
 
     /**
+     * Checks that this copy of the app was got from the App Store by this customer, on this Mac
+     * (macOS 13+): the app's [appTransaction] must be signed by Apple, made for this bundle id and
+     * this Mac, and not revoked. Every check runs on the device; to also hold the proof against
+     * Apple's servers, send [AppTransactionInfo.signedAppTransaction] to the App Store Server API.
+     *
+     * Never throws: anything that prevents the check is [AppLicenseStatus.Unavailable].
+     *
+     * ```kotlin
+     * when (MacAppStore.appLicense().status) {
+     *     AppLicenseStatus.Valid -> rememberLicensed()
+     *     AppLicenseStatus.Unavailable -> if (!licensedRecently()) showOfflineNotice()
+     *     AppLicenseStatus.Revoked, AppLicenseStatus.Invalid -> showBuyPrompt()
+     * }
+     * ```
+     */
+    public suspend fun appLicense(): AppLicense = backend.appLicense()
+
+    /**
      * Opens the app's page in the App Store app, for ratings or an update the store has not
      * installed yet.
      *

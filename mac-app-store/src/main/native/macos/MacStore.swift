@@ -74,6 +74,8 @@ private func handle(_ method: String, args: Data) async throws -> AnyEncodable {
         return AnyEncodable(Empty())
     case "appTransaction":
         return AnyEncodable(try await appTransaction())
+    case "license":
+        return AnyEncodable(await license())
     case "openStorePage":
         return AnyEncodable(try await openStorePage(try decode(StorePageArgs.self, args).appId))
     case "dev.configure":

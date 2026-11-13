@@ -1,5 +1,6 @@
 package dev.nucleusframework.store.mac.internal
 
+import dev.nucleusframework.store.mac.AppLicenseStatus
 import dev.nucleusframework.store.mac.EntitlementState
 import dev.nucleusframework.store.mac.OfferPaymentMode
 import dev.nucleusframework.store.mac.PeriodUnit
@@ -83,4 +84,13 @@ internal fun entitlementState(value: String): EntitlementState =
         "expired" -> EntitlementState.Expired
         "revoked" -> EntitlementState.Revoked
         else -> EntitlementState.NotOwned
+    }
+
+// An unknown status is not a licence.
+internal fun licenseStatus(value: String): AppLicenseStatus =
+    when (value) {
+        "valid" -> AppLicenseStatus.Valid
+        "revoked" -> AppLicenseStatus.Revoked
+        "unavailable" -> AppLicenseStatus.Unavailable
+        else -> AppLicenseStatus.Invalid
     }

@@ -1,5 +1,6 @@
 package dev.nucleusframework.store.mac.internal
 
+import dev.nucleusframework.store.mac.AppLicense
 import dev.nucleusframework.store.mac.AppTransactionInfo
 import dev.nucleusframework.store.mac.EntitlementStatus
 import dev.nucleusframework.store.mac.IntroductoryOffer
@@ -81,4 +82,11 @@ internal fun WireAppTransaction.toInfo(): AppTransactionInfo =
         revocationTime = instant(revocationTime),
         environment = environment(environment),
         signedAppTransaction = jws,
+    )
+
+internal fun WireLicense.toLicense(): AppLicense =
+    AppLicense(
+        status = licenseStatus(status),
+        reason = reason,
+        appTransaction = app?.toInfo(),
     )

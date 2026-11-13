@@ -5,6 +5,7 @@ The Mac App Store (StoreKit 2) for JVM desktop apps it sells, behind one `MacApp
 - `MacAppStore.purchases` — in-app products: buy them, what the customer owns, consumables,
   and the changes the App Store sends (`purchaseUpdates`)
 - `MacAppStore.appTransaction()` — the signed record of the customer getting the app itself
+- `MacAppStore.appLicense()` — whether this copy was bought: a paid app's licence check
 - `MacAppStore.openStorePage()` — the app's page in the App Store app
 
 macOS 12+ only, and only from an app bundle. Elsewhere every call fails with
@@ -91,6 +92,24 @@ val app = MacAppStore.appTransaction() // macOS 13+
 if (app.originalAppVersion.toInt() < FREEMIUM_BUILD) unlockEverything() // bought before it went free
 MacAppStore.openStorePage(appId = 1234567890) // the Apple ID from App Store Connect
 ```
+
+### A paid app's licence
+
+The Mac App Store neither encrypts apps nor issues a licence: a copied bundle runs. A paid app
+checks its proof of purchase at launch:
+
+```kotlin
+when (MacAppStore.appLicense().status) {
+    AppLicenseStatus.Valid -> rememberLicensed()                      // keep the date
+    AppLicenseStatus.Unavailable -> if (!licensedRecently()) showOfflineNotice()
+    AppLicenseStatus.Revoked, AppLicenseStatus.Invalid -> showBuyPrompt()
+}
+```
+
+`Valid` means the app's `AppTransaction` is signed by Apple, made for this bundle id and this
+Mac, and not refunded. `Unavailable` (offline on the first launch, no App Store account) is not
+evidence of a copy: decide how long a previous `Valid` holds. For a server-side check, send
+`appTransaction.signedAppTransaction` to the App Store Server API.
 
 - `entitlement()` says why a product is not active: `Expired`, `Revoked`, `InBillingRetry`
   (`InGracePeriod` still counts as active).

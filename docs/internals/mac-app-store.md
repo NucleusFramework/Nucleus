@@ -115,6 +115,23 @@ for the Apple Account). `openStorePage` opens `macappstore://apps.apple.com/app/
 through `NSWorkspace`, with the id given or the app transaction's (`nil` in StoreKit Testing, so
 it fails instead of opening anything).
 
+## App licence (`appLicense`)
+
+The Mac App Store has no licence object and does not encrypt apps (FairPlay covers iOS only), so
+`appLicense()` runs the checks Apple documents for an `AppTransaction`, on the device:
+
+1. StoreKit's signature (`VerificationResult.verified`);
+2. `bundleID` equals the running bundle's;
+3. the device: `SHA384(nonce + deviceVerificationID)`, both lowercase UUID strings, equals
+   `deviceVerification` (`AppStore.deviceVerificationID`, macOS 12+; the nonce and hash are on
+   `VerificationResult<AppTransaction>`, macOS 13+), so a proof copied with an app container
+   from another Mac fails;
+4. no `revocationDate` (macOS 27 SDK only, see `revocationDate(_:)`).
+
+A failed check is `invalid`; no proof at all (`AppTransaction.shared` throws: offline first
+launch, no account) is `unavailable` and never thrown, because a paid app must choose a grace
+period rather than lock out a customer who is offline. An unknown wire status maps to `Invalid`.
+
 ## StoreKit Testing without Xcode (dev mode)
 
 `-Dnucleus.macAppStore.storeKitConfiguration` makes `NativeStoreBackend` send

@@ -1,6 +1,7 @@
 package dev.nucleusframework.lab.probes.system.macstore
 
 import dev.nucleusframework.lab.core.Availability
+import dev.nucleusframework.store.mac.AppLicense
 import dev.nucleusframework.store.mac.AppTransactionInfo
 import dev.nucleusframework.store.mac.EntitlementStatus
 import dev.nucleusframework.store.mac.MacAppStore
@@ -37,6 +38,8 @@ interface MacStoreGateway {
     suspend fun consume(purchase: Purchase)
 
     suspend fun appTransaction(): AppTransactionInfo
+
+    suspend fun appLicense(): AppLicense
 
     suspend fun openStorePage()
 
@@ -85,6 +88,8 @@ class NucleusMacStoreGateway : MacStoreGateway {
     }
 
     override suspend fun appTransaction(): AppTransactionInfo = MacAppStore.appTransaction()
+
+    override suspend fun appLicense(): AppLicense = MacAppStore.appLicense()
 
     override suspend fun openStorePage() {
         MacAppStore.openStorePage()

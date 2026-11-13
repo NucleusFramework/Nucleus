@@ -83,6 +83,10 @@ class MacStoreProbe : Probe {
                         "Ask to Buy on: Buy ends Pending; Approve Ask to Buy delivers the purchase as an update",
                     ),
                     Check("app", "App transaction reads the Lab's bundle id in the Xcode environment"),
+                    Check(
+                        "license",
+                        "App license: Valid for the bought Lab; Invalid for a copy of its bundle on another Mac",
+                    ),
                 ),
             keywords =
                 listOf(
@@ -156,6 +160,10 @@ class MacStoreProbe : Probe {
                             enabled = ready,
                         ) { vm.onIntent(MacStoreIntent.ReadAppTransaction) }
                         SecondaryAction(
+                            "App license",
+                            enabled = ready,
+                        ) { vm.onIntent(MacStoreIntent.CheckLicense) }
+                        SecondaryAction(
                             "Open store page",
                             enabled = ready,
                         ) { vm.onIntent(MacStoreIntent.OpenStorePage) }
@@ -189,6 +197,14 @@ class MacStoreProbe : Probe {
                 SubSection("App transaction") {
                     val app = state.app
                     if (app == null) EmptyState("Not read yet.") else Readouts(app.fields())
+                }
+                SubSection("App license") {
+                    val license = state.license
+                    if (license == null) {
+                        EmptyState("Not checked yet.")
+                    } else {
+                        Readouts(listOf("status" to license.status.name, "reason" to license.reason))
+                    }
                 }
                 SubSection("Updates") {
                     Hint(

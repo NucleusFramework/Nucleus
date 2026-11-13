@@ -8,6 +8,7 @@ import dev.nucleusframework.lab.core.mvi.Delivery
 import dev.nucleusframework.lab.core.mvi.Reducer
 import dev.nucleusframework.lab.core.mvi.plusCall
 import dev.nucleusframework.lab.core.mvi.plusDelivery
+import dev.nucleusframework.store.mac.AppLicense
 import dev.nucleusframework.store.mac.AppTransactionInfo
 import dev.nucleusframework.store.mac.Purchase
 import dev.nucleusframework.store.mac.StoreAvailability
@@ -23,6 +24,7 @@ data class MacStoreState(
     val products: List<StoreProduct> = emptyList(),
     val purchases: List<Purchase> = emptyList(),
     val app: AppTransactionInfo? = null,
+    val license: AppLicense? = null,
     /** The product the store-side actions apply to. */
     val actionProductId: String = "premium.monthly",
     /** The StoreKit Testing switches, read from the session (they outlive the Lab). */
@@ -103,6 +105,8 @@ sealed interface MacStoreIntent {
 
     data object ReadAppTransaction : MacStoreIntent
 
+    data object CheckLicense : MacStoreIntent
+
     data object OpenStorePage : MacStoreIntent
 
     data class Switch(
@@ -153,6 +157,12 @@ sealed interface MacStoreEvent {
         override fun toString(): String = "AppTransactionRead(${app.bundleId}, ${app.environment})"
     }
 
+    data class LicenseChecked(
+        val license: AppLicense,
+    ) : MacStoreEvent {
+        override fun toString(): String = "LicenseChecked(${license.status}, ${license.reason})"
+    }
+
     data class ActionProductChanged(
         val productId: String,
     ) : MacStoreEvent
@@ -186,6 +196,7 @@ object MacStoreReducer : Reducer<MacStoreState, MacStoreEvent> {
             is MacStoreEvent.ProductsLoaded -> state.copy(products = event.products)
             is MacStoreEvent.PurchasesListed -> state.copy(purchases = event.purchases)
             is MacStoreEvent.AppTransactionRead -> state.copy(app = event.app)
+            is MacStoreEvent.LicenseChecked -> state.copy(license = event.license)
             is MacStoreEvent.ActionProductChanged -> state.copy(actionProductId = event.productId)
             is MacStoreEvent.Switched -> state.copy(switches = state.switches + (event.switch to event.enabled))
             is MacStoreEvent.Called ->

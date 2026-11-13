@@ -79,6 +79,12 @@ class MacStoreViewModel(
                     returned = { "${it.bundleId} · ${it.environment}" },
                 ) { gateway.appTransaction() }
                     ?.let { dispatch(MacStoreEvent.AppTransactionRead(it)) }
+            MacStoreIntent.CheckLicense ->
+                call(
+                    "appLicense()",
+                    returned = { "${it.status}${it.reason?.let { reason -> " · $reason" }.orEmpty()}" },
+                ) { gateway.appLicense() }
+                    ?.let { dispatch(MacStoreEvent.LicenseChecked(it)) }
             MacStoreIntent.OpenStorePage -> call("openStorePage()") { gateway.openStorePage() }
             is MacStoreIntent.Switch ->
                 call(
