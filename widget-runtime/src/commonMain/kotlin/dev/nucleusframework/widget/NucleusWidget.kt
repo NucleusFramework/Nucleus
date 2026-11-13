@@ -92,9 +92,16 @@ public suspend fun updateWidgetState(
     }
 }
 
-/** The state of the pinned widget [id], like Glance's `getAppWidgetState`; empty when no host runs. */
+/**
+ * The state of the pinned widget [id], like Glance's `getAppWidgetState`; empty when no host runs.
+ * A snapshot: later changes to the widget do not show in it.
+ */
 @ExperimentalNucleusWidgetApi
-public suspend fun getWidgetState(id: WidgetId): WidgetState = NucleusWidgets.host?.loadState(id) ?: WidgetState.Empty
+public suspend fun getWidgetState(id: WidgetId): WidgetState {
+    val host = NucleusWidgets.host ?: return WidgetState.Empty
+    // Copied on the engine's thread: the host's own state is the live one renders and clicks change.
+    return WidgetEngine.serialized { host.loadState(id).toMutable() }
+}
 
 /** The id of the widget being rendered. */
 @ExperimentalNucleusWidgetApi

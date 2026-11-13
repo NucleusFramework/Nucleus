@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nucleus_widget_surface">@android:color/system_neutral1_50</color>
+    <color name="nucleus_widget_text_accent">@android:color/system_accent1_600</color>
+    <color name="nucleus_widget_bg_default">@android:color/system_neutral1_50</color>
+    <color name="nucleus_widget_bg_emphasis">@android:color/system_neutral2_100</color>
+    <color name="nucleus_widget_bg_accent">@android:color/system_accent1_100</color>
+    <color name="nucleus_widget_button">@android:color/system_accent1_600</color>
+    <color name="nucleus_widget_on_button">@android:color/system_accent1_0</color>
+</resources>

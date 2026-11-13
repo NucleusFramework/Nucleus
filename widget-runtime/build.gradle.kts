@@ -2,9 +2,11 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Platform-agnostic widget runtime: the Glance-like API (NucleusWidget, composables, state,
 // actions) and the one-shot composition that turns it into a WidgetElement tree. Hosts
-// (widget-windows, widget-macos) render that tree; this module renders nothing itself.
+// (widget-windows, widget-macos) render that tree. Android is the exception: its host (an
+// AppWidgetProvider drawing RemoteViews) needs no native code and lives in androidMain.
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.androidKotlinMultiplatformLibrary)
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.vanniktechMavenPublish)
 }
@@ -35,6 +37,18 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
 
+    android {
+        namespace = "dev.nucleusframework.widget"
+        compileSdk = 37
+        // PendingIntent.FLAG_IMMUTABLE; Glance's floor too.
+        minSdk = 23
+        // The RemoteViews layouts, colors and drawables the host draws widgets with.
+        androidResources { enable = true }
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(libs.compose.runtime)
@@ -49,6 +63,9 @@ kotlin {
             // already runs nucleusApplication; never forced on consumers.
             compileOnly(project(":nucleus-application"))
         }
+        androidMain.dependencies {
+            implementation(libs.coroutines.android)
+        }
     }
 }
 
@@ -57,7 +74,7 @@ mavenPublishing {
 
     pom {
         name.set("Nucleus Widget Runtime")
-        description.set("Glance-like API for desktop widgets (Windows 11 widgets board, macOS WidgetKit)")
+        description.set("Glance-like API for widgets (Windows 11 widgets board, macOS WidgetKit, Android app widgets)")
         url.set("https://github.com/NucleusFramework/Nucleus")
 
         licenses {

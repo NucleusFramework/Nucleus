@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A switch or a choice option before Android 12: a clickable line with a check glyph. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/nucleus_element"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:minHeight="32dp"
+    android:textColor="@color/nucleus_widget_text"
+    android:textSize="14sp" />
