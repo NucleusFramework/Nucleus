@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launcher's own widget radius, so the frame matches its clipping. -->
+    <dimen name="nucleus_widget_radius">@android:dimen/system_app_widget_background_radius</dimen>
+    <dimen name="nucleus_widget_inner_radius">@android:dimen/system_app_widget_inner_radius</dimen>
+</resources>

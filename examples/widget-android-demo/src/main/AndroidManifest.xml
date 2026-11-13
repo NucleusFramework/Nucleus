@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Lets the fuzz widget reach image URLs (the timeout and failure paths). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:name=".DemoApplication"
+        android:icon="@android:drawable/ic_menu_agenda"
+        android:label="Widget Demo"
+        android:theme="@android:style/Theme.Material.Light">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- The counter's "Open the demo" link. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="widgetdemo" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".CounterWidgetReceiver"
+            android:exported="false"
+            android:label="Counter">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/counter_widget" />
+        </receiver>
+        <receiver
+            android:name=".TasksWidgetReceiver"
+            android:exported="false"
+            android:label="Tasks">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tasks_widget" />
+        </receiver>
+        <receiver
+            android:name=".FuzzWidgetReceiver"
+            android:exported="false"
+            android:label="Fuzz">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/fuzz_widget" />
+        </receiver>
+    </application>
+</manifest>

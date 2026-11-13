@@ -45,7 +45,7 @@ public fun Row(
     )
 }
 
-/** Displays [text], wrapping to at most [maxLines] lines. */
+/** Displays [text], wrapping to at most [maxLines] lines; [maxLines] must be positive, as in Compose. */
 @Composable
 @ExperimentalNucleusWidgetApi
 public fun Text(
@@ -54,6 +54,7 @@ public fun Text(
     style: TextStyle = TextStyle(),
     maxLines: Int = Int.MAX_VALUE,
 ) {
+    require(maxLines > 0) { "maxLines must be positive, was $maxLines" }
     val resolved = LocalActionRegistry.current.resolve(modifier)
     ComposeNode<WidgetNode.Text, WidgetApplier>(
         factory = WidgetNode::Text,

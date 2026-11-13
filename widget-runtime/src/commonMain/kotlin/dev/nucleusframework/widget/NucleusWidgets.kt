@@ -21,7 +21,8 @@ public class WidgetsBuilder internal constructor() {
     /**
      * Declares the widget [definitionId], rendered by the [NucleusWidget] [factory] returns. The id
      * must match a `widget("…")` of the Gradle plugin's `windows { widgets { } }` and / or
-     * `macOS { widgets { } }` (the WidgetKit kind).
+     * `macOS { widgets { } }` (the WidgetKit kind), and on Android the id a
+     * `NucleusWidgetReceiver` subclass passes.
      */
     public fun widget(
         definitionId: String,

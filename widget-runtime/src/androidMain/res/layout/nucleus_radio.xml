@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ only: RemoteViews refuse a CompoundButton before. -->
+<RadioButton xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/nucleus_element"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="32dp"
+    android:textColor="@color/nucleus_widget_text"
+    android:textSize="14sp" />

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget's frame: @android:id/background lets Android 12+ launchers clip it to their radius. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/nucleus_widget_background"
+    android:clipToOutline="true"
+    android:padding="@dimen/nucleus_widget_padding" />
