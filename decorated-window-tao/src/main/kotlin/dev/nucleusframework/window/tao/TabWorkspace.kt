@@ -458,13 +458,14 @@ public class TabWorkspace(
      * Removes the tab [tabId] from the workspace: its group selects a
      * neighbour, and a group left empty is dropped along with its window.
      *
-     * The tab is forgotten entirely, state included — a closed tab is gone,
-     * unlike a satellite, which is only hidden.
+     * The tab is forgotten entirely, state and view models included — a
+     * closed tab is gone, unlike a satellite, which is only hidden.
      */
     public fun close(tabId: String) {
         val entry = entryMap.remove(tabId) ?: return
         entry.group?.let { detach(it, tabId) }
         entry.group = null
+        entry.stateSlot.clear()
     }
 
     /**
@@ -1203,8 +1204,14 @@ public class TabWorkspace(
         move(entry.id, target)
     }
 
+    /**
+     * The tab's declaration left the composition: its content stops, and so
+     * do its view models, cleared once the content is off screen. Its saved
+     * state is kept for a later declaration of the same id.
+     */
     internal fun unregister(entry: TabEntry) {
         entry.content = null
+        entry.stateSlot.clear()
     }
 
     /** Defaults shared with [TabWindows] and [TabStrip]. */

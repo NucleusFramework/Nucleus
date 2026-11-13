@@ -175,6 +175,9 @@ internal class TaoComposeSceneHostWindows(
     var nativePopupLayers: Boolean = false
 
     private val windowInfo = TaoWindowInfo()
+
+    /** This window's view-model store, lifecycle and saved state; see [TaoArchitectureComponents]. */
+    private val architectureComponents = TaoArchitectureComponents()
     private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
     private var hwnd: Long = 0
@@ -546,6 +549,7 @@ internal class TaoComposeSceneHostWindows(
                 topInsetPx = { 0 },
                 scaleProvider = { scale },
                 windowInfo = windowInfo,
+                architectureComponentsOwner = architectureComponents.owner,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
@@ -614,6 +618,7 @@ internal class TaoComposeSceneHostWindows(
         window.onFocusChanged { focused ->
             if (focused) onOwnerFocusGained() else onOwnerFocusLost()
         }
+        architectureComponents.onAttached(focused = window.isFocused, minimized = window.isMinimized)
     }
 
     private fun onOwnerFocusLost() {
@@ -629,6 +634,7 @@ internal class TaoComposeSceneHostWindows(
     private fun markOwnerFocusedFromPointerInput() {
         if (windowInfo.isWindowFocused) return
         windowInfo.isWindowFocused = true
+        architectureComponents.onFocusChanged(true)
         onOwnerFocusGained()
     }
 
@@ -1340,6 +1346,7 @@ internal class TaoComposeSceneHostWindows(
      * (#478), whose renderer must not lose its cache mid-frame.
      */
     fun onMinimizedChanged(minimized: Boolean) {
+        architectureComponents.onMinimizedChanged(minimized)
         if (minimized) purgeGpuResourceCacheAtRest()
     }
 
@@ -1366,6 +1373,7 @@ internal class TaoComposeSceneHostWindows(
         // under the user's hands. `DecoratedWindow` keeps its chrome active
         // through the same question.
         windowInfo.isWindowFocused = focused || isFocusInsideWindowTree()
+        architectureComponents.onFocusChanged(windowInfo.isWindowFocused)
     }
 
     /** Whether Win32 keyboard focus is on this window or on something it contains. */
@@ -2983,6 +2991,9 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun detach() {
+        // Paused and stopped while the content is still composed, so its
+        // lifecycle observers see the window go; see [TaoArchitectureComponents.onDetaching].
+        architectureComponents.onDetaching()
         // Layers whose dismiss animation was still running: Compose closes a
         // native popup layer only when its own disappearance finishes, so an
         // owner destroyed mid-animation left the layer's popup window mapped
@@ -3017,6 +3028,8 @@ internal class TaoComposeSceneHostWindows(
         sceneBundle?.close()
         window.clearContentMeasurer()
         sceneBundle = null
+        // After the composition is gone, so no onDispose meets a cleared view model.
+        architectureComponents.onDetached()
         if (directContext != null) {
             // Belt for TextureView imports a leaked composition may still hold:
             // scene.close() above released the leases of every live one. They
@@ -3113,6 +3126,7 @@ private class WindowsTaoPlatformContext(
     /** Live px-per-dp factor of the owning scene — see [TaoPlatformContextBase.sceneScale]. */
     private val scaleProvider: () -> Float,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
+    override val architectureComponentsOwner: androidx.compose.ui.platform.PlatformArchitectureComponentsOwner,
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,

@@ -167,7 +167,10 @@ internal class SatelliteScopeImpl(
  * `rememberSaveable` state inside [content] survives docking and undocking:
  * the workspace carries it from one host to the next. Plain `remember` state
  * does not, exactly as when any composable moves between windows — hoist it
- * or make it saveable.
+ * or make it saveable. View models from `viewModel { }` inside [content]
+ * belong to the satellite, not to the window showing it: they survive docking,
+ * undocking and hiding, and are cleared when this declaration leaves the
+ * composition.
  *
  * On native **Wayland** the dock drag rides the platform's drag-and-drop
  * session from the header strip: a reduced picture of the palette follows the
@@ -299,6 +302,9 @@ public fun ApplicationScope.Satellite(
         entry.content = content
     }
     DisposableEffect(workspace, entry) {
+        // Re-declared (a new call site) in the frame the old one left: the
+        // old one's clear is still pending while the content is on screen.
+        entry.stateSlot.cancelPendingClear()
         onDispose { workspace.unregister(entry) }
     }
 
