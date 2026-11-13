@@ -8,6 +8,7 @@ package dev.nucleusframework.desktop.application.tasks
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.LaunchAgentDefinition
 import dev.nucleusframework.desktop.application.dsl.MacAppExtension
+import dev.nucleusframework.desktop.application.internal.MacWidgetsPackaging
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.internal.LaunchAgentPlistGenerator
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
@@ -44,6 +45,7 @@ import dev.nucleusframework.desktop.application.internal.files.mangledName
 import dev.nucleusframework.desktop.application.internal.files.normalizedPath
 import dev.nucleusframework.desktop.application.internal.files.nucleusNativeDir
 import dev.nucleusframework.desktop.application.internal.files.transformJar
+import dev.nucleusframework.desktop.application.internal.files.nucleusPackagingOnlyEntries
 import dev.nucleusframework.desktop.application.internal.files.unpackNucleusNativeLibs
 import dev.nucleusframework.desktop.application.internal.installInfoPlistLocalizations
 import dev.nucleusframework.desktop.application.internal.plistDocumentTypes
@@ -420,6 +422,20 @@ abstract class AbstractJPackageTask
         @get:Internal
         val appResourcesDir: DirectoryProperty = objects.directoryProperty()
 
+        /**
+         * The content of [appResourcesDir], tracked: the directory itself is only a location, so a
+         * resource added or changed under `appResourcesRootDir` left the app image up to date and
+         * silently stale. Resolved lazily, as the directory is produced by `prepareAppResources`.
+         */
+        @get:InputFiles
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        internal val appResourcesFiles: ConfigurableFileCollection =
+            objects.fileCollection().from(
+                java.util.concurrent.Callable {
+                    appResourcesDir.orNull?.asFileTree ?: emptyList<java.io.File>()
+                },
+            )
+
         @get:Internal
         private val libsMappingFile: Provider<RegularFile> =
             workingDir.map {
@@ -627,7 +643,14 @@ abstract class AbstractJPackageTask
             // list a dependency's); every other entry, and any JAR without one, stays untouched.
             val nucleusEntries: Set<String> =
                 if (bundleNucleusNatives) jars.flatMapTo(sortedSetOf()) { it.nucleusNativeEntries() } else emptySet()
-            val layout = nucleusEntries.joinToString("\n")
+            // Read by the plugin at packaging only (widget-macos' WidgetKit extension): left out of the JARs.
+            val packagingOnly: Set<String> =
+                if (bundleNucleusNatives) {
+                    jars.flatMapTo(sortedSetOf()) { it.nucleusPackagingOnlyEntries() }
+                } else {
+                    emptySet()
+                }
+            val layout = (nucleusEntries + packagingOnly).joinToString("\n")
             val layoutFile = nucleusNativesLayoutFile.ioFile
             val layoutChanged = !layoutFile.exists() || layoutFile.readText() != layout
 
@@ -641,6 +664,7 @@ abstract class AbstractJPackageTask
                     libsDir = unpackDir,
                     platformDir = nucleusNativeDir.get(),
                     nucleusEntries = nucleusEntries,
+                    packagingOnly = packagingOnly,
                 )
             }
 
@@ -957,7 +981,9 @@ abstract class AbstractJPackageTask
          * custom `entitlementsFile` without them — modern JDKs only need `allow-jit`.
          */
         private fun warnIfHostEntitlementsBlockExtensions(appEntitlementsFile: File?) {
-            if (macAppExtensions.get().isEmpty() || appEntitlementsFile == null) return
+            // The Nucleus widget extension launches fine beside the JVM's default entitlements.
+            val userExtensions = macAppExtensions.get().filter { it.name != MacWidgetsPackaging.EXTENSION_NAME }
+            if (userExtensions.isEmpty() || appEntitlementsFile == null) return
             val offending =
                 listOf(
                     "com.apple.security.cs.allow-unsigned-executable-memory",

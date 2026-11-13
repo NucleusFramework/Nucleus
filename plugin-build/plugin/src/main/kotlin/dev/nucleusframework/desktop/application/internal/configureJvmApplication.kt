@@ -321,6 +321,17 @@ private fun JvmApplicationContext.registerGenerateAppProperties() {
                 val taskId = appxSettings.startupTaskId ?: "SlackStartup"
                 startupTaskId.set(taskId)
             }
+            // The COM class the widgets board activates: the same CLSID the AppX manifest declares.
+            windowsWidgetsClsid.set(
+                project.provider {
+                    val distributions = app.nativeDistributions
+                    if (distributions.windows.widgets.definitions.isEmpty()) {
+                        null
+                    } else {
+                        WindowsWidgetsPackaging.clsid(WindowsWidgetsPackaging.identity(distributions)).toString()
+                    }
+                },
+            )
             // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
             idleGc.set(project.provider { app.optIdleGc })
             partialRedraw.set(project.provider { app.optPartialRedraw })
@@ -1175,12 +1186,13 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         packageTask.macRuntimeEntitlementsFile.set(
             mac.runtimeEntitlementsFile.orElse(defaultRuntimeEntitlements),
         )
-        packageTask.macAppExtensions.set(mac.appExtensions.extensions)
+        packageTask.macAppExtensions.set(macAppExtensionsWithWidgets())
         packageTask.macAppExtensionFiles.from(
             mac.appExtensions.extensions.flatMap {
                 listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
             },
         )
+        macWidgetsExtension()?.let { packageTask.macAppExtensionFiles.from(it.task) }
     }
 }
 
@@ -1304,12 +1316,13 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                 packageTask.urlProtocols.set(app.nativeDistributions.protocols)
                 packageTask.macLayeredIcons.set(mac.layeredIconDir)
                 packageTask.macLaunchAgents.set(mac.launchAgents.agents)
-                packageTask.macAppExtensions.set(mac.appExtensions.extensions)
+                packageTask.macAppExtensions.set(macAppExtensionsWithWidgets())
                 packageTask.macAppExtensionFiles.from(
                     mac.appExtensions.extensions.flatMap {
                         listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
                     },
                 )
+                macWidgetsExtension()?.let { packageTask.macAppExtensionFiles.from(it.task) }
             }
         }
     }

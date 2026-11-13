@@ -227,6 +227,14 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
         fn.execute(appExtensions)
     }
 
+    /** macOS widgets (WidgetKit) the app provides; see [MacWidgetsSettings]. */
+    val widgets: MacWidgetsSettings = MacWidgetsSettings()
+
+    /** Configures [widgets]. */
+    fun widgets(fn: Action<MacWidgetsSettings>) {
+        fn.execute(widgets)
+    }
+
     internal val infoPlistSettings = InfoPlistSettings()
 
     /** Configures extra keys added to the bundle's `Info.plist`. */
@@ -494,6 +502,14 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
     /** Configures the AppX / MSIX package. */
     fun appx(fn: Action<AppXSettings>) {
         fn.execute(appx)
+    }
+
+    /** Windows 11 widgets the app provides; see [WindowsWidgetsSettings]. */
+    val widgets: WindowsWidgetsSettings = objects.newInstance(WindowsWidgetsSettings::class.java)
+
+    /** Configures [widgets]. */
+    fun widgets(fn: Action<WindowsWidgetsSettings>) {
+        fn.execute(widgets)
     }
 
     val portable: PortableSettings = objects.newInstance(PortableSettings::class.java)

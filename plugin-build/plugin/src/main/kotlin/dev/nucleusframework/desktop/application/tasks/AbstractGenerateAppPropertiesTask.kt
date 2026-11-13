@@ -57,6 +57,10 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
 
     @get:Input
     @get:Optional
+    abstract val windowsWidgetsClsid: Property<String>
+
+    @get:Input
+    @get:Optional
     abstract val idleGc: Property<Boolean>
 
     @get:Input
@@ -86,6 +90,7 @@ abstract class AbstractGenerateAppPropertiesTask : DefaultTask() {
         startupWmClass.orNull?.let { props["startup.wm.class"] = it }
         linuxDesktopEntryId.orNull?.let { props["linux.desktop.entry.id"] = it }
         startupTaskId.orNull?.let { props["startup.task.id"] = it }
+        windowsWidgetsClsid.orNull?.let { props["windows.widgets.clsid"] = it }
         if (idleGc.getOrElse(false)) props[NUCLEUS_IDLE_GC_RESOURCE_KEY] = "true"
         if (partialRedraw.getOrElse(false)) props[NUCLEUS_PARTIAL_REDRAW_RESOURCE_KEY] = "true"
         if (mallocArenas.getOrElse(false)) {

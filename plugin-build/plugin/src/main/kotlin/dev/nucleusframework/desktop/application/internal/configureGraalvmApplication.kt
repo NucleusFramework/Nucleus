@@ -2102,10 +2102,12 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
 
     // Embed and (ad-hoc) sign app extensions into Contents/PlugIns after the bundle is sealed,
     // then re-seal the outer bundle without --deep so each extension keeps its own entitlements.
-    val macAppExtensions = app.nativeDistributions.macOS.appExtensions.extensions
+    val macAppExtensions = macAppExtensionsWithWidgets()
     val embedAppExtensions =
         if (macAppExtensions.isNotEmpty()) {
-            registerEmbedGraalvmAppExtensions(macAppExtensions, appBundleName, codesignBundle)
+            registerEmbedGraalvmAppExtensions(macAppExtensions, appBundleName, codesignBundle).also { embed ->
+                macWidgetsExtension()?.let { widgets -> embed.configure { it.dependsOn(widgets.task) } }
+            }
         } else {
             null
         }
@@ -2876,12 +2878,13 @@ private fun JvmApplicationContext.configureGraalvmPlatformPackageSettings(
                 }
             task.macEntitlementsFile.set(mac.entitlementsFile.orElse(defaultEntitlements))
             task.macRuntimeEntitlementsFile.set(mac.runtimeEntitlementsFile.orElse(defaultEntitlements))
-            task.macAppExtensions.set(mac.appExtensions.extensions)
+            task.macAppExtensions.set(macAppExtensionsWithWidgets())
             task.macAppExtensionFiles.from(
                 mac.appExtensions.extensions.flatMap {
                     listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
                 },
             )
+            macWidgetsExtension()?.let { task.macAppExtensionFiles.from(it.task) }
         }
     }
 }
