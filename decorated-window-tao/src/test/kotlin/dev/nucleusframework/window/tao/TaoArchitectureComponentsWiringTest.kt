@@ -33,6 +33,22 @@ class TaoArchitectureComponentsWiringTest {
         assertTrue(problems.isEmpty(), problems.joinToString("\n"))
     }
 
+    /**
+     * On Linux a focus-out during a compositor move or resize grab is masked
+     * from the lifecycle; clearing the mask anywhere but `endCompositorGrab`
+     * would leave the lifecycle on the masked focus after the grab.
+     */
+    @Test
+    fun `the linux host resyncs the lifecycle focus when a compositor grab ends`() {
+        val source = hostSource("TaoComposeSceneHostLinux.kt").readText()
+        val clears = Regex("""(?<!var )compositorDragActive\s*=\s*false""").findAll(source).count()
+        assertTrue(clears == 1, "compositorDragActive cleared $clears times; clear it only through endCompositorGrab()")
+        assertTrue(
+            "architectureComponents.onFocusChanged(windowInfo.isWindowFocused)" in source,
+            "endCompositorGrab() must hand the lifecycle the real focus",
+        )
+    }
+
     private fun hostSource(name: String): File {
         val relative = "src/main/kotlin/dev/nucleusframework/window/tao/scene/$name"
         // Module directory first (Gradle), then the repository root (IDE).

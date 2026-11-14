@@ -2010,6 +2010,16 @@ internal class TaoComposeSceneHostLinux(
         return true
     }
 
+    /**
+     * The compositor grab is over: drops the focus mask and gives the lifecycle
+     * the real focus, which a focus-out masked during the grab left behind.
+     */
+    private fun endCompositorGrab() {
+        if (!compositorDragActive) return
+        compositorDragActive = false
+        architectureComponents.onFocusChanged(windowInfo.isWindowFocused)
+    }
+
     fun onFocusChanged(focused: Boolean) {
         // NB: do NOT clear compositorDragActive on focus-in here. GNOME toggles
         // keyboard focus *during* a compositor resize/move grab, and clearing on
@@ -2950,9 +2960,7 @@ internal class TaoComposeSceneHostLinux(
         // withholds motion for the whole grab), so drop the focus mask here
         // rather than on focus-in, which can toggle mid-grab. See
         // [onFocusChanged].
-        if (compositorDragActive) {
-            compositorDragActive = false
-        }
+        endCompositorGrab()
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
 
@@ -3048,7 +3056,7 @@ internal class TaoComposeSceneHostLinux(
         }
         // Any other real press means no compositor grab is in flight.
         if (pressed) {
-            compositorDragActive = false
+            endCompositorGrab()
             nativePointerDispatchedThisEvent = false
             // A button an embed swallowed the release of must not still be
             // "down" when this press is hit-tested — see [forwardedNativeButtons].
