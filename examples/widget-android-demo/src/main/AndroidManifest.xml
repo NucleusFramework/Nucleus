@@ -58,5 +58,38 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/fuzz_widget" />
         </receiver>
+        <receiver
+            android:name=".DemoTasksWidgetReceiver"
+            android:exported="false"
+            android:label="Tasks (complex)">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/demo_tasks_widget" />
+        </receiver>
+        <receiver
+            android:name=".DemoDashboardWidgetReceiver"
+            android:exported="false"
+            android:label="CI dashboard">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/dashboard_widget" />
+        </receiver>
+        <receiver
+            android:name=".DemoWeatherWidgetReceiver"
+            android:exported="false"
+            android:label="Weather">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/weather_widget" />
+        </receiver>
     </application>
 </manifest>

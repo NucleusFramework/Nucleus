@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An unselected option of a collapsed ChoiceField: a pill, as on WidgetKit. -->
+<Button xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/nucleus_element"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:minHeight="36dp"
+    android:minWidth="0dp"
+    android:stateListAnimator="@null"
+    android:elevation="0dp"
+    android:background="@drawable/nucleus_widget_chip"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
+    android:singleLine="true"
+    android:ellipsize="end"
+    android:textAllCaps="false"
+    android:textColor="@color/nucleus_widget_text_accent"
+    android:textSize="14sp" />
