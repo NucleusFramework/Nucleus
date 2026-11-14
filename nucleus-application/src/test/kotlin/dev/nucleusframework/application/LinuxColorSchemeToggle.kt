@@ -4,7 +4,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Toggles GNOME/portal color-scheme for live E2E tests. [isAvailable] is false
- * without a desktop session (e.g. CI without a session bus).
+ * when the host cannot round-trip a toggle: no `gsettings`, or no XDG Desktop
+ * Portal on the session bus (CI runners ship `gsettings` with its in-memory
+ * backend, but the dark-mode detector only reads through the portal).
  */
 internal object LinuxColorSchemeToggle {
     private const val SCHEMA = "org.gnome.desktop.interface"
