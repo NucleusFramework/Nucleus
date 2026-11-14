@@ -97,6 +97,10 @@ internal fun JvmApplicationContext.configureJvmApplication() {
         registerCleanNativeLibsTransform(project)
     }
 
+    // The Nucleus Tao runtime only runs on Compose 1.13+: fail early instead
+    // of a NoSuchMethodError at run time.
+    configureComposeVersionCheck(project)
+
     // LCD / ClearType text on Windows (#875): patch Compose's hardcoded
     // grayscale PlatformDefault at build time — see LcdTextDefaultTransform.
     configureLcdTextDefaultTransform(project)
