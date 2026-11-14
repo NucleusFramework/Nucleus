@@ -34,6 +34,7 @@ import dev.nucleusframework.window.tao.TaoMonitors
 import dev.nucleusframework.window.tao.TaoMouseButton
 import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
+import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
@@ -51,6 +52,7 @@ import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsTouchBridge
 import dev.nucleusframework.window.tao.initialMacOsScaleFactor
 import dev.nucleusframework.window.tao.installContentMeasurer
 import dev.nucleusframework.window.tao.popup.PopupScreenGeometry
@@ -389,6 +391,7 @@ internal class TaoComposeSceneHost(
         val handle = NativeMetalBridge.nativeAttach(nsView)
         require(handle != 0L) { "Failed to attach CAMetalLayer to NSView" }
         attachmentHandle = handle
+        registerDirectTouch()
         // The partial-redraw oracle reads the presented drawables back (#755).
         if (PartialRedraw.verify) NativeMetalBridge.nativeSetFramebufferOnly(handle, false)
 
@@ -1336,6 +1339,9 @@ internal class TaoComposeSceneHost(
         hasReceivedCursorMove = true
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        // A finger is down: the cursor does not move for it, and a hover event
+        // would read as the contacts' release.
+        if (!touches.isEmpty) return
         if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
         interruptRotation()
         scene?.sendPointerEvent(
@@ -1349,6 +1355,7 @@ internal class TaoComposeSceneHost(
     fun onPointerExited() {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        if (!touches.isEmpty) return
         interruptRotation()
         scene?.sendPointerEvent(
             eventType = PointerEventType.Exit,
@@ -1372,6 +1379,7 @@ internal class TaoComposeSceneHost(
         // fling must not race an open pan session).
         if (pressed) scrollRouter.finishPan()
         interruptRotation()
+        interruptTouches()
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         if (buttonCode == TaoMouseButton.LEFT && pressed) controlClick = currentKeyboardModifiers.isCtrlPressed
@@ -1426,6 +1434,7 @@ internal class TaoComposeSceneHost(
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         // A rotation owns the fingers: a mouse-only Pan / Scroll would release its contacts.
         if (rotateActive) return
+        interruptTouches()
         scrollRouter.onScroll(pointerDeadband.x, pointerDeadband.y, event, currentKeyboardModifiers)
     }
 
@@ -1642,6 +1651,114 @@ internal class TaoComposeSceneHost(
         rotateScale = 1f
     }
 
+    // ── Direct touch (macOS 27+ touchscreen, Sidecar, #892) ──────────────
+    //
+    // AppKit hands direct touches to gesture recognizers only. The forwarder
+    // `macos/direct_touch.m` attaches to this window's content view reports
+    // every contact through `onTouchInput` (the Windows wire), so Compose gets
+    // real PointerType.Touch pointers — multi-touch, finger drags, its own
+    // pinch and rotate — instead of AppKit's mouse emulation (tap → click, pan
+    // → scroll, long press → right click), which the forwarder's presence
+    // turns off for this view. `-Dnucleus.tao.directTouch=false` keeps the
+    // emulation.
+    //
+    // The contacts follow the trackpad rotation's rule: they never coexist
+    // with a mouse-only event (an event lists every active pointer, so one
+    // without them reads as their release). A finger landing ends an open pan
+    // and a rotation; a real cursor move while fingers are down is dropped,
+    // and a click / scroll / exit cancels the touch interaction first.
+
+    private val touches = TaoTouchContacts()
+
+    private fun registerDirectTouch() {
+        if (!directTouchEnabled) return
+        // Touch runs user pointer-input code exactly like the mouse path, so
+        // it gets the same guard: a rethrow unwinds into
+        // `EventDispatcher.guarded`, i.e. the fatal path.
+        window.onTouchInput { phase, id, xFixed, yFixed, _ ->
+            exceptionHandler.catchExceptions { onTouchInput(phase, id, xFixed, yFixed) }
+        }
+        NativeTaoMacOsTouchBridge.nativeAttachDirectTouch(window.handle)
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    private fun onTouchInput(
+        phase: Int,
+        id: Long,
+        xFixed: Int,
+        yFixed: Int,
+    ) {
+        val sc = scene ?: return
+        currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
+        windowInfo.keyboardModifiers = currentKeyboardModifiers
+        if (phase == TaoTouchEvent.PRESS && touches.isEmpty) {
+            scrollRouter.finishPan()
+            interruptRotation()
+        }
+        val composeType =
+            touches.update(
+                phase,
+                id,
+                xFixed / TRACKPAD_POSITION_SCALE,
+                yFixed / TRACKPAD_POSITION_SCALE,
+                // AppKit reports no finger pressure: the standard "average touch".
+                pressure = 1f,
+                type = PointerType.Touch,
+                onPress = ::onTouchPress,
+            ) ?: return
+        // Cancel first: a Release delivered before the cancel is an ordinary
+        // touch-up, which a tap detector takes as a tap. After it, the Release
+        // only clears the scene's record of the contact.
+        if (phase == TaoTouchEvent.CANCEL && composeType == PointerEventType.Release) {
+            sc.cancelPointerInput()
+        }
+        // As on Windows and Compose iOS: no event-level button, empty mask.
+        sc.sendPointerEvent(
+            eventType = composeType,
+            pointers = touches.pointers(),
+            keyboardModifiers = currentKeyboardModifiers,
+        )
+        touches.purgeAfterDispatch(phase, id)
+    }
+
+    private fun onTouchPress() {
+        if (nsViewHandle != 0L && NativeTaoMacOsNativeViewBridge.isLoaded) {
+            // As for a click: the finger landed on Compose (the forwarder
+            // declines NativeView children), so typing goes to Compose.
+            NativeTaoMacOsNativeViewBridge.nativeMakeContentViewFirstResponder(nsViewHandle)
+        }
+    }
+
+    /**
+     * A mouse-only event is about to reach the scene while fingers are down:
+     * it would read as their release, so cancel the touch interaction first
+     * — cancelled, so the contacts do not land as a tap.
+     */
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    private fun interruptTouches() {
+        if (touches.isEmpty) return
+        val sc = scene
+        if (sc != null) {
+            sc.cancelPointerInput()
+            for (pointer in touches.pointers()) {
+                touches.update(
+                    TaoTouchEvent.CANCEL,
+                    pointer.id.value,
+                    pointer.position.x,
+                    pointer.position.y,
+                    1f,
+                    PointerType.Touch,
+                )
+            }
+            sc.sendPointerEvent(
+                eventType = PointerEventType.Release,
+                pointers = touches.pointers(),
+                keyboardModifiers = currentKeyboardModifiers,
+            )
+        }
+        touches.clear()
+    }
+
     /**
      * Converts a Tao keyboard event (already reshaped to AWT-style values by
      * `keymap.rs` / `TaoWindow.dispatchKey`) into a Compose `KeyEvent` and
@@ -1730,6 +1847,13 @@ internal class TaoComposeSceneHost(
         // `CURSOR_FIXED_SCALE` on the Rust side).
         private const val TRACKPAD_POSITION_SCALE: Float = 1024f
         private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
+
+        /**
+         * `-Dnucleus.tao.directTouch=false` leaves touchscreen and Sidecar
+         * contacts on AppKit's mouse emulation (#892). Read once.
+         */
+        private val directTouchEnabled: Boolean =
+            System.getProperty("nucleus.tao.directTouch", "true").toBoolean()
 
         // Two synthesised touch pointers for rotation (pinch is a Scale event
         // unless a rotation already owns the gesture). 120 px keeps `detectTransformGestures` rotation slop

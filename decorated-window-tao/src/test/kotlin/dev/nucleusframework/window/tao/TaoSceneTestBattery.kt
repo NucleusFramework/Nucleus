@@ -39,6 +39,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadScaleTest
 import dev.nucleusframework.window.tao.scene.TaoSceneWindowsTouchpadTest
+import dev.nucleusframework.window.tao.scene.TaoTouchContactsTest
 import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import dev.nucleusframework.window.tao.workspace.DragControllerTest
 import dev.nucleusframework.window.tao.workspace.HostGeometryTest
@@ -524,6 +525,18 @@ public object TaoSceneTestBattery {
         }
         run("TaoTrackpadScaleSessionTest: aSecondStartIsIgnoredWhileActive") {
             TaoTrackpadScaleSessionTest().aSecondStartIsIgnoredWhileActive()
+        }
+        run("TaoTouchContactsTest: everyContactIsListedUntilItsReleaseWentOut") {
+            TaoTouchContactsTest().everyContactIsListedUntilItsReleaseWentOut()
+        }
+        run("TaoTouchContactsTest: aMoveForAnUnknownFingerPressesIt") {
+            TaoTouchContactsTest().aMoveForAnUnknownFingerPressesIt()
+        }
+        run("TaoTouchContactsTest: aReleaseOrCancelForAnUnknownContactMakesNoEvent") {
+            TaoTouchContactsTest().aReleaseOrCancelForAnUnknownContactMakesNoEvent()
+        }
+        run("TaoTouchContactsTest: aPenHoversStaysAfterItsLiftAndExitsOnCancel") {
+            TaoTouchContactsTest().aPenHoversStaysAfterItsLiftAndExitsOnCancel()
         }
         run("TaoTouchEventTimeTest: delayedDeliveryPreservesSampleIntervals") {
             TaoTouchEventTimeTest().delayedDeliveryPreservesSampleIntervals()
