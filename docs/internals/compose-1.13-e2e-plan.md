@@ -103,7 +103,7 @@ Ids are `<area>-<nn>`. "All OS" means L-X11, L-WL, W-REAL.
 | S-03 | `./gradlew :decorated-window-tao:apiCheck` and `detekt` | Exit 0 |
 | S-04 | `./gradlew :decorated-window-tao:taoHeadfulTest` (full suite) | Exit code 0 (= zero failed cases). Compare the failing set against the same run on `nucleus-3.0` (1.12) when non-zero; only new failures count |
 | S-05 | `./gradlew preMerge` (Linux only, long) | Exit 0 |
-| S-06 | In a sample app, pin `org.jetbrains.compose.ui:ui-desktop` with `strictly("1.12.1")` and run `createDistributable` | Build fails with `Nucleus requires Compose Multiplatform 1.13 or newer…`. Apply `org.jetbrains.compose` 1.12.x instead: the build only warns about the Hot Reload agent. Revert afterwards |
+| S-06 | In a sample app, pin `org.jetbrains.compose.ui:ui-desktop` with `strictly("1.12.1")` and run `createDistributable` | Build fails with `Nucleus requires Compose Multiplatform 1.13 or newer…`. Apply `org.jetbrains.compose` 1.12.x instead: the build only warns about the Hot Reload agent. When a 1.14 prerelease exists, resolve it: the build passes with one "has not been tested" warning per runtime classpath. Revert afterwards |
 
 On Wayland, S-04 runs the cases that support Wayland; note which were skipped.
 
