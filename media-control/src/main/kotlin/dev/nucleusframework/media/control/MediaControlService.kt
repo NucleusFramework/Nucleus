@@ -64,6 +64,9 @@ public object MediaControlService {
     /**
      * Update the metadata shown in the system media center.
      * Call whenever the track changes.
+     * On Linux, title, artist and album identify the track. Updating only duration
+     * or cover art preserves its MPRIS track ID. Tracks with identical title,
+     * artist and album cannot be distinguished by this API.
      */
     public fun setMetadata(metadata: MediaMetadata) {
         backend.setMetadata(
