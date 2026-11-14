@@ -57,4 +57,9 @@ internal class TaoPointerDeadband {
         hasDispatched = true
         return true
     }
+
+    /** Lets the next Move through whatever its distance, e.g. after the pointer left the scene. */
+    fun forget() {
+        hasDispatched = false
+    }
 }

@@ -278,6 +278,25 @@ internal class TaoComposeSceneHost(
 
     private val isInteropAttached: Boolean get() = interopAttachCount + overlayAttachCount > 0
 
+    /**
+     * The part of each overlay embed that AppKit shows, in root px, keyed by
+     * its handle. AppKit hit-tests those views itself, but the content view's
+     * tracking area still reports every move under them: a Compose node there
+     * must not look hovered while the pointer is on the native view.
+     */
+    private val overlayVisibleRects: MutableMap<Long, IntRect> = LinkedHashMap()
+
+    /** The pointer is on an overlay embed and Compose was sent an Exit for it. */
+    private var pointerOnOverlay: Boolean = false
+
+    private fun isOnOverlay(
+        xPx: Float,
+        yPx: Float,
+    ): Boolean =
+        overlayVisibleRects.values.any { rect ->
+            xPx >= rect.left && xPx < rect.right && yPx >= rect.top && yPx < rect.bottom
+        }
+
     private fun syncOverlayNativeViews() {
         for (sync in overlayFrameSyncs.values) sync()
     }
@@ -1091,6 +1110,7 @@ internal class TaoComposeSceneHost(
                 regionToken: Any,
             ) {
                 outer.overlayFrameSyncs.remove(regionToken)
+                outer.overlayVisibleRects.remove(childHandle)
                 outer.detachedNativeViews += childHandle
                 NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
                 outer.overlayAttachCount--
@@ -1103,6 +1123,7 @@ internal class TaoComposeSceneHost(
                 visible: IntRect,
             ) {
                 if (handle in outer.detachedNativeViews) return
+                outer.overlayVisibleRects[handle] = visible
                 // No redraw request: this runs inside the frame that commits it.
                 outer.transaction.add {
                     if (handle in outer.detachedNativeViews) return@add
@@ -1404,6 +1425,19 @@ internal class TaoComposeSceneHost(
         hasReceivedCursorMove = true
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        // On an overlay embed AppKit delivers the pointer to the native view:
+        // Compose sees the pointer leave instead. A drag Compose started keeps
+        // its moves, since AppKit keeps sending them to the content view.
+        if (!isPressed && overlayVisibleRects.isNotEmpty() && isOnOverlay(xPx, yPx)) {
+            if (!pointerOnOverlay) {
+                onPointerExited()
+                pointerOnOverlay = true
+                // Back on Compose, the first Move must go through.
+                pointerDeadband.forget()
+            }
+            return
+        }
+        pointerOnOverlay = false
         if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
         interruptRotation()
         scene?.sendPointerEvent(
@@ -1415,6 +1449,7 @@ internal class TaoComposeSceneHost(
     }
 
     fun onPointerExited() {
+        pointerOnOverlay = false
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         interruptRotation()
