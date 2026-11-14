@@ -20,7 +20,8 @@ typedef struct {
     long long start_time;     // Unix timestamp
     long long run_time;       // seconds
     long parent_pid;
-    char cmd[1024];           // NUL-separated cmdline
+    char *cmd;                // Raw /proc/[pid]/cmdline (NUL-terminated args), malloc'd
+    size_t cmd_len;
     char cwd[512];
     char root[512];
 } proc_entry_t;
@@ -129,20 +130,21 @@ static void read_proc_extras(long pid, proc_entry_t *pe) {
     n = readlink(link_path, pe->root, sizeof(pe->root) - 1);
     if (n > 0) pe->root[n] = '\0'; else pe->root[0] = '\0';
 
-    // cmdline (NUL-separated)
+    // cmdline, read whole: argv has no fixed size limit
     char cmd_path[64];
     snprintf(cmd_path, sizeof(cmd_path), "/proc/%ld/cmdline", pid);
-    FILE *f = fopen(cmd_path, "r");
-    if (f) {
-        size_t read = fread(pe->cmd, 1, sizeof(pe->cmd) - 1, f);
-        pe->cmd[read] = '\0';
-        fclose(f);
-    } else {
-        pe->cmd[0] = '\0';
-    }
+    pe->cmd = read_file_contents(cmd_path, &pe->cmd_len);
+    if (!pe->cmd) pe->cmd_len = 0;
+}
+
+static void free_proc_entry(proc_entry_t *pe) {
+    free(pe->cmd);
+    pe->cmd = NULL;
+    pe->cmd_len = 0;
 }
 
 static void refresh_processes(void) {
+    for (int i = 0; i < g_proc_count; i++) free_proc_entry(&g_procs[i]);
     g_proc_count = 0;
     DIR *proc_dir = opendir("/proc");
     if (!proc_dir) return;
@@ -204,7 +206,22 @@ PROC_STRING_ARRAY(nativeProcessStatuses, status)
 PROC_LONG_ARRAY(nativeProcessStartTimes, start_time)
 PROC_LONG_ARRAY(nativeProcessRunTimes, run_time)
 PROC_LONG_ARRAY(nativeProcessParentPids, parent_pid)
-PROC_STRING_ARRAY(nativeProcessCmds, cmd)
+
+JNIEXPORT jobjectArray JNICALL
+Java_dev_nucleusframework_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessCmds(
+    JNIEnv *env, jclass clazz) {
+    if (g_proc_count <= 0) return NULL;
+    jclass string_class = (*env)->FindClass(env, "java/lang/String");
+    jobjectArray arr = (*env)->NewObjectArray(env, g_proc_count, string_class, NULL);
+    (*env)->DeleteLocalRef(env, string_class);
+    for (int i = 0; i < g_proc_count; i++) {
+        jstring js = to_jstring_bytes(env, g_procs[i].cmd ? g_procs[i].cmd : "", g_procs[i].cmd_len);
+        (*env)->SetObjectArrayElement(env, arr, i, js);
+        if (js) (*env)->DeleteLocalRef(env, js);
+    }
+    return arr;
+}
+
 PROC_STRING_ARRAY(nativeProcessCwds, cwd)
 PROC_STRING_ARRAY(nativeProcessRoots, root)
 
@@ -235,10 +252,13 @@ enum { PROCESS_FLOAT_CPU_USAGE, PROCESS_FLOAT_COUNT };
 enum { PROCESS_STRING_NAME, PROCESS_STRING_EXE, PROCESS_STRING_STATUS, PROCESS_STRING_CMD,
        PROCESS_STRING_CWD, PROCESS_STRING_ROOT, PROCESS_STRING_COUNT };
 
-static void set_string_slot(JNIEnv *env, jobjectArray strings, int slot, const char *value) {
-    jstring js = to_jstring(env, value);
+static void set_jstring_slot(JNIEnv *env, jobjectArray strings, int slot, jstring js) {
     (*env)->SetObjectArrayElement(env, strings, slot, js);
     if (js) (*env)->DeleteLocalRef(env, js);
+}
+
+static void set_string_slot(JNIEnv *env, jobjectArray strings, int slot, const char *value) {
+    set_jstring_slot(env, strings, slot, to_jstring(env, value));
 }
 
 JNIEXPORT jboolean JNICALL
@@ -262,8 +282,10 @@ Java_dev_nucleusframework_systeminfo_linux_NativeLinuxSystemInfoBridge_nativePro
     set_string_slot(env, strings, PROCESS_STRING_NAME, pe.name);
     set_string_slot(env, strings, PROCESS_STRING_EXE, pe.exe);
     set_string_slot(env, strings, PROCESS_STRING_STATUS, pe.status);
-    set_string_slot(env, strings, PROCESS_STRING_CMD, pe.cmd);
+    set_jstring_slot(env, strings, PROCESS_STRING_CMD,
+                     to_jstring_bytes(env, pe.cmd ? pe.cmd : "", pe.cmd_len));
     set_string_slot(env, strings, PROCESS_STRING_CWD, pe.cwd);
     set_string_slot(env, strings, PROCESS_STRING_ROOT, pe.root);
+    free_proc_entry(&pe);
     return JNI_TRUE;
 }
