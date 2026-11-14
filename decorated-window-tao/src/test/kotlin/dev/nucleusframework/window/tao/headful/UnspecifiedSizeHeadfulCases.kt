@@ -2,12 +2,17 @@ package dev.nucleusframework.window.tao.headful
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
@@ -22,7 +27,10 @@ import dev.nucleusframework.window.tao.resolvedSizePolicy
 import dev.nucleusframework.window.tao.showObservers
 import kotlinx.coroutines.delay
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 
 /**
@@ -44,6 +52,8 @@ internal object UnspecifiedSizeHeadfulCases {
             windowWrapContentWidthTitleBarSpans(),
             windowWrapContentMapsAtMeasuredSize(),
             dialogWrapContentMapsAtMeasuredSize(),
+            dialogWrapContentFirstPassGetsRequestedWidth(),
+            dialogWrapContentFillMaxSizeShowsAtOnce(),
         )
 
     /** What each window looked like at the instant [TaoWindow.show] ran, by handle — first show only. */
@@ -53,6 +63,7 @@ internal object UnspecifiedSizeHeadfulCases {
     private class ShowSnapshot(
         val bounds: LongArray?,
         val wrapSettled: Boolean,
+        val atNanos: Long = System.nanoTime(),
     )
 
     init {
@@ -230,6 +241,77 @@ internal object UnspecifiedSizeHeadfulCases {
             assertMappedAndStaysAtWrapSize(checkNotNull(dialogWindow) { "dialog window never published" })
         }
 
+    /**
+     * #890 — under a wrap-content height the specified width must reach the
+     * content in pixels from the very first pass. It was handed the dp value
+     * as pixels (650 px at 200%), so text measured its height against half the
+     * window's width.
+     */
+    private fun dialogWrapContentFirstPassGetsRequestedWidth(): TaoWindowTestCase {
+        val widthsPx = CopyOnWriteArrayList<Int>()
+        val densityHolder = AtomicReference(0f)
+        return TaoWindowTestCase(
+            name = "#890 dialog wrap-content height: first pass gets the requested width",
+            paintDefaultBackground = false,
+            dialogSize = DpSize(ISSUE_890_WIDTH_DP.dp, Dp.Unspecified),
+            dialogContent = {
+                densityHolder.set(LocalDensity.current.density)
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(CONTENT_HEIGHT_DP.dp)
+                        .onGloballyPositioned { widthsPx += it.size.width },
+                )
+            },
+        ) {
+            val dialog = checkNotNull(dialogWindow) { "dialog window never published" }
+            awaitUntil("dialog shown", detail = { "widths=$widthsPx" }) {
+                firstShow.containsKey(dialog.handle) && widthsPx.isNotEmpty()
+            }
+            val expected = ISSUE_890_WIDTH_DP * densityHolder.get()
+            val wrong = widthsPx.filter { abs(it - expected) > 2f }
+            check(wrong.isEmpty()) {
+                "content measured at widths $widthsPx px, " +
+                    "expected ${expected}px (${ISSUE_890_WIDTH_DP}dp × ${densityHolder.get()})"
+            }
+        }
+    }
+
+    /**
+     * #890 — `fillMaxSize` content under a wrap-content height measures to a
+     * zero height, which the wrap waited for in vain: the dialog was held
+     * hidden for the whole 1 s fallback, then shown with its content still 0 px
+     * tall. It must show at once, and the content must fill it.
+     */
+    private fun dialogWrapContentFillMaxSizeShowsAtOnce(): TaoWindowTestCase {
+        val composedAt = AtomicLong(0)
+        val contentHeightPx = AtomicInteger(-1)
+        return TaoWindowTestCase(
+            name = "#890 dialog wrap-content height with fillMaxSize content shows at once",
+            paintDefaultBackground = false,
+            dialogSize = DpSize(ISSUE_890_WIDTH_DP.dp, Dp.Unspecified),
+            dialogContent = {
+                composedAt.compareAndSet(0, System.nanoTime())
+                Box(Modifier.fillMaxSize().onGloballyPositioned { contentHeightPx.set(it.size.height) })
+            },
+        ) {
+            val dialog = checkNotNull(dialogWindow) { "dialog window never published" }
+            awaitUntil("dialog shown", detail = { "height=${contentHeightPx.get()}" }) {
+                firstShow.containsKey(dialog.handle)
+            }
+            val shownAfterMs = (checkNotNull(firstShow[dialog.handle]).atNanos - composedAt.get()) / 1_000_000
+            check(shownAfterMs < MAX_SHOW_DELAY_MS) {
+                "shown ${shownAfterMs}ms after its content composed, expected under ${MAX_SHOW_DELAY_MS}ms"
+            }
+            awaitUntil(
+                "fillMaxSize content fills the dialog",
+                detail = { "content=${contentHeightPx.get()}px bounds=${dialog.outerBoundsPx()?.toList()}" },
+            ) {
+                contentHeightPx.get() > 0
+            }
+        }
+    }
+
     private suspend fun TaoWindowTestScope.assertMappedAndStaysAtWrapSize(target: TaoWindow) {
         awaitUntil(
             "window shown and settled at its wrap-content size",
@@ -295,6 +377,10 @@ internal object UnspecifiedSizeHeadfulCases {
     private const val WRAP_HEIGHT_DP = 300f
     private const val CONTENT_HEIGHT_DP = 137f
     private const val STABILITY_HOLD_MILLIS = 1_000L
+    private const val ISSUE_890_WIDTH_DP = 650f
+
+    // Well under the 1 s wrap fallback the #890 dialog waited for.
+    private const val MAX_SHOW_DELAY_MS = 500L
 
     // Title bar + Linux CSD shadow / macOS traffic-light chrome.
     private const val MAX_CHROME_DP = 220f
