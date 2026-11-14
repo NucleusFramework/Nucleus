@@ -64,7 +64,7 @@ public fun Switch(
 
 /**
  * A choice among [choices], showing and editing [key] (the chosen [Choice.value]): a drop-down,
- * or radio buttons when [isExpanded].
+ * or radio buttons when [isExpanded]. [defaultValue] is shown as chosen while [key] is unset.
  */
 @Composable
 @ExperimentalNucleusWidgetApi
@@ -74,9 +74,10 @@ public fun ChoiceField(
     modifier: WidgetModifier = WidgetModifier,
     label: String? = null,
     isExpanded: Boolean = false,
+    defaultValue: String? = null,
 ) {
     val resolved = LocalActionRegistry.current.resolve(modifier)
-    val value = LocalWidgetStateHandle.current[key]
+    val value = LocalWidgetStateHandle.current[key] ?: defaultValue
     ComposeNode<WidgetNode.ChoiceInput, WidgetApplier>(
         factory = WidgetNode::ChoiceInput,
         update = {

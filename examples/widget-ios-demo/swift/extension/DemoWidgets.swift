@@ -17,5 +17,8 @@ struct DemoWidgets: WidgetBundle {
             description: "A counter composed by Kotlin in the widget extension",
             families: [.systemSmall, .systemMedium]
         )
+        NucleusWidget(kind: "DemoTasks", displayName: "Tasks", description: "Rows, icons, a filter and a counter", families: [.systemMedium, .systemLarge])
+        NucleusWidget(kind: "DemoDashboard", displayName: "CI dashboard", description: "Weighted tiles on colored backgrounds", families: [.systemMedium, .systemLarge])
+        NucleusWidget(kind: "DemoWeather", displayName: "Weather", description: "A forecast in columns and a city choice", families: [.systemSmall, .systemMedium, .systemLarge])
     }
 }

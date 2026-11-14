@@ -54,6 +54,9 @@ xcrun appintentsmetadataprocessor --output "$EXT" --toolchain-dir "$TOOLCHAIN" -
     --binary-file "$EXT/DemoWidgets" --force >/dev/null
 test -f "$EXT/Metadata.appintents/extract.actionsdata"
 
+# App resources (ImageProvider.appResource): read by the extension from the app bundle.
+mkdir -p "$APP/widget" && cp "$ROOT"/examples/lab/app/resources/common/widget/*.png "$APP/widget/"
+
 cat > "$APP/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

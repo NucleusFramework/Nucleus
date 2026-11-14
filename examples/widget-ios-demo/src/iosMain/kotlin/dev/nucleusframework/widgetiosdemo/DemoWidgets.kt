@@ -81,6 +81,9 @@ class DemoCounterWidget : NucleusWidget() {
 fun startDemoWidgets() =
     startIosWidgets {
         widget(COUNTER_WIDGET) { DemoCounterWidget() }
+        widget(TASKS_WIDGET) { DemoTasksWidget() }
+        widget(DASHBOARD_WIDGET) { DemoDashboardWidget() }
+        widget(WEATHER_WIDGET) { DemoWeatherWidget() }
     }
 
 /** The app's Push button: changes the state of every family of the counter, then reloads it. */
