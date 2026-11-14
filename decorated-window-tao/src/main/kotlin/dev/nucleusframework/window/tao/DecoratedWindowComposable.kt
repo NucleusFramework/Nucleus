@@ -253,6 +253,7 @@ public fun ApplicationScope.DecoratedWindow(
             WindowSizePolicy(
                 wrapWidth = wrapWidth,
                 wrapHeight = wrapHeight,
+                requestedSize = state.size,
                 onContentMeasured = { size ->
                     if (measuredContent.value != size) measuredContent.value = size
                 },
@@ -503,8 +504,8 @@ public fun ApplicationScope.DecoratedWindow(
         applied.initialAligned?.let { alignWithRetries(window, it, resolved) }
         sizePolicy.showReady.value = true
     }
-    // Content that never measures to a positive size (nothing in it) has no
-    // wrap size to wait for: show it at the fallback rather than never.
+    // A safety net for a scene that never lays out its content at all: show it
+    // at the fallback rather than never.
     LaunchedEffect(window) {
         if (sizePolicy.showReady.value) return@LaunchedEffect
         delay(WRAP_CONTENT_SHOW_TIMEOUT_MS)

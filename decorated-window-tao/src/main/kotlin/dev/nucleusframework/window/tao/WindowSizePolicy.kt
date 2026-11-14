@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.Composable
@@ -43,10 +45,14 @@ internal fun TaoWindow.resolvedSizePolicy(): WindowSizePolicy = sizePolicies[han
  * modifiers hand children an unbounded axis, under which `fillMaxWidth` /
  * `fillMaxHeight` collapse to content — a `TitleBar` shrank to its buttons
  * (#546).
+ *
+ * [requestedSize] is the window's requested size: its specified axis is what
+ * the content measures against while the wrap is pending (#890).
  */
 internal class WindowSizePolicy(
     val wrapWidth: Boolean = false,
     val wrapHeight: Boolean = false,
+    val requestedSize: DpSize = DpSize.Unspecified,
     val onContentMeasured: ((IntSize) -> Unit)? = null,
 ) {
     val wraps: Boolean get() = wrapWidth || wrapHeight
@@ -77,12 +83,25 @@ internal fun WindowSceneColumn(content: @Composable ColumnScope.() -> Unit) {
         if (!policy.wraps || policy.settled.value) {
             Modifier.fillMaxSize()
         } else {
+            // The specified axis takes the requested size, not the scene's: on
+            // Wayland the hidden scene is still sized before the output scale is
+            // known (650 px for 650dp at 200%), so content measured against it
+            // wrapped to the wrong height (#890).
+            val requested = policy.requestedSize
             Modifier
-                .then(if (policy.wrapWidth) Modifier.wrapContentWidth(unbounded = true) else Modifier.fillMaxWidth())
-                .then(if (policy.wrapHeight) Modifier.wrapContentHeight(unbounded = true) else Modifier.fillMaxHeight())
-                .onSizeChanged { size ->
-                    if (size.width > 0 && size.height > 0) policy.onContentMeasured?.invoke(size)
-                }
+                .then(
+                    when {
+                        policy.wrapWidth -> Modifier.wrapContentWidth(unbounded = true)
+                        requested.width.isSpecified -> Modifier.requiredWidth(requested.width)
+                        else -> Modifier.fillMaxWidth()
+                    },
+                ).then(
+                    when {
+                        policy.wrapHeight -> Modifier.wrapContentHeight(unbounded = true)
+                        requested.height.isSpecified -> Modifier.requiredHeight(requested.height)
+                        else -> Modifier.fillMaxHeight()
+                    },
+                ).onSizeChanged { size -> policy.onContentMeasured?.invoke(size) }
         }
     Column(modifier = modifier, content = content)
 }
@@ -91,7 +110,10 @@ internal fun WindowSceneColumn(content: @Composable ColumnScope.() -> Unit) {
  * Builds the first real [DpSize] for a wrap-content window from the
  * content's measured pixels. Specified axes keep the requested value;
  * unspecified axes take the measured size (floored by [minimumSize]).
- * Returns `null` when the wrap axes have not produced a positive size yet.
+ *
+ * A wrap axis measured at zero has no content extent to wrap (`fillMaxSize`
+ * under an unbounded axis, or nothing at all): it takes the creation fallback
+ * at once rather than waiting for a size that never comes (#890).
  */
 internal fun resolveWrapContentSize(
     wrapWidth: Boolean,
@@ -108,13 +130,13 @@ internal fun resolveWrapContentSize(
         when {
             !wrapWidth && requested.width.isSpecified -> requested.width
             measured.width > 0 -> measuredW
-            else -> return null
+            else -> DEFAULT_WINDOW_WIDTH_DP.dp
         }
     val height =
         when {
             !wrapHeight && requested.height.isSpecified -> requested.height
             measured.height > 0 -> measuredH
-            else -> return null
+            else -> DEFAULT_WINDOW_HEIGHT_DP.dp
         }
     val minW = minimumSize?.width
     val minH = minimumSize?.height
