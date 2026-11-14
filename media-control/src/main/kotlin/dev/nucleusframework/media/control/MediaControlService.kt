@@ -77,7 +77,12 @@ public object MediaControlService {
 
     /**
      * Update the playback state shown in the system media center.
-     * Call on play/pause/stop and periodically during playback to update position.
+     * Call on play/pause/stop, seeks and periodically to correct the position.
+     *
+     * On Linux, Position advances at the backend's fixed rate of 1.0 while playing,
+     * even without further calls. A position correction emits Seeked only when it
+     * differs from the predicted position by more than 100 ms. After an MPRIS seek
+     * request, the next supplied position emits Seeked even for a smaller change.
      */
     public fun setPlaybackState(state: MediaPlaybackState) {
         backend.setPlaybackState(

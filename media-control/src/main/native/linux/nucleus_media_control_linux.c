@@ -34,6 +34,7 @@
 #define STATUS_PLAYING 2
 
 #define NAME_ACQUISITION_TIMEOUT_SECONDS 10
+#define SEEK_THRESHOLD_US 100000
 
 /* ---- Introspection XML ------------------------------------------------ */
 
@@ -110,6 +111,8 @@ static char   *g_album      = NULL;
 static char   *g_cover_url  = NULL;
 static gint64  g_duration_us = -1;
 static gint64  g_position_us =  0;
+static gint64  g_position_updated_us = 0;
+static gboolean g_seek_pending = FALSE;
 static gint    g_status      = STATUS_STOPPED;
 static gdouble g_volume      = 1.0;
 static guint64 g_track_counter = 0;
@@ -283,6 +286,13 @@ static void dispatch_event_uri(const char *uri) {
 }
 
 /* ---- MPRIS helpers ---------------------------------------------------- */
+
+/* Caller must hold g_state_mutex. Rate is fixed at 1.0 by this backend. */
+static gint64 current_position_locked(gint64 now_us) {
+    if (g_status != STATUS_PLAYING) return g_position_us;
+    gint64 elapsed_us = MAX(now_us - g_position_updated_us, 0);
+    return g_position_us + MIN(elapsed_us, G_MAXINT64 - g_position_us);
+}
 
 static const char *status_to_string(gint status) {
     switch (status) {
@@ -472,6 +482,9 @@ static void player_handle_method(
     } else if (g_strcmp0(method, "Seek") == 0) {
         gint64 offset = 0;
         g_variant_get(params, "(x)", &offset);
+        pthread_mutex_lock(&g_state_mutex);
+        g_seek_pending = TRUE;
+        pthread_mutex_unlock(&g_state_mutex);
         dispatch_event_offset("seek", offset);
         g_dbus_method_invocation_return_value(invocation, NULL);
     } else if (g_strcmp0(method, "SetPosition") == 0) {
@@ -486,6 +499,9 @@ static void player_handle_method(
             g_dbus_method_invocation_return_value(invocation, NULL);
             return;
         }
+        pthread_mutex_lock(&g_state_mutex);
+        g_seek_pending = TRUE;
+        pthread_mutex_unlock(&g_state_mutex);
         dispatch_event_position(position);
         g_dbus_method_invocation_return_value(invocation, NULL);
     } else if (g_strcmp0(method, "OpenUri") == 0) {
@@ -525,7 +541,7 @@ static GVariant *player_get_property(
     }
     if (g_strcmp0(prop, "Position") == 0) {
         pthread_mutex_lock(&g_state_mutex);
-        GVariant *v = g_variant_new_int64(g_position_us);
+        GVariant *v = g_variant_new_int64(current_position_locked(g_get_monotonic_time()));
         pthread_mutex_unlock(&g_state_mutex);
         return v;
     }
@@ -734,14 +750,18 @@ Java_dev_nucleusframework_media_control_linux_NativeLinuxBridge_nativeSetPlaybac
     gint64 new_position_us = 0;
 
     pthread_mutex_lock(&g_state_mutex);
-    if (status != g_status) { g_status = status; status_changed = 1; }
+    gint64 now_us = g_get_monotonic_time();
+    gint64 expected_position_us = current_position_locked(now_us);
+    g_position_us = expected_position_us;
+    g_position_updated_us = now_us;
     if (position_ms >= 0) {
-        new_position_us = (gint64)position_ms * 1000;
-        if (new_position_us != g_position_us) {
-            g_position_us = new_position_us;
-            position_changed = 1;
-        }
+        new_position_us = (gint64)MIN(position_ms, G_MAXINT64 / 1000) * 1000;
+        position_changed = g_seek_pending ||
+            llabs(new_position_us - expected_position_us) > SEEK_THRESHOLD_US;
+        g_position_us = new_position_us;
+        g_seek_pending = FALSE;
     }
+    if (status != g_status) { g_status = status; status_changed = 1; }
     pthread_mutex_unlock(&g_state_mutex);
 
     if (status_changed) {
@@ -829,5 +849,6 @@ Java_dev_nucleusframework_media_control_linux_NativeLinuxBridge_nativeStopListen
     pthread_mutex_lock(&g_state_mutex);
     if (g_root_node)   { g_dbus_node_info_unref(g_root_node);   g_root_node   = NULL; }
     if (g_player_node) { g_dbus_node_info_unref(g_player_node); g_player_node = NULL; }
+    g_seek_pending = FALSE;
     pthread_mutex_unlock(&g_state_mutex);
 }
