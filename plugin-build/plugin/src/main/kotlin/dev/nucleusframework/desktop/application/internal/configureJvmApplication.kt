@@ -25,6 +25,7 @@ import dev.nucleusframework.desktop.application.tasks.AbstractGenerateAppPropert
 import dev.nucleusframework.desktop.application.tasks.AbstractGenerateFlathubRepositoryTask
 import dev.nucleusframework.desktop.application.tasks.AbstractJLinkTask
 import dev.nucleusframework.desktop.application.tasks.AbstractJPackageTask
+import dev.nucleusframework.desktop.application.tasks.isForeignSkikoNative
 import dev.nucleusframework.desktop.application.tasks.AbstractMergeUpdateYmlTask
 import dev.nucleusframework.desktop.application.tasks.AbstractNotarizationTask
 import dev.nucleusframework.desktop.application.tasks.AbstractPatchCaCertificatesTask
@@ -1523,6 +1524,8 @@ private fun JvmApplicationContext.configurePackageUberJarForCurrentOS(
 ) {
     jar.dependsOn(flattenJars)
     jar.from(project.zipTree(flattenJars.flatMap { it.flattenedJar }))
+    // The other platforms' Skiko natives, which `skiko-awt-runtime-all` brings in.
+    jar.exclude { isForeignSkikoNative(it.name) }
 
     app.mainClass?.let { jar.manifest.attributes["Main-Class"] = it }
     jar.manifest.attributes["Multi-Release"] = "true"
