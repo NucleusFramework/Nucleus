@@ -180,6 +180,25 @@ static void explicit_seeks_below_threshold_emit_once(void) {
     g_assert_cmpint(seeked_count, ==, 2);
 }
 
+static void extrapolation_stops_at_track_length(void) {
+    reset();
+    g_duration_us = 1000000;
+    publish(STATUS_PLAYING, 900);
+    seeked_count = 0;
+    now_us += 500000;
+    g_assert_cmpint(read_position(), ==, 1000000);
+    now_us += 10000000;
+    g_assert_cmpint(read_position(), ==, 1000000);
+    publish(STATUS_PLAYING, 1000);
+    g_assert_cmpint(seeked_count, ==, 0);
+    publish(STATUS_PLAYING, 1200);
+    now_us += 500000;
+    g_assert_cmpint(read_position(), ==, 1200000);
+    g_duration_us = -1;
+    now_us += 500000;
+    g_assert_cmpint(read_position(), ==, 2200000);
+}
+
 int main(int argc, char **argv) {
     g_test_init(&argc, &argv, NULL);
     static const struct JNIInvokeInterface_ vm_functions = { .GetEnv = unavailable_env };
@@ -192,6 +211,7 @@ int main(int argc, char **argv) {
     g_test_add_func("/mpris/position/transport", transport_changes_preserve_position);
     g_test_add_func("/mpris/position/discontinuities", discontinuities_emit_once);
     g_test_add_func("/mpris/position/explicit-seeks", explicit_seeks_below_threshold_emit_once);
+    g_test_add_func("/mpris/position/track-length", extrapolation_stops_at_track_length);
     int result = g_test_run();
     g_conn = NULL;
     g_main_context_unref(g_ctx);

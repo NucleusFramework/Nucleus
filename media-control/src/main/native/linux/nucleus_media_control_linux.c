@@ -289,11 +289,16 @@ static void dispatch_event_uri(const char *uri) {
 
 /* ---- MPRIS helpers ---------------------------------------------------- */
 
-/* Caller must hold g_state_mutex. Rate is fixed at 1.0 by this backend. */
+/* Caller must hold g_state_mutex. Rate is fixed at 1.0 by this backend.
+   Extrapolation stops at the track length; a published position is never reduced. */
 static gint64 current_position_locked(gint64 now_us) {
     if (g_status != STATUS_PLAYING) return g_position_us;
     gint64 elapsed_us = MAX(now_us - g_position_updated_us, 0);
-    return g_position_us + MIN(elapsed_us, G_MAXINT64 - g_position_us);
+    gint64 position_us = g_position_us + MIN(elapsed_us, G_MAXINT64 - g_position_us);
+    if (g_duration_us > 0 && position_us > g_duration_us) {
+        position_us = MAX(g_position_us, g_duration_us);
+    }
+    return position_us;
 }
 
 static const char *status_to_string(gint status) {
