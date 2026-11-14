@@ -5,6 +5,7 @@ import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.ViewConfiguration
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.energymanager.AwakeHandle
 import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
@@ -82,10 +83,13 @@ internal abstract class TaoPlatformContextBase : PlatformContext.Empty() {
 
     /**
      * Compose 1.13 takes the owner's `LocalUriHandler` from the context, so
-     * popups and dialogs get it too. Skiko's default `URIManager` calls
-     * `Desktop.browse`, which starts XAWT. See [TaoLinuxUriHandler].
+     * popups and dialogs get it too. On Linux, Skiko's default `URIManager`
+     * calls `Desktop.browse`, which starts XAWT. See [TaoLinuxUriHandler].
+     * Elsewhere `xdg-open` does not exist, so the default handler stays.
      */
-    override val uriHandler: UriHandler get() = TaoLinuxUriHandler
+    override val uriHandler: UriHandler by lazy {
+        if (Platform.Current == Platform.Linux) TaoLinuxUriHandler else super.uriHandler
+    }
 
     /** The owner's `LocalClipboard`: GTK when available (#582), Compose's AWT clipboard otherwise. */
     override val clipboard: Clipboard by lazy {
