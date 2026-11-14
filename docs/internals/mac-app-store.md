@@ -218,7 +218,7 @@ later runs under a second, code changes picked up without a rebuild of the shell
 configuration cache stored and reused. Not covered: the vtool-patched JDK `run` uses for Liquid
 Glass (the shell launcher is jpackage's).
 
-## Sandbox and GraalVM (tested on one Mac, no Apple account)
+## Sandbox and GraalVM
 
 - **App Sandbox, JVM.** The E2E runs entirely inside the sandbox (its code and `.storekit` in the
   bundle, ad-hoc signed with `app-sandbox`, `network.client`, `get-task-allow`). So does the Lab
@@ -228,15 +228,18 @@ Glass (the shell launcher is jpackage's).
   container is quarantined, and Gatekeeper blocks `dlopen` behind a prompt ("Apple could not
   confirm…") — the process hangs. Packaged apps never extract (`nucleus.native.libraryPath`,
   `java.library.path` on `Contents/Frameworks`), so only an ad-hoc test bundle hits it.
-- **GraalVM native image, no sandbox.** The Lab's native image runs the whole probe: the JNI
+- **GraalVM native image.** The Lab's native image runs the whole probe, sandboxed or not: the JNI
   responses and events (`reachability-metadata.json`) and the loose `libnucleus_macstore.dylib`
-  next to the executable work as on the JVM.
-- **GraalVM + App Sandbox is impossible**, which is why the plugin refuses the combination: the
-  native image dies at start-up with `CSunMiscSignal.open() failed`, the sandbox denying
-  `ipc-posix-sem-create /cSunMiscSignal-<pid>` (Substrate's signal handling uses a named POSIX
-  semaphore; a sandboxed app may only create ones prefixed by its App Group).
-- Not testable without an Apple account: the real App Store sandbox and production (server-side
-  products, account sign-in), a build signed with a real certificate and provisioning profile.
+  next to the executable work as on the JVM. The App Store PKG comes from the sandboxed image
+  (`packageGraalvmPkg`), compiled without Substrate's signal handling, whose named semaphore the
+  sandbox denies: see `docs/internals/graalvm-app-sandbox.md`.
+- **The real App Store Sandbox** (verified): the GraalVM App Store PKG signed with 3rd Party Mac
+  Developer certificates, re-signed with an Apple Development certificate and a macOS App
+  Development profile to run on the Mac (a distribution signature is refused locally), loads the
+  products from Apple's Sandbox and buys with a Sandbox tester; `appLicense()` reads `Valid`.
+  Products only come back once each has its metadata, price, availability and review screenshot
+  and the Paid Applications agreement is active, then after up to an hour; an HTTPS-intercepting
+  proxy makes `sandbox.itunes.apple.com` fail certificate validation (`-1202`).
 
 ## E2E
 

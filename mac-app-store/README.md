@@ -195,10 +195,10 @@ if (testing.isActive) {
 
 ## Distribution
 
-The Mac App Store channel is the plugin's sandboxed JVM pipeline (`createSandboxedDistributable`,
-App Store PKG); the module runs inside the App Sandbox. A GraalVM native image cannot be
-sandboxed (it dies at start-up), so it is for Developer ID distribution, where there is no App
-Store to buy from.
+The Mac App Store channel is the App Store PKG, and the module runs inside the App Sandbox. A JVM
+app gets it from the plugin's sandboxed pipeline (`packagePkg`); a GraalVM app from a second,
+sandboxed native image built next to the regular one (`packageGraalvmPkg`, see
+`docs/internals/graalvm-app-sandbox.md`).
 
 ## Platform requirements
 
