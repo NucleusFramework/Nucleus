@@ -39,7 +39,7 @@ The declaration belongs in `Application.onCreate`: Android starts the process fo
 - `pinnedWidgets()` / `updateAll()` from app code: the host records `receiver:<class> → definitionId` each time a receiver runs (a placed widget's receiver always ran once), then asks `AppWidgetManager.getAppWidgetIds` per receiver.
 - Every broadcast runs on `WidgetEngine.scope` under `goAsync()`.
 - Clicks are broadcast `PendingIntent`s to the widget's own receiver. The key, the `WidgetActionSignatures` signature and the input value go in the intent's **data URI**, not in extras, so each distinct click is its own `PendingIntent` and an older render never fires a newer one's extras. Outdated clicks are dropped with `ActionDropped`, as on macOS.
-- Inputs write their value when clicked, as on WidgetKit. Android 12+ uses a real `Switch` / `RadioButton`; before, `RemoteViews` refuse `CompoundButton`s and both become a clickable line with a ☐/☑ or ○/◉ glyph. A collapsed `ChoiceField` is drawn as a list too: there is no drop-down in `RemoteViews`. `TextField` / `NumberField` (Windows-only) are left out.
+- Inputs write their value when clicked, as on WidgetKit. Android 12+ uses a real `Switch` / `RadioButton` (an expanded `ChoiceField`); before, `RemoteViews` refuse `CompoundButton`s and both become a clickable line with a ☐/☑ or ○/◉ glyph. There is no drop-down in `RemoteViews`: a collapsed `ChoiceField` is a row of pill `Button`s, the chosen one filled, like WidgetKit's bordered / prominent buttons, on every API level. `TextField` / `NumberField` (Windows-only) are left out.
 - `actionOpenUrl` is a `PendingIntent.getActivity(ACTION_VIEW)` and runs no app code.
 - State is written with `commit()` on the engine's thread before the launcher is updated, and only when it changed.
 - A render that throws, or nests past 10 levels, is replaced by a one-line notice and reported (`Failed` / `HostError`).
@@ -81,11 +81,11 @@ The runtime already composes a `WidgetElement` tree. Glance would mean a second 
 
 ## E2E
 
-`examples/widget-android-demo` is a Counter (lambdas, `Switch`, `ChoiceField`, assets image, deep link) and a Tasks list (clickable weighted rows, icons, footer pushed down).
+`examples/widget-android-demo` is a Counter (lambdas, `Switch`, `ChoiceField`, assets image, deep link) and a Tasks list (clickable weighted rows, icons, footer pushed down). It also carries the iOS demo's complex widgets (`ComplexWidgets.kt`, same code): Tasks (filter, callback rows, badge), CI dashboard (weighted colored tiles, recent runs) and Weather (forecast columns, city choice); pin them with `pin-demo-tasks`, `pin-dashboard`, `pin-weather`.
 
 ```bash
 ./gradlew :examples:widget-android-demo:installDebug
-adb shell am start -n dev.nucleusframework.widgetandroiddemo/.MainActivity --es action pin-counter   # pin-tasks, push, list
+adb shell am start -n dev.nucleusframework.widgetandroiddemo/.MainActivity --es action pin-counter   # pin-tasks, pin-demo-tasks, pin-dashboard, pin-weather, push, list
 adb logcat -s WidgetDemo NucleusWidgets
 ```
 

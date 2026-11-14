@@ -80,8 +80,9 @@ class DemoTasksWidget : NucleusWidget() {
         provideContent {
             val state = currentWidgetState()
             val tasks = parse(state[Tasks])
-            val filter = state[Filter] ?: "all"
             val large = LocalSize.current == WidgetSize.Large
+            // The filter is only shown on Large: a smaller size lists everything.
+            val filter = if (large) state[Filter] ?: "all" else "all"
             val left = tasks.count { !it.second }
             val shown =
                 tasks.withIndex().filter { (_, task) ->

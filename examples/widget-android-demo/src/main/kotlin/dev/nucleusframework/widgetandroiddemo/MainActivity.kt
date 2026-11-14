@@ -22,7 +22,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Buttons for what the app does to its widgets, scriptable for the E2E:
- * `adb shell am start -n dev.nucleusframework.widgetandroiddemo/.MainActivity --es action <pin-counter|pin-tasks|push|list>`,
+ * `adb shell am start -n dev.nucleusframework.widgetandroiddemo/.MainActivity --es action <pin-counter|pin-tasks|pin-demo-tasks|pin-dashboard|pin-weather|push|list>`,
  * results on logcat tag `WidgetDemo`.
  */
 class MainActivity : Activity() {
@@ -65,6 +65,9 @@ class MainActivity : Activity() {
                 "pin-counter" -> pin(CounterWidgetReceiver::class.java)
                 "pin-tasks" -> pin(TasksWidgetReceiver::class.java)
                 "pin-fuzz" -> pin(FuzzWidgetReceiver::class.java)
+                "pin-demo-tasks" -> pin(DemoTasksWidgetReceiver::class.java)
+                "pin-dashboard" -> pin(DemoDashboardWidgetReceiver::class.java)
+                "pin-weather" -> pin(DemoWeatherWidgetReceiver::class.java)
                 "fuzz" -> fuzz(intent.getLongExtra("seed", 0L), intent.getIntExtra("count", 1))
                 // The app changes a widget's state and redraws it, without any widget broadcast.
                 "push" ->
