@@ -211,6 +211,7 @@ public final class dev/nucleusframework/window/tao/ComposableSingletons$DragPrev
 public final class dev/nucleusframework/window/tao/ComposableSingletons$NativeViewKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/ComposableSingletons$NativeViewKt;
 	public fun <init> ()V
+	public final fun getLambda$1033216030$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
 	public final fun getLambda$1447510722$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
 }
 
@@ -406,7 +407,8 @@ public final class dev/nucleusframework/window/tao/NativePopupLayersKt {
 }
 
 public final class dev/nucleusframework/window/tao/NativeViewKt {
-	public static final fun NativeView-hGBTI10 (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function1;FLkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final synthetic fun NativeView-hGBTI10 (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function1;FLkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun NativeView-jIwJxvA (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function1;FZLkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class dev/nucleusframework/window/tao/NucleusDmaBufPlane {
