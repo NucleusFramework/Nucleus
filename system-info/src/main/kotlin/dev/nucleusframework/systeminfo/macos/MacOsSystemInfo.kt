@@ -19,6 +19,7 @@ import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
 import dev.nucleusframework.systeminfo.model.RenderTier
 import dev.nucleusframework.systeminfo.model.UserInfo
+import dev.nucleusframework.systeminfo.splitCommandLine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -229,7 +230,7 @@ internal object MacOsSystemInfo : PlatformSystemInfo {
                 startTime = startTimes.getOrElse(i) { 0L },
                 runTime = runTimes.getOrElse(i) { 0L },
                 parentPid = if (ppid >= 0) ppid else null,
-                cmd = cmds.getOrElse(i) { "" }.split("\u0000").filter { it.isNotEmpty() },
+                cmd = splitCommandLine(cmds.getOrNull(i)),
                 cwd = cwds.getOrElse(i) { "" }.ifEmpty { null },
                 root = roots.getOrElse(i) { "" }.ifEmpty { null },
             )
@@ -254,7 +255,7 @@ internal object MacOsSystemInfo : PlatformSystemInfo {
             startTime = longs[PROCESS_LONG_START_TIME],
             runTime = longs[PROCESS_LONG_RUN_TIME],
             parentPid = if (ppid >= 0) ppid else null,
-            cmd = (strings[PROCESS_STRING_CMD] ?: "").split("\u0000").filter { it.isNotEmpty() },
+            cmd = splitCommandLine(strings[PROCESS_STRING_CMD]),
             cwd = strings[PROCESS_STRING_CWD]?.ifEmpty { null },
             root = strings[PROCESS_STRING_ROOT]?.ifEmpty { null },
         )
