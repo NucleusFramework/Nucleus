@@ -263,6 +263,25 @@ internal class TaoComposeSceneHost(
     private var transaction = MutableTaoInteropTransaction(isInteropActive = false)
     private var interopAttachCount: Int = 0
 
+    /**
+     * `NativeView(placedAsOverlay = true)` embeds. They sit above the surface,
+     * so unlike [interopAttachCount] they need no window transparency.
+     */
+    private var overlayAttachCount: Int = 0
+
+    /**
+     * One per overlay embed, keyed by its region token and run after the
+     * layout of every frame: an overlay is clipped by its Compose ancestors,
+     * and their clip can change with nothing of the embed's own layout moving.
+     */
+    private val overlayFrameSyncs: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    private val isInteropAttached: Boolean get() = interopAttachCount + overlayAttachCount > 0
+
+    private fun syncOverlayNativeViews() {
+        for (sync in overlayFrameSyncs.values) sync()
+    }
+
     /** Set by NativeView pointer-interop when a Press was forwarded to AppKit. */
     private var nativePointerDispatchedThisEvent: Boolean = false
 
@@ -294,7 +313,7 @@ internal class TaoComposeSceneHost(
 
     private fun retrieveTransaction(): TaoInteropTransaction {
         val result = transaction
-        transaction = MutableTaoInteropTransaction(isInteropActive = interopAttachCount > 0)
+        transaction = MutableTaoInteropTransaction(isInteropActive = isInteropAttached)
         return result
     }
 
@@ -1030,12 +1049,12 @@ internal class TaoComposeSceneHost(
                 // (`scheduleInteropAction` + presentsWithTransaction),
                 // not for the initial add.
                 if (outer.interopAttachCount == 0) {
-                    outer.transaction.isInteropActive = true
                     // Punch-through blending needs a non-opaque CAMetalLayer
                     // and alpha-0 Skia clears — same latch as glass regions.
                     WindowTransparencyMode.acquire(outer.window, outer.glassBackgroundState)
                 }
                 outer.interopAttachCount++
+                outer.transaction.isInteropActive = true
                 outer.detachedNativeViews.remove(childHandle)
                 NativeTaoMacOsNativeViewBridge.nativeAddSubview(outer.nsViewHandle, childHandle)
             }
@@ -1048,8 +1067,57 @@ internal class TaoComposeSceneHost(
                 NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
                 outer.interopAttachCount--
                 if (outer.interopAttachCount == 0) {
-                    outer.transaction.isInteropActive = false
                     WindowTransparencyMode.release(outer.window, outer.glassBackgroundState)
+                }
+                outer.transaction.isInteropActive = outer.isInteropAttached
+            }
+
+            override fun attachOverlay(
+                childHandle: Long,
+                regionToken: Any,
+                onFrame: () -> Unit,
+            ) {
+                outer.overlayAttachCount++
+                outer.transaction.isInteropActive = true
+                outer.detachedNativeViews.remove(childHandle)
+                outer.overlayFrameSyncs[regionToken] = onFrame
+                NativeTaoMacOsNativeViewBridge.nativeAddSubviewAbove(outer.nsViewHandle, childHandle)
+                // Hidden until a frame reports where it goes.
+                outer.window.requestRedraw()
+            }
+
+            override fun detachOverlay(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
+                outer.overlayFrameSyncs.remove(regionToken)
+                outer.detachedNativeViews += childHandle
+                NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
+                outer.overlayAttachCount--
+                outer.transaction.isInteropActive = outer.isInteropAttached
+            }
+
+            override fun setOverlayFrame(
+                handle: Long,
+                frame: IntRect,
+                visible: IntRect,
+            ) {
+                if (handle in outer.detachedNativeViews) return
+                // No redraw request: this runs inside the frame that commits it.
+                outer.transaction.add {
+                    if (handle in outer.detachedNativeViews) return@add
+                    NativeTaoMacOsNativeViewBridge.nativeSetSubviewFrameClipped(
+                        outer.nsViewHandle,
+                        handle,
+                        frame.left,
+                        frame.top,
+                        frame.width,
+                        frame.height,
+                        visible.left,
+                        visible.top,
+                        visible.width,
+                        visible.height,
+                    )
                 }
             }
 
@@ -1861,16 +1929,6 @@ internal class TaoComposeSceneHost(
         displayLinkIdleStop?.cancel()
         NativeMetalBridge.nativeStartDisplayLink(handle) // no-op while running
 
-        // ── interop transaction snapshot (main) ──
-        val tx = retrieveTransaction()
-        val needsTransaction =
-            tx.actions.isNotEmpty() || rendererIsInteropActive != tx.isInteropActive
-        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
-            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
-            layerPresentsWithTransaction = needsTransaction
-        }
-        if (tx.isInteropActive) rendererIsInteropActive = true
-
         // ── record (main) ──
         // Clear to the current themed fallback color, not hard-coded white, so
         // fullscreen/title-bar animation gaps don't flash. The clear itself runs
@@ -1879,6 +1937,21 @@ internal class TaoComposeSceneHost(
         val frameH = heightPx
         val (mainPicture, frameDamage, mainClear) = recordMainScene(bundle, frameW, frameH)
         val popupSurfaces = recordPopupSurfaces()
+
+        // ── interop transaction snapshot (main) ──
+        // After the record: the layout that just ran is what moves the embeds,
+        // and the AppKit mutations it queued must ride on this frame's present,
+        // not the next one's. Compose iOS's MetalRedrawer retrieves its interop
+        // transaction after rendering the scene for the same reason.
+        syncOverlayNativeViews()
+        val tx = retrieveTransaction()
+        val needsTransaction =
+            tx.actions.isNotEmpty() || rendererIsInteropActive != tx.isInteropActive
+        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
+            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
+            layerPresentsWithTransaction = needsTransaction
+        }
+        if (tx.isInteropActive) rendererIsInteropActive = true
         // Drain Compose's async work (sendFrame continuations, recomposer steps)
         // synchronously so their state writes happen now and trigger invalidate →
         // next requestFrame in the same Tao loop iteration. Mirrors Skiko's

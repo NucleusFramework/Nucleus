@@ -441,6 +441,8 @@ public object TaoHeadfulTestSuiteMain {
             MacOsGpuCacheReclaimHeadfulCases.all() +
             TearOffFlashHeadfulCases.all() +
             NativeViewMonkeyHeadfulCases.all() +
+            NativeViewFrameSyncHeadfulCases.all() +
+            NativeViewOverlayHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all() +
             GpuCacheReclaimHeadfulCases.all() +
             ModalDialogHeadfulCases.all()

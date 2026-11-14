@@ -20,9 +20,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.roundToIntRect
 import dev.nucleusframework.core.runtime.Platform
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -57,6 +63,18 @@ import kotlin.math.roundToInt
  * native views (same limitation as `AndroidView` / `UIKitView`). Use
  * [cornerRadius] for rounded/circular clipping; pass [Dp.Infinity] to
  * make it fully circular regardless of size.
+ *
+ * @param placedAsOverlay macOS only, read when the view is first composed.
+ * Mounts the view **above** the Compose surface instead, like
+ * `UIKitInteropProperties(placedAsOverlay = true)` on Compose iOS: no hole
+ * is punched, the window is not switched to transparency, and no pointer
+ * event is replayed. AppKit hit-tests the view and delivers hover, press,
+ * drag and click itself, which controls that run their own mouse tracking
+ * (`NSButton`, `NSTextField`) need. Compose cannot draw over such a view,
+ * neither in [content] nor in later siblings or in-scene popups. The view
+ * is still clipped to the bounds of its clipping ancestors (`clipToBounds`,
+ * scrolling containers), but not to their shapes. Ignored on Windows and
+ * Linux.
  */
 @Composable
 public fun NativeView(
@@ -64,9 +82,11 @@ public fun NativeView(
     modifier: Modifier = Modifier,
     update: (NucleusPlatformView) -> Unit = {},
     cornerRadius: Dp = Dp.Unspecified,
+    placedAsOverlay: Boolean = false,
     content: @Composable () -> Unit = {},
 ) {
     val view = remember { factory() }
+    val overlay = remember { placedAsOverlay }
     val latestUpdate by rememberUpdatedState(update)
 
     // `view.dispose()` is owned by [EmbeddedNativeView], sequenced *after* the
@@ -77,15 +97,26 @@ public fun NativeView(
 
     when (view) {
         is NucleusPlatformView.NsView ->
-            EmbeddedNativeView(
-                handle = view.nsViewHandle,
-                view = view,
-                modifier = modifier,
-                cornerRadius = cornerRadius,
-                content = content,
-                enabled = Platform.Current == Platform.MacOS && view.nsViewHandle != 0L,
-                applyCornerRadius = true,
-            )
+            if (overlay) {
+                OverlayNativeView(
+                    handle = view.nsViewHandle,
+                    view = view,
+                    modifier = modifier,
+                    cornerRadius = cornerRadius,
+                    content = content,
+                    enabled = Platform.Current == Platform.MacOS && view.nsViewHandle != 0L,
+                )
+            } else {
+                EmbeddedNativeView(
+                    handle = view.nsViewHandle,
+                    view = view,
+                    modifier = modifier,
+                    cornerRadius = cornerRadius,
+                    content = content,
+                    enabled = Platform.Current == Platform.MacOS && view.nsViewHandle != 0L,
+                    applyCornerRadius = true,
+                )
+            }
         is NucleusPlatformView.GtkWidget ->
             EmbeddedNativeView(
                 handle = view.gtkWidgetHandle,
@@ -108,6 +139,137 @@ public fun NativeView(
                 enabled = Platform.Current == Platform.Windows,
                 applyCornerRadius = true,
             )
+    }
+}
+
+/** The signature before `placedAsOverlay`, kept for binaries compiled against it. */
+@Deprecated("Use the overload with placedAsOverlay.", level = DeprecationLevel.HIDDEN)
+@Composable
+public fun NativeView(
+    factory: () -> NucleusPlatformView,
+    modifier: Modifier = Modifier,
+    update: (NucleusPlatformView) -> Unit = {},
+    cornerRadius: Dp = Dp.Unspecified,
+    content: @Composable () -> Unit = {},
+) {
+    NativeView(factory, modifier, update, cornerRadius, placedAsOverlay = false, content = content)
+}
+
+/**
+ * `placedAsOverlay` embedding (macOS): the view sits above the Compose
+ * surface, so there is no hole to punch and no pointer event to replay.
+ * [content] composes in the same scene, under the view.
+ */
+@Composable
+private fun OverlayNativeView(
+    handle: Long,
+    view: NucleusPlatformView,
+    modifier: Modifier,
+    cornerRadius: Dp,
+    content: @Composable () -> Unit,
+    enabled: Boolean,
+) {
+    val host = LocalTaoNativeViewHost.current
+    val latestContent by rememberUpdatedState(content)
+    if (!enabled || host == null) {
+        DisposableEffect(view) {
+            onDispose { view.dispose() }
+        }
+        Box(modifier)
+        return
+    }
+
+    val regionToken = remember { Any() }
+    val geometry = remember(host) { OverlayGeometry(host, handle, view) }
+    geometry.cornerRadiusPx = cornerRadiusPx(cornerRadius)
+    // Same order as [EmbeddedNativeView]: the host lets go of the handle,
+    // then the app frees it.
+    DisposableEffect(host, regionToken) {
+        host.attachOverlay(handle, regionToken, geometry::sync)
+        onDispose {
+            host.detachOverlay(handle, regionToken)
+            view.dispose()
+        }
+    }
+    Box(modifier.onPlaced { geometry.coordinates = it }) {
+        latestContent()
+    }
+}
+
+/**
+ * What the host was last told about an overlay view: its rect, the part of
+ * it that its clipping ancestors leave visible, and its corner radius.
+ */
+private class OverlayGeometry(
+    private val host: TaoNativeViewHost,
+    private val handle: Long,
+    private val view: NucleusPlatformView,
+) {
+    var coordinates: LayoutCoordinates? = null
+    var cornerRadiusPx: Float = 0f
+
+    private var frame: IntRect? = null
+    private var visible: IntRect? = null
+    private var radius: Float = Float.NaN
+
+    /**
+     * Runs after the layout of every frame rather than when the view is
+     * placed: an ancestor's clip can change around a view that stays put.
+     * The two rects are the ones Compose iOS's interop holder computes.
+     */
+    fun sync() {
+        val coordinates = coordinates?.takeIf { it.isAttached }
+        if (coordinates == null) {
+            // Still composed but out of the layout, e.g. a lazy item kept for reuse.
+            hide()
+            return
+        }
+        val root = coordinates.findRootCoordinates()
+        val bounds = root.localBoundingBoxOf(coordinates, clipBounds = false).roundToIntRect()
+        val newFrame =
+            IntRect(bounds.topLeft, IntSize(bounds.width.coerceAtLeast(1), bounds.height.coerceAtLeast(1)))
+        val newVisible = root.localBoundingBoxOf(coordinates, clipBounds = true).roundToIntRect()
+        val moved = newFrame != frame
+        if (moved || newVisible != visible) {
+            frame = newFrame
+            visible = newVisible
+            host.setOverlayFrame(handle, newFrame, newVisible)
+        }
+        if (moved) {
+            view.resize(newFrame.width, newFrame.height)
+            view.setBounds(newFrame.left, newFrame.top, newFrame.width, newFrame.height)
+        }
+        if (moved || radius != cornerRadiusPx) {
+            radius = cornerRadiusPx
+            val radiusToApply =
+                if (cornerRadiusPx.isInfinite()) {
+                    min(newFrame.width, newFrame.height) / 2f
+                } else {
+                    cornerRadiusPx
+                }
+            host.setCornerRadius(handle, radiusToApply)
+            view.setCornerRadius(radiusToApply)
+        }
+    }
+
+    private fun hide() {
+        val shown = frame ?: return
+        if (visible == IntRect.Zero) return
+        visible = IntRect.Zero
+        host.setOverlayFrame(handle, shown, IntRect.Zero)
+    }
+}
+
+/** [cornerRadius] in px: 0 when unspecified, infinite for a fully circular clip. */
+@Composable
+private fun cornerRadiusPx(cornerRadius: Dp): Float {
+    val density = LocalDensity.current
+    return remember(cornerRadius, density) {
+        when {
+            cornerRadius == Dp.Unspecified -> 0f
+            cornerRadius == Dp.Infinity -> Float.POSITIVE_INFINITY
+            else -> with(density) { cornerRadius.toPx() }
+        }
     }
 }
 
@@ -149,15 +311,7 @@ private fun EmbeddedNativeView(
         }
     }
 
-    val density = LocalDensity.current
-    val cornerRadiusPx =
-        remember(cornerRadius, density) {
-            when {
-                cornerRadius == Dp.Unspecified -> 0f
-                cornerRadius == Dp.Infinity -> Float.POSITIVE_INFINITY
-                else -> with(density) { cornerRadius.toPx() }
-            }
-        }
+    val cornerRadiusPx = cornerRadiusPx(cornerRadius)
     val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
     val lastRadius = remember { floatArrayOf(Float.NaN) }
     Box(
@@ -349,6 +503,38 @@ internal interface TaoNativeViewHost {
         handle: Long,
         radiusPx: Float,
     )
+
+    /**
+     * Mounts [childHandle] above the Compose surface (`placedAsOverlay`).
+     * [onFrame] runs after the layout of every frame the window renders,
+     * for the embedding to report its geometry through [setOverlayFrame].
+     * macOS only: no other host is handed an overlay.
+     */
+    fun attachOverlay(
+        childHandle: Long,
+        regionToken: Any,
+        onFrame: () -> Unit,
+    ) {
+    }
+
+    fun detachOverlay(
+        childHandle: Long,
+        regionToken: Any,
+    ) {
+    }
+
+    /**
+     * Places an overlay: [frame] is its own rect and [visible] the part of
+     * it that its clipping ancestors leave, both in root px. They are equal
+     * for a view nothing clips; an empty [visible] hides it. Called from
+     * `onFrame`, so the change is committed with that frame.
+     */
+    fun setOverlayFrame(
+        handle: Long,
+        frame: IntRect,
+        visible: IntRect,
+    ) {
+    }
 
     /**
      * Forwards a Compose pointer event that landed on this native view
