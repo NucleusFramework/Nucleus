@@ -443,6 +443,7 @@ public object TaoHeadfulTestSuiteMain {
             NativeViewMonkeyHeadfulCases.all() +
             NativeViewFrameSyncHeadfulCases.all() +
             NativeViewOverlayHeadfulCases.all() +
+            NativeViewOverlayInputHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all() +
             GpuCacheReclaimHeadfulCases.all() +
             ModalDialogHeadfulCases.all()

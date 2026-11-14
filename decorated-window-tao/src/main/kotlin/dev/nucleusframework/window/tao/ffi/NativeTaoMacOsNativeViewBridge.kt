@@ -298,4 +298,12 @@ internal object NativeTaoMacOsNativeViewBridge {
         contentNsView: Long,
         nsView: Long,
     ): IntArray?
+
+    /** Headful diagnostics: an NSButton counting its action, released with [nativeDiagReleaseView]. */
+    @JvmStatic
+    external fun nativeDiagCreateButton(): Long
+
+    /** Headful diagnostics: how many times the button's action ran, -1 if not a diag button. */
+    @JvmStatic
+    external fun nativeDiagButtonClicks(nsView: Long): Int
 }

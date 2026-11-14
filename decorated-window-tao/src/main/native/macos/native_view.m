@@ -1146,3 +1146,40 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     (*env)->SetIntArrayRegion(env, result, 0, 6, out);
     return result;
 }
+
+// An NSButton counting its action, for the overlay input cases: it runs
+// AppKit's own mouse tracking, which only a view AppKit hit-tests gets.
+
+@interface NucleusDiagButtonTarget : NSObject
+@property (atomic) int clicks;
+- (void)hit:(id)sender;
+@end
+
+@implementation NucleusDiagButtonTarget
+- (void)hit:(id)sender { (void)sender; self.clicks += 1; }
+@end
+
+static char kNucleusDiagButtonTargetKey;
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagCreateButton(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    NucleusDiagButtonTarget *target = [NucleusDiagButtonTarget new];
+    NSButton *button = [NSButton buttonWithTitle:@"Native" target:target action:@selector(hit:)];
+    objc_setAssociatedObject(button, &kNucleusDiagButtonTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    button.bezelStyle = NSBezelStylePush;
+    button.wantsLayer = YES;
+    return (jlong)(uintptr_t)(__bridge_retained void *)button;
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagButtonClicks(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    NucleusDiagButtonTarget *target = objc_getAssociatedObject(view, &kNucleusDiagButtonTargetKey);
+    return target == nil ? -1 : target.clicks;
+}
