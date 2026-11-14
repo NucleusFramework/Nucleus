@@ -411,6 +411,7 @@ public object TaoHeadfulTestSuiteMain {
             TabWorkspaceHeadfulCases.all() +
             TabStripMotionHeadfulCases.all() +
             TabWorkspaceLifecycleHeadfulCases.all() +
+            RelocatedViewModelHeadfulCases.all() +
             TabWorkspaceMotionHeadfulCases.all() +
             TabWorkspaceMouseHeadfulCases.all() +
             TabWorkspaceConcurrencyHeadfulCases.all() +
