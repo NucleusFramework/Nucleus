@@ -170,6 +170,14 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
     val runtimeProvisioningProfile: RegularFileProperty = objects.fileProperty()
 
     /**
+     * A StoreKit configuration (`.storekit`, Xcode › File › New › StoreKit Configuration File)
+     * that `runStoreKit` serves to the app through StoreKit Testing, so in-app purchases
+     * (`nucleus.mac-app-store`) work in development without App Store Connect or an Apple
+     * account. Never packaged.
+     */
+    val storeKitConfiguration: RegularFileProperty = objects.fileProperty()
+
+    /**
      * Target macOS SDK version to set in the app launcher's Mach-O headers via vtool.
      * This allows AppKit to enable features gated behind a specific SDK version
      * (e.g. Liquid Glass requires SDK 26.0).
@@ -225,6 +233,14 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
     /** Configures [appExtensions]. See [MacAppExtensionSettings] for the caveats. */
     fun appExtensions(fn: Action<MacAppExtensionSettings>) {
         fn.execute(appExtensions)
+    }
+
+    /** macOS widgets (WidgetKit) the app provides; see [MacWidgetsSettings]. */
+    val widgets: MacWidgetsSettings = MacWidgetsSettings()
+
+    /** Configures [widgets]. */
+    fun widgets(fn: Action<MacWidgetsSettings>) {
+        fn.execute(widgets)
     }
 
     internal val infoPlistSettings = InfoPlistSettings()
@@ -494,6 +510,14 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
     /** Configures the AppX / MSIX package. */
     fun appx(fn: Action<AppXSettings>) {
         fn.execute(appx)
+    }
+
+    /** Windows 11 widgets the app provides; see [WindowsWidgetsSettings]. */
+    val widgets: WindowsWidgetsSettings = objects.newInstance(WindowsWidgetsSettings::class.java)
+
+    /** Configures [widgets]. */
+    fun widgets(fn: Action<WindowsWidgetsSettings>) {
+        fn.execute(widgets)
     }
 
     val portable: PortableSettings = objects.newInstance(PortableSettings::class.java)

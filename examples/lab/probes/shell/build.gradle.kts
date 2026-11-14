@@ -1,5 +1,5 @@
 // Shell integration probes: badge, taskbar progress, jump lists, Dock / menu bar, quicklist,
-// tray, media controls and global hotkeys.
+// tray, media controls, global hotkeys and Windows 11 widgets.
 plugins {
     alias(libs.plugins.kotlin)
     alias(libs.plugins.kotlinComposePlugin)
@@ -11,6 +11,7 @@ kotlin {
     jvmToolchain(25)
     compilerOptions {
         optIn.add("dev.nucleusframework.window.ExperimentalNucleusApi")
+        optIn.add("dev.nucleusframework.widget.ExperimentalNucleusWidgetApi")
     }
 }
 
@@ -27,6 +28,8 @@ dependencies {
     implementation(project(":freedesktop-icons"))
     implementation(project(":media-control"))
     implementation(project(":global-hotkey"))
+    implementation(project(":widget-windows"))
+    implementation(project(":widget-macos"))
     // Built against published Nucleus modules: the in-tree ones must win (duplicate classes otherwise).
     implementation(libs.composenativetray) {
         exclude(group = "dev.nucleusframework", module = "nucleus.core-runtime")

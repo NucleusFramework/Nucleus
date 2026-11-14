@@ -82,7 +82,8 @@ abstract class AbstractRunAppXTask : AbstractNucleusTask() {
         // Find the app executable
         val installDir = File(installLocation)
         val exe =
-            findAppExecutable(installDir)
+            manifestExecutable(installDir)
+                ?: findAppExecutable(installDir)
                 ?: error("No .exe found in $installLocation")
         logger.lifecycle("Launching: ${exe.absolutePath}")
 
@@ -92,6 +93,27 @@ abstract class AbstractRunAppXTask : AbstractNucleusTask() {
             spec.executable(exe.absolutePath)
             spec.isIgnoreExitValue = true
         }
+    }
+
+    /**
+     * The `Executable` of the installed manifest's `<Application>` ([applicationId], else the
+     * first one): additional launchers (a CLI next to the GUI exe) make a directory scan ambiguous.
+     */
+    private fun manifestExecutable(installDir: File): File? {
+        val manifest = File(installDir, "AppxManifest.xml").takeIf { it.isFile } ?: return null
+        val applications =
+            Regex("""<Application\b[^>]*>""")
+                .findAll(manifest.readText())
+                .map { it.value }
+                .toList()
+        fun attribute(
+            tag: String,
+            name: String,
+        ) = Regex("""\b$name="([^"]+)"""").find(tag)?.groupValues?.get(1)
+        val application =
+            applications.firstOrNull { attribute(it, "Id") == applicationId.orNull } ?: applications.firstOrNull()
+        val executable = application?.let { attribute(it, "Executable") } ?: return null
+        return File(installDir, executable).takeIf { it.isFile }
     }
 
     private fun findAppExecutable(installDir: File): File? {

@@ -83,4 +83,20 @@ abstract class AppXSettings {
 
     /** Wide tile, `Wide310x150Logo` (310 x 150 at 100 %). */
     val wide310x150Logo: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * Replaces electron-builder's `AppxManifest.xml` template (`customManifestPath`). Its
+     * `${...}` macros (`${identityName}`, `${extensions}`, `${capabilities}`, …) are still
+     * expanded, so a copy of the stock template only needs the extra namespaces or
+     * `<PackageDependency>` entries. Default: the stock template.
+     */
+    val customManifest: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * XML appended inside the manifest's `<Extensions>` (`customExtensionsPath`), after the
+     * extensions generated for protocols, file associations and auto-launch, e.g. a
+     * `com:Extension` COM server or a `uap3:AppExtension`. Their namespaces must be declared,
+     * see [customManifest].
+     */
+    val customExtensions: RegularFileProperty = objects.fileProperty()
 }

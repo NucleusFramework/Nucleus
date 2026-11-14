@@ -1,6 +1,7 @@
 package dev.nucleusframework.desktop.application.tasks
 
 import dev.nucleusframework.desktop.application.internal.files.nucleusNativeEntries
+import dev.nucleusframework.desktop.application.internal.files.nucleusPackagingOnlyEntries
 import dev.nucleusframework.desktop.application.internal.files.unpackNucleusNativeLibs
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
 import org.gradle.api.file.DirectoryProperty
@@ -21,7 +22,8 @@ import org.gradle.work.DisableCachingByDefault
  * [platformDir] go to [libsDir], to be shipped next to the executable, and [strippedJar] is the
  * same JAR without any library a Nucleus module lists, so native-image embeds none of them.
  * [droppedEntries] — Skiko's library, which the packaging copies beside the executable itself
- * (#821) — are left out of [strippedJar] as well. Everything else — including other
+ * (#821) — and the entries a module needs at packaging only (`widget-macos`'s WidgetKit extension)
+ * are left out of [strippedJar] as well. Everything else — including other
  * `nucleus/native/` entries — is left as it is.
  *
  * Embedded libraries could only be loaded by extracting them to the user's cache on first launch;
@@ -63,6 +65,7 @@ abstract class AbstractUnpackNucleusNativesTask : AbstractNucleusTask() {
             platformDir = platformDir.get(),
             nucleusEntries = source.nucleusNativeEntries(),
             droppedEntries = droppedEntries.get(),
+            packagingOnly = source.nucleusPackagingOnlyEntries(),
         )
     }
 }

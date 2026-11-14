@@ -37,8 +37,9 @@ import java.awt.dnd.DropTargetDropEvent
  * `JPanel`'s Swing L&F / toolkit init would deadlock the app. See [TaoSyntheticKey].
  *
  * The synthetic events also carry the [TaoDragAndDropPayload] directly via
- * [TaoSyntheticDropEvent.payload] / [TaoSyntheticDragEvent.payload] so a
- * non-AWT consumer can pattern-match without invoking the toolkit at all.
+ * [TaoSyntheticDropEvent.payload] / [TaoSyntheticDragEvent.payload]; both are
+ * internal, so applications read it through the public
+ * [dev.nucleusframework.window.tao.taoPayload] extension.
  */
 internal object TaoSyntheticDropContext {
     private val shadowComponent: java.awt.Component = object : java.awt.Component() {}

@@ -1,0 +1,76 @@
+{
+  "identifier": "4F2C6C1E",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "4.99",
+      "familyShareable": false,
+      "internalID": "6450000001",
+      "localizations": [
+        {
+          "description": "Every Lab feature, for good",
+          "displayName": "Nucleus Lab Pro",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "pro",
+      "referenceName": "Nucleus Lab Pro",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "6450000002",
+      "localizations": [
+        {
+          "description": "100 coins, used up when consumed",
+          "displayName": "Lab Coins",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "coins",
+      "referenceName": "Lab Coins",
+      "type": "Consumable"
+    }
+  ],
+  "settings": {},
+  "subscriptionGroups": [
+    {
+      "id": "21000001",
+      "localizations": [],
+      "name": "Lab Premium",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "2.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "6450000003",
+          "introductoryOffer": {
+            "internalID": "6450000004",
+            "numberOfPeriods": 1,
+            "paymentMode": "free",
+            "subscriptionPeriod": "P1W"
+          },
+          "localizations": [
+            {
+              "description": "Monthly Lab subscription with a free week",
+              "displayName": "Lab Premium",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "premium.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Lab Premium",
+          "subscriptionGroupID": "21000001",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}
