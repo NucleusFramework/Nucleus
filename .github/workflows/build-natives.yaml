@@ -366,6 +366,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash service-management-macos/src/main/native/macos/build.sh
 
+      - name: Build mac-app-store macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash mac-app-store/src/main/native/macos/build.sh
+
       - name: Build scheduler macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash scheduler/src/main/native/macos/build.sh
@@ -449,6 +453,7 @@ jobs:
             "taskbar-progress/libnucleus_taskbar_progress.dylib"
             "notification-macos/libnucleus_notification.dylib"
             "service-management-macos/libnucleus_service_management.dylib"
+            "mac-app-store/libnucleus_macstore.dylib"
             "scheduler/libnucleus_scheduler.dylib"
             "launcher-macos/libnucleus_launcher_macos.dylib"
             "widget-macos/libnucleus_widget_macos.dylib"

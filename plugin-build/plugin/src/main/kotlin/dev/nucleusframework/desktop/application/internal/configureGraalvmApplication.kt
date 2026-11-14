@@ -2268,7 +2268,8 @@ private fun JvmApplicationContext.registerEmbedGraalvmAppExtensions(
             extension.entitlements?.let { inputs.file(it) }
             extension.provisioningProfile?.let { inputs.file(it) }
         }
-        val bundleDir = appTmpDir.map { it.dir("graalvm/output/${appBundleName.get()}") }.get().asFile
+        // The bundle codesignBundle sealed, under compose/binaries like the JVM app.
+        val bundleDir = graalvmOutputDir.map { it.dir(appBundleName.get()) }.get().asFile
         commandLine("bash", "-c", buildGraalvmAppExtensionEmbedScript(bundleDir, macAppExtensions))
     }
 

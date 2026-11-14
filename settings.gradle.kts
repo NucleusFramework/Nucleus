@@ -83,6 +83,7 @@ include(":speech-recognition")
 include(":flatpak")
 include(":location")
 include(":microsoft-store")
+include(":mac-app-store")
 
 // Nucleus Lab: the single test bench app (examples/lab). One module per probe domain;
 // each contributes its probes to the Metro graph assembled by :examples:lab:app.
