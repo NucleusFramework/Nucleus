@@ -53,6 +53,7 @@ private fun VerticalSliderDemo() {
         ) {
             VerticalSlider(
                 state = vertical,
+                onValueChange = { vertical.value = it },
                 modifier = Modifier.height(180.dp),
             )
             Column(
@@ -65,6 +66,7 @@ private fun VerticalSliderDemo() {
                 )
                 Slider(
                     state = horizontal,
+                    onValueChange = { horizontal.value = it },
                     track = { sliderState ->
                         SliderDefaults.Track(
                             sliderState = sliderState,

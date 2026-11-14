@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao.headful
 
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
@@ -46,7 +47,7 @@ internal object WindowApiV2HeadfulCases {
                 initialBoundsProvider =
                     WindowBoundsProvider(
                         sizeProvider = WindowSizeProvider.Fixed(INITIAL_SIZE),
-                        positionProvider = WindowPositionProvider.CenteredOnScreen,
+                        positionProvider = WindowPositionProvider.AlignedToScreenAvailableBounds(Alignment.Center),
                     ),
             )
         return TaoWindowTestCase(

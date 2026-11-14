@@ -1,11 +1,16 @@
 package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.PlatformContext
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.ViewConfiguration
 import dev.nucleusframework.energymanager.AwakeHandle
 import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
+import dev.nucleusframework.window.tao.TaoLinuxUriHandler
+import dev.nucleusframework.window.tao.clipboard.TaoLinuxClipboard
+import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxClipboardBridge
 import java.util.logging.Logger
 
 /**
@@ -74,6 +79,19 @@ internal abstract class TaoPlatformContextBase : PlatformContext.Empty() {
      * tracks display-scale changes. Hosts override with their current scale.
      */
     protected open val sceneScale: Float get() = 1f
+
+    /**
+     * Compose 1.13 takes the owner's `LocalUriHandler` from the context, so
+     * popups and dialogs get it too. Skiko's default `URIManager` calls
+     * `Desktop.browse`, which starts XAWT. See [TaoLinuxUriHandler].
+     */
+    override val uriHandler: UriHandler get() = TaoLinuxUriHandler
+
+    /** The owner's `LocalClipboard`: GTK when available (#582), Compose's AWT clipboard otherwise. */
+    override val clipboard: Clipboard by lazy {
+        val awt = super.clipboard
+        if (NativeTaoLinuxClipboardBridge.isAvailable) TaoLinuxClipboard(fallback = awt) else awt
+    }
 
     /**
      * Density-scaled thresholds — AWT/Android parity (#615).

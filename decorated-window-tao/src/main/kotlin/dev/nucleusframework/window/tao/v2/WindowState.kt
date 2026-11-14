@@ -38,7 +38,7 @@ import kotlinx.coroutines.channels.Channel
  *     initialScreenProvider = WindowScreenProvider.Primary,
  *     initialBoundsProvider = WindowBoundsProvider(
  *         sizeProvider = WindowSizeProvider.Fixed(1200.dp, 800.dp),
- *         positionProvider = WindowPositionProvider.CenteredOnScreen,
+ *         positionProvider = WindowPositionProvider.CenteredInScreenBounds,
  *     ),
  * )
  * DecoratedWindow(onCloseRequest = ::exitApplication, state = state) { }

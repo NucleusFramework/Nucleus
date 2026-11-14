@@ -9,6 +9,10 @@ public final class androidx/compose/ui/node/TaoLayerTreeAccess {
 	public static fun wrapped (Landroidx/compose/ui/layout/LayoutCoordinates;)Landroidx/compose/ui/layout/LayoutCoordinates;
 }
 
+public final class androidx/compose/ui/platform/TaoGraphicsResourceCacheAccess {
+	public static fun localGraphicsResourceCache ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
 public final class androidx/compose/ui/scene/TaoComposeSceneContextAccess {
 	public static fun localComposeSceneContext ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }
@@ -1766,10 +1770,12 @@ public final class dev/nucleusframework/window/tao/v2/WindowPositionProvider$Com
 	public final fun Absolute-jo-Fl9I (J)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
 	public final fun AlignedToParentWindow-7WlHY6s (Landroidx/compose/ui/Alignment;Landroidx/compose/ui/Alignment;JZ)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
 	public static synthetic fun AlignedToParentWindow-7WlHY6s$default (Ldev/nucleusframework/window/tao/v2/WindowPositionProvider$Companion;Landroidx/compose/ui/Alignment;Landroidx/compose/ui/Alignment;JZILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
-	public final fun AlignedToScreen-BkVx2pU (Landroidx/compose/ui/Alignment;J)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
-	public static synthetic fun AlignedToScreen-BkVx2pU$default (Ldev/nucleusframework/window/tao/v2/WindowPositionProvider$Companion;Landroidx/compose/ui/Alignment;JILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun AlignedToScreenAvailableBounds-BkVx2pU (Landroidx/compose/ui/Alignment;J)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public static synthetic fun AlignedToScreenAvailableBounds-BkVx2pU$default (Ldev/nucleusframework/window/tao/v2/WindowPositionProvider$Companion;Landroidx/compose/ui/Alignment;JILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun CenteredInScreenBounds-jo-Fl9I (J)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public static synthetic fun CenteredInScreenBounds-jo-Fl9I$default (Ldev/nucleusframework/window/tao/v2/WindowPositionProvider$Companion;JILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
 	public final fun getCenteredInParentWindow ()Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
-	public final fun getCenteredOnScreen ()Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun getCenteredInScreenBounds ()Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
 	public final fun getCurrent ()Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
 	public final fun getDefault ()Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
 }

@@ -11,8 +11,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.TaoGraphicsResourceCacheAccess
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.scene.ensureSkikoComposeBackend
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -119,6 +121,7 @@ private fun runTaoComposeLoop(
     content: @Composable ApplicationScope.() -> Unit,
 ) {
     TaoApplication.run { app ->
+        ensureSkikoComposeBackend()
         val scope = ComposableApplicationScope(app)
         // CoroutineScope pinned to the Tao main thread. Every `launch` posts
         // the block via TaoMainDispatcher, which queues onto the Tao event
@@ -171,16 +174,7 @@ private fun runTaoComposeLoop(
         coroutineScope.launch {
             try {
                 composition.setContent {
-                    // Install root-level defaults for locals that Compose APIs may consult
-                    // before any window scene is mounted (e.g. compose-resources `Font(…)`
-                    // reads `LocalDensity.current` via `rememberEnvironment`). Mirrors the
-                    // exact pattern Compose Desktop's AWT `application { }` uses — see
-                    // `androidx.compose.ui.window.LayoutConfiguration.desktop.kt`. Per-window
-                    // ComposeScenes override these with their own platform-correct values.
-                    CompositionLocalProvider(
-                        LocalDensity provides GlobalDensity,
-                        LocalLayoutDirection provides GlobalLayoutDirection,
-                    ) {
+                    ProvideApplicationRootLocals {
                         if (scope.isOpen) scope.content()
                     }
                 }
@@ -232,7 +226,28 @@ private fun startGlobalSnapshotManager(scope: CoroutineScope) {
     }
 }
 
-private object NoOpApplier : Applier<Unit> {
+/**
+ * Root-level defaults for locals that Compose APIs may consult before any
+ * window scene is mounted (e.g. compose-resources `Font(…)` reads
+ * `LocalDensity.current` via `rememberEnvironment`). Mirrors Compose Desktop's
+ * AWT `application { }` (`LayoutConfiguration.desktop.kt`); per-window scenes
+ * override them with their own values.
+ *
+ * `LocalGraphicsResourceCache` (Compose 1.13) defaults to `LocalOwner`'s cache,
+ * and the application composition has no Owner: without the `null` default,
+ * `rememberVectorPainter` at application scope (window / tray icons) throws.
+ */
+@Composable
+internal fun ProvideApplicationRootLocals(content: @Composable () -> Unit) {
+    CompositionLocalProvider(
+        LocalDensity provides GlobalDensity,
+        LocalLayoutDirection provides GlobalLayoutDirection,
+        TaoGraphicsResourceCacheAccess.localGraphicsResourceCache() providesDefault null,
+        content = content,
+    )
+}
+
+internal object NoOpApplier : Applier<Unit> {
     override val current: Unit = Unit
 
     override fun down(node: Unit) = Unit

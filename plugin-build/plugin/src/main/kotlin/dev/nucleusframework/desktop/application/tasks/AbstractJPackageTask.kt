@@ -1240,9 +1240,18 @@ private class FilesMapping : Serializable {
     }
 }
 
+// Compose 1.13 ships every platform's Skiko native in one `skiko-awt-runtime-all` jar.
 private fun isSkikoForCurrentOS(lib: File): Boolean =
-    lib.name.contains("skiko-awt-runtime-${currentOS.id}-${currentArch.id}") &&
-        lib.name.endsWith(".jar")
+    lib.name.endsWith(".jar") &&
+        (
+            lib.name.contains("skiko-awt-runtime-${currentOS.id}-${currentArch.id}") ||
+                lib.name.contains(SKIKO_RUNTIME_ALL)
+        )
+
+private const val SKIKO_RUNTIME_ALL = "skiko-awt-runtime-all"
+
+// Any Skiko native library, with or without its `.sha256`, for any OS / arch.
+private val SKIKO_NATIVE_ENTRY = Regex("""^(lib)?skiko-(linux|macos|windows)-[a-z0-9]+\.(so|dylib|dll)$""")
 
 private fun unpackSkikoForCurrentOS(
     sourceJar: File,
@@ -1269,7 +1278,9 @@ private fun unpackSkikoForCurrentOS(
             val unpackedFile = skikoDir.resolve(entry.name.substringAfterLast("/"))
             zin.copyTo(unpackedFile)
             outputFiles.add(unpackedFile)
-        } else {
+        } else if (!SKIKO_NATIVE_ENTRY.matches(entryFileName)) {
+            // Other platforms' natives (the `-all` jar, or an uber jar built from it) are dropped:
+            // dead weight, and binaries the notarization / signing pass would have to handle.
             copyZipEntry(entry, zin, zout)
         }
     }

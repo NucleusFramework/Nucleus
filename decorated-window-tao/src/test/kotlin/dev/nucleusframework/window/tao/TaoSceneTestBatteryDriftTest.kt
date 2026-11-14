@@ -131,6 +131,7 @@ class TaoSceneTestBatteryDriftTest {
             TransferDragTest::class.java,
             TabWorkspaceTest::class.java,
             TabHoverPreviewTest::class.java,
+            ApplicationScopeVectorPainterTest::class.java,
             PartialRedrawTest::class.java,
         )
 

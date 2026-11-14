@@ -57,7 +57,7 @@ class LayerDamageTransformTest {
             } catch (_: InvocationTargetException) {
                 // The body runs against an object no constructor set up.
             }
-            invokeIgnoringBody(layerClass, layer, "draw\$ui_graphics", null, parent)
+            invokeIgnoringBody(layerClass, layer, "draw\$org_jetbrains_compose_ui_ui_graphics", null, parent)
             assertEquals(listOf("start", "draw:true"), events)
         }
     }
