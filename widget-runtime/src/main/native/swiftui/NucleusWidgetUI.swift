@@ -289,7 +289,6 @@ struct NodeView: View {
                 maxHeight: modifier?.fh == true ? .infinity : nil,
                 alignment: Alignment(horizontal: alignment, vertical: .top)
             )
-            .layoutPriority(Double(modifier?.w ?? 0))
         let backed = Group {
             if let color = Style.background(modifier?.bg), !isRoot {
                 filled.padding(6).background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(color))
