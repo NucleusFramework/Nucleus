@@ -224,6 +224,24 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
     ) {
         protocols.add(UrlProtocol(name, schemes.toList()))
     }
+
+    // --- App links (verified https:// links that open the application) ---
+
+    val appLinkHosts: MutableList<String> = mutableListOf()
+
+    /**
+     * Declares the web [hosts] whose `https://` links open the application instead of the browser,
+     * the desktop counterpart of Android App Links. `*.example.com` covers every subdomain. Each host
+     * must prove the app owns it with a file it serves; the link then reaches `onDeepLink` like a
+     * custom scheme does.
+     *
+     * - Windows: AppX / MSIX only (`windows.appUriHandler`, which needs package identity), the host
+     *   serving `/.well-known/windows-app-web-link`. NSIS, MSI and portable builds ignore it.
+     * - macOS and Linux: not supported yet.
+     */
+    fun appLinks(vararg hosts: String) {
+        appLinkHosts.addAll(hosts)
+    }
 }
 
 /** A URL protocol handler: the URL [schemes] the application opens, registered under [name]. */

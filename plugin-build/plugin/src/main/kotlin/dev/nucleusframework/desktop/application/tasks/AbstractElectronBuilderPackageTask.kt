@@ -16,9 +16,10 @@ import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
+import dev.nucleusframework.desktop.application.internal.AppXAppLinks
 import dev.nucleusframework.desktop.application.internal.AppXLogo
 import dev.nucleusframework.desktop.application.internal.WindowsWidgetsPackaging
-import dev.nucleusframework.desktop.application.internal.electronbuilder.AppXWidgetFiles
+import dev.nucleusframework.desktop.application.internal.electronbuilder.AppXManifestFiles
 import dev.nucleusframework.desktop.application.internal.FlathubChecks
 import dev.nucleusframework.desktop.application.internal.FlathubRepository
 import dev.nucleusframework.desktop.application.internal.FlathubSpec
@@ -379,7 +380,7 @@ abstract class AbstractElectronBuilderPackageTask
             val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir)
             signWindowsAppImage(workingAppDir, outputDir, dist)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
-            val appxWidgets = stageWindowsWidgets(dist, workingAppDir, outputDir)
+            val appxManifest = stageAppXManifest(dist, workingAppDir, outputDir)
 
             val (node, npm) = resolveNodeJs()
             validateNodeVersion(node)
@@ -405,7 +406,7 @@ abstract class AbstractElectronBuilderPackageTask
                     windowsIconOverride = windowsIconOverride,
                     linuxScripts = LinuxScriptTemplates(linuxAfterInstallTemplate, linuxAfterRemoveTemplate),
                     hotUpdateLayout = hotUpdateLayout,
-                    appxWidgets = appxWidgets,
+                    appxManifest = appxManifest,
                 )
             ensureProjectPackageMetadata(outputDir, dist)
 
@@ -632,9 +633,10 @@ abstract class AbstractElectronBuilderPackageTask
                     // signWindowsAppImage(), generateNsisInclude()
                     appendLine("windowsSigning.signNativeLibraries: ${dist.windows.signing.signNativeLibraries}")
                     appendLine("appName: ${dist.appName}")
-                    // stageWindowsWidgets()
+                    // stageAppXManifest()
                     if (targetFormat == TargetFormat.AppX) {
                         appendLine(WindowsWidgetsPackaging.describe(dist.windows.widgets))
+                        appendLine("appLinks: ${dist.appLinkHosts}")
                     }
                 }
                 OS.MacOS -> {
@@ -657,7 +659,7 @@ abstract class AbstractElectronBuilderPackageTask
             windowsIconOverride: File?,
             linuxScripts: LinuxScriptTemplates,
             hotUpdateLayout: Boolean,
-            appxWidgets: AppXWidgetFiles?,
+            appxManifest: AppXManifestFiles?,
         ): File {
             val configGenerator = ElectronBuilderConfigGenerator()
             val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
@@ -695,7 +697,7 @@ abstract class AbstractElectronBuilderPackageTask
                     dmgWindowOverride = dmgWindowOverride,
                     nsisInclude = nsisInclude,
                     macBundleName = macBundleName.orNull,
-                    appxWidgets = appxWidgets,
+                    appxManifest = appxManifest,
                 )
             val configFile = File(outputDir, "electron-builder.yml")
             configFile.writeText(configContent)
@@ -2004,16 +2006,38 @@ abstract class AbstractElectronBuilderPackageTask
         )
 
         /**
-         * For an AppX of an app declaring `windows { widgets { } }`: copies the widget images into the
-         * app image and writes the widget manifest template and extensions (see [WindowsWidgetsPackaging]).
+         * For an AppX: the `<Extensions>` the stock template cannot express, in one file ending with
+         * the user's `customExtensions`. Widgets (`windows { widgets { } }`) also copy their images
+         * into the app image and bring their own template (see [WindowsWidgetsPackaging]); app links
+         * (`appLinks(…)`) add the `windows.appUriHandler` extension (see [AppXAppLinks]). `null` when
+         * the app declares neither, so electron-builder reads the user's files directly.
          */
-        private fun stageWindowsWidgets(
+        private fun stageAppXManifest(
             dist: JvmApplicationDistributions,
             appDir: File,
             outputDir: File,
-        ): AppXWidgetFiles? {
+        ): AppXManifestFiles? {
+            if (dist.appLinkHosts.isNotEmpty() && currentOS == OS.Windows && targetFormat != TargetFormat.AppX) {
+                logger.warn(
+                    "appLinks: ${targetFormat.name} has no package identity, so its https:// links keep opening " +
+                        "in the browser. Only the AppX / MSIX package registers them.",
+                )
+            }
+            if (targetFormat != TargetFormat.AppX) return null
             val widgets = dist.windows.widgets
-            if (targetFormat != TargetFormat.AppX || widgets.definitions.isEmpty()) return null
+            val hosts = AppXAppLinks.hosts(dist.appLinkHosts)
+            if (widgets.definitions.isEmpty() && hosts.isEmpty()) return null
+
+            val extraExtensions =
+                (if (hosts.isEmpty()) "" else AppXAppLinks.extensionsXml(hosts)) +
+                    dist.windows.appx.customExtensions.orNull
+                        ?.asFile
+                        ?.readText()
+                        .orEmpty()
+            if (widgets.definitions.isEmpty()) {
+                val extensions = outputDir.resolve("appx-extensions.xml").apply { writeText(extraExtensions) }
+                return AppXManifestFiles(template = null, extensions = extensions)
+            }
             val staged =
                 WindowsWidgetsPackaging.stage(
                     widgets = widgets,
@@ -2023,10 +2047,10 @@ abstract class AbstractElectronBuilderPackageTask
                         resolveExecutableName() ?: throw GradleException("No executable name for the widget provider"),
                     appImageDir = appDir,
                     workDir = outputDir.resolve("widgets"),
-                    userExtensions = dist.windows.appx.customExtensions.orNull?.asFile,
+                    extraExtensions = extraExtensions,
                     warn = logger::warn,
                 )
-            return AppXWidgetFiles(staged.manifestTemplate, staged.extensions)
+            return AppXManifestFiles(staged.manifestTemplate, staged.extensions)
         }
 
         /**

@@ -93,7 +93,7 @@ internal class ElectronBuilderConfigGenerator(
         dmgWindowOverride: DmgWindowOverride? = null,
         nsisInclude: File? = null,
         macBundleName: String? = null,
-        appxWidgets: AppXWidgetFiles? = null,
+        appxManifest: AppXManifestFiles? = null,
     ): String {
         val yaml = StringBuilder()
 
@@ -165,7 +165,7 @@ internal class ElectronBuilderConfigGenerator(
                     windowsIconOverride,
                     executableName,
                     nsisInclude,
-                    appxWidgets,
+                    appxManifest,
                 )
             OS.Linux ->
                 generateLinuxConfig(
@@ -338,7 +338,7 @@ internal class ElectronBuilderConfigGenerator(
         windowsIconOverride: File?,
         executableName: String?,
         nsisInclude: File?,
-        appxWidgets: AppXWidgetFiles? = null,
+        appxManifest: AppXManifestFiles? = null,
     ) {
         yaml.appendLine("win:")
         yaml.appendLine("  target:")
@@ -394,7 +394,7 @@ internal class ElectronBuilderConfigGenerator(
                 appendIfNotNull(yaml, "  menuCategory", msi.menuCategory ?: distributions.windows.menuGroup)
                 appendIfNotNull(yaml, "  shortcutName", msi.shortcutName)
             }
-            TargetFormat.AppX -> generateAppXConfig(yaml, distributions.windows.appx, appxWidgets)
+            TargetFormat.AppX -> generateAppXConfig(yaml, distributions.windows.appx, appxManifest)
             TargetFormat.Portable -> {
                 // electron-builder only honors top-level `compression` for portable;
                 // the block is still required so the target is configured.
@@ -576,7 +576,7 @@ internal class ElectronBuilderConfigGenerator(
     private fun generateAppXConfig(
         yaml: StringBuilder,
         appx: AppXSettings,
-        widgets: AppXWidgetFiles?,
+        manifest: AppXManifestFiles?,
     ) {
         yaml.appendLine("appx:")
         appendIfNotNull(yaml, "  applicationId", appx.applicationId)
@@ -608,10 +608,11 @@ internal class ElectronBuilderConfigGenerator(
                 yaml.appendLine("    - \"$cap\"")
             }
         }
-        // Widgets need their own template and extensions; a user template still wins (it must then
-        // declare the com/uap3 namespaces and the Windows App SDK dependency itself).
-        appendIfNotNull(yaml, "  customManifestPath", appx.customManifest.ref() ?: widgets?.manifestTemplate.ref())
-        appendIfNotNull(yaml, "  customExtensionsPath", widgets?.extensions.ref() ?: appx.customExtensions.ref())
+        // Widgets need their own template; a user template still wins (it must then declare the
+        // com/uap3 namespaces and the Windows App SDK dependency itself). The staged extensions
+        // already end with the user's own customExtensions.
+        appendIfNotNull(yaml, "  customManifestPath", appx.customManifest.ref() ?: manifest?.template.ref())
+        appendIfNotNull(yaml, "  customExtensionsPath", manifest?.extensions.ref() ?: appx.customExtensions.ref())
     }
 
     // Mirrors generateConfig's inputs one-to-one and is called directly by the unit tests.
@@ -977,8 +978,11 @@ internal class ElectronBuilderConfigGenerator(
  */
 internal const val APPIMAGE_TOOLSET_VERSION = "1.0.3"
 
-/** The AppX files staged for `windows { widgets { } }` (see `WindowsWidgetsPackaging`). */
-internal class AppXWidgetFiles(
-    val manifestTemplate: File,
-    val extensions: File,
+/**
+ * The AppX manifest files the task staged: the widgets template (`WindowsWidgetsPackaging`), and the
+ * `<Extensions>` XML of widgets and app links (`AppXAppLinks`) followed by the user's own.
+ */
+internal class AppXManifestFiles(
+    val template: File?,
+    val extensions: File?,
 )

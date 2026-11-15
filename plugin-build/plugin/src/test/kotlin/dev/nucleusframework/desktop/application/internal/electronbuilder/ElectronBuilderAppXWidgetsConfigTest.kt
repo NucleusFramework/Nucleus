@@ -30,7 +30,7 @@ class ElectronBuilderAppXWidgetsConfigTest {
 
     private fun renderAppX(
         distributions: JvmApplicationDistributions,
-        widgets: AppXWidgetFiles? = null,
+        manifest: AppXManifestFiles? = null,
     ): String {
         val yaml = StringBuilder()
         ElectronBuilderConfigGenerator().generateWindowsConfig(
@@ -41,7 +41,7 @@ class ElectronBuilderAppXWidgetsConfigTest {
             windowsIconOverride = null,
             executableName = "Demo",
             nsisInclude = null,
-            appxWidgets = widgets,
+            appxManifest = manifest,
         )
         return yaml.toString()
     }
@@ -81,7 +81,7 @@ class ElectronBuilderAppXWidgetsConfigTest {
                 executableName = "Demo",
                 appImageDir = appImage,
                 workDir = temp.newFolder("work"),
-                userExtensions = null,
+                extraExtensions = "",
                 warn = { error("unexpected warning: $it") },
             )
 
@@ -109,7 +109,7 @@ class ElectronBuilderAppXWidgetsConfigTest {
         }
         assertFalse(xml, xml.contains("<Size Name=\"large\" />"))
 
-        val yaml = renderAppX(distributions, AppXWidgetFiles(staged.manifestTemplate, staged.extensions))
+        val yaml = renderAppX(distributions, AppXManifestFiles(staged.manifestTemplate, staged.extensions))
         assertTrue(yaml, yaml.contains("customManifestPath"))
         assertTrue(yaml, yaml.contains("customExtensionsPath"))
     }

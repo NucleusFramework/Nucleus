@@ -52,7 +52,7 @@ internal object WindowsWidgetsPackaging {
 
     /**
      * Copies the widget images into [appImageDir] and writes the manifest template and the
-     * extensions XML (followed by the user's own `customExtensions`, if any) into [workDir].
+     * extensions XML (followed by [extraExtensions]: app links, the user's own `customExtensions`) into [workDir].
      */
     @Suppress("LongParameterList") // the app's packaging settings, all passed from one call site
     fun stage(
@@ -62,7 +62,7 @@ internal object WindowsWidgetsPackaging {
         executableName: String,
         appImageDir: File,
         workDir: File,
-        userExtensions: File?,
+        extraExtensions: String,
         warn: (String) -> Unit,
     ): Staged {
         val definitions = widgets.definitions
@@ -88,7 +88,7 @@ internal object WindowsWidgetsPackaging {
             workDir.resolve("widget-extensions.xml").apply {
                 writeText(
                     extensionsXml(clsid(identity), displayName, "app\\$executableName.exe", definitions, paths) +
-                        (userExtensions?.readText().orEmpty()),
+                        extraExtensions,
                 )
             }
         return Staged(template, extensions)
