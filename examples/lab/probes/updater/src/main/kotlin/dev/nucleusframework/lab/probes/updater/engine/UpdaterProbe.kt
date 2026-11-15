@@ -165,6 +165,11 @@ private fun Observed(state: UpdaterState) {
         Readout("wasJustUpdated()", it.wasJustUpdated.toString())
     }
     Readout("At launch", state.launchEvent)
+    Readout(
+        "consumeInstallFailure()",
+        state.installFailure ?: "no failed install (Linux deb/rpm only)",
+        tone = if (state.installFailure != null) Tone.Error else Tone.Neutral,
+    )
     state.consumedEvent?.let { Readout("consumeUpdateEvent()", it) }
     Readout("pendingRestartVersion", state.pendingRestart ?: "none (Windows hot update only)")
     SubHeading("Check")

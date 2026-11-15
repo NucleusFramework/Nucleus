@@ -20,6 +20,7 @@ object UpdaterReducer : Reducer<UpdaterState, UpdaterEvent> {
                 )
             is UpdaterEvent.ConfigFailed -> state.copy(configError = event.reason)
             is UpdaterEvent.LaunchEventRead -> state.copy(launchEvent = event.description)
+            is UpdaterEvent.InstallFailureRead -> state.copy(installFailure = event.description)
             is UpdaterEvent.EventConsumed -> state.copy(consumedEvent = event.description)
             UpdaterEvent.CheckStarted -> state.copy(checking = true, outcome = null, download = null, install = null)
             is UpdaterEvent.Checked -> state.copy(checking = false, outcome = event.outcome)

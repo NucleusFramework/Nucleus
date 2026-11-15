@@ -2,6 +2,7 @@ package dev.nucleusframework.lab.probes.updater.engine
 
 import dev.nucleusframework.core.runtime.ExecutableRuntime
 import dev.nucleusframework.updater.DownloadProgress
+import dev.nucleusframework.updater.InstallFailure
 import dev.nucleusframework.updater.NucleusUpdater
 import dev.nucleusframework.updater.UpdateEvent
 import dev.nucleusframework.updater.UpdateInfo
@@ -68,6 +69,12 @@ interface UpdaterGateway {
      */
     val launchEvent: UpdateEvent?
 
+    /**
+     * The failed install recorded before the Lab started (Linux deb/rpm only), consumed once per
+     * process with the runtime's own version: why the Lab is still on the old version.
+     */
+    val launchInstallFailure: InstallFailure?
+
     /** Consumes the current updater's event (a simulated `justUpdatedFrom`, or a marker). */
     fun consumeUpdateEvent(): UpdateEvent?
 
@@ -90,6 +97,8 @@ class NucleusUpdaterGateway : UpdaterGateway {
     private var updater: NucleusUpdater = initial
 
     override val launchEvent: UpdateEvent? by lazy { initial.consumeUpdateEvent() }
+
+    override val launchInstallFailure: InstallFailure? by lazy { initial.consumeInstallFailure() }
 
     override fun configure(setup: UpdaterSetup): UpdaterFacts {
         updater = build(setup)
