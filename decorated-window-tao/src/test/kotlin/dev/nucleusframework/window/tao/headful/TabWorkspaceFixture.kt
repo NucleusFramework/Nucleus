@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
+import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.nucleusframework.window.tao.ApplicationScope
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.Tab
@@ -107,6 +108,19 @@ internal class TabWorkspaceFixture(
 
     /** The scroll state of each tab's body — a `rememberSaveable` Int under the hood. */
     val scrolls = mutableStateOf<Map<String, Int>>(emptyMap())
+
+    /** The view model each tab's body resolved most recently, by tab id. */
+    val viewModels = mutableStateOf<Map<String, RelocationProbeViewModel>>(emptyMap())
+
+    /** The tab view models cleared so far, in clearing order. */
+    val clearedViewModels = clearedProbeViewModels()
+
+    /**
+     * Tabs whose body was disposed after its view model had been cleared: the
+     * slot must clear only once its content is off screen, so a body's
+     * `onDispose` still sees a live view model. Expected empty in every case.
+     */
+    val disposedAfterClear = mutableStateListOf<String>()
 
     /** How many tab bodies are composing right now; two overlap for a frame while moving. */
     val composedBodies = mutableIntStateOf(0)
@@ -303,12 +317,16 @@ internal class TabWorkspaceFixture(
                 val clicks = rememberSaveable { mutableStateOf(0) }
                 val scroll = rememberScrollState()
                 val window = LocalTaoWindow.current
+                // Belongs to the tab, not to the window showing it: the same
+                // instance in every window the tab moves to.
+                val viewModel = viewModel { RelocationProbeViewModel(id, clearedViewModels) }
                 // A plain `remember`: it comes back at 0 whenever this subtree
                 // is rebuilt rather than moved, which is what a body must not
                 // do when its tab only changes window.
                 val incarnation = remember { Any() }
                 SideEffect {
                     counters.value = counters.value + (id to clicks)
+                    viewModels.value = viewModels.value + (id to viewModel)
                     scrolls.value = scrolls.value + (id to scroll.value)
                 }
                 // The host is published for exactly this body's lifetime, not
@@ -320,6 +338,7 @@ internal class TabWorkspaceFixture(
                     bodyIncarnations.value = bodyIncarnations.value + (id to (bodyIncarnations.value[id] ?: 0) + 1)
                     if (window != null) composedIn.value = composedIn.value.plusHost(id, window)
                     onDispose {
+                        if (viewModel in clearedViewModels) disposedAfterClear += id
                         composedBodies.value--
                         if (window != null) composedIn.value = composedIn.value.minusHost(id, window)
                     }

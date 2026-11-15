@@ -18,6 +18,9 @@ class DemoApplication : Application() {
             widget(COUNTER_WIDGET) { CounterWidget() }
             widget(TASKS_WIDGET) { TasksWidget() }
             widget(FUZZ_WIDGET) { FuzzWidget() }
+            widget(DEMO_TASKS_WIDGET) { DemoTasksWidget() }
+            widget(DASHBOARD_WIDGET) { DemoDashboardWidget() }
+            widget(WEATHER_WIDGET) { DemoWeatherWidget() }
         }
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             NucleusWidgets.events.collect { event -> Log.i(TAG, "event $event") }

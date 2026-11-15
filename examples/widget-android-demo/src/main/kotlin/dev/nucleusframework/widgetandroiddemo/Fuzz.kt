@@ -280,7 +280,13 @@ class FuzzSpec(
                 is FuzzNode.Ch -> {
                     add("LinearLayout")
                     if (node.label != null) add("TextView")
-                    add(if (modern) "RadioButton" else "TextView", node.choices.size)
+                    if (node.expanded) {
+                        add(if (modern) "RadioButton" else "TextView", node.choices.size)
+                    } else {
+                        // Collapsed: a row of pills.
+                        add("LinearLayout")
+                        add("Button", node.choices.size)
+                    }
                 }
                 is FuzzNode.Field -> Unit
             }

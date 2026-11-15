@@ -355,7 +355,8 @@ internal class RemoteViewsRenderer(
         element: WidgetElement.ChoiceInput,
         sizing: Sizing,
     ): RemoteViews {
-        // A drop-down has no RemoteViews counterpart: both forms are a list of options.
+        // A drop-down has no RemoteViews counterpart: collapsed is a row of pills (as on WidgetKit),
+        // expanded a list of radio buttons.
         val width = if (sizing.width == Extent.Weight) Extent.Match else sizing.width
         val height = if (sizing.height == Extent.Weight) Extent.Match else sizing.height
         val views = RemoteViews(packageName, containerLayout(true, width, height))
@@ -364,6 +365,10 @@ internal class RemoteViewsRenderer(
         element.label?.let { label ->
             val text = WidgetElement.Text(label, SUBTLE_LABEL, 1, ResolvedModifier())
             nest(views, ELEMENT, slot(sizing(text.modifier, Parent.Column), text(text, Gravity.START)))
+        }
+        if (!element.isExpanded) {
+            nest(views, ELEMENT, pills(element))
+            return if (sizing.isWeighted) slot(sizing, views) else views
         }
         for (choice in element.choices) {
             val selected = choice.value == element.value
@@ -379,6 +384,24 @@ internal class RemoteViewsRenderer(
             nest(views, ELEMENT, slot(Sizing(width, Extent.Wrap, 0), option))
         }
         return if (sizing.isWeighted) slot(sizing, views) else views
+    }
+
+    /** A collapsed choice: one pill per option in a row, the chosen one filled, as on WidgetKit. */
+    private fun pills(element: WidgetElement.ChoiceInput): RemoteViews {
+        val row = RemoteViews(packageName, containerLayout(false, Extent.Wrap, Extent.Wrap))
+        row.removeAllViews(ELEMENT)
+        element.choices.forEachIndexed { index, choice ->
+            if (index > 0) gap(Spacing.Small, Parent.Row)?.let { nest(row, ELEMENT, it) }
+            val layout = if (choice.value == element.value) R.layout.nucleus_chip_selected else R.layout.nucleus_chip
+            val click = WidgetClick(appWidgetId, null, null, element.id to choice.value)
+            val pill =
+                RemoteViews(packageName, layout).apply {
+                    setTextViewText(ELEMENT, choice.title)
+                    setOnClickPendingIntent(ELEMENT, broadcast(click))
+                }
+            nest(row, ELEMENT, pill)
+        }
+        return row
     }
 
     @TargetApi(Build.VERSION_CODES.S)

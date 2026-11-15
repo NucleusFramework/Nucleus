@@ -198,6 +198,9 @@ internal class TaoComposeSceneHost(
     // collapses the available area to zero and consistently places itself
     // above the click → the "inverted" feel reported by users.
     private val windowInfo = TaoWindowInfo()
+
+    /** This window's view-model store, lifecycle and saved state; see [TaoArchitectureComponents]. */
+    private val architectureComponents = TaoArchitectureComponents()
     private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
     private var nsViewHandle: Long = 0
@@ -265,6 +268,44 @@ internal class TaoComposeSceneHost(
     private var transaction = MutableTaoInteropTransaction(isInteropActive = false)
     private var interopAttachCount: Int = 0
 
+    /**
+     * `NativeView(placedAsOverlay = true)` embeds. They sit above the surface,
+     * so unlike [interopAttachCount] they need no window transparency.
+     */
+    private var overlayAttachCount: Int = 0
+
+    /**
+     * One per overlay embed, keyed by its region token and run after the
+     * layout of every frame: an overlay is clipped by its Compose ancestors,
+     * and their clip can change with nothing of the embed's own layout moving.
+     */
+    private val overlayFrameSyncs: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    private val isInteropAttached: Boolean get() = interopAttachCount + overlayAttachCount > 0
+
+    /**
+     * The part of each overlay embed that AppKit shows, in root px, keyed by
+     * its handle. AppKit hit-tests those views itself, but the content view's
+     * tracking area still reports every move under them: a Compose node there
+     * must not look hovered while the pointer is on the native view.
+     */
+    private val overlayVisibleRects: MutableMap<Long, IntRect> = LinkedHashMap()
+
+    /** The pointer is on an overlay embed and Compose was sent an Exit for it. */
+    private var pointerOnOverlay: Boolean = false
+
+    private fun isOnOverlay(
+        xPx: Float,
+        yPx: Float,
+    ): Boolean =
+        overlayVisibleRects.values.any { rect ->
+            xPx >= rect.left && xPx < rect.right && yPx >= rect.top && yPx < rect.bottom
+        }
+
+    private fun syncOverlayNativeViews() {
+        for (sync in overlayFrameSyncs.values) sync()
+    }
+
     /** Set by NativeView pointer-interop when a Press was forwarded to AppKit. */
     private var nativePointerDispatchedThisEvent: Boolean = false
 
@@ -296,7 +337,7 @@ internal class TaoComposeSceneHost(
 
     private fun retrieveTransaction(): TaoInteropTransaction {
         val result = transaction
-        transaction = MutableTaoInteropTransaction(isInteropActive = interopAttachCount > 0)
+        transaction = MutableTaoInteropTransaction(isInteropActive = isInteropAttached)
         return result
     }
 
@@ -480,6 +521,7 @@ internal class TaoComposeSceneHost(
                 topInsetPx = { 0 },
                 scaleProvider = { scale },
                 windowInfo = windowInfo,
+                architectureComponentsOwner = architectureComponents.owner,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
@@ -531,6 +573,7 @@ internal class TaoComposeSceneHost(
         // resolves it through here, and so does an in-process driver.
         window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
+        architectureComponents.onAttached(focused = window.isFocused, minimized = window.isMinimized)
     }
 
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -913,6 +956,7 @@ internal class TaoComposeSceneHost(
      * (#478), whose renderer must not lose its cache mid-frame.
      */
     fun onMinimizedChanged(minimized: Boolean) {
+        architectureComponents.onMinimizedChanged(minimized)
         if (minimized) purgeGpuResourceCacheAtRest()
     }
 
@@ -931,6 +975,7 @@ internal class TaoComposeSceneHost(
 
     fun onFocusChanged(focused: Boolean) {
         windowInfo.isWindowFocused = focused
+        architectureComponents.onFocusChanged(focused)
         if (!focused) interruptRotation()
         if (!focused && isPressed) {
             // Whatever stole focus mid-click (a native context-menu tracking
@@ -1033,12 +1078,12 @@ internal class TaoComposeSceneHost(
                 // (`scheduleInteropAction` + presentsWithTransaction),
                 // not for the initial add.
                 if (outer.interopAttachCount == 0) {
-                    outer.transaction.isInteropActive = true
                     // Punch-through blending needs a non-opaque CAMetalLayer
                     // and alpha-0 Skia clears — same latch as glass regions.
                     WindowTransparencyMode.acquire(outer.window, outer.glassBackgroundState)
                 }
                 outer.interopAttachCount++
+                outer.transaction.isInteropActive = true
                 outer.detachedNativeViews.remove(childHandle)
                 NativeTaoMacOsNativeViewBridge.nativeAddSubview(outer.nsViewHandle, childHandle)
             }
@@ -1051,8 +1096,59 @@ internal class TaoComposeSceneHost(
                 NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
                 outer.interopAttachCount--
                 if (outer.interopAttachCount == 0) {
-                    outer.transaction.isInteropActive = false
                     WindowTransparencyMode.release(outer.window, outer.glassBackgroundState)
+                }
+                outer.transaction.isInteropActive = outer.isInteropAttached
+            }
+
+            override fun attachOverlay(
+                childHandle: Long,
+                regionToken: Any,
+                onFrame: () -> Unit,
+            ) {
+                outer.overlayAttachCount++
+                outer.transaction.isInteropActive = true
+                outer.detachedNativeViews.remove(childHandle)
+                outer.overlayFrameSyncs[regionToken] = onFrame
+                NativeTaoMacOsNativeViewBridge.nativeAddSubviewAbove(outer.nsViewHandle, childHandle)
+                // Hidden until a frame reports where it goes.
+                outer.window.requestRedraw()
+            }
+
+            override fun detachOverlay(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
+                outer.overlayFrameSyncs.remove(regionToken)
+                outer.overlayVisibleRects.remove(childHandle)
+                outer.detachedNativeViews += childHandle
+                NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
+                outer.overlayAttachCount--
+                outer.transaction.isInteropActive = outer.isInteropAttached
+            }
+
+            override fun setOverlayFrame(
+                handle: Long,
+                frame: IntRect,
+                visible: IntRect,
+            ) {
+                if (handle in outer.detachedNativeViews) return
+                outer.overlayVisibleRects[handle] = visible
+                // No redraw request: this runs inside the frame that commits it.
+                outer.transaction.add {
+                    if (handle in outer.detachedNativeViews) return@add
+                    NativeTaoMacOsNativeViewBridge.nativeSetSubviewFrameClipped(
+                        outer.nsViewHandle,
+                        handle,
+                        frame.left,
+                        frame.top,
+                        frame.width,
+                        frame.height,
+                        visible.left,
+                        visible.top,
+                        visible.width,
+                        visible.height,
+                    )
                 }
             }
 
@@ -1342,6 +1438,19 @@ internal class TaoComposeSceneHost(
         // A finger is down: the cursor does not move for it, and a hover event
         // would read as the contacts' release.
         if (!touches.isEmpty) return
+        // On an overlay embed AppKit delivers the pointer to the native view:
+        // Compose sees the pointer leave instead. A drag Compose started keeps
+        // its moves, since AppKit keeps sending them to the content view.
+        if (!isPressed && overlayVisibleRects.isNotEmpty() && isOnOverlay(xPx, yPx)) {
+            if (!pointerOnOverlay) {
+                onPointerExited()
+                pointerOnOverlay = true
+                // Back on Compose, the first Move must go through.
+                pointerDeadband.forget()
+            }
+            return
+        }
+        pointerOnOverlay = false
         if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
         interruptRotation()
         scene?.sendPointerEvent(
@@ -1353,6 +1462,7 @@ internal class TaoComposeSceneHost(
     }
 
     fun onPointerExited() {
+        pointerOnOverlay = false
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         if (!touches.isEmpty) return
@@ -1985,16 +2095,6 @@ internal class TaoComposeSceneHost(
         displayLinkIdleStop?.cancel()
         NativeMetalBridge.nativeStartDisplayLink(handle) // no-op while running
 
-        // ── interop transaction snapshot (main) ──
-        val tx = retrieveTransaction()
-        val needsTransaction =
-            tx.actions.isNotEmpty() || rendererIsInteropActive != tx.isInteropActive
-        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
-            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
-            layerPresentsWithTransaction = needsTransaction
-        }
-        if (tx.isInteropActive) rendererIsInteropActive = true
-
         // ── record (main) ──
         // Clear to the current themed fallback color, not hard-coded white, so
         // fullscreen/title-bar animation gaps don't flash. The clear itself runs
@@ -2003,6 +2103,21 @@ internal class TaoComposeSceneHost(
         val frameH = heightPx
         val (mainPicture, frameDamage, mainClear) = recordMainScene(bundle, frameW, frameH)
         val popupSurfaces = recordPopupSurfaces()
+
+        // ── interop transaction snapshot (main) ──
+        // After the record: the layout that just ran is what moves the embeds,
+        // and the AppKit mutations it queued must ride on this frame's present,
+        // not the next one's. Compose iOS's MetalRedrawer retrieves its interop
+        // transaction after rendering the scene for the same reason.
+        syncOverlayNativeViews()
+        val tx = retrieveTransaction()
+        val needsTransaction =
+            tx.actions.isNotEmpty() || rendererIsInteropActive != tx.isInteropActive
+        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
+            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
+            layerPresentsWithTransaction = needsTransaction
+        }
+        if (tx.isInteropActive) rendererIsInteropActive = true
         // Drain Compose's async work (sendFrame continuations, recomposer steps)
         // synchronously so their state writes happen now and trigger invalidate →
         // next requestFrame in the same Tao loop iteration. Mirrors Skiko's
@@ -2297,6 +2412,9 @@ internal class TaoComposeSceneHost(
     }
 
     fun detach() {
+        // Paused and stopped while the content is still composed, so its
+        // lifecycle observers see the window go; see [TaoArchitectureComponents.onDetaching].
+        architectureComponents.onDetaching()
         // Layers whose dismiss animation was still running: Compose closes a
         // native popup layer only when its own disappearance finishes, so an
         // owner destroyed mid-animation left the layer's popup window mapped
@@ -2327,6 +2445,8 @@ internal class TaoComposeSceneHost(
         window.clearContentMeasurer()
         sceneBundle?.close()
         sceneBundle = null
+        // After the composition is gone, so no onDispose meets a cleared view model.
+        architectureComponents.onDetached()
         // Drop the TextureView handle before the context it points at dies.
         metalTextureHostCache.invalidate()
         // Close the DirectContext on its owning thread (FIFO after any in-flight
@@ -2409,6 +2529,7 @@ private class TaoPlatformContext(
     /** Live px-per-dp factor of the owning scene — see [TaoPlatformContextBase.sceneScale]. */
     private val scaleProvider: () -> Float,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
+    override val architectureComponentsOwner: androidx.compose.ui.platform.PlatformArchitectureComponentsOwner,
     override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,

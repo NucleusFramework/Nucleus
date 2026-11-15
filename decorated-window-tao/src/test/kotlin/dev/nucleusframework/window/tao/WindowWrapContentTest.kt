@@ -6,7 +6,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
 class WindowWrapContentTest {
     @Test
@@ -45,17 +44,18 @@ class WindowWrapContentTest {
     }
 
     @Test
-    fun wrapWaitsForPositiveMeasuredAxis() {
-        assertNull(
+    fun zeroWrapAxisTakesCreationFallback() {
+        // #890: fillMaxSize content under an unbounded height measures 0 tall.
+        val size =
             resolveWrapContentSize(
                 wrapWidth = false,
                 wrapHeight = true,
                 requested = DpSize(300.dp, Dp.Unspecified),
                 minimumSize = null,
-                measured = IntSize(300, 0),
-                scale = 1f,
-            ),
-        )
+                measured = IntSize(600, 0),
+                scale = 2f,
+            )
+        assertEquals(DpSize(300.dp, DEFAULT_WINDOW_HEIGHT_DP.dp), size)
     }
 
     @Test

@@ -287,8 +287,8 @@ public object TaoSceneTestBattery {
         run("WindowWrapContentTest: wrapBothUsesMeasuredPixels") {
             WindowWrapContentTest().wrapBothUsesMeasuredPixels()
         }
-        run("WindowWrapContentTest: wrapWaitsForPositiveMeasuredAxis") {
-            WindowWrapContentTest().wrapWaitsForPositiveMeasuredAxis()
+        run("WindowWrapContentTest: zeroWrapAxisTakesCreationFallback") {
+            WindowWrapContentTest().zeroWrapAxisTakesCreationFallback()
         }
         run("WindowWrapContentTest: wrapHonoursMinimumSizeFloor") {
             WindowWrapContentTest().wrapHonoursMinimumSizeFloor()
