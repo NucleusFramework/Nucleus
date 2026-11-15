@@ -977,9 +977,15 @@ public class SatelliteWorkspace(
         return entry
     }
 
+    /**
+     * The satellite's declaration left the composition: its content stops, and
+     * so do its view models, cleared once the content is off screen. Its saved
+     * state and placement are kept for a later declaration of the same id.
+     */
     internal fun unregister(entry: SatelliteEntry) {
         entry.content = null
         entry.header = null
+        entry.stateSlot.clear()
     }
 
     // ── Internals ────────────────────────────────────────────────────────

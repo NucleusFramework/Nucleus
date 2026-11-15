@@ -40,6 +40,14 @@ dependencies {
     // D3D11 only -- see THIRD_PARTY_NOTICES.md.
     implementation(libs.angle.natives)
     implementation(libs.compose.desktop.common)
+    // Each window's own ViewModelStore / Lifecycle / SavedState owner (TaoArchitectureComponents).
+    // The owner's supertypes. compileOnly: Compose's ui already brings these at run time, at
+    // the versions it was built against, and this module must not pin different ones.
+    compileOnly(libs.lifecycle.runtime)
+    compileOnly(libs.lifecycle.viewmodel.savedstate)
+    compileOnly(libs.navigationevent)
+    // LocalViewModelStoreOwner, provided around relocatable content (RelocatedContentHost).
+    compileOnly(libs.lifecycle.viewmodel.compose)
     // Compose Hot Reload interop (TaoHotReloadBridge). compileOnly: these
     // artifacts are only referenced when running under the hot-reload agent,
     // which puts them on the runtime classpath itself (the plugin adds
@@ -55,6 +63,11 @@ dependencies {
     testImplementation(compose.desktop.currentOs)
     // The Material 3 AlertDialog the headful appearance film compares against (the Lab's gallery)
     testImplementation(libs.compose.material3)
+    // The compileOnly lifecycle artifacts above, for the tests that compose view models
+    testImplementation(libs.lifecycle.viewmodel.compose)
+    testImplementation(libs.lifecycle.runtime)
+    testImplementation(libs.lifecycle.viewmodel.savedstate)
+    testImplementation(libs.navigationevent)
 }
 
 java {
