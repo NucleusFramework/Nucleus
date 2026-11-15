@@ -444,6 +444,7 @@ internal class ElectronBuilderConfigGenerator(
                 TargetFormat.Nsis,
                 TargetFormat.NsisWeb,
                 TargetFormat.Msi,
+                TargetFormat.AppX,
                 -> distributions.windows.fileAssociations
                 TargetFormat.Dmg,
                 TargetFormat.Pkg,
@@ -454,15 +455,19 @@ internal class ElectronBuilderConfigGenerator(
 
         yaml.appendLine("fileAssociations:")
         for (association in associations) {
-            appendFileAssociation(yaml, association)
+            // electron-builder uses the extension as the AppX `FileTypeAssociation Name`, which
+            // the manifest schema only accepts in lower case (makeappx rejects "PDF")
+            appendFileAssociation(yaml, association, lowercase = targetFormat == TargetFormat.AppX)
         }
     }
 
     private fun appendFileAssociation(
         yaml: StringBuilder,
         association: FileAssociation,
+        lowercase: Boolean,
     ) {
-        val normalizedExtension = association.extension.trim().removePrefix(".")
+        val normalizedExtension =
+            association.extension.trim().removePrefix(".").let { if (lowercase) it.lowercase() else it }
         if (normalizedExtension.isBlank()) return
 
         yaml.appendLine("  - ext: \"$normalizedExtension\"")
