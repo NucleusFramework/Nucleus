@@ -29,6 +29,12 @@ public object GraalVmInitializer {
             // On Windows/Linux SVM eliminates the call, avoiding an undefined-symbol link error.
             PlatformEncodingInitializer.initialize()
 
+            // `graalvm { headless = true }` bakes -Djava.awt.headless=true, but native-image keeps
+            // `-D` options at build time only. Restore it so AWT stays headless at run time.
+            if (BuildTimeProperties.headless) {
+                setIfAbsent(BuildTimeProperties.HEADLESS_PROPERTY, "true")
+            }
+
             // Metal L&F — avoids platform-specific modules unsupported in native image
             System.setProperty("swing.defaultlaf", "javax.swing.plaf.metal.MetalLookAndFeel")
 
@@ -83,7 +89,11 @@ public object GraalVmInitializer {
         // rendering AND mouse events) + sun.java2d.uiScale as fallback.
         applyLinuxHiDpiScale()
 
-        if (isNativeImage) {
+        // A headless image (`graalvm { headless = true }`) is built without the AWT/font JNI
+        // metadata, so libfontmanager's JNI_OnLoad would fail its lookups and leave a pending JNI
+        // exception that aborts the VM — the catch below cannot stop it. Such an image never
+        // renders text through Java2D anyway.
+        if (isNativeImage && !BuildTimeProperties.headless) {
             try {
                 System.loadLibrary("fontmanager")
             } catch (_: Throwable) {
