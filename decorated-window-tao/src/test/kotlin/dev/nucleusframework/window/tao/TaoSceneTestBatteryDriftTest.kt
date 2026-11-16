@@ -40,6 +40,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
 import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadScaleTest
 import dev.nucleusframework.window.tao.scene.TaoSceneWindowsTouchpadTest
+import dev.nucleusframework.window.tao.scene.TaoTouchContactsTest
 import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import dev.nucleusframework.window.tao.workspace.DragControllerTest
 import dev.nucleusframework.window.tao.workspace.HostGeometryTest
@@ -75,6 +76,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoKeyRepeatTest::class.java,
             TaoSyntheticMouseWheelEventTest::class.java,
             TaoTouchEventTimeTest::class.java,
+            TaoTouchContactsTest::class.java,
             FullscreenOverlayVisibilityTest::class.java,
             Win32WheelDeltaTest::class.java,
             LinuxWheelDeltaTest::class.java,
@@ -156,6 +158,8 @@ class TaoSceneTestBatteryDriftTest {
                 "reads the source tree's metadata file and resolves its classes reflectively",
             TaoScrollWireDriftTest::class.java to
                 "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
+            TaoArchitectureComponentsWiringTest::class.java to
+                "reads the three scene hosts from the repo; wire guard, not a scene behaviour",
             TaoMouseButtonWireDriftTest::class.java to
                 "reads events.rs from the repo; wire guard, not a scene behaviour",
             TaoPointerKindWireDriftTest::class.java to
@@ -165,6 +169,10 @@ class TaoSceneTestBatteryDriftTest {
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
+            dev.nucleusframework.window.tao.scene.TaoArchitectureComponentsTest::class.java to
+                "owner plumbing guard; viewModel { } comes from test-only lifecycle-viewmodel-compose",
+            dev.nucleusframework.window.tao.workspace.RelocatedViewModelStoreTest::class.java to
+                "viewModel { } comes from test-only lifecycle-viewmodel-compose",
             EventLoopHangDetectorTest::class.java to
                 "pure-function hang state machine (#643); no ComposeScene",
             TaoEventLoopWatchdogMonkeyTest::class.java to

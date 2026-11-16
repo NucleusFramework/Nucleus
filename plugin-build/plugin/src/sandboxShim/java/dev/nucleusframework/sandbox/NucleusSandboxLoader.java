@@ -23,7 +23,9 @@ import java.util.Properties;
  * <p>At build time the pipeline replaces each native-lib entry inside dependency JARs with a small
  * unique <em>marker</em> file (at the same resource path), rewrites every {@code System.load} /
  * {@code Runtime.load} call site to {@link #load(String)}, and emits a manifest mapping
- * {@code sha256(marker) -> bundled lib filename}. The real native libraries are extracted flat into
+ * {@code sha256(marker) -> bundled lib filename}, plus {@code sha256(original lib) -> bundled lib
+ * filename} for loaders that cache by content and may hand over a real copy an earlier, unstripped
+ * build extracted into the app container. The real native libraries are extracted flat into
  * the app resources (signed and, on macOS, moved to {@code Contents/Frameworks} and re-signed by
  * Apple on distribution).
  *

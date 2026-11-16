@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: write
+  # SignPath's action reads the uploaded artifact through the GitHub API.
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -62,10 +64,17 @@ jobs:
             arch: amd64
             native: true
             tasks: packageGraalvmNsis packageGraalvmMsi packageGraalvmPortable
+            # SignPath: the app image is built alone, signed, then packaged as is.
+            app-image-task: createGraalvmNativeDistributable
+            app-image-dir: main/graalvm-app
           - os: windows-11-arm
             arch: arm64
             native: false
             tasks: packageReleaseDistributionForCurrentOS
+            # Only the loose launchers and DLLs: rewriting a JAR would void the AOT cache, which
+            # the package task trains afterwards on the signed image.
+            app-image-task: createReleaseDistributable
+            app-image-dir: main-release/app
           - os: macos-latest
             arch: arm64
             native: true
@@ -82,6 +91,8 @@ jobs:
       RELEASE_VERSION: ${{ github.ref_name }}
       HAS_SIGNING_CERTS: ${{ secrets.MAC_CERTIFICATES_P12 != '' }}
       HAS_NOTARIZATION: ${{ secrets.MAC_NOTARIZATION_APPLE_ID != '' }}
+      # SignPath Foundation signing (Windows). Read by the Lab build to turn its own signing off.
+      NUCLEUS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
 
     steps:
       - name: Checkout Repo
@@ -154,13 +165,135 @@ jobs:
             echo "compose.desktop.mac.signing.keychain=${{ steps.signing.outputs.keychain-path }}"
           } >> gradle.properties
 
+      # --- SignPath, stage 1: the app image (launchers, DLLs), before electron-builder packs it ---
+      - name: Build app image for SignPath
+        if: runner.os == 'Windows' && env.NUCLEUS_SIGNPATH == 'true'
+        shell: bash
+        run: ./gradlew :examples:lab:app:${{ matrix.app-image-task }} -PnativeMarch=compatibility --stacktrace --no-daemon
+
+      # SignPath re-signs whatever it is given (no "skip if signed"), so only the unsigned binaries go:
+      # a vendor's signature (Microsoft, the JDK's) stays, as with the plugin's own signer.
+      - name: Stage unsigned app image binaries
+        if: runner.os == 'Windows' && env.NUCLEUS_SIGNPATH == 'true'
+        shell: pwsh
+        run: |
+          $image = Resolve-Path "examples/lab/app/build/compose/binaries/${{ matrix.app-image-dir }}"
+          $out = "$env:RUNNER_TEMP/signpath-app-image"
+          Get-ChildItem $image -Recurse -File -Include *.exe, *.dll |
+            Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -eq 'NotSigned' } |
+            ForEach-Object {
+              $target = Join-Path $out $_.FullName.Substring($image.Path.Length + 1)
+              New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
+              Copy-Item $_.FullName $target
+            }
+          "Staged $((Get-ChildItem $out -Recurse -File).Count) unsigned binaries"
+
+      - name: Upload unsigned app image binaries
+        id: upload-app-image
+        if: runner.os == 'Windows' && env.NUCLEUS_SIGNPATH == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-app-image-${{ matrix.arch }}
+          path: ${{ runner.temp }}/signpath-app-image
+          if-no-files-found: error
+
+      - name: Sign app image binaries (SignPath)
+        if: runner.os == 'Windows' && env.NUCLEUS_SIGNPATH == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: app-image
+          github-artifact-id: ${{ steps.upload-app-image.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: ${{ runner.temp }}/signpath-app-image-signed
+
+      - name: Put signed binaries back into the app image
+        if: runner.os == 'Windows' && env.NUCLEUS_SIGNPATH == 'true'
+        shell: pwsh
+        run: |
+          $image = "examples/lab/app/build/compose/binaries/${{ matrix.app-image-dir }}"
+          Copy-Item "$env:RUNNER_TEMP/signpath-app-image-signed/*" $image -Recurse -Force
+          $unsigned = Get-ChildItem $image -Recurse -File -Include *.exe, *.dll |
+            Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -eq 'NotSigned' }
+          if ($unsigned) { $unsigned.FullName; throw "Binaries left unsigned after SignPath" }
+
       - name: Build packages
         shell: bash
         run: |
           set -euo pipefail
           TASKS=""
           for task in ${{ matrix.tasks }}; do TASKS="$TASKS :examples:lab:app:$task"; done
+          # With SignPath the image is already built and signed: rebuilding it would overwrite it.
+          if [[ "$RUNNER_OS" == "Windows" && "$NUCLEUS_SIGNPATH" == "true" ]]; then
+            TASKS="$TASKS -x :examples:lab:app:${{ matrix.app-image-task }}"
+          fi
           ./gradlew $TASKS -PnativeMarch=compatibility --stacktrace --no-daemon
+
+      # --- SignPath, stage 2: the installers electron-builder produced ---
+      # ponytail: the NSIS uninstaller stays unsigned — electron-builder signs it mid-build, where
+      # SignPath (artifact-based) cannot reach.
+      - name: Stage installers
+        if: runner.os == 'Windows' && env.NUCLEUS_SIGNPATH == 'true'
+        shell: pwsh
+        run: |
+          $bin = Resolve-Path "examples/lab/app/build/compose/binaries"
+          $out = "$env:RUNNER_TEMP/signpath-installers"
+          # binaries/<appDir>/<format>/<installer>: deeper .exe files are app image copies.
+          # Not -Include: it matches nothing on a multi-level wildcard path.
+          Get-ChildItem "$bin/*/*/*" -File | Where-Object Extension -in '.exe', '.msi' | ForEach-Object {
+            $target = Join-Path $out $_.FullName.Substring($bin.Path.Length + 1)
+            New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
+            Copy-Item $_.FullName $target
+          }
+          Get-ChildItem $out -Recurse -File | ForEach-Object FullName
+
+      - name: Upload unsigned installers
+        id: upload-installers
+        if: runner.os == 'Windows' && env.NUCLEUS_SIGNPATH == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-installers-${{ matrix.arch }}
+          path: ${{ runner.temp }}/signpath-installers
+          if-no-files-found: error
+
+      - name: Sign installers (SignPath)
+        if: runner.os == 'Windows' && env.NUCLEUS_SIGNPATH == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: installers
+          github-artifact-id: ${{ steps.upload-installers.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: ${{ runner.temp }}/signpath-installers-signed
+
+      # Signing changed the installers' bytes: their differential-update blockmaps are stale.
+      # The update YMLs are hashed later, in the publish job, from these final files.
+      - name: Put signed installers back, regenerate blockmaps
+        if: runner.os == 'Windows' && env.NUCLEUS_SIGNPATH == 'true'
+        shell: pwsh
+        run: |
+          $bin = Resolve-Path "examples/lab/app/build/compose/binaries"
+          $signed = "$env:RUNNER_TEMP/signpath-installers-signed"
+          Copy-Item "$signed/*" $bin -Recurse -Force
+          $appBuilder = Get-ChildItem $bin -Recurse -File -Filter app-builder.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          Get-ChildItem $signed -Recurse -File | ForEach-Object {
+            $file = Join-Path $bin $_.FullName.Substring((Resolve-Path $signed).Path.Length + 1)
+            if (-not (Test-Path "$file.blockmap")) { return }
+            if ($appBuilder) {
+              & $appBuilder.FullName blockmap --input $file --output "$file.blockmap"
+              if ($LASTEXITCODE -ne 0) { throw "app-builder blockmap failed for $file" }
+            } else {
+              Write-Warning "app-builder not found: dropping the stale blockmap of $file (full download on update)"
+              Remove-Item "$file.blockmap"
+            }
+          }
 
       - name: Notarize DMG and ZIP
         if: runner.os == 'macOS' && env.HAS_NOTARIZATION == 'true'

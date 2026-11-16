@@ -46,10 +46,9 @@ nucleus.application {
         march = NativeImageMarch.COMPATIBILITY
         // Fail loud on the dev loop when the _Impl is missing from reachability.
         exactReachabilityMetadata = ExactReachabilityMetadata.APP_PACKAGES
-        // Headless, tiny image — no AWT/Compose.
-        buildArgs.addAll(
-            "-Djava.awt.headless=true",
-        )
+        // Headless, tiny image — no AWT/Compose. Also the regression fixture for the
+        // headless start-up crash: GraalVmInitializer must not load libfontmanager here.
+        headless = true
 
         providers.gradleProperty("nucleus.orphanDetect").orNull?.let {
             detectOrphanProjectClasses.set(it.toBoolean())

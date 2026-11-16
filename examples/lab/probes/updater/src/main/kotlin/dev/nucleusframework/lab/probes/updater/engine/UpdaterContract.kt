@@ -66,6 +66,8 @@ data class UpdaterState(
     val configError: String? = null,
     val launchEvent: String? = null,
     val consumedEvent: String? = null,
+    /** `null` when no failed install was recorded. */
+    val installFailure: String? = null,
     val checking: Boolean = false,
     val outcome: CheckOutcome? = null,
     val download: DownloadState? = null,
@@ -109,6 +111,10 @@ sealed interface UpdaterEvent {
 
     data class LaunchEventRead(
         val description: String,
+    ) : UpdaterEvent
+
+    data class InstallFailureRead(
+        val description: String?,
     ) : UpdaterEvent
 
     data class EventConsumed(

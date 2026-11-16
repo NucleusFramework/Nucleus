@@ -36,6 +36,8 @@ import java.util.Properties
  * `dev.nucleusframework.sandbox.NucleusSandboxLoader.load`, and injects the shim JAR onto the app
  * classpath. At runtime a third-party loader extracts the marker to temp and calls `System.load`;
  * the shim hashes it, looks the bundled signed copy up in the manifest, and loads that instead.
+ * The manifest also records `sha256(original lib)`, so a real copy a content-keyed cache kept from
+ * an earlier, unstripped build is redirected the same way instead of being refused by the sandbox.
  * `System.loadLibrary`-first loaders are intentionally untouched (they already work via
  * `java.library.path`). Reflection-based `System.load` calls escape rewriting (documented gap).
  *
@@ -59,7 +61,7 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
-    /** Receives `nucleus-sandbox-manifest.properties` (`sha256(marker)=bundledLibName`). */
+    /** Receives `nucleus-sandbox-manifest.properties` (`sha256(marker or original lib)=bundledLibName`). */
     @get:OutputDirectory
     abstract val manifestOutputDir: DirectoryProperty
 
@@ -149,7 +151,7 @@ abstract class AbstractStripNativeLibsFromJarsTask : AbstractNucleusTask() {
         val manifestFile = manifestDir.resolve(SandboxMarkers.MANIFEST_FILENAME)
         manifest.store(
             manifestFile.outputStream().buffered(),
-            "Nucleus sandbox native-lib redirect manifest: sha256(marker)=bundledLibName",
+            "Nucleus sandbox native-lib redirect manifest: sha256(marker or original lib)=bundledLibName",
         )
 
         logger.lifecycle(

@@ -638,6 +638,26 @@ internal object NativeMetalBridge {
     ): Boolean
 
     /**
+     * Headful e2e only (#892): queues one frame of direct touch (touchscreen,
+     * Sidecar) contacts on `NSApp` (`postEvent`, delivered after the current
+     * callback returns). The event goes through AppKit's real touch routing to
+     * the views' gesture recognizers, from a fake Sidecar touch device that the
+     * first call registers. [fingers] are the contacts' identities, [xs] /
+     * [ys] their content-local points (top-left origin), [phases] the
+     * [dev.nucleusframework.window.tao.TaoTouchEvent] wire (a lifted or
+     * cancelled contact is left out of later frames). `false` when injection
+     * is disabled, a private symbol is missing or the view or its window is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagInjectDirectTouch(
+        nsViewPtr: Long,
+        fingers: IntArray,
+        xs: FloatArray,
+        ys: FloatArray,
+        phases: IntArray,
+    ): Boolean
+
+    /**
      * Disables native → JVM callbacks and removes any active menu bar
      * monitors. Called from a JVM shutdown hook so AppKit can't fire a
      * callback into a half-destroyed JVM.

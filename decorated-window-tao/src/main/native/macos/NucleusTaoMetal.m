@@ -20,6 +20,7 @@
 #import <Carbon/Carbon.h>
 #import <mach/mach_time.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <dlfcn.h>
 #import <stdatomic.h>
 #import <stdio.h>
@@ -3223,6 +3224,169 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectTable
     NSEvent *event = [NSEvent eventWithCGEvent:cg];
     CFRelease(cg);
     if (event == nil) return JNI_FALSE;
+    [NSApp postEvent:event atStart:NO];
+    return JNI_TRUE;
+}
+
+/* ── Direct touch injection (#892) ───────────────────────────────────────
+ *
+ * A direct touch (touchscreen, Sidecar) reaches AppKit as a CGEvent of the
+ * gesture type (29) whose field 110 is SkyLight's `kSLSHIDEventTypeDirectTouch`
+ * (59) and which carries an IOHIDEvent digitizer collection: a hand event with
+ * one finger child per contact, `IsDisplayIntegrated` set. `+[NSEvent
+ * eventWithCGEvent:]` decodes it into an `NSEventTypeDirectTouch` event, and
+ * posted on NSApp's queue it goes through AppKit's real touch routing —
+ * hit-testing, recognizer gathering, exclusivity, the mouse emulation for a
+ * view without recognizers — to the views' gesture recognizers (verified on
+ * macOS 27.0).
+ *
+ * AppKit resolves the event's touch device by its IOHID sender id and drops
+ * contacts from an unknown device. Without a touch display there is none, so
+ * the first injection registers a fake "sidecar" device: `+[NSTouchDevice
+ * _touchDeviceFromTrueDeviceID:]` falls back to it when the real lookup finds
+ * nothing. Its surface is SURFACE_PT square (given to AppKit in mm, 72 pt per
+ * inch); a contact's normalized position times that surface is its location
+ * in window base coordinates (bottom-left origin).
+ *
+ * Every private symbol is resolved at run time, so a missing one fails the
+ * injection instead of the load. */
+
+typedef struct __IOHIDEvent *NucleusIOHIDEventRef;
+typedef NucleusIOHIDEventRef (*DigitizerEventFn)(
+    CFAllocatorRef, uint64_t, uint32_t transducer, uint32_t index, uint32_t identity,
+    uint32_t eventMask, uint32_t buttonMask, double x, double y, double z,
+    double tipPressure, double barrelPressure, Boolean range, Boolean touch, uint32_t options);
+typedef NucleusIOHIDEventRef (*DigitizerFingerEventFn)(
+    CFAllocatorRef, uint64_t, uint32_t index, uint32_t identity, uint32_t eventMask,
+    double x, double y, double z, double tipPressure, double twist,
+    Boolean range, Boolean touch, uint32_t options);
+typedef void (*HIDEventAppendFn)(NucleusIOHIDEventRef, NucleusIOHIDEventRef, uint32_t);
+typedef void (*HIDEventSetIntegerFn)(NucleusIOHIDEventRef, uint32_t, long);
+typedef void (*CGEventSetHIDEventFn)(CGEventRef, NucleusIOHIDEventRef);
+
+static const double kDirectTouchSurfacePt = 10000.0;
+static id sFakeTouchDevice = nil;
+static IMP sTouchDeviceLookup = NULL;
+
+static id fakeTouchDeviceLookup(id self, SEL _cmd, unsigned long long deviceId) {
+    id real = sTouchDeviceLookup != NULL
+        ? ((id (*)(id, SEL, unsigned long long))sTouchDeviceLookup)(self, _cmd, deviceId)
+        : nil;
+    return real != nil ? real : sFakeTouchDevice;
+}
+
+static BOOL installFakeTouchDevice(void) {
+    if (sFakeTouchDevice != nil) return YES;
+    Class deviceClass = NSClassFromString(@"NSTouchDevice");
+    SEL make = NSSelectorFromString(@"_touchDeviceWithIOHIDDictionary:");
+    SEL lookup = NSSelectorFromString(@"_touchDeviceFromTrueDeviceID:");
+    Method lookupMethod = deviceClass != Nil ? class_getClassMethod(deviceClass, lookup) : NULL;
+    if (lookupMethod == NULL || ![deviceClass respondsToSelector:make]) return NO;
+    double surfaceMm = kDirectTouchSurfacePt * 25.4 / 72.0;
+    NSDictionary *properties = @{
+        @"Device ID": @(0x4E55434CULL),
+        @"Device Type": @"sidecar",
+        @"Surface Width mm": @(surfaceMm),
+        @"Surface Height mm": @(surfaceMm),
+        @"Built-in": @YES,
+        @"Opaque": @NO,
+    };
+    sFakeTouchDevice = ((id (*)(id, SEL, id))objc_msgSend)(deviceClass, make, properties);
+    if (sFakeTouchDevice == nil) return NO;
+    sTouchDeviceLookup = method_setImplementation(lookupMethod, (IMP)fakeTouchDeviceLookup);
+    return YES;
+}
+
+/* macOS only, headful e2e (#892): queues one frame of direct touch contacts on
+ * NSApp (`postEvent`, for the reason given on nativeDiagInjectTrackpadGesture).
+ * `fingers[i]` is the contact's identity (stable while it is down), (xs[i],
+ * ys[i]) its view-local point (top-left origin) and `phases[i]` the
+ * `TaoTouchEvent` wire: 0 = lands, 1 = moves (or rests), 2 = lifts,
+ * 3 = cancelled. A lifted contact is left out of the following frames. Same gate as nativeDiagInjectScrollWheel.
+ * Returns JNI true once the event is queued. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectDirectTouch(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr,
+        jintArray fingers, jfloatArray xs, jfloatArray ys, jintArray phases) {
+    (void)clazz;
+    if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
+    if (!taoInputInjectionEnabled()) return JNI_FALSE;
+    static DigitizerEventFn sDigitizer = NULL;
+    static DigitizerFingerEventFn sFinger = NULL;
+    static HIDEventAppendFn sAppend = NULL;
+    static HIDEventSetIntegerFn sSetInteger = NULL;
+    static CGEventSetHIDEventFn sSetHIDEvent = NULL;
+    static BOOL sResolved = NO;
+    if (!sResolved) {
+        sResolved = YES;
+        void *iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+        void *skylight = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW);
+        if (iokit != NULL) {
+            sDigitizer = (DigitizerEventFn) dlsym(iokit, "IOHIDEventCreateDigitizerEvent");
+            sFinger = (DigitizerFingerEventFn) dlsym(iokit, "IOHIDEventCreateDigitizerFingerEvent");
+            sAppend = (HIDEventAppendFn) dlsym(iokit, "IOHIDEventAppendEvent");
+            sSetInteger = (HIDEventSetIntegerFn) dlsym(iokit, "IOHIDEventSetIntegerValue");
+        }
+        if (skylight != NULL) sSetHIDEvent = (CGEventSetHIDEventFn) dlsym(skylight, "SLEventSetIOHIDEvent");
+    }
+    if (sDigitizer == NULL || sFinger == NULL || sAppend == NULL || sSetInteger == NULL ||
+        sSetHIDEvent == NULL) {
+        return JNI_FALSE;
+    }
+    if (!installFakeTouchDevice()) return JNI_FALSE;
+    jsize count = (*env)->GetArrayLength(env, fingers);
+    if (count == 0 || (*env)->GetArrayLength(env, xs) != count ||
+        (*env)->GetArrayLength(env, ys) != count || (*env)->GetArrayLength(env, phases) != count) {
+        return JNI_FALSE;
+    }
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    NSWindow *window = view.window;
+    if (window == nil) return JNI_FALSE;
+
+    // IOHIDDigitizer transducer / event-mask bits and the IsDisplayIntegrated field.
+    const uint32_t kHand = 3;
+    const uint32_t kRange = 1u << 0, kTouch = 1u << 1, kPosition = 1u << 2, kCancel = 1u << 7;
+    const uint32_t kIsDisplayIntegrated = (11u << 16) | 25u;
+
+    jint *fingerIds = (*env)->GetIntArrayElements(env, fingers, NULL);
+    jfloat *x = (*env)->GetFloatArrayElements(env, xs, NULL);
+    jfloat *y = (*env)->GetFloatArrayElements(env, ys, NULL);
+    jint *phase = (*env)->GetIntArrayElements(env, phases, NULL);
+    uint64_t now = mach_absolute_time();
+    BOOL anyDown = NO;
+    for (jsize i = 0; i < count; i++) anyDown |= phase[i] == 0 || phase[i] == 1;
+    NucleusIOHIDEventRef hand = sDigitizer(kCFAllocatorDefault, now, kHand, 0, 0,
+        kRange | kTouch | kPosition, 0, 0, 0, 0, 0, 0, anyDown, anyDown, 0);
+    sSetInteger(hand, kIsDisplayIntegrated, 1);
+    for (jsize i = 0; i < count; i++) {
+        NSPoint local = NSMakePoint(x[i], view.isFlipped ? y[i] : view.bounds.size.height - y[i]);
+        NSPoint base = [view convertPoint:local toView:nil];
+        BOOL down = phase[i] == 0 || phase[i] == 1;
+        // What changed in this frame: contact made or broken, or a move.
+        uint32_t mask = kPosition | (phase[i] == 1 ? 0 : kRange | kTouch) | (phase[i] == 3 ? kCancel : 0);
+        NucleusIOHIDEventRef finger = sFinger(kCFAllocatorDefault, now, (uint32_t)(i + 1),
+            (uint32_t)fingerIds[i], mask,
+            base.x / kDirectTouchSurfacePt, 1.0 - base.y / kDirectTouchSurfacePt, 0,
+            down ? 1.0 : 0.0, 0, down, down, 0);
+        sSetInteger(finger, kIsDisplayIntegrated, 1);
+        sAppend(hand, finger, 0);
+        CFRelease(finger);
+    }
+    (*env)->ReleaseIntArrayElements(env, fingers, fingerIds, JNI_ABORT);
+    (*env)->ReleaseFloatArrayElements(env, xs, x, JNI_ABORT);
+    (*env)->ReleaseFloatArrayElements(env, ys, y, JNI_ABORT);
+    (*env)->ReleaseIntArrayElements(env, phases, phase, JNI_ABORT);
+
+    CGEventRef cg = CGEventCreate(NULL);
+    if (cg == NULL) { CFRelease(hand); return JNI_FALSE; }
+    CGEventSetType(cg, (CGEventType) 29);
+    CGEventSetIntegerValueField(cg, (CGEventField) 110, 59); // kSLSHIDEventTypeDirectTouch
+    CGEventSetIntegerValueField(cg, (CGEventField) 51, window.windowNumber);
+    sSetHIDEvent(cg, hand); // copies the event
+    CFRelease(hand);
+    NSEvent *event = [NSEvent eventWithCGEvent:cg];
+    CFRelease(cg);
+    if (event == nil || event.window != window) return JNI_FALSE;
     [NSApp postEvent:event atStart:NO];
     return JNI_TRUE;
 }

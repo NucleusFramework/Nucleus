@@ -10,6 +10,7 @@ import dev.nucleusframework.lab.core.mvi.MviViewModel
 import dev.nucleusframework.lab.core.timeline.Severity
 import dev.nucleusframework.lab.core.timeline.Timeline
 import dev.nucleusframework.lab.probes.updater.feed.FeedServerHost
+import dev.nucleusframework.updater.InstallFailure
 import dev.nucleusframework.updater.UpdateEvent
 import dev.nucleusframework.updater.UpdateResult
 import dev.nucleusframework.updater.UpdateSimulation
@@ -41,6 +42,7 @@ class UpdaterViewModel(
     init {
         launch {
             dispatch(UpdaterEvent.LaunchEventRead(io { gateway.launchEvent }.describe("no update event at launch")))
+            dispatch(UpdaterEvent.InstallFailureRead(io { gateway.launchInstallFailure }?.describe()))
             apply()
         }
         // nucleus-lab://probe/updater.engine?source=simulation&scenario=download_error&check=true
@@ -178,6 +180,14 @@ class UpdaterViewModel(
 
 private fun UpdateEvent?.describe(none: String): String =
     this?.let { "$previousVersion → $newVersion ($updateLevel)" } ?: none
+
+private fun InstallFailure.describe(): String =
+    "${version ?: "unknown version"} · exit $exitCode" +
+        output
+            .lineSequence()
+            .lastOrNull { it.isNotBlank() }
+            ?.let { " · $it" }
+            .orEmpty()
 
 /** `?source=simulation&scenario=download_error&version=1.0.0&justUpdatedFrom=0.9.0`: applies what parses. */
 private fun SetupForm.withParams(params: LabParams): SetupForm =

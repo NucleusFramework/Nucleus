@@ -378,6 +378,7 @@ public object TaoHeadfulTestSuiteMain {
             LinuxTrackpadPinchHeadfulCases.all() +
             LinuxPenPointerTypeHeadfulCases.all() +
             MacOsPenPointerTypeHeadfulCases.all() +
+            MacOsDirectTouchHeadfulCases.all() +
             WindowsDirectManipulationHeadfulCases.all() +
             WindowsPenPointerTypeHeadfulCases.all() +
             MacOsTrackpadScaleHeadfulCases.all() +
@@ -411,6 +412,7 @@ public object TaoHeadfulTestSuiteMain {
             TabWorkspaceHeadfulCases.all() +
             TabStripMotionHeadfulCases.all() +
             TabWorkspaceLifecycleHeadfulCases.all() +
+            RelocatedViewModelHeadfulCases.all() +
             TabWorkspaceMotionHeadfulCases.all() +
             TabWorkspaceMouseHeadfulCases.all() +
             TabWorkspaceConcurrencyHeadfulCases.all() +
@@ -441,6 +443,9 @@ public object TaoHeadfulTestSuiteMain {
             MacOsGpuCacheReclaimHeadfulCases.all() +
             TearOffFlashHeadfulCases.all() +
             NativeViewMonkeyHeadfulCases.all() +
+            NativeViewFrameSyncHeadfulCases.all() +
+            NativeViewOverlayHeadfulCases.all() +
+            NativeViewOverlayInputHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all() +
             GpuCacheReclaimHeadfulCases.all() +
             ModalDialogHeadfulCases.all()

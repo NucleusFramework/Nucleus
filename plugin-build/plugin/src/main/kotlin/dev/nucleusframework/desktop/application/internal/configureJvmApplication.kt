@@ -31,6 +31,7 @@ import dev.nucleusframework.desktop.application.tasks.AbstractPatchCaCertificate
 import dev.nucleusframework.desktop.application.tasks.AbstractPatchMacJvmTask
 import dev.nucleusframework.desktop.application.tasks.AbstractProguardTask
 import dev.nucleusframework.desktop.application.tasks.AbstractRunAppXTask
+import dev.nucleusframework.desktop.application.tasks.AbstractRunStoreKitTask
 import dev.nucleusframework.desktop.application.tasks.AbstractRunDistributableTask
 import dev.nucleusframework.desktop.application.tasks.AbstractServeUpdateFeedTask
 import dev.nucleusframework.desktop.application.tasks.AbstractStripNativeLibsFromJarsTask
@@ -321,6 +322,17 @@ private fun JvmApplicationContext.registerGenerateAppProperties() {
                 val taskId = appxSettings.startupTaskId ?: "SlackStartup"
                 startupTaskId.set(taskId)
             }
+            // The COM class the widgets board activates: the same CLSID the AppX manifest declares.
+            windowsWidgetsClsid.set(
+                project.provider {
+                    val distributions = app.nativeDistributions
+                    if (distributions.windows.widgets.definitions.isEmpty()) {
+                        null
+                    } else {
+                        WindowsWidgetsPackaging.clsid(WindowsWidgetsPackaging.identity(distributions)).toString()
+                    }
+                },
+            )
             // Native images have no launcher .cfg for the idle-GC -D flag; bake it here too.
             idleGc.set(project.provider { app.optIdleGc })
             partialRedraw.set(project.provider { app.optPartialRedraw })
@@ -442,6 +454,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                         createDistributable = createDistributable,
                         unpackDefaultResources = commonTasks.unpackDefaultResources,
                     )
+                    configureFlathubMetadata(this, targetFormat)
                     generateAotCache?.let { dependsOn(it) }
                 }
 
@@ -562,6 +575,42 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
 
     tasks.register<JavaExec>(taskNameAction = "run") {
         configureRunTask(this, commonTasks.prepareAppResources, runProguard, patchMacJvmTask)
+    }
+
+    // runStoreKit: in-app purchases against a .storekit file (macOS only)
+    if (currentOS == OS.MacOS) {
+        registerRunStoreKit(commonTasks.prepareAppResources, runProguard)
+    }
+}
+
+/** Registers `runStoreKit`: the app as a development bundle served by StoreKit Testing. */
+private fun JvmApplicationContext.registerRunStoreKit(
+    prepareAppResources: TaskProvider<Sync>,
+    runProguard: Provider<AbstractProguardTask>?,
+) {
+    tasks.register<AbstractRunStoreKitTask>(
+        taskNameAction = "run",
+        taskNameObject = "storeKit",
+    ) {
+        dependsOn(prepareAppResources)
+        if (runProguard != null) {
+            dependsOn(runProguard)
+            classpath.from(project.fileTree(runProguard.flatMap { it.destinationDir }))
+        } else {
+            useAppRuntimeFiles { (runtimeJars, _) ->
+                classpath.from(runtimeJars)
+            }
+        }
+        app.mainClass?.let(mainClass::set)
+        // Same arguments as `run`.
+        jvmArgs.set(devJvmArgs(prepareAppResources))
+        appArgs.set(app.args)
+        javaHome.set(app.javaHomeProvider)
+        bundleId.set(resolvedAppIdProvider())
+        launcherName.set(packageNameProvider)
+        storeKitConfiguration.set(app.nativeDistributions.macOS.storeKitConfiguration)
+        shellDir.set(project.layout.buildDirectory.dir("nucleus/storekit-app"))
+        environment.putAll(UpdaterLaunchSettings.environment(project.providers))
     }
 }
 
@@ -1174,12 +1223,15 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         packageTask.macRuntimeEntitlementsFile.set(
             mac.runtimeEntitlementsFile.orElse(defaultRuntimeEntitlements),
         )
-        packageTask.macAppExtensions.set(mac.appExtensions.extensions)
+        packageTask.macProvisioningProfile.set(mac.provisioningProfile)
+        packageTask.macAppLinkHosts.set(provider { app.nativeDistributions.appLinkHosts })
+        packageTask.macAppExtensions.set(macAppExtensionsWithWidgets())
         packageTask.macAppExtensionFiles.from(
             mac.appExtensions.extensions.flatMap {
                 listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
             },
         )
+        macWidgetsExtension()?.let { packageTask.macAppExtensionFiles.from(it.task) }
     }
 }
 
@@ -1291,6 +1343,7 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                 packageTask.nonValidatedMacBundleID.set(mac.bundleID)
                 packageTask.macProvisioningProfile.set(mac.provisioningProfile)
                 packageTask.macRuntimeProvisioningProfile.set(mac.runtimeProvisioningProfile)
+                packageTask.macAppLinkHosts.set(provider { app.nativeDistributions.appLinkHosts })
                 packageTask.macOsSdkVersion.set(mac.macOsSdkVersion)
                 packageTask.macExtraPlistKeysRawXml.set(mac.infoPlistSettings.extraKeysRawXml)
                 packageTask.macInfoPlistLocalizationsDir.set(mac.infoPlistSettings.localizationsDir)
@@ -1303,12 +1356,13 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                 packageTask.urlProtocols.set(app.nativeDistributions.protocols)
                 packageTask.macLayeredIcons.set(mac.layeredIconDir)
                 packageTask.macLaunchAgents.set(mac.launchAgents.agents)
-                packageTask.macAppExtensions.set(mac.appExtensions.extensions)
+                packageTask.macAppExtensions.set(macAppExtensionsWithWidgets())
                 packageTask.macAppExtensionFiles.from(
                     mac.appExtensions.extensions.flatMap {
                         listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
                     },
                 )
+                macWidgetsExtension()?.let { packageTask.macAppExtensionFiles.from(it.task) }
             }
         }
     }
@@ -1365,69 +1419,7 @@ private fun JvmApplicationContext.configureRunTask(
     } else {
         configureRunJavaHome(exec)
     }
-    exec.jvmArgs =
-        arrayListOf<String>().apply {
-            addAll(defaultJvmArgs)
-            // Same collector in dev as in the packaged app; before app.jvmArgs so an
-            // explicit -XX:+Use…GC there still wins.
-            app.garbageCollector?.let { addAll(it.jvmArgs) }
-            add("-D$APP_EXECUTABLE_TYPE=$EXECUTABLE_TYPE_DEV")
-            add("-D$APP_ID=${resolvedAppIdProvider().get()}")
-            // ./gradlew run -Pnucleus.updater.simulate=update / -Pnucleus.updater.feedUrl=<dir or url>
-            UpdaterLaunchSettings.systemProperties(project.providers).forEach { (key, value) -> add("-D$key=$value") }
-
-            if (currentOS == OS.MacOS) {
-                val dockName =
-                    app.nativeDistributions.appName
-                        ?: app.nativeDistributions.packageName
-                        ?: project.name
-                add("-Dapple.awt.application.name=$dockName")
-                val file = app.nativeDistributions.macOS.iconFile.ioFileOrNull
-                if (file != null) add("-Xdock:icon=$file")
-            }
-
-            addAll(app.jvmArgs)
-            // debug { } and -Pnucleus.debug: the run task only, never a package
-            val debugProperty = project.providers.gradleProperty(NUCLEUS_DEBUG_GRADLE_PROPERTY).orNull
-            addAll(nucleusDebugJvmArgs(app, debugProperty, project.logger))
-            val appResourcesDir = prepareAppResources.get().destinationDir
-            add("-D$APP_RESOURCES_DIR=${appResourcesDir.absolutePath}")
-
-            app.nativeDistributions.splashImage?.let { splash ->
-                val splashFile = appResourcesDir.resolve(splash)
-                if (splashFile.exists()) {
-                    add("-splash:${splashFile.absolutePath}")
-                }
-            }
-
-            // Dev mode AOT: ./gradlew run -Paot=train|on|auto|off
-            val aotCacheDir =
-                project.layout.buildDirectory
-                    .dir("compose/aot-cache")
-                    .get()
-                    .asFile
-            val devAotCache = java.io.File(aotCacheDir, "dev.aot")
-            when (project.findProperty("aot")?.toString()) {
-                "train" -> {
-                    aotCacheDir.mkdirs()
-                    add("-XX:AOTCacheOutput=${devAotCache.absolutePath}")
-                }
-                "on" -> {
-                    if (devAotCache.exists()) {
-                        add("-XX:AOTCache=${devAotCache.absolutePath}")
-                    }
-                }
-                "auto" -> {
-                    if (devAotCache.exists()) {
-                        add("-XX:AOTCache=${devAotCache.absolutePath}")
-                    } else {
-                        aotCacheDir.mkdirs()
-                        add("-XX:AOTCacheOutput=${devAotCache.absolutePath}")
-                    }
-                }
-                // "off" or absent → no-op
-            }
-        }
+    exec.jvmArgs = devJvmArgs(prepareAppResources)
     exec.args = app.args
 
     if (runProguard != null) {
@@ -1439,6 +1431,74 @@ private fun JvmApplicationContext.configureRunTask(
         }
     }
 }
+
+/**
+ * The JVM arguments of a development launch (`run`, `runStoreKit`): app identity, updater test
+ * switches, Dock name and icon, resources directory, splash, debug and dev AOT.
+ */
+private fun JvmApplicationContext.devJvmArgs(prepareAppResources: TaskProvider<Sync>): List<String> =
+    arrayListOf<String>().apply {
+        addAll(defaultJvmArgs)
+        // Same collector in dev as in the packaged app; before app.jvmArgs so an
+        // explicit -XX:+Use…GC there still wins.
+        app.garbageCollector?.let { addAll(it.jvmArgs) }
+        add("-D$APP_EXECUTABLE_TYPE=$EXECUTABLE_TYPE_DEV")
+        add("-D$APP_ID=${resolvedAppIdProvider().get()}")
+        // ./gradlew run -Pnucleus.updater.simulate=update / -Pnucleus.updater.feedUrl=<dir or url>
+        UpdaterLaunchSettings.systemProperties(project.providers).forEach { (key, value) -> add("-D$key=$value") }
+
+        if (currentOS == OS.MacOS) {
+            val dockName =
+                app.nativeDistributions.appName
+                    ?: app.nativeDistributions.packageName
+                    ?: project.name
+            add("-Dapple.awt.application.name=$dockName")
+            val file = app.nativeDistributions.macOS.iconFile.ioFileOrNull
+            if (file != null) add("-Xdock:icon=$file")
+        }
+
+        addAll(app.jvmArgs)
+        // debug { } and -Pnucleus.debug: the run task only, never a package
+        val debugProperty = project.providers.gradleProperty(NUCLEUS_DEBUG_GRADLE_PROPERTY).orNull
+        addAll(nucleusDebugJvmArgs(app, debugProperty, project.logger))
+        val appResourcesDir = prepareAppResources.get().destinationDir
+        add("-D$APP_RESOURCES_DIR=${appResourcesDir.absolutePath}")
+
+        app.nativeDistributions.splashImage?.let { splash ->
+            val splashFile = appResourcesDir.resolve(splash)
+            if (splashFile.exists()) {
+                add("-splash:${splashFile.absolutePath}")
+            }
+        }
+
+        // Dev mode AOT: ./gradlew run -Paot=train|on|auto|off
+        val aotCacheDir =
+            project.layout.buildDirectory
+                .dir("compose/aot-cache")
+                .get()
+                .asFile
+        val devAotCache = java.io.File(aotCacheDir, "dev.aot")
+        when (project.findProperty("aot")?.toString()) {
+            "train" -> {
+                aotCacheDir.mkdirs()
+                add("-XX:AOTCacheOutput=${devAotCache.absolutePath}")
+            }
+            "on" -> {
+                if (devAotCache.exists()) {
+                    add("-XX:AOTCache=${devAotCache.absolutePath}")
+                }
+            }
+            "auto" -> {
+                if (devAotCache.exists()) {
+                    add("-XX:AOTCache=${devAotCache.absolutePath}")
+                } else {
+                    aotCacheDir.mkdirs()
+                    add("-XX:AOTCacheOutput=${devAotCache.absolutePath}")
+                }
+            }
+            // "off" or absent → no-op
+        }
+    }
 
 private fun JvmApplicationContext.configureFlattenJars(
     flattenJars: AbstractJarsFlattenTask,
@@ -1540,75 +1600,93 @@ private fun JvmApplicationContext.registerPatchMacJvmTask(
 }
 
 /**
- * Registers `generateFlathubRepository` when `linux { flathub { appId } }` is set: the Flathub
- * repository of the app, built from its released `tar.gz` (see [AbstractGenerateFlathubRepositoryTask]).
- * Every value is resolved when the task runs, from the DSL as a whole.
+ * `linux { flathub { } }` resolved for the generator and the `Tar` packaging, or `null` without an
+ * `appId`. Every value is read when the task runs, from the DSL as a whole.
  */
-private fun JvmApplicationContext.registerFlathubRepositoryIfNeeded() {
+internal fun JvmApplicationContext.flathubSpecOrNull(): Provider<FlathubSpec>? {
     val distributions = app.nativeDistributions
     val linux = distributions.linux
     val flathub = linux.flathub
-    val appId = flathub.appId ?: return
+    val appId = flathub.appId ?: return null
     val version = packageVersionFor(TargetFormat.Tar)
     val graalvm = app.graalvm
     val imageName = graalvm.imageName.orElse(packageNameProvider)
+    return project.provider {
+        val packageName = packageNameProvider.get()
+        FlathubSpec(
+            appId = appId,
+            name = distributions.appName ?: packageName,
+            version =
+                project.findProperty("nucleus.flathub.releaseVersion")?.toString()
+                    ?: flathub.releaseVersion
+                    ?: version.get(),
+            archiveVersion = version.get(),
+            releaseDate =
+                project.findProperty("nucleus.flathub.releaseDate")?.toString()
+                    ?: java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString(),
+            runtime = flathub.runtime,
+            runtimeVersion = flathub.runtimeVersion,
+            sdk = flathub.sdk,
+            finishArgs = flathub.finishArgs,
+            executable =
+                flathub.executable
+                    ?: if (graalvm.isEnabled.get()) imageName.get() else "bin/$packageName",
+            summary = flathub.summary.orEmpty(),
+            description = flathub.description ?: distributions.description.orEmpty(),
+            projectLicense = flathub.projectLicense.orEmpty(),
+            developerId = flathub.developerId ?: appId.substringBeforeLast('.'),
+            developerName = flathub.developerName ?: distributions.vendor.orEmpty(),
+            homepage = distributions.homepage,
+            bugtrackerUrl = flathub.bugtrackerUrl,
+            vcsBrowserUrl = flathub.vcsBrowserUrl,
+            categories =
+                flathub.categories.ifEmpty {
+                    (linux.appCategory ?: linux.menuGroup)
+                        ?.split(';')
+                        ?.map(String::trim)
+                        ?.filter(String::isNotEmpty)
+                        .orEmpty()
+                },
+            keywords = flathub.keywords,
+            brandingLight = flathub.brandingLight,
+            brandingDark = flathub.brandingDark,
+            screenshots = flathub.screenshots.toList(),
+            mimeTypes = linux.fileAssociations.map { FlathubMimeType(it.mimeType, it.extension, it.description) },
+            urlSchemes = distributions.protocols.flatMap { it.schemes },
+            arches = flathub.arches.sortedBy { it.ordinal },
+        )
+    }
+}
+
+/** Gives a `Tar` package task the Flathub metadata to bundle under `share/` when `flathub { }` is set. */
+internal fun JvmApplicationContext.configureFlathubMetadata(
+    task: AbstractElectronBuilderPackageTask,
+    targetFormat: TargetFormat,
+) {
+    if (targetFormat != TargetFormat.Tar) return
+    val spec = flathubSpecOrNull() ?: return
+    val linux = app.nativeDistributions.linux
+    task.flathubSpec.set(spec)
+    task.flathubIcon.set(linux.flathub.iconFile.orElse(linux.iconFile))
+}
+
+/**
+ * Registers `generateFlathubRepository` when `linux { flathub { appId } }` is set: the Flathub
+ * repository of the app, built from its released `tar.gz` (see [AbstractGenerateFlathubRepositoryTask]).
+ */
+private fun JvmApplicationContext.registerFlathubRepositoryIfNeeded() {
+    val flathub = app.nativeDistributions.linux.flathub
+    val spec = flathubSpecOrNull() ?: return
+    val appId = flathub.appId
 
     tasks.register<AbstractGenerateFlathubRepositoryTask>(
         taskNameAction = "generate",
         taskNameObject = "flathubRepository",
     ) {
-        description = "Writes the Flathub repository of the app (manifest, metainfo, desktop entry, icon)"
-        spec.set(
-            project.provider {
-                val packageName = packageNameProvider.get()
-                FlathubSpec(
-                    appId = appId,
-                    name = distributions.appName ?: packageName,
-                    version =
-                        project.findProperty("nucleus.flathub.releaseVersion")?.toString()
-                            ?: flathub.releaseVersion
-                            ?: version.get(),
-                    archiveVersion = version.get(),
-                    releaseDate =
-                        project.findProperty("nucleus.flathub.releaseDate")?.toString()
-                            ?: java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString(),
-                    runtime = flathub.runtime,
-                    runtimeVersion = flathub.runtimeVersion,
-                    sdk = flathub.sdk,
-                    finishArgs = flathub.finishArgs,
-                    executable =
-                        flathub.executable
-                            ?: if (graalvm.isEnabled.get()) imageName.get() else "bin/$packageName",
-                    summary = flathub.summary.orEmpty(),
-                    description = flathub.description ?: distributions.description.orEmpty(),
-                    projectLicense = flathub.projectLicense.orEmpty(),
-                    developerId = flathub.developerId ?: appId.substringBeforeLast('.'),
-                    developerName = flathub.developerName ?: distributions.vendor.orEmpty(),
-                    homepage = distributions.homepage,
-                    bugtrackerUrl = flathub.bugtrackerUrl,
-                    vcsBrowserUrl = flathub.vcsBrowserUrl,
-                    categories =
-                        flathub.categories.ifEmpty {
-                            (linux.appCategory ?: linux.menuGroup)
-                                ?.split(';')
-                                ?.map(String::trim)
-                                ?.filter(String::isNotEmpty)
-                                .orEmpty()
-                        },
-                    keywords = flathub.keywords,
-                    brandingLight = flathub.brandingLight,
-                    brandingDark = flathub.brandingDark,
-                    screenshots = flathub.screenshots.toList(),
-                    mimeTypes =
-                        linux.fileAssociations.map { FlathubMimeType(it.mimeType, it.extension, it.description) },
-                    urlSchemes = distributions.protocols.flatMap { it.schemes },
-                    arches = flathub.arches.sortedBy { it.ordinal },
-                )
-            },
-        )
+        description = "Writes the Flathub manifest of the app, which repackages its released tar.gz"
+        this.spec.set(spec)
         flathub.archiveUrl?.let(archiveUrl::set)
         project.findProperty("nucleus.flathub.localArchive")?.let { localArchive.set(project.file(it)) }
-        iconFile.set(flathub.iconFile.orElse(linux.iconFile))
         outputDir.set(flathub.outputDir.orElse(project.layout.buildDirectory.dir("flathub/$appId")))
         // A clone of github.com/flathub/<appId> to update in place, without touching the build script.
         project.findProperty("nucleus.flathub.outputDir")?.let { outputDir.set(project.file(it)) }

@@ -2102,10 +2102,12 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
 
     // Embed and (ad-hoc) sign app extensions into Contents/PlugIns after the bundle is sealed,
     // then re-seal the outer bundle without --deep so each extension keeps its own entitlements.
-    val macAppExtensions = app.nativeDistributions.macOS.appExtensions.extensions
+    val macAppExtensions = macAppExtensionsWithWidgets()
     val embedAppExtensions =
         if (macAppExtensions.isNotEmpty()) {
-            registerEmbedGraalvmAppExtensions(macAppExtensions, appBundleName, codesignBundle)
+            registerEmbedGraalvmAppExtensions(macAppExtensions, appBundleName, codesignBundle).also { embed ->
+                macWidgetsExtension()?.let { widgets -> embed.configure { it.dependsOn(widgets.task) } }
+            }
         } else {
             null
         }
@@ -2266,7 +2268,8 @@ private fun JvmApplicationContext.registerEmbedGraalvmAppExtensions(
             extension.entitlements?.let { inputs.file(it) }
             extension.provisioningProfile?.let { inputs.file(it) }
         }
-        val bundleDir = appTmpDir.map { it.dir("graalvm/output/${appBundleName.get()}") }.get().asFile
+        // The bundle codesignBundle sealed, under compose/binaries like the JVM app.
+        val bundleDir = graalvmOutputDir.map { it.dir(appBundleName.get()) }.get().asFile
         commandLine("bash", "-c", buildGraalvmAppExtensionEmbedScript(bundleDir, macAppExtensions))
     }
 
@@ -2786,6 +2789,7 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
 
                 executableName.set(imageName)
                 runtimeAppId.set(resolvedAppIdProvider())
+                configureFlathubMetadata(this, targetFormat)
                 customNodePath.set(NucleusProperties.electronBuilderNodePath(project.providers))
                 configureNodeJs(project, app.nativeDistributions.nodejs)
                 publishMode.set(NucleusProperties.electronBuilderPublishMode(project.providers))
@@ -2875,12 +2879,15 @@ private fun JvmApplicationContext.configureGraalvmPlatformPackageSettings(
                 }
             task.macEntitlementsFile.set(mac.entitlementsFile.orElse(defaultEntitlements))
             task.macRuntimeEntitlementsFile.set(mac.runtimeEntitlementsFile.orElse(defaultEntitlements))
-            task.macAppExtensions.set(mac.appExtensions.extensions)
+            task.macProvisioningProfile.set(mac.provisioningProfile)
+            task.macAppLinkHosts.set(provider { app.nativeDistributions.appLinkHosts })
+            task.macAppExtensions.set(macAppExtensionsWithWidgets())
             task.macAppExtensionFiles.from(
                 mac.appExtensions.extensions.flatMap {
                     listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
                 },
             )
+            macWidgetsExtension()?.let { task.macAppExtensionFiles.from(it.task) }
         }
     }
 }

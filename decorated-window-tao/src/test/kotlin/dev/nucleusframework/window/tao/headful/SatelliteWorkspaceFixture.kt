@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
+import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.ApplicationScope
 import dev.nucleusframework.window.tao.DockLayout
@@ -68,6 +69,12 @@ internal class SatelliteWorkspaceFixture {
     /** The `rememberSaveable` counter of the current host's composition. */
     val counter = mutableStateOf<MutableState<Int>?>(null)
 
+    /** The view model the satellite's content resolved most recently. */
+    val viewModel = mutableStateOf<RelocationProbeViewModel?>(null)
+
+    /** The satellite view models cleared so far, in clearing order. */
+    val clearedViewModels = clearedProbeViewModels()
+
     /** Hosts currently composing the content; the two overlap for a frame when switching. */
     val composedHosts = mutableIntStateOf(0)
     val isComposed: Boolean get() = composedHosts.value > 0
@@ -87,9 +94,12 @@ internal class SatelliteWorkspaceFixture {
             val clicks = rememberSaveable { mutableStateOf(0) }
             val window = LocalTaoWindow.current
             val docked = isDocked
+            // Belongs to the satellite, not to its floating window or dock host.
+            val probe = viewModel { RelocationProbeViewModel(SATELLITE_ID, clearedViewModels) }
             val container = LocalWindowInfo.current.containerSize
             SideEffect {
                 counter.value = clicks
+                viewModel.value = probe
                 if (docked) {
                     panelHost.value = window
                     hostContentSizePx.value = container

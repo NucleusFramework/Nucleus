@@ -132,6 +132,11 @@ jobs:
         shell: cmd
         run: call notification-windows\src\main\native\windows\build.bat
 
+      - name: Build widget-windows Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call widget-windows\src\main\native\windows\build.bat
+
       - name: Build autolaunch Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -226,6 +231,7 @@ jobs:
             "energy-manager/nucleus_energy_manager.dll"
             "taskbar-progress/nucleus_taskbar_progress.dll"
             "notification-windows/nucleus_notification_windows.dll"
+            "widget-windows/nucleus_widget_windows.dll"
             "autolaunch/nucleus_autolaunch.dll"
             "launcher-windows/nucleus_launcher_windows.dll"
             "global-hotkey/nucleus_global_hotkey.dll"
@@ -360,6 +366,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash service-management-macos/src/main/native/macos/build.sh
 
+      - name: Build mac-app-store macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash mac-app-store/src/main/native/macos/build.sh
+
       - name: Build scheduler macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash scheduler/src/main/native/macos/build.sh
@@ -367,6 +377,10 @@ jobs:
       - name: Build launcher-macos macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash launcher-macos/src/main/native/macos/build.sh
+
+      - name: Build widget-macos macOS dylibs and widget extension
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash widget-macos/src/main/native/macos/build.sh
 
       - name: Build global-hotkey macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
@@ -439,8 +453,12 @@ jobs:
             "taskbar-progress/libnucleus_taskbar_progress.dylib"
             "notification-macos/libnucleus_notification.dylib"
             "service-management-macos/libnucleus_service_management.dylib"
+            "mac-app-store/libnucleus_macstore.dylib"
             "scheduler/libnucleus_scheduler.dylib"
             "launcher-macos/libnucleus_launcher_macos.dylib"
+            "widget-macos/libnucleus_widget_macos.dylib"
+            "widget-macos/nucleus-widget-extension/NucleusWidgets"
+            "widget-macos/nucleus-widget-extension/Metadata.appintents/extract.actionsdata"
             "global-hotkey/libnucleus_global_hotkey.dylib"
             "menu-macos/libnucleus_menu_macos.dylib"
             "decorated-window-core/libnucleus_layout_direction.dylib"

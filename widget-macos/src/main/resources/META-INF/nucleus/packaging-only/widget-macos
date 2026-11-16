@@ -1,0 +1,4 @@
+# The prebuilt WidgetKit extension: the Gradle plugin copies it into NucleusWidgets.appex while
+# packaging; the application never reads it, so it is left out of the application's JARs.
+nucleus/native/darwin-aarch64/nucleus-widget-extension/
+nucleus/native/darwin-x64/nucleus-widget-extension/

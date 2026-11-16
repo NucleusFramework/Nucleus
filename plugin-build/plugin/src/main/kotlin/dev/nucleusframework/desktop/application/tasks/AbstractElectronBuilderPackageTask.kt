@@ -16,12 +16,20 @@ import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
+import dev.nucleusframework.desktop.application.internal.AppLinkHosts
+import dev.nucleusframework.desktop.application.internal.AppXAppLinks
 import dev.nucleusframework.desktop.application.internal.AppXLogo
+import dev.nucleusframework.desktop.application.internal.WindowsWidgetsPackaging
+import dev.nucleusframework.desktop.application.internal.electronbuilder.AppXManifestFiles
+import dev.nucleusframework.desktop.application.internal.FlathubChecks
+import dev.nucleusframework.desktop.application.internal.FlathubRepository
+import dev.nucleusframework.desktop.application.internal.FlathubSpec
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxPolkitActions
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
 import dev.nucleusframework.desktop.application.internal.MacPkgScripts
 import dev.nucleusframework.desktop.application.internal.MacDmgLzma
+import dev.nucleusframework.desktop.application.internal.MacAppLinks
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
 import dev.nucleusframework.desktop.application.internal.NodeToolchainProvisioner
@@ -144,6 +152,20 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Input
         @get:Optional
         val packageVersion: Property<String> = objects.nullableProperty()
+
+        /**
+         * `linux { flathub { } }`, resolved: a Linux `Tar` archive then carries the app's Flathub
+         * metadata under `share/`, which the Flathub manifest installs (Flathub wants it upstream).
+         */
+        @get:Input
+        @get:Optional
+        val flathubSpec: Property<FlathubSpec> = objects.nullableProperty()
+
+        /** The icon of that metadata: `flathub { iconFile }`, else `linux.iconFile`. */
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.NONE)
+        val flathubIcon: RegularFileProperty = objects.fileProperty()
 
         @get:Input
         @get:Optional
@@ -279,6 +301,17 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Optional
         internal val nonValidatedMacBundleID: Property<String> = objects.nullableProperty()
 
+        /** Embedded when app links apply (see [MacAppLinks]); the JVM app image already carries it. */
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.ABSOLUTE)
+        val macProvisioningProfile: RegularFileProperty = objects.fileProperty()
+
+        /** `nativeDistributions { appLinks(…) }`: the Universal Links hosts (see [MacAppLinks]). */
+        @get:Input
+        internal val macAppLinkHosts: ListProperty<String> =
+            objects.listProperty(String::class.java).convention(emptyList())
+
         @get:Internal
         internal val macAppExtensions: ListProperty<MacAppExtension> =
             objects.listProperty(MacAppExtension::class.java).convention(emptyList())
@@ -354,11 +387,13 @@ abstract class AbstractElectronBuilderPackageTask
             ensureResourcesDirForElectronBuilder(workingAppDir)
             bundleSilentUpdateArtifacts(workingAppDir, dist)
             bundlePolkitPolicies(workingAppDir, dist)
+            bundleFlathubMetadata(workingAppDir)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             val hotUpdateLayout = applyWindowsHotUpdateLayout(workingAppDir)
             signWindowsAppImage(workingAppDir, outputDir, dist)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
+            val appxManifest = stageAppXManifest(dist, workingAppDir, outputDir)
 
             val (node, npm) = resolveNodeJs()
             validateNodeVersion(node)
@@ -384,6 +419,7 @@ abstract class AbstractElectronBuilderPackageTask
                     windowsIconOverride = windowsIconOverride,
                     linuxScripts = LinuxScriptTemplates(linuxAfterInstallTemplate, linuxAfterRemoveTemplate),
                     hotUpdateLayout = hotUpdateLayout,
+                    appxManifest = appxManifest,
                 )
             ensureProjectPackageMetadata(outputDir, dist)
 
@@ -569,6 +605,7 @@ abstract class AbstractElectronBuilderPackageTask
                     appendSettingsReadOutsideConfig(dist, generator, arch)
                 }
             val files = generator.referencedFiles.toMutableSet()
+            if (targetFormat == TargetFormat.AppX) files += WindowsWidgetsPackaging.files(dist.windows.widgets)
             if (currentOS == OS.Linux && targetFormat in LINUX_SIGNED_FORMATS) {
                 dist.linux.signing.keyFile.orNull
                     ?.let { files += it.asFile }
@@ -609,11 +646,18 @@ abstract class AbstractElectronBuilderPackageTask
                     // signWindowsAppImage(), generateNsisInclude()
                     appendLine("windowsSigning.signNativeLibraries: ${dist.windows.signing.signNativeLibraries}")
                     appendLine("appName: ${dist.appName}")
+                    // stageAppXManifest()
+                    if (targetFormat == TargetFormat.AppX) {
+                        appendLine(WindowsWidgetsPackaging.describe(dist.windows.widgets))
+                        appendLine("appLinks: ${dist.appLinkHosts}")
+                    }
                 }
                 OS.MacOS -> {
                     // exportMacOSPackagingMetadata() writes the DMG layout and install location
                     // next to every macOS package, whatever its format.
                     appendLine("installationPath: ${dist.macOS.installationPath}")
+                    // resignApp() → MacAppLinks
+                    appendLine("appLinks: ${dist.appLinkHosts}")
                     if (targetFormat != TargetFormat.Dmg) {
                         generator.generateMacConfig(this, dist, TargetFormat.Dmg, arch)
                     }
@@ -621,6 +665,7 @@ abstract class AbstractElectronBuilderPackageTask
             }
         }
 
+        @Suppress("LongParameterList") // the task's inputs, passed from its single action
         private fun generateConfig(
             distributions: JvmApplicationDistributions,
             appDir: File,
@@ -629,6 +674,7 @@ abstract class AbstractElectronBuilderPackageTask
             windowsIconOverride: File?,
             linuxScripts: LinuxScriptTemplates,
             hotUpdateLayout: Boolean,
+            appxManifest: AppXManifestFiles?,
         ): File {
             val configGenerator = ElectronBuilderConfigGenerator()
             val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
@@ -666,6 +712,7 @@ abstract class AbstractElectronBuilderPackageTask
                     dmgWindowOverride = dmgWindowOverride,
                     nsisInclude = nsisInclude,
                     macBundleName = macBundleName.orNull,
+                    appxManifest = appxManifest,
                 )
             val configFile = File(outputDir, "electron-builder.yml")
             configFile.writeText(configContent)
@@ -1117,8 +1164,8 @@ abstract class AbstractElectronBuilderPackageTask
         private fun resignApp(
             appDir: File,
             label: String,
-        ) {
-            val signer = macSigner ?: return
+        ): File? {
+            val signer = macSigner ?: return macEntitlementsFile.orNull?.asFile
             val appEntitlements = macEntitlementsFile.orNull?.asFile
             val runtimeEntitlements = macRuntimeEntitlementsFile.orNull?.asFile
 
@@ -1173,8 +1220,20 @@ abstract class AbstractElectronBuilderPackageTask
             // electron-builder packages must carry a valid nested signature.
             signAppExtensions(appDir, signer)
 
-            // Re-sign the entire app bundle
-            signer.sign(appDir, appEntitlements, forceEntitlements = true)
+            // Re-sign the entire app bundle, with the associated domains when app links apply.
+            val bundleEntitlements =
+                MacAppLinks.bundleEntitlements(
+                    declaredHosts = macAppLinkHosts.get(),
+                    appDir = appDir,
+                    entitlements = appEntitlements,
+                    provisioningProfile = macProvisioningProfile.orNull?.asFile,
+                    signed = signer.settings != null,
+                    runTool = runExternalTool,
+                    logger = logger,
+                    workDir = temporaryDir,
+                )
+            signer.sign(appDir, bundleEntitlements, forceEntitlements = true)
+            return bundleEntitlements
         }
 
         /**
@@ -1227,10 +1286,9 @@ abstract class AbstractElectronBuilderPackageTask
          * and team-identifier (required by TestFlight / Transporter, error 90886).
          */
         private fun resignAppForAppStorePkg(appDir: File) {
-            resignApp(appDir, "App Store PKG format")
+            val appEntitlements = resignApp(appDir, "App Store PKG format")
 
             val signer = macSigner ?: return
-            val appEntitlements = macEntitlementsFile.orNull?.asFile
             // augmentEntitlementsForAppStore returns null when settings is null (NoCertificateSigner /
             // unsigned builds). Fall back to the original entitlements so the app is never re-signed
             // without them — which would silently strip sandbox entitlements from the bundle.
@@ -1873,6 +1931,28 @@ abstract class AbstractElectronBuilderPackageTask
             LinuxPolkitActions.writePolicies(workingAppDir, dist.linux.polkitActions.actions)
         }
 
+        /** Writes [FlathubRepository.archiveFiles] into a Linux `Tar` archive when `flathub { }` is set. */
+        private fun bundleFlathubMetadata(workingAppDir: File) {
+            if (currentOS != OS.Linux || targetFormat != TargetFormat.Tar) return
+            val spec = flathubSpec.orNull ?: return
+            val icon =
+                flathubIcon.orNull?.asFile
+                    ?: throw GradleException(
+                        "linux { flathub { } } needs an icon: flathub { iconFile } or linux.iconFile",
+                    )
+            val iconPng = icon.readBytes()
+            val problems = FlathubChecks.problems(spec) + listOfNotNull(FlathubChecks.iconProblem(iconPng))
+            if (problems.isNotEmpty()) {
+                throw GradleException(
+                    "linux { flathub { } } is not ready for Flathub:\n" + problems.joinToString("\n") { "  - $it" },
+                )
+            }
+            FlathubRepository.archiveFiles(spec, iconPng).forEach { (path, content) ->
+                workingAppDir.resolve(path).apply { parentFile.mkdirs() }.writeBytes(content)
+            }
+            logger.info("Bundled the Flathub metadata of ${spec.appId} ${spec.version} under share/")
+        }
+
         private fun bundleSilentUpdateArtifacts(
             workingAppDir: File,
             dist: JvmApplicationDistributions,
@@ -1950,6 +2030,54 @@ abstract class AbstractElectronBuilderPackageTask
             val afterInstall: File?,
             val afterRemove: File?,
         )
+
+        /**
+         * For an AppX: the `<Extensions>` the stock template cannot express, in one file ending with
+         * the user's `customExtensions`. Widgets (`windows { widgets { } }`) also copy their images
+         * into the app image and bring their own template (see [WindowsWidgetsPackaging]); app links
+         * (`appLinks(…)`) add the `windows.appUriHandler` extension (see [AppXAppLinks]). `null` when
+         * the app declares neither, so electron-builder reads the user's files directly.
+         */
+        private fun stageAppXManifest(
+            dist: JvmApplicationDistributions,
+            appDir: File,
+            outputDir: File,
+        ): AppXManifestFiles? {
+            if (dist.appLinkHosts.isNotEmpty() && currentOS == OS.Windows && targetFormat != TargetFormat.AppX) {
+                logger.warn(
+                    "appLinks: ${targetFormat.name} has no package identity, so its https:// links keep opening " +
+                        "in the browser. Only the AppX / MSIX package registers them.",
+                )
+            }
+            if (targetFormat != TargetFormat.AppX) return null
+            val widgets = dist.windows.widgets
+            val hosts = AppLinkHosts.normalize(dist.appLinkHosts)
+            if (widgets.definitions.isEmpty() && hosts.isEmpty()) return null
+
+            val extraExtensions =
+                (if (hosts.isEmpty()) "" else AppXAppLinks.extensionsXml(hosts)) +
+                    dist.windows.appx.customExtensions.orNull
+                        ?.asFile
+                        ?.readText()
+                        .orEmpty()
+            if (widgets.definitions.isEmpty()) {
+                val extensions = outputDir.resolve("appx-extensions.xml").apply { writeText(extraExtensions) }
+                return AppXManifestFiles(template = null, extensions = extensions)
+            }
+            val staged =
+                WindowsWidgetsPackaging.stage(
+                    widgets = widgets,
+                    identity = WindowsWidgetsPackaging.identity(dist),
+                    displayName = WindowsWidgetsPackaging.displayName(dist),
+                    executableName =
+                        resolveExecutableName() ?: throw GradleException("No executable name for the widget provider"),
+                    appImageDir = appDir,
+                    workDir = outputDir.resolve("widgets"),
+                    extraExtensions = extraExtensions,
+                    warn = logger::warn,
+                )
+            return AppXManifestFiles(staged.manifestTemplate, staged.extensions)
+        }
 
         /**
          * Stages the AppX logos in electron-builder's `build/appx`: each declared logo, or else the

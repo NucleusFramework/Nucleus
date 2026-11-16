@@ -62,3 +62,12 @@ internal interface PlatformSystemInfo {
             awaitCancellation()
         }
 }
+
+/**
+ * Splits a native command line, where every argument is NUL-terminated, into argv.
+ * Empty arguments are kept; only the trailing NULs (terminator, `setproctitle` padding) are dropped.
+ */
+internal fun splitCommandLine(raw: String?): List<String> {
+    val args = raw.orEmpty().trimEnd('\u0000')
+    return if (args.isEmpty()) emptyList() else args.split('\u0000')
+}
