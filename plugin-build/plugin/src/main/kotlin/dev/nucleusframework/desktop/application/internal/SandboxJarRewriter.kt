@@ -21,7 +21,8 @@ import java.util.zip.ZipOutputStream
  * - `.class` entries → [SandboxBytecodeRewriter] rewrites `System.load`/`Runtime.load` call sites;
  * - other entries preserved (STORED entries keep their size/crc).
  *
- * Returns the `sha256(marker) -> bundledLibName` pairs to merge into the manifest.
+ * Returns the `sha256(marker) -> bundledLibName` and `sha256(original lib) -> bundledLibName`
+ * pairs to merge into the manifest.
  *
  * Extracted from [dev.nucleusframework.desktop.application.tasks.AbstractStripNativeLibsFromJarsTask]
  * so the jar-rewrite logic is unit-testable without a Gradle project.
@@ -29,7 +30,7 @@ import java.util.zip.ZipOutputStream
 internal object SandboxJarRewriter {
     /** Result of rewriting a single JAR. */
     data class RewriteResult(
-        /** `sha256(marker) -> bundledLibName` entries to merge into the manifest. */
+        /** `sha256(marker or original lib) -> bundledLibName` entries to merge into the manifest. */
         val manifest: Map<String, String>,
         /** Number of native-lib entries replaced with markers. */
         val markedLibs: Int,
@@ -79,9 +80,16 @@ internal object SandboxJarRewriter {
                 entry.isDirectory -> copyVerbatim(entry, zis, zos)
                 NativeLibArchDetector.isNativeLib(entry.name) -> {
                     val marker = SandboxMarkers.markerBytes(jarMangledName, entry.name)
+                    val bundledName = SandboxMarkers.bundledLibName(entry.name)
                     // Last-write-wins is fine: duplicate filenames across JARs dedup at
                     // extraction time, and the bundled filename is identical for them.
-                    manifest[SandboxMarkers.sha256Hex(marker)] = SandboxMarkers.bundledLibName(entry.name)
+                    manifest[SandboxMarkers.sha256Hex(marker)] = bundledName
+                    // The original lib too: loaders that cache by content (filament-kmp keys its
+                    // cache dir on the lib's sha256 and reuses any file already there) can hand
+                    // the shim a real copy extracted by an earlier, unstripped build into the
+                    // container, which the App Sandbox refuses to load. It is byte-identical to
+                    // the signed bundled copy, so redirecting it is safe.
+                    manifest[SandboxMarkers.sha256Hex(zis)] = bundledName
                     markedLibs++
                     zos.putNextEntry(ZipEntry(entry.name).withTimeOf(entry))
                     zos.write(marker)
