@@ -1223,6 +1223,8 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         packageTask.macRuntimeEntitlementsFile.set(
             mac.runtimeEntitlementsFile.orElse(defaultRuntimeEntitlements),
         )
+        packageTask.macProvisioningProfile.set(mac.provisioningProfile)
+        packageTask.macAppLinkHosts.set(provider { app.nativeDistributions.appLinkHosts })
         packageTask.macAppExtensions.set(macAppExtensionsWithWidgets())
         packageTask.macAppExtensionFiles.from(
             mac.appExtensions.extensions.flatMap {
@@ -1341,6 +1343,7 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                 packageTask.nonValidatedMacBundleID.set(mac.bundleID)
                 packageTask.macProvisioningProfile.set(mac.provisioningProfile)
                 packageTask.macRuntimeProvisioningProfile.set(mac.runtimeProvisioningProfile)
+                packageTask.macAppLinkHosts.set(provider { app.nativeDistributions.appLinkHosts })
                 packageTask.macOsSdkVersion.set(mac.macOsSdkVersion)
                 packageTask.macExtraPlistKeysRawXml.set(mac.infoPlistSettings.extraKeysRawXml)
                 packageTask.macInfoPlistLocalizationsDir.set(mac.infoPlistSettings.localizationsDir)

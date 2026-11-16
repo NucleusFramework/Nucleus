@@ -6,7 +6,8 @@ the browser, and arrives through the same `onDeepLink { }` as a custom scheme.
 ```kotlin
 nativeDistributions {
     protocol("MyApp", "myapp")                    // custom scheme, every format
-    appLinks("example.com", "*.example.com")      // https:// links, AppX / MSIX only today
+    appLinks("example.com", "*.example.com")      // https:// links: AppX / MSIX, signed macOS builds
+    macOS { provisioningProfile.set(file("packaging/MyApp.provisionprofile")) } // macOS needs it
 }
 ```
 
@@ -14,7 +15,8 @@ nativeDistributions {
 |---|---|---|
 | Windows, AppX / MSIX | **shipped** | `windows.appUriHandler` |
 | Windows, NSIS / MSI / portable / ZIP | impossible | needs package identity; the build warns |
-| macOS | **not implemented**, plan below | Universal Links (Associated Domains) |
+| macOS, signed (Developer ID / App Store) + profile granting Associated Domains | **shipped** | Universal Links |
+| macOS, unsigned / ad hoc, or no such profile | skipped | restricted entitlement; the build warns |
 | Linux | impossible | no verified-link mechanism in freedesktop |
 
 Never answer a "can I declare https:// as a deep link" question with `protocol("X", "https")`: that
@@ -107,55 +109,87 @@ export ELECTRON_BUILDER_WINDOWS_KITS_PATH='C:\Program Files (x86)\Windows Kits\1
 Results 2026-11-15: all five pass (JVM AppX + NSIS). GraalVM AppX goes through the same task and the
 same argv path but was not run.
 
-## macOS plan (not implemented)
+## macOS
 
-Universal Links. Everything below is a plan for whoever picks it up; verify each assumption.
+### Packaging
 
-### What Apple requires
+Universal Links rest on `com.apple.developer.associated-domains`, a **restricted** entitlement: AMFI
+refuses to launch an app claiming it without an embedded provisioning profile that grants it, for
+Developer ID builds as well as App Store ones. So `MacAppLinks` (plugin `internal/`) only touches a
+bundle when all of these hold, and otherwise leaves its entitlements alone:
 
-- Entitlement `com.apple.developer.associated-domains` = `["applinks:example.com", "applinks:*.example.com"]`.
-  It is a **restricted** entitlement: the app must embed a provisioning profile that grants it
-  (`Contents/embedded.provisionprofile`), for Developer ID builds as well as App Store ones. An
-  ad-hoc or unprovisioned signature makes the app **fail to launch** (AMFI kills it), so never add
-  the entitlement without a profile.
-- The host serves `https://<host>/.well-known/apple-app-site-association` (JSON, no redirect),
-  fetched through Apple's CDN, with `applinks.details[].appIDs = ["<TEAMID>.<bundleID>"]` and
-  `components`. For local tests: `applinks:host?mode=developer` + `swcutil developer-mode -e true`
-  bypasses the CDN.
-- Delivery is **not** the `kAEGetURL` Apple Event the custom scheme uses: AppKit calls
-  `-[NSApplicationDelegate application:continueUserActivity:restorationHandler:]` with an
-  `NSUserActivity` of type `NSUserActivityTypeBrowsingWeb`, whose `webpageURL` is the link.
-- In practice only Safari (and apps calling `NSWorkspace open` on the URL) honour them on macOS;
-  Chrome opens the page.
+- the build is signed with a real identity (`macOS { signing { sign = true } }`); unsigned and ad-hoc
+  builds (`runDistributable`, dev) skip it at info level;
+- `macOS { provisioningProfile }` is set and grants Associated Domains (read with
+  `security cms -D -i`); otherwise the build warns and skips;
+- the entitlements do not already declare associated domains (a user `entitlementsFile` with its own
+  key, e.g. `applinks:host?mode=developer`, is used as is).
 
-### Plugin
+It then copies the profile to `Contents/embedded.provisionprofile`, and seals the bundle with the
+entitlements plus `applinks:<host>` for each host (wildcards map 1:1) and, when missing,
+`com.apple.application-identifier` / `com.apple.developer.team-identifier` taken from the profile
+(swcd matches the AASA `appIDs` against them). Two places seal the bundle, both call it:
 
-1. Reuse `appLinkHosts` (same declaration as Windows; wildcards map 1:1).
-2. When `appLinkHosts` is non-empty and the target is a signed macOS build, add the
-   `associated-domains` entitlement to the entitlements file the plugin generates for every macOS
-   path (JVM `.app`, GraalVM `.app`, DMG / PKG / App Store PKG), the same place the sandbox
-   entitlements are merged.
-3. New DSL `macOS { provisioningProfile.set(file(…)) }` (check first whether one already exists for
-   the App Store PKG). Copy it to `Contents/embedded.provisionprofile` **before** signing. Without a
-   profile: fail the build when `appLinks` is set (better than an app AMFI refuses), or skip the
-   entitlement with a warning; decide with the user.
-4. Unsigned / ad-hoc dev builds (`runDistributable`): never add the entitlement.
+- `AbstractJPackageTask.modifyRuntimeOnMacOsIfNeeded()`, the JVM `.app` (`createDistributable`);
+- `AbstractElectronBuilderPackageTask.resignApp()`, every signed DMG / ZIP / PKG, JVM and GraalVM
+  (the GraalVM `.app` gets its profile there). The App Store PKG feeds the result to its own
+  identifier injection.
+
+`macOS { provisioningProfile }` used to reach the JVM bundle through jpackage's `--app-content`, which
+keeps the file's own name: anything but `embedded.provisionprofile` landed as unsigned content and
+failed jpackage's `codesign`. The jpackage task now copies it to `Contents/embedded.provisionprofile`.
 
 ### Runtime
 
-5. Tao owns `NSApp` (no AWT). Find where the Tao backend installs its `kAEGetURL` handler
-   (`decorated-window-tao`, `TaoDeepLinkBridge.kt` on the Kotlin side, the Rust/ObjC side in the tao
-   patches) and add `application:continueUserActivity:restorationHandler:` to the same app delegate:
-   when `activityType == NSUserActivityTypeBrowsingWeb`, hand `webpageURL.absoluteString` to the same
-   callback, which ends in `DeepLinkHandler.deliver(URI)`. Return `YES`.
-   tao's `NSApplicationDelegate` may not forward unknown selectors: add the method through a tao
-   patch (`vendor/tao-patches`), like the other delegate additions.
-6. Cold start: the activity arrives after `applicationDidFinishLaunching`, so a URI received before
-   `onDeepLink { }` registers must be stored and delivered once, exactly like the Apple Event path.
+Nothing to add. Safari hands the link to AppKit as an `NSUserActivity`
+(`NSUserActivityTypeBrowsingWeb`); the vendored tao app delegate implements
+`application:continueUserActivity:restorationHandler:` and turns `webpageURL` into the same
+`Event::Opened` as the `kAEGetURL` path, so it reaches `NativeTaoBridge.dispatchDeepLink` →
+`onDeepLink`, cold start included.
+
+### What the host must serve
+
+`https://<host>/.well-known/apple-app-site-association` (no extension, no redirect), fetched through
+Apple's CDN (`https://app-site-association.cdn-apple.com/a/v1/<host>` shows what it holds).
+`application/octet-stream` (GitHub Pages' type for it) is accepted.
+
+```json
+{ "applinks": { "details": [ { "appIDs": ["TEAMID.bundle.id"], "components": [ { "/": "/app/*" } ] } ] } }
+```
+
+Limit `components` to the paths the app handles: everything else keeps opening in the browser.
+
+### Behaviour measured on macOS 27.2 (2026-11-16)
+
+- Developer ID build, profile with Associated Domains, installed in `~/Applications` and launched once:
+  swcd picked the domain up from the CDN within a minute, without developer mode.
+- `open https://…` and `open -a Safari https://…` load the page in the browser: a URL typed or handed
+  over is never diverted. Chrome ignores Universal Links.
+- Safari then shows a banner "**<App>** — Open in the app <App>" above the page; its **Open** button
+  delivers the link. Cold start: the app launches with no argv and gets the URL in `onDeepLink`.
+  Warm start: the running instance gets it.
 
 ### E2E
 
-7. Developer ID–signed build with a profile carrying the entitlement, `?mode=developer` host,
-   `swcutil developer-mode -e true`, AASA served by a local HTTPS server trusted by the system, then
-   `open https://host/path` (cold and warm) and a click in Safari. `swcutil dl -d <host>` shows
-   what the system resolved.
+Fixture: `examples/app-links-demo` (bundle ID `dev.nucleusframework.applinksdemo`, team `25Y9KCRMA3`).
+`nucleusframework.dev` (GitHub Pages, repo `NucleusFramework/nucleus-website`,
+`public/.well-known/apple-app-site-association`) serves an AASA for that app ID, scoped to
+`/app-links-demo/*`.
+
+```bash
+./gradlew :examples:app-links-demo:createDistributable --no-configuration-cache \
+  -PappLinksDemo.hosts=nucleusframework.dev \
+  -PappLinksDemo.macIdentity="Your Name (TEAMID)" \
+  -PappLinksDemo.macProfile=/path/to/applinksdemo.provisionprofile \
+  -PappLinksDemo.macKeychain=$HOME/Library/Keychains/login.keychain-db  # when the cert is in two keychains
+```
+
+1. `codesign -d --entitlements - --xml <app> | plutil -p -` lists `applinks:nucleusframework.dev`
+   and the identifiers; `Contents/embedded.provisionprofile` exists; the app launches (AMFI accepts).
+2. `ditto` the app to `~/Applications`, `lsregister -f` it, launch it once.
+3. Safari: open `https://nucleusframework.dev/app-links-demo/x/1?y=1` → banner → **Open**. The log
+   (`~/app-links-demo.log`) shows `deeplink https://…` from the running pid (warm), or a new pid's
+   `launch args=[]` followed by the `deeplink` (cold).
+
+Results 2026-11-16: all three pass (JVM, Developer ID). Not run: GraalVM and App Store PKG (same
+`resignApp()` path), a link click inside a Safari page (the banner is the same activity).

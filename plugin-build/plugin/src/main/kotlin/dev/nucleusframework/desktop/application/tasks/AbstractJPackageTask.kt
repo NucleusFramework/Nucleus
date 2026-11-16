@@ -21,6 +21,7 @@ import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPl
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
 import dev.nucleusframework.desktop.application.internal.JvmRuntimeProperties
 import dev.nucleusframework.desktop.application.internal.MacAssetsTool
+import dev.nucleusframework.desktop.application.internal.MacAppLinks
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
@@ -269,6 +270,11 @@ abstract class AbstractJPackageTask
         @get:PathSensitive(PathSensitivity.ABSOLUTE)
         val macRuntimeProvisioningProfile: RegularFileProperty = objects.fileProperty()
 
+        /** `nativeDistributions { appLinks(…) }`: the Universal Links hosts (see [MacAppLinks]). */
+        @get:Input
+        internal val macAppLinkHosts: ListProperty<String> =
+            objects.listProperty(String::class.java).convention(emptyList())
+
         @get:Input
         @get:Optional
         val winConsole: Property<Boolean> = objects.nullableProperty()
@@ -499,9 +505,6 @@ abstract class AbstractJPackageTask
                 if (currentOS == OS.MacOS) {
                     macDockName.orNull?.let { dockName ->
                         javaOption("-Xdock:name=$dockName")
-                    }
-                    macProvisioningProfile.orNull?.let { provisioningProfile ->
-                        cliArg("--app-content", provisioningProfile)
                     }
                 }
 
@@ -878,7 +881,13 @@ abstract class AbstractJPackageTask
                 renderedStrings = macInfoPlistLocalizedStrings.get(),
             )
 
-            // Add the provisioning profile
+            // Add the provisioning profiles. Not through jpackage's --app-content, which keeps the
+            // file's own name (only `embedded.provisionprofile` is a profile to macOS; any other
+            // name is unsigned content that fails jpackage's codesign).
+            macProvisioningProfile.ioFileOrNull?.copyTo(
+                target = appDir.resolve("Contents/embedded.provisionprofile"),
+                overwrite = true,
+            )
             macRuntimeProvisioningProfile.ioFileOrNull?.copyTo(
                 target = runtimeDir.resolve("Contents/embedded.provisionprofile"),
                 overwrite = true,
@@ -924,7 +933,18 @@ abstract class AbstractJPackageTask
             warnIfHostEntitlementsBlockExtensions(appEntitlementsFile)
 
             macSigner.sign(runtimeDir, runtimeEntitlementsFile, forceEntitlements = true)
-            macSigner.sign(appDir, appEntitlementsFile, forceEntitlements = true)
+            val bundleEntitlementsFile =
+                MacAppLinks.bundleEntitlements(
+                    declaredHosts = macAppLinkHosts.get(),
+                    appDir = appDir,
+                    entitlements = appEntitlementsFile,
+                    provisioningProfile = macProvisioningProfile.ioFileOrNull,
+                    signed = macSigner.settings != null,
+                    runTool = runExternalTool,
+                    logger = logger,
+                    workDir = temporaryDir,
+                )
+            macSigner.sign(appDir, bundleEntitlementsFile, forceEntitlements = true)
 
             if (iconMapping.isNotEmpty()) {
                 for ((originalIcon, newIcon) in iconMapping) {

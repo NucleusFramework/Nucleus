@@ -16,6 +16,7 @@ import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.AotJarTimestamps
+import dev.nucleusframework.desktop.application.internal.AppLinkHosts
 import dev.nucleusframework.desktop.application.internal.AppXAppLinks
 import dev.nucleusframework.desktop.application.internal.AppXLogo
 import dev.nucleusframework.desktop.application.internal.WindowsWidgetsPackaging
@@ -28,6 +29,7 @@ import dev.nucleusframework.desktop.application.internal.LinuxPolkitActions
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
 import dev.nucleusframework.desktop.application.internal.MacPkgScripts
 import dev.nucleusframework.desktop.application.internal.MacDmgLzma
+import dev.nucleusframework.desktop.application.internal.MacAppLinks
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
 import dev.nucleusframework.desktop.application.internal.NodeToolchainProvisioner
@@ -298,6 +300,17 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Input
         @get:Optional
         internal val nonValidatedMacBundleID: Property<String> = objects.nullableProperty()
+
+        /** Embedded when app links apply (see [MacAppLinks]); the JVM app image already carries it. */
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.ABSOLUTE)
+        val macProvisioningProfile: RegularFileProperty = objects.fileProperty()
+
+        /** `nativeDistributions { appLinks(…) }`: the Universal Links hosts (see [MacAppLinks]). */
+        @get:Input
+        internal val macAppLinkHosts: ListProperty<String> =
+            objects.listProperty(String::class.java).convention(emptyList())
 
         @get:Internal
         internal val macAppExtensions: ListProperty<MacAppExtension> =
@@ -643,6 +656,8 @@ abstract class AbstractElectronBuilderPackageTask
                     // exportMacOSPackagingMetadata() writes the DMG layout and install location
                     // next to every macOS package, whatever its format.
                     appendLine("installationPath: ${dist.macOS.installationPath}")
+                    // resignApp() → MacAppLinks
+                    appendLine("appLinks: ${dist.appLinkHosts}")
                     if (targetFormat != TargetFormat.Dmg) {
                         generator.generateMacConfig(this, dist, TargetFormat.Dmg, arch)
                     }
@@ -1149,8 +1164,8 @@ abstract class AbstractElectronBuilderPackageTask
         private fun resignApp(
             appDir: File,
             label: String,
-        ) {
-            val signer = macSigner ?: return
+        ): File? {
+            val signer = macSigner ?: return macEntitlementsFile.orNull?.asFile
             val appEntitlements = macEntitlementsFile.orNull?.asFile
             val runtimeEntitlements = macRuntimeEntitlementsFile.orNull?.asFile
 
@@ -1205,8 +1220,20 @@ abstract class AbstractElectronBuilderPackageTask
             // electron-builder packages must carry a valid nested signature.
             signAppExtensions(appDir, signer)
 
-            // Re-sign the entire app bundle
-            signer.sign(appDir, appEntitlements, forceEntitlements = true)
+            // Re-sign the entire app bundle, with the associated domains when app links apply.
+            val bundleEntitlements =
+                MacAppLinks.bundleEntitlements(
+                    declaredHosts = macAppLinkHosts.get(),
+                    appDir = appDir,
+                    entitlements = appEntitlements,
+                    provisioningProfile = macProvisioningProfile.orNull?.asFile,
+                    signed = signer.settings != null,
+                    runTool = runExternalTool,
+                    logger = logger,
+                    workDir = temporaryDir,
+                )
+            signer.sign(appDir, bundleEntitlements, forceEntitlements = true)
+            return bundleEntitlements
         }
 
         /**
@@ -1259,10 +1286,9 @@ abstract class AbstractElectronBuilderPackageTask
          * and team-identifier (required by TestFlight / Transporter, error 90886).
          */
         private fun resignAppForAppStorePkg(appDir: File) {
-            resignApp(appDir, "App Store PKG format")
+            val appEntitlements = resignApp(appDir, "App Store PKG format")
 
             val signer = macSigner ?: return
-            val appEntitlements = macEntitlementsFile.orNull?.asFile
             // augmentEntitlementsForAppStore returns null when settings is null (NoCertificateSigner /
             // unsigned builds). Fall back to the original entitlements so the app is never re-signed
             // without them — which would silently strip sandbox entitlements from the bundle.
@@ -2025,7 +2051,7 @@ abstract class AbstractElectronBuilderPackageTask
             }
             if (targetFormat != TargetFormat.AppX) return null
             val widgets = dist.windows.widgets
-            val hosts = AppXAppLinks.hosts(dist.appLinkHosts)
+            val hosts = AppLinkHosts.normalize(dist.appLinkHosts)
             if (widgets.definitions.isEmpty() && hosts.isEmpty()) return null
 
             val extraExtensions =

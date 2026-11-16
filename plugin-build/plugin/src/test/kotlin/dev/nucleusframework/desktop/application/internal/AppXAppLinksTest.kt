@@ -13,7 +13,7 @@ class AppXAppLinksTest {
     fun `hosts are normalized and deduplicated`() {
         assertEquals(
             listOf("example.com", "*.example.com"),
-            AppXAppLinks.hosts(listOf(" Example.com", "*.example.com", "example.COM")),
+            AppLinkHosts.normalize(listOf(" Example.com", "*.example.com", "example.COM")),
         )
     }
 
@@ -22,7 +22,7 @@ class AppXAppLinksTest {
         val invalid =
             listOf("https://example.com", "example.com/path", "example.com:443", "*example.com", "a.*.com", "")
         for (bad in invalid) {
-            assertThrows(bad, GradleException::class.java) { AppXAppLinks.hosts(listOf(bad)) }
+            assertThrows(bad, GradleException::class.java) { AppLinkHosts.normalize(listOf(bad)) }
         }
     }
 

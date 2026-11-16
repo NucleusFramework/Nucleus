@@ -237,7 +237,11 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
      *
      * - Windows: AppX / MSIX only (`windows.appUriHandler`, which needs package identity), the host
      *   serving `/.well-known/windows-app-web-link`. NSIS, MSI and portable builds ignore it.
-     * - macOS and Linux: not supported yet.
+     * - macOS: Universal Links (`com.apple.developer.associated-domains`), the host serving
+     *   `/.well-known/apple-app-site-association`. Added only to a build signed with a real identity
+     *   whose `macOS { provisioningProfile }` grants Associated Domains (the build warns otherwise:
+     *   macOS refuses to launch an app claiming that entitlement without such a profile).
+     * - Linux: not supported (no verified-link mechanism in freedesktop).
      */
     fun appLinks(vararg hosts: String) {
         appLinkHosts.addAll(hosts)
