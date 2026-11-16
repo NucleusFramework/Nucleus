@@ -183,7 +183,7 @@ and FFI with a JSON protocol of its own, and reworked the parts listed in the fi
 These are resolved on the build machine and are **not** shipped inside any Nucleus artifact. They
 are listed for transparency, not as a redistribution notice.
 
-- **electron-builder** 26.17.0 (MIT) — packaging backend for 17 of the 18 target formats. The
+- **electron-builder** 26.18.1 (MIT) — packaging backend for 17 of the 18 target formats. The
   plugin embeds only a pinned `package.json` / `package-lock.json` pair
   (`plugin-build/plugin/src/main/resources/nucleus/electron-builder/`) and installs the tree with
   `npm ci --ignore-scripts` into a build-local directory. See
