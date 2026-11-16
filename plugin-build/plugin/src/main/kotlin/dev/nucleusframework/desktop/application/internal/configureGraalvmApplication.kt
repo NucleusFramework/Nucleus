@@ -2879,6 +2879,8 @@ private fun JvmApplicationContext.configureGraalvmPlatformPackageSettings(
                 }
             task.macEntitlementsFile.set(mac.entitlementsFile.orElse(defaultEntitlements))
             task.macRuntimeEntitlementsFile.set(mac.runtimeEntitlementsFile.orElse(defaultEntitlements))
+            task.macProvisioningProfile.set(mac.provisioningProfile)
+            task.macAppLinkHosts.set(provider { app.nativeDistributions.appLinkHosts })
             task.macAppExtensions.set(macAppExtensionsWithWidgets())
             task.macAppExtensionFiles.from(
                 mac.appExtensions.extensions.flatMap {
