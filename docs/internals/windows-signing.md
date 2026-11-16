@@ -1,3 +1,13 @@
 # Windows app-image signing (#748)
 
 **Windows signing covers the app image, not only the installer** (#748): electron-builder runs with `--prepackaged`, which skips its own `signApp` (it lives in `doPack`), so it only ever signed the installer, the uninstaller and the AppX/MSI — the launcher and every DLL shipped unsigned and Smart App Control refused them. `WindowsAppImageSigner` signs the working app image before electron-builder runs (after the hot update layout): launchers always when `windows { signing { enabled } }`, DLLs too unless `signNativeLibraries = false` (default `true`) — loose ones (jlinked runtime DLLs are unsigned too, not only Skiko and the Nucleus natives) and those inside unsigned JARs (extracted, signed, written back through zipfs). Binaries already carrying a signature (`PeSignature`: non-empty PE security directory) keep it. Same certificate resolution as electron-builder (`certificateFile` / store `sha1` / subject, then `WIN_CSC_LINK`; Azure via `Invoke-TrustedSigning`), one batched `signtool` call per command-line chunk; the jpackage launcher is read-only, cleared before signing
+
+## The Lab on CI: SignPath Foundation
+
+The Lab's Windows legs are signed by SignPath (OSS program), which only signs a GitHub Actions artifact, never a file on the runner, so `release-desktop.yaml` splits the build when `SIGNPATH_API_TOKEN` (secret) and `SIGNPATH_ORGANIZATION_ID` / `SIGNPATH_PROJECT_SLUG` / `SIGNPATH_SIGNING_POLICY_SLUG` (variables) are set; `NUCLEUS_SIGNPATH=true` turns the Lab's own `windows { signing }` off:
+
+1. build the app image alone (`createGraalvmNativeDistributable`, or `createReleaseDistributable` on Windows ARM), upload its still-unsigned `.exe` / `.dll` (SignPath has no "skip if signed": a vendor's signature would be replaced), sign them with the `app-image` artifact configuration, copy them back;
+2. package with `-x <that task>` so Gradle does not rebuild (and unsign) the image;
+3. sign the installers (`installers` configuration), then regenerate their blockmaps with electron-builder's `app-builder`; the update YMLs are hashed afterwards by the publish job.
+
+The artifact configurations live in [`.signpath/artifact-configurations/`](../../.signpath/artifact-configurations/) and must be pasted into the SignPath project under those slugs. Gaps: the NSIS uninstaller (signed by electron-builder mid-build) and, on the JVM leg, the DLLs inside JARs (rewriting a JAR would void the AOT cache) stay unsigned. The signing policy slug starts at the test certificate's and moves to the release one once SignPath imports the production certificate.
