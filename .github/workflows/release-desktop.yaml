@@ -242,7 +242,8 @@ jobs:
           $bin = Resolve-Path "examples/lab/app/build/compose/binaries"
           $out = "$env:RUNNER_TEMP/signpath-installers"
           # binaries/<appDir>/<format>/<installer>: deeper .exe files are app image copies.
-          Get-ChildItem "$bin/*/*/*" -File -Include *.exe, *.msi | ForEach-Object {
+          # Not -Include: it matches nothing on a multi-level wildcard path.
+          Get-ChildItem "$bin/*/*/*" -File | Where-Object Extension -in '.exe', '.msi' | ForEach-Object {
             $target = Join-Path $out $_.FullName.Substring($bin.Path.Length + 1)
             New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
             Copy-Item $_.FullName $target
