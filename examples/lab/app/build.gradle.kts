@@ -275,7 +275,9 @@ nucleus.application {
             // Inherited from the former nucleus-demo so installs upgrade in place.
             upgradeUuid = "d24e3b8d-3e9b-4cc7-a5d8-5e2d1f0c9f1b"
             signing {
-                enabled = true
+                // On CI with SignPath, release-desktop.yaml signs the app image and the installers
+                // through SignPath instead (the test PFX would otherwise sign the uninstaller).
+                enabled = System.getenv("NUCLEUS_SIGNPATH") != "true"
                 // Public self-signed test certificate (release-desktop.yaml uses the same password).
                 certificateFile.set(file("packaging/KDroidFilter.pfx"))
                 certificatePassword = System.getenv("WIN_CSC_KEY_PASSWORD") ?: "ChangeMe-Temp123!"
