@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import java.io.InputStream
 import java.security.MessageDigest
 
 /**
@@ -54,16 +55,28 @@ internal object SandboxMarkers {
     ): ByteArray = "$MAGIC\njar=$jarMangledName\nentry=$entryPath\n".toByteArray(Charsets.UTF_8)
 
     /** Lowercase hex sha256, matching `NucleusSandboxLoader.sha256Hex`. */
-    fun sha256Hex(bytes: ByteArray): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-        return buildString(digest.size * 2) {
+    fun sha256Hex(bytes: ByteArray): String = toHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+
+    /** Lowercase hex sha256 of the rest of [input], which is read to its end but not closed. */
+    fun sha256Hex(input: InputStream): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            md.update(buffer, 0, read)
+        }
+        return toHex(md.digest())
+    }
+
+    private fun toHex(digest: ByteArray): String =
+        buildString(digest.size * 2) {
             for (b in digest) {
                 val v = b.toInt() and BYTE_MASK
                 if (v < FIRST_TWO_DIGIT_HEX) append('0')
                 append(Integer.toHexString(v))
             }
         }
-    }
 
     /** Flattened bundled filename for a native-lib entry path (matches `AbstractExtractNativeLibsTask`). */
     fun bundledLibName(entryPath: String): String = entryPath.substringAfterLast('/')

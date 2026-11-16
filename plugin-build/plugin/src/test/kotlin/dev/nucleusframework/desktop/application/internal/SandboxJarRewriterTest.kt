@@ -66,7 +66,8 @@ class SandboxJarRewriterTest {
 
         assertEquals(2, result.markedLibs)
         assertEquals(1, result.rewrittenClasses)
-        assertEquals(2, result.manifest.size)
+        // A marker and an original-lib entry per native lib.
+        assertEquals(4, result.manifest.size)
 
         // Marker at the same path with the exact marker bytes.
         val markerBytes = entryText(output, "jni/aarch64/libfoo.dylib")
@@ -81,6 +82,18 @@ class SandboxJarRewriterTest {
 
         // Plain resource preserved verbatim.
         assertArrayEquals("hello".toByteArray(), entryText(output, "META-INF/plain.txt"))
+    }
+
+    @Test
+    fun `manifest also maps the original lib sha so a cached real copy is redirected`() {
+        val input = buildInputJar(tmp.newFile("input.jar"))
+        val output = tmp.newFile("output.jar")
+        val result = SandboxJarRewriter.rewriteJar(input, output, "input-x.jar", keepReal = false)
+
+        val dylibSha = SandboxMarkers.sha256Hex(entryText(input, "jni/aarch64/libfoo.dylib"))
+        assertEquals("libfoo.dylib", result.manifest[dylibSha])
+        val soSha = SandboxMarkers.sha256Hex(entryText(input, "jni/amd64/libfoo.so"))
+        assertEquals("libfoo.so", result.manifest[soSha])
     }
 
     @Test
