@@ -42,9 +42,15 @@ class WindowsComposeTrayTortureTest {
         frame()
     }
 
+    /**
+     * Two passes, like two vsyncs of a running app: a composable menu lambda re-records into its
+     * scope's snapshot list, and the `Tray` reading that list recomposes on the following pass.
+     */
     private fun frame() {
-        Snapshot.sendApplyNotifications()
-        scene!!.render()
+        repeat(2) {
+            Snapshot.sendApplyNotifications()
+            scene!!.render()
+        }
     }
 
     private fun await(

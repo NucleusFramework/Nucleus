@@ -25,7 +25,10 @@
 
 - `WindowsTrayTortureTest`: seeded menu fuzzer (hostile labels, nesting, 0-80 items; compares the popup item by item), multi-tray isolation, frozen-tray, throwing callbacks, explorer restart, GDI leak, lifecycle churn across threads, dispose racing init, rapid-update convergence, garbage icons.
 - `WindowsTrayLifecycleTortureTest`: JVM exit with a live tray (child JVM), dispose with the menu open, click storm during rebuilds and disposals, 30 trays, icon-file growth, evicted icon file, create/dispose x100 leak check.
-- `WindowsComposeTrayTortureTest`: the composables in a real composition (`ImageComposeScene`): labels follow state, stale-closure clicks and `onMenuOpened`, add/remove from composition.
+- `WindowsComposeTrayTortureTest`: the composables in a real composition (`ImageComposeScene`, two render passes per frame: a composable menu re-records into its scope's snapshot list and `Tray` recomposes on the next pass): labels follow state, stale-closure clicks and `onMenuOpened`, add/remove from composition.
+- `WindowsTrayAppE2ETest`: each scenario runs `TrayAppProbeMain` in its own JVM (real `nucleusApplication`, Tao loop, standalone popup) and reports `CHECK` lines: click toggles, `visibleOnStart`, seeded click storm and concurrent `show`/`hide`/`toggle` (state must match the popup on screen), resize while visible, menu next to the popup, removal from composition. Geometry oracle: the popup's physical rect has the state's dp size at the window DPI, sits inside the icon monitor's work area, against the taskbar edge (default 10 px offset), centered on the icon unless clamped. `TrayApp` hands the tray a stable primary action, so a show/hide no longer rebuilds the native tray.
+
+Not covered: the outside-click dismissal (a low-level mouse hook that only real input reaches), HiDPI and top/side taskbars (the dev machine is 100 %, bottom taskbar).
 
 Seeds are printed (`[torture] … seed=`); rerun with `-PtraySeed=<seed>`, scale with `-PtrayIterations=<n>`. Dismiss popups with `WM_CANCELMODE` only: `#32768` windows are reused, so a stray Esc closes the next popup. `Shell_NotifyIconGetRect` fails for a dead window, so it cannot tell a removed icon from a visual ghost.
 

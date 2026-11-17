@@ -89,6 +89,8 @@ internal object Win32Probe {
 
         fun IsMenu(menu: Pointer?): Boolean
 
+        fun GetDpiForWindow(hwnd: HWND): Int
+
         fun GetGuiResources(
             process: HANDLE,
             flags: Int,
@@ -254,6 +256,74 @@ internal object Win32Probe {
             )
         }
     }
+
+    /** A rectangle in physical screen pixels. */
+    data class Box(
+        val left: Int,
+        val top: Int,
+        val right: Int,
+        val bottom: Int,
+    ) {
+        val width: Int get() = right - left
+        val height: Int get() = bottom - top
+        val centerX: Int get() = (left + right) / 2
+    }
+
+    private fun RECT.box() = Box(left, top, right, bottom)
+
+    /** Rect of the shell icon ([hwnd], [uid]), or null when the shell has none. */
+    fun shellIconRect(
+        hwnd: Long,
+        uid: Int,
+    ): Box? {
+        val id = NotifyIconIdentifier()
+        id.hWnd = hwnd(hwnd)
+        id.uID = uid
+        id.write()
+        val rect = RECT()
+        return if (shell32.Shell_NotifyIconGetRect(id, rect) == 0) rect.box() else null
+    }
+
+    /** Visible top-level windows of this process, with their class and rect. */
+    fun visibleWindows(): List<Triple<HWND, String, Box>> {
+        val found = mutableListOf<Triple<HWND, String, Box>>()
+        user32.EnumWindows(
+            { hwnd, _ ->
+                val owner = IntByReference()
+                user32.GetWindowThreadProcessId(hwnd, owner)
+                if (owner.value == pid && user32.IsWindowVisible(hwnd)) {
+                    val rect = RECT()
+                    com.sun.jna.platform.win32.User32.INSTANCE
+                        .GetWindowRect(hwnd, rect)
+                    found += Triple(hwnd, className(hwnd), rect.box())
+                }
+                true
+            },
+            null,
+        )
+        return found
+    }
+
+    /** Work area of the monitor showing [box]. */
+    fun workAreaOf(box: Box): Box {
+        val u = com.sun.jna.platform.win32.User32.INSTANCE
+        val rect =
+            RECT().apply {
+                left = box.left
+                top = box.top
+                right = box.right
+                bottom = box.bottom
+            }
+        val monitor = u.MonitorFromRect(rect, com.sun.jna.platform.win32.WinUser.MONITOR_DEFAULTTONEAREST)
+        val info =
+            com.sun.jna.platform.win32.WinUser
+                .MONITORINFO()
+        u.GetMonitorInfo(monitor, info)
+        return info.rcWork.box()
+    }
+
+    /** DPI scale of [hwnd] (1.0 = 96 dpi). */
+    fun scaleOf(hwnd: HWND): Float = user32.GetDpiForWindow(hwnd) / 96f
 
     /** GDI objects (flags = 0) and USER objects (flags = 1) owned by this process. */
     fun guiResources(): Pair<Int, Int> {

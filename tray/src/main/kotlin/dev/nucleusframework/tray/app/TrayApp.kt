@@ -26,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -754,8 +755,11 @@ private fun TrayAppImplPanel(
         }
     }
 
-    LaunchedEffect(pngIconPath, windowsIconPath, tooltip, internalPrimaryAction, menu, contentHash, menuHash) {
-        tray.update(pngIconPath, windowsIconPath, tooltip, internalPrimaryAction, menu)
+    // A fresh lambda per recomposition (every show / hide) must not rebuild the native tray.
+    val latestPrimaryAction = rememberUpdatedState(internalPrimaryAction)
+    val stablePrimaryAction = remember { { latestPrimaryAction.value() } }
+    LaunchedEffect(pngIconPath, windowsIconPath, tooltip, menu, contentHash, menuHash) {
+        tray.update(pngIconPath, windowsIconPath, tooltip, stablePrimaryAction, menu)
     }
 
     DisposableEffect(Unit) { onDispose { tray.dispose() } }
@@ -966,8 +970,11 @@ private fun NucleusApplicationScope.TrayAppImplWindow(
         }
     }
 
-    LaunchedEffect(pngIconPath, windowsIconPath, tooltip, internalPrimaryAction, menu, contentHash, menuHash) {
-        tray.update(pngIconPath, windowsIconPath, tooltip, internalPrimaryAction, menu)
+    // A fresh lambda per recomposition (every show / hide) must not rebuild the native tray.
+    val latestPrimaryAction = rememberUpdatedState(internalPrimaryAction)
+    val stablePrimaryAction = remember { { latestPrimaryAction.value() } }
+    LaunchedEffect(pngIconPath, windowsIconPath, tooltip, menu, contentHash, menuHash) {
+        tray.update(pngIconPath, windowsIconPath, tooltip, stablePrimaryAction, menu)
     }
 
     DisposableEffect(Unit) { onDispose { tray.dispose() } }

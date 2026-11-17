@@ -63,6 +63,13 @@ internal object WindowsTrayInitializer {
     /** Hidden window and Shell icon id of tray [id], for diagnostics and tests. */
     fun nativeIdentity(id: String): Pair<Long, Int>? = synchronized(this) { trayManagers[id] }?.nativeIdentity()
 
+    /** Hidden window and Shell icon id of every live tray, by id (diagnostics and tests). */
+    fun nativeIdentities(): Map<String, Pair<Long, Int>> =
+        synchronized(this) { trayManagers.toMap() }
+            .mapNotNull { (id, m) ->
+                m.nativeIdentity()?.let { id to it }
+            }.toMap()
+
     /** Waits until tray [id] exists natively (or failed to); false on timeout. */
     fun awaitInitialized(
         id: String,
