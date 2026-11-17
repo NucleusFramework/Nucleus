@@ -75,6 +75,8 @@ class WindowsTrayAppE2ETest {
 
     @Test fun `outside clicks dismiss per dismissMode`() = scenario("dismiss", FUZZ_MAIN, listOf("0"))
 
+    @Test fun `real mouse clicks go through the outside-click hook`() = scenario("realmouse", FUZZ_MAIN, listOf("0"))
+
     private companion object {
         const val FUZZ_MAIN = "dev.nucleusframework.tray.windows.TrayAppFuzzMainKt"
     }

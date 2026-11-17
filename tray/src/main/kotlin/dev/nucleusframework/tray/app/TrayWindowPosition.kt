@@ -34,6 +34,35 @@ private fun resolveWindowsClick(raw: TrayClickPoint): ResolvedClick {
     return ResolvedClick(logicalX, logicalY, corner)
 }
 
+/**
+ * Origin (logical px) of a [width] x [height] popup anchored to a Windows tray icon. Pure, so every
+ * DPI scale and taskbar edge can be checked without a matching machine.
+ *
+ * @param rawX icon anchor from the native side, physical px: the icon's center x, and its bottom
+ *   edge when the icon sits in the top half of its monitor, its top edge otherwise
+ * @param scale primary monitor scale (physical / logical)
+ * @param workArea primary monitor work area, logical px
+ */
+internal fun windowsPopupOrigin(
+    rawX: Int,
+    rawY: Int,
+    scale: Float,
+    workArea: ScreenRect,
+    width: Int,
+    height: Int,
+    horizontalOffset: Int,
+    verticalOffset: Int,
+): Pair<Int, Int> {
+    val clickX = (rawX / scale).toInt()
+    val clickY = (rawY / scale).toInt()
+    val corner = convertPositionToCorner(clickX - workArea.x, clickY - workArea.y, workArea.width, workArea.height)
+    val isTop = corner == TrayPosition.TOP_LEFT || corner == TrayPosition.TOP_RIGHT
+    val x = clickX - width / 2 + horizontalOffset
+    val y = (if (isTop) clickY else clickY - height) + verticalOffset
+    val position = clampToWorkArea(x, y, width, height, workArea) as WindowPosition.Absolute
+    return position.x.value.toInt() to position.y.value.toInt()
+}
+
 /** Linux/macOS record the click in logical pixels already; derive the corner. */
 private fun resolveLogicalClick(raw: TrayClickPoint): ResolvedClick {
     val screen = TrayScreenGeometry.workAreaLogical()
@@ -142,16 +171,18 @@ public fun getTrayWindowPositionForInstance(
                 }
                 return fallbackCornerPosition(windowWidth, windowHeight, horizontalOffset, verticalOffset)
             }
-            val resolved = resolveWindowsClick(raw)
-            calculateWindowPositionFromClick(
-                resolved.x,
-                resolved.y,
-                resolved.corner,
-                windowWidth,
-                windowHeight,
-                horizontalOffset,
-                verticalOffset,
-            )
+            val (x, y) =
+                windowsPopupOrigin(
+                    raw.x,
+                    raw.y,
+                    TrayScreenGeometry.scale(),
+                    TrayScreenGeometry.workAreaLogical(),
+                    windowWidth,
+                    windowHeight,
+                    horizontalOffset,
+                    verticalOffset,
+                )
+            WindowPosition(x.dp, y.dp)
         }
         Platform.MacOS -> {
             val outXY = IntArray(2)

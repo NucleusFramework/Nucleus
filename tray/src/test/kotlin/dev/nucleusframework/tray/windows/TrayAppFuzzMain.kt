@@ -14,7 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.rememberWindowState
 import com.sun.jna.platform.win32.WinDef.HWND
+import dev.nucleusframework.application.Window
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.tray.app.TrayApp
 import dev.nucleusframework.tray.app.TrayAppState
@@ -328,6 +331,94 @@ private fun dismiss(app: FuzzApp) {
     expect(until(3000) { popupOf(app) == null }) { "dismiss: hide() still works in MANUAL" }
 }
 
+/** Real input: SendInput clicks go through Tao's WH_MOUSE_LL hook. The cursor is put back. */
+private fun realClick(
+    x: Int,
+    y: Int,
+) {
+    val u = com.sun.jna.platform.win32.User32.INSTANCE
+    val saved =
+        com.sun.jna.platform.win32.WinDef
+            .POINT()
+    u.GetCursorPos(saved)
+    val sw = u.GetSystemMetrics(com.sun.jna.platform.win32.WinUser.SM_CXSCREEN) - 1
+    val sh = u.GetSystemMetrics(com.sun.jna.platform.win32.WinUser.SM_CYSCREEN) - 1
+
+    fun input(flags: Int): com.sun.jna.platform.win32.WinUser.INPUT =
+        com.sun.jna.platform.win32.WinUser.INPUT().apply {
+            type =
+                com.sun.jna.platform.win32.WinDef
+                    .DWORD(
+                        com.sun.jna.platform.win32.WinUser.INPUT.INPUT_MOUSE
+                            .toLong(),
+                    )
+            input.setType("mi")
+            input.mi.dx =
+                com.sun.jna.platform.win32.WinDef
+                    .LONG((x * 65535L / sw))
+            input.mi.dy =
+                com.sun.jna.platform.win32.WinDef
+                    .LONG((y * 65535L / sh))
+            input.mi.dwFlags =
+                com.sun.jna.platform.win32.WinDef
+                    .DWORD(flags.toLong())
+        }
+    val move = 0x0001 or 0x8000 // MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE
+    for (flags in listOf(move, move or 0x0002, move or 0x0004)) { // + LEFTDOWN, + LEFTUP
+        u.SendInput(
+            com.sun.jna.platform.win32.WinDef
+                .DWORD(1),
+            arrayOf(input(flags)),
+            input(0).size(),
+        )
+        Thread.sleep(40)
+    }
+    u.SetCursorPos(saved.x.toLong(), saved.y.toLong())
+}
+
+private const val TARGET_W = 400
+private const val TARGET_H = 300
+
+/** Outside / inside clicks with the real mouse, on a topmost window this JVM owns. */
+private fun realMouse(app: FuzzApp) {
+    learnTray(app, emptyList())
+    val target =
+        Win32Probe
+            .visibleWindows()
+            .firstOrNull {
+                abs(it.third.width - TARGET_W) <= 3 &&
+                    abs(it.third.height - TARGET_H) <= 3
+            }?.third ?: return expect(false) { "realmouse: click target window not found" }
+
+    fun showByClick(): Boolean {
+        Thread.sleep(500)
+        click(app)
+        return until(3000) { popupOf(app) != null }
+    }
+    expect(showByClick()) { "realmouse: popup shown" }
+    Thread.sleep(500)
+    realClick(target.centerX, (target.top + target.bottom) / 2)
+    expect(
+        until(3000) {
+            popupOf(app) == null && !app.state.isVisible.value
+        },
+    ) { "realmouse: a real click elsewhere hides it (AUTO)" }
+
+    expect(showByClick()) { "realmouse: popup shown again" }
+    Thread.sleep(500)
+    val popup = popupOf(app) ?: return expect(false) { "realmouse: popup vanished" }
+    realClick(popup.centerX, (popup.top + popup.bottom) / 2)
+    Thread.sleep(800)
+    expect(popupOf(app) != null && app.state.isVisible.value) { "realmouse: a real click inside keeps it" }
+
+    app.state.setDismissMode(TrayWindowDismissMode.MANUAL)
+    realClick(target.centerX, (target.top + target.bottom) / 2)
+    Thread.sleep(800)
+    expect(popupOf(app) != null && app.state.isVisible.value) { "realmouse: MANUAL ignores a real outside click" }
+    app.state.hide()
+    expect(until(3000) { popupOf(app) == null }) { "realmouse: hidden at the end" }
+}
+
 fun main(args: Array<String>) {
     val scenario = args[0]
     val seed = args[1].toLong()
@@ -340,7 +431,11 @@ fun main(args: Array<String>) {
 
     Thread({
         try {
-            if (scenario == "dismiss") dismiss(apps.single()) else fuzz(apps, Random(seed), rounds)
+            when (scenario) {
+                "dismiss" -> dismiss(apps.single())
+                "realmouse" -> realMouse(apps.single())
+                else -> fuzz(apps, Random(seed), rounds)
+            }
         } catch (t: Throwable) {
             expect(false) { "fuzz threw ${t.stackTraceToString()}" }
         }
@@ -354,6 +449,22 @@ fun main(args: Array<String>) {
     }
 
     nucleusApplication(enableSingleInstance = false) {
+        if (scenario == "realmouse") {
+            // Topmost, so a real click aimed here can never land in another application.
+            Window(
+                onCloseRequest = {},
+                state =
+                    rememberWindowState(
+                        position = WindowPosition(200.dp, 200.dp),
+                        size = DpSize(TARGET_W.dp, TARGET_H.dp),
+                    ),
+                undecorated = true,
+                alwaysOnTop = true,
+                title = "tray click target",
+            ) {
+                Box(Modifier.fillMaxSize().background(Color(0xFF263238)))
+            }
+        }
         for (app in apps) {
             if (!app.shown) continue
             TrayApp(
