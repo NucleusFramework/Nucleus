@@ -1,0 +1,59 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.tray.internal.macos.MacNativeBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.tray.internal.macos.MacNativeBridge$ThemeChangeCallback",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onThemeChanged",
+                    "parameterTypes": ["int"]
+                }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.tray.internal.windows.WindowsNativeBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.tray.internal.linux.LinuxNativeBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.tray.internal.linux.JniRunnable",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "run",
+                    "parameterTypes": []
+                }
+            ]
+        },
+        {
+            "type": "sun.awt.X11GraphicsConfig",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "createDCM32",
+                    "parameterTypes": ["int", "int", "int", "int", "boolean"]
+                }
+            ]
+        },
+        {
+            "type": "java.lang.Runnable",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "run",
+                    "parameterTypes": []
+                }
+            ]
+        }
+    ],
+    "resources": [
+        {"glob": "composetray/native/**"}
+    ]
+}

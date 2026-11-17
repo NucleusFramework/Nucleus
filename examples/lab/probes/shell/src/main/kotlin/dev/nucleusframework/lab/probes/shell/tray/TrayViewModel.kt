@@ -12,7 +12,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 
-/** The tray is pure composition (ComposeNativeTray), so there is no gateway: the session reports what it saw. */
+/** The tray is pure composition (the tray module), so there is no gateway: the session reports what it saw. */
 @ViewModelKey
 @ContributesIntoMap(AppScope::class, binding = binding<ViewModel>())
 @Inject

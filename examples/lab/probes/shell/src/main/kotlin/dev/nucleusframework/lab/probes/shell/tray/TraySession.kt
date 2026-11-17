@@ -5,13 +5,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import dev.nucleusframework.composenativetray.tray.api.Tray
+import dev.nucleusframework.tray.Tray
 import dev.nucleusframework.lab.core.LabPaths
 import dev.nucleusframework.lab.core.mvi.stamped
 
 /**
  * The Lab's tray icon, composed as a session so it outlives navigation, like a real tray
- * icon outlives any one screen. Picks are stamped where ComposeNativeTray calls them.
+ * icon outlives any one screen. Picks are stamped where the tray module calls them.
  */
 @Suppress("DEPRECATION") // The composable-icon overloads need a skiko API Compose 1.12 dropped.
 @Composable
@@ -52,7 +52,7 @@ fun TraySession(
 }
 
 /**
- * A classpath icon as a `file:` URI string: ComposeNativeTray parses `iconPath` through
+ * A classpath icon as a `file:` URI string: the tray parses `iconPath` through
  * `java.net.URI`, which rejects raw Windows paths (`C:\…` reads as an opaque `C:` scheme).
  */
 private fun iconUri(resource: String): String =
