@@ -15,21 +15,119 @@ use ndk::{
   configuration::Configuration,
   looper::{ForeignLooper, Poll, ThreadLooper},
 };
-use once_cell::sync::Lazy;
 use std::{
-  collections::VecDeque,
-  sync::RwLock,
+  collections::{HashSet, VecDeque},
+  error::Error,
+  fmt,
+  sync::{LazyLock, RwLock},
   time::{Duration, Instant},
 };
+
+#[derive(Debug)]
+pub struct JniCallError {
+  source: jni::errors::Error,
+  java_exception: Option<String>,
+}
+
+impl JniCallError {
+  fn new(source: jni::errors::Error, java_exception: Option<String>) -> Self {
+    Self {
+      source,
+      java_exception,
+    }
+  }
+}
+
+impl From<jni::errors::Error> for JniCallError {
+  fn from(source: jni::errors::Error) -> Self {
+    Self::new(source, None)
+  }
+}
+
+impl fmt::Display for JniCallError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match &self.java_exception {
+      Some(java_exception) => write!(f, "{}: {java_exception}", self.source),
+      None => self.source.fmt(f),
+    }
+  }
+}
+
+impl Error for JniCallError {
+  fn source(&self) -> Option<&(dyn Error + 'static)> {
+    Some(&self.source)
+  }
+}
+
+/// Logs and clears a pending Java exception while preserving the original JNI error.
+macro_rules! jni_handle_error {
+  ($env:ident, $e:expr) => {{
+    let e = $e;
+    let message = (|| -> jni::errors::Result<Option<String>> {
+      if $env.exception_check()? {
+        let throwable = $env.exception_occurred()?;
+        $env.exception_clear()?;
+
+        let message = $env
+          .call_method(&throwable, "toString", "()Ljava/lang/String;", &[])?
+          .l()?;
+        let message: jni::objects::JString = message.into();
+        return $env.get_string(&message).map(|s| Some(s.into()));
+      }
+
+      Ok(None)
+    })();
+
+    let java_exception = match message {
+      Ok(Some(message)) => {
+        log::error!(
+          "tao: JNI call failed at {}:{} with Java exception: {message}",
+          file!(),
+          line!()
+        );
+        Some(message)
+      }
+      Ok(None) => {
+        log::error!("tao: JNI call failed at {}:{}: {e}", file!(), line!());
+        None
+      }
+      Err(err) => {
+        let message = format!("failed to read Java exception: {err}");
+        log::error!(
+          "tao: JNI call failed at {}:{}: {e}; {message}",
+          file!(),
+          line!()
+        );
+        Some(message)
+      }
+    };
+
+    $crate::platform_impl::platform::JniCallError::new(e, java_exception)
+  }};
+}
+
+macro_rules! jni_call_method {
+  ($env:ident, $obj:expr, $method:expr, $sig:expr, $args:expr, $ret_typ:ident) => {{
+    $env
+      .call_method($obj, $method, $sig, $args)
+      .and_then(|v| v.$ret_typ())
+      .map_err(|e| jni_handle_error!($env, e))
+  }};
+
+  ($env:ident, $obj:expr, $method:expr, $sig:expr, $ret_typ:ident) => {
+    jni_call_method!($env, $obj, $method, $sig, &[], $ret_typ)
+  };
+}
 
 pub mod ndk_glue;
 use ndk_glue::{ActivityId, Event, Rect, WindowEvent};
 
-static CONFIG: Lazy<RwLock<Configuration>> = Lazy::new(|| RwLock::new(Configuration::new()));
+static CONFIG: LazyLock<RwLock<Configuration>> =
+  LazyLock::new(|| RwLock::new(Configuration::new()));
 
 #[derive(Debug)]
 pub enum OsError {
-  JniError(jni::errors::Error),
+  JniCallError(JniCallError),
   NoAvailableActivity,
 }
 
@@ -37,7 +135,7 @@ impl std::error::Error for OsError {}
 impl std::fmt::Display for OsError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      OsError::JniError(e) => write!(f, "JNI error: {e}"),
+      OsError::JniCallError(e) => write!(f, "JNI error: {e}"),
       OsError::NoAvailableActivity => write!(f, "no available activity"),
     }
   }
@@ -72,21 +170,11 @@ pub struct EventLoop<T: 'static> {
   first_event: Option<EventSource>,
   start_cause: event::StartCause,
   looper: ThreadLooper,
-  running: bool,
+  running: HashSet<window::WindowId>,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PlatformSpecificEventLoopAttributes {}
-
-macro_rules! call_event_handler {
-  ( $event_handler:expr, $window_target:expr, $cf:expr, $event:expr ) => {{
-    if let ControlFlow::ExitWithCode(code) = $cf {
-      $event_handler($event, $window_target, &mut ControlFlow::ExitWithCode(code));
-    } else {
-      $event_handler($event, $window_target, &mut $cf);
-    }
-  }};
-}
 
 impl<T: 'static> EventLoop<T> {
   pub(crate) fn new(_: &PlatformSpecificEventLoopAttributes) -> Self {
@@ -104,7 +192,7 @@ impl<T: 'static> EventLoop<T> {
       first_event: None,
       start_cause: event::StartCause::Init,
       looper: ThreadLooper::for_thread().unwrap(),
-      running: false,
+      running: HashSet::new(),
     }
   }
 
@@ -121,14 +209,14 @@ impl<T: 'static> EventLoop<T> {
   where
     F: FnMut(event::Event<'_, T>, &event_loop::EventLoopWindowTarget<T>, &mut ControlFlow),
   {
-    let mut control_flow = ControlFlow::default();
+    let event_handler = &mut event_handler;
+    let control_flow = &mut ControlFlow::default();
 
-    'event_loop: loop {
-      call_event_handler!(
+    loop {
+      self.call_event_handler(
         event_handler,
-        self.window_target(),
         control_flow,
-        event::Event::NewEvents(self.start_cause)
+        event::Event::NewEvents(self.start_cause),
       );
 
       let mut redraw_window_id = None;
@@ -136,12 +224,14 @@ impl<T: 'static> EventLoop<T> {
 
       match self.first_event.take() {
         Some(EventSource::Callback) => match ndk_glue::poll_events().unwrap() {
-          Event::Resume => {
-            call_event_handler!(
+          Event::Resume { id: window_id } => {
+            self.call_event_handler(
               event_handler,
-              self.window_target(),
               control_flow,
-              event::Event::Resumed
+              event::Event::WindowEvent {
+                window_id,
+                event: event::WindowEvent::Resumed,
+              },
             );
           }
           Event::WindowEvent {
@@ -150,49 +240,65 @@ impl<T: 'static> EventLoop<T> {
           } => match event {
             WindowEvent::Resized => resized_window_id = Some(window_id),
             WindowEvent::RedrawNeeded => redraw_window_id = Some(window_id),
-            WindowEvent::Focused(focused) => {
-              call_event_handler!(
+            WindowEvent::Started => {
+              self.running.insert(window_id);
+              self.call_event_handler(
                 event_handler,
-                self.window_target(),
                 control_flow,
                 event::Event::WindowEvent {
                   window_id,
-                  event: event::WindowEvent::Focused(focused)
-                }
+                  event: event::WindowEvent::Started,
+                },
+              );
+            }
+            WindowEvent::Focused(focused) => {
+              self.call_event_handler(
+                event_handler,
+                control_flow,
+                event::Event::WindowEvent {
+                  window_id,
+                  event: event::WindowEvent::Focused(focused),
+                },
+              );
+            }
+            WindowEvent::Stopped => {
+              self.running.remove(&window_id);
+              self.call_event_handler(
+                event_handler,
+                control_flow,
+                event::Event::WindowEvent {
+                  window_id,
+                  event: event::WindowEvent::Stopped,
+                },
               );
             }
             WindowEvent::Destroyed => {
-              call_event_handler!(
+              self.running.remove(&window_id);
+              self.call_event_handler(
                 event_handler,
-                self.window_target(),
                 control_flow,
                 event::Event::WindowEvent {
                   window_id,
                   event: event::WindowEvent::Destroyed,
-                }
+                },
               );
             }
             _ => {}
           },
-          Event::Pause => {
-            call_event_handler!(
+          Event::Pause { id: window_id } => {
+            self.call_event_handler(
               event_handler,
-              self.window_target(),
               control_flow,
-              event::Event::Suspended
+              event::Event::WindowEvent {
+                window_id,
+                event: event::WindowEvent::Suspended,
+              },
             );
           }
-          Event::Stop => self.running = false,
-          Event::Start => self.running = true,
           Event::Opened => {
             let urls = ndk_glue::take_intent_urls();
             if !urls.is_empty() {
-              call_event_handler!(
-                event_handler,
-                self.window_target(),
-                control_flow,
-                event::Event::Opened { urls }
-              );
+              self.call_event_handler(event_handler, control_flow, event::Event::Opened { urls });
             }
           }
           //Event::ConfigChanged => {
@@ -211,7 +317,7 @@ impl<T: 'static> EventLoop<T> {
           //       scale_factor,
           //     },
           //   };
-          //   call_event_handler!(event_handler, self.window_target(), control_flow, event);
+          //   self.call_event_handler(event_handler, control_flow, event);
           // }
           //}
           _ => {}
@@ -267,9 +373,8 @@ impl<T: 'static> EventLoop<T> {
                               force: None,
                             }),
                           };
-                          call_event_handler!(
+                          self.call_event_handler(
                             event_handler,
-                            self.window_target(),
                             control_flow,
                             event
                           );
@@ -305,7 +410,11 @@ impl<T: 'static> EventLoop<T> {
                           is_synthetic: false,
                         },
                       };
-                      call_event_handler!(event_handler, self.window_target(), control_flow, event);
+                      self.call_event_handler(
+                        event_handler,
+                        control_flow,
+                        event,
+                      );
                     }
                     _ => {}
                   };
@@ -315,80 +424,58 @@ impl<T: 'static> EventLoop<T> {
             }
           */
         }
-        Some(EventSource::User) => {
-          while let Ok(event) = self.receiver.try_recv() {
-            call_event_handler!(
-              event_handler,
-              self.window_target(),
-              control_flow,
-              event::Event::UserEvent(event)
-            );
-          }
-        }
-        None => {}
+        _ => {}
       }
 
-      call_event_handler!(
-        event_handler,
-        self.window_target(),
-        control_flow,
-        event::Event::MainEventsCleared
-      );
+      // We need to treat every event as if they were from [`EventLoopProxy::send_event`]
+      //
+      // > All return values may also imply ALOOPER_POLL_WAKE. If you call this in a loop,
+      // > you must treat all return values as if they also indicated ALOOPER_POLL_WAKE.
+      // > https://developer.android.com/ndk/reference/group/looper#alooper_pollonce
+      while let Ok(event) = self.receiver.try_recv() {
+        self.call_event_handler(event_handler, control_flow, event::Event::UserEvent(event));
+      }
+
+      self.call_event_handler(event_handler, control_flow, event::Event::MainEventsCleared);
 
       if let Some(window_id) = resized_window_id {
-        if self.running {
+        if self.running.contains(&window_id) {
           let size = MonitorHandle.size();
           let event = event::Event::WindowEvent {
             window_id,
             event: event::WindowEvent::Resized(size),
           };
-          call_event_handler!(event_handler, self.window_target(), control_flow, event);
+          self.call_event_handler(event_handler, control_flow, event);
         }
       }
 
       if let Some(window_id) = redraw_window_id {
-        if self.running {
+        if self.running.contains(&window_id) {
           let event = event::Event::RedrawRequested(window_id);
-          call_event_handler!(event_handler, self.window_target(), control_flow, event);
+          self.call_event_handler(event_handler, control_flow, event);
         }
       }
 
-      call_event_handler!(
+      self.call_event_handler(
         event_handler,
-        self.window_target(),
         control_flow,
-        event::Event::RedrawEventsCleared
+        event::Event::RedrawEventsCleared,
       );
 
-      match control_flow {
+      match *control_flow {
         ControlFlow::ExitWithCode(code) => {
-          self.first_event = poll(
-            self
-              .looper
-              .poll_once_timeout(Duration::from_millis(0))
-              .unwrap(),
-          );
+          self.first_event = poll(self.looper.poll_once_timeout(Duration::ZERO).unwrap());
           self.start_cause = event::StartCause::WaitCancelled {
             start: Instant::now(),
             requested_resume: None,
           };
 
-          call_event_handler!(
-            event_handler,
-            self.window_target(),
-            control_flow,
-            event::Event::LoopDestroyed
-          );
+          self.call_event_handler(event_handler, control_flow, event::Event::LoopDestroyed);
 
-          break 'event_loop code;
+          return code;
         }
         ControlFlow::Poll => {
-          self.first_event = poll(
-            self
-              .looper
-              .poll_all_timeout(Duration::from_millis(0))
-              .unwrap(),
-          );
+          self.first_event = poll(self.looper.poll_all_timeout(Duration::ZERO).unwrap());
           self.start_cause = event::StartCause::Poll;
         }
         ControlFlow::Wait => {
@@ -422,6 +509,25 @@ impl<T: 'static> EventLoop<T> {
     }
   }
 
+  fn call_event_handler<F>(
+    &self,
+    event_handler: &mut F,
+    control_flow: &mut ControlFlow,
+    event: event::Event<'_, T>,
+  ) where
+    F: FnMut(event::Event<'_, T>, &event_loop::EventLoopWindowTarget<T>, &mut ControlFlow),
+  {
+    if let ControlFlow::ExitWithCode(code) = *control_flow {
+      event_handler(
+        event,
+        self.window_target(),
+        &mut ControlFlow::ExitWithCode(code),
+      );
+    } else {
+      event_handler(event, self.window_target(), control_flow);
+    }
+  }
+
   pub fn window_target(&self) -> &event_loop::EventLoopWindowTarget<T> {
     &self.window_target
   }
@@ -441,7 +547,7 @@ pub struct EventLoopProxy<T: 'static> {
 
 impl<T> EventLoopProxy<T> {
   pub fn send_event(&self, event: T) -> Result<(), event_loop::EventLoopClosed<T>> {
-    _ = self.queue.try_send(event);
+    let _ = self.queue.send(event);
     self.looper.wake();
     Ok(())
   }
@@ -553,7 +659,7 @@ impl Window {
         .ok_or_else(|| os_error!(OsError::NoAvailableActivity))?;
         let activity_id = ctx
           .create_activity(&activity_name)
-          .map_err(|error| os_error!(OsError::JniError(error)))?;
+          .map_err(|error| os_error!(OsError::JniCallError(error)))?;
         (activity_id, activity_name)
       }
       None => ndk_glue::next_available_activity()
@@ -785,7 +891,7 @@ impl Window {
     if let Some(w) = ndk_glue::activity_window_manager(self.activity_id).as_ref() {
       handle.a_native_window = w.as_obj().as_raw() as *mut _;
     } else {
-      panic!("Cannot get the native window, it's null and will always be null before Event::Resumed and after Event::Suspended. Make sure you only call this function between those events.");
+      panic!("Cannot get the native window, it's null and will always be null before WindowEvent::Resumed and after WindowEvent::Suspended. Make sure you only call this function between those events.");
     };
     rwh_04::RawWindowHandle::AndroidNdk(handle)
   }
@@ -797,7 +903,7 @@ impl Window {
     if let Some(w) = ndk_glue::activity_window_manager(self.activity_id).as_ref() {
       handle.a_native_window = w.as_obj().as_raw() as *mut _;
     } else {
-      panic!("Cannot get the native window, it's null and will always be null before Event::Resumed and after Event::Suspended. Make sure you only call this function between those events.");
+      panic!("Cannot get the native window, it's null and will always be null before WindowEvent::Resumed and after WindowEvent::Suspended. Make sure you only call this function between those events.");
     };
     rwh_05::RawWindowHandle::AndroidNdk(handle)
   }
@@ -849,6 +955,63 @@ pub(crate) use crate::icon::NoIcon as PlatformIcon;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MonitorHandle;
 
+fn current_window_metrics_size(
+  env: &mut jni::JNIEnv<'_>,
+  window_manager: &jni::objects::JObject<'_>,
+) -> Option<PhysicalSize<u32>> {
+  let metrics = jni_call_method!(
+    env,
+    window_manager,
+    "getCurrentWindowMetrics",
+    "()Landroid/view/WindowMetrics;",
+    l
+  )
+  .ok()?;
+
+  let rect = jni_call_method!(env, &metrics, "getBounds", "()Landroid/graphics/Rect;", l).ok()?;
+  let width = jni_call_method!(env, &rect, "width", "()I", i).ok()?;
+  let height = jni_call_method!(env, &rect, "height", "()I", i).ok()?;
+  Some(PhysicalSize::new(width as u32, height as u32))
+}
+
+fn legacy_display_metrics_size(
+  env: &mut jni::JNIEnv<'_>,
+  window_manager: &jni::objects::JObject<'_>,
+) -> Option<PhysicalSize<u32>> {
+  let display = jni_call_method!(
+    env,
+    window_manager,
+    "getDefaultDisplay",
+    "()Landroid/view/Display;",
+    l
+  )
+  .ok()?;
+  let display_metrics = env
+    .new_object("android/util/DisplayMetrics", "()V", &[])
+    .ok()?;
+
+  jni_call_method!(
+    env,
+    &display,
+    "getRealMetrics",
+    "(Landroid/util/DisplayMetrics;)V",
+    &[(&display_metrics).into()],
+    v
+  )
+  .ok()?;
+
+  let width = env
+    .get_field(&display_metrics, "widthPixels", "I")
+    .and_then(|v| v.i())
+    .ok()?;
+  let height = env
+    .get_field(&display_metrics, "heightPixels", "I")
+    .and_then(|v| v.i())
+    .ok()?;
+
+  Some(PhysicalSize::new(width as u32, height as u32))
+}
+
 impl MonitorHandle {
   pub fn name(&self) -> Option<String> {
     Some("Android Device".to_owned())
@@ -865,35 +1028,30 @@ impl MonitorHandle {
     let Some(ctx) = ndk_glue::main_android_context() else {
       return PhysicalSize::new(0, 0);
     };
-    let vm = unsafe { jni::JavaVM::from_raw(ctx.java_vm.cast()) }.unwrap();
-    let mut env = vm.attach_current_thread().unwrap();
+    let Ok(vm) = (unsafe { jni::JavaVM::from_raw(ctx.java_vm.cast()) }) else {
+      return PhysicalSize::new(0, 0);
+    };
+    let Ok(mut env) = vm.attach_current_thread() else {
+      return PhysicalSize::new(0, 0);
+    };
     let window_manager = w.as_obj();
-    let metrics = env
-      .call_method(
-        window_manager,
-        "getCurrentWindowMetrics",
-        "()Landroid/view/WindowMetrics;",
-        &[],
-      )
-      .unwrap()
-      .l()
-      .unwrap();
-    let rect = env
-      .call_method(&metrics, "getBounds", "()Landroid/graphics/Rect;", &[])
-      .unwrap()
-      .l()
-      .unwrap();
-    let width = env
-      .call_method(&rect, "width", "()I", &[])
-      .unwrap()
-      .i()
-      .unwrap();
-    let height = env
-      .call_method(&rect, "height", "()I", &[])
-      .unwrap()
-      .i()
-      .unwrap();
-    PhysicalSize::new(width as u32, height as u32)
+
+    let sdk_int = env
+      .get_static_field("android/os/Build$VERSION", "SDK_INT", "I")
+      .and_then(|v| v.i())
+      .unwrap_or(0);
+
+    let metrics_size = if sdk_int >= 30 {
+      current_window_metrics_size(&mut env, window_manager)
+    } else {
+      legacy_display_metrics_size(&mut env, window_manager)
+    };
+
+    if metrics_size.is_none() && env.exception_check().unwrap_or(false) {
+      let _ = env.exception_clear();
+    }
+
+    metrics_size.unwrap_or(PhysicalSize::new(0, 0))
   }
 
   pub fn position(&self) -> PhysicalPosition<i32> {

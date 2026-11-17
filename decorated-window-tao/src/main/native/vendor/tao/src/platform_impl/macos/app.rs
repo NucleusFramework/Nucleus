@@ -6,7 +6,7 @@ use std::{collections::VecDeque, ffi::CStr};
 
 use objc2::runtime::{AnyClass as Class, ClassBuilder as ClassDecl, Sel};
 use objc2_app_kit::{self as appkit, NSApplication, NSEvent, NSEventType};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 use super::{app_state::AppState, event::EventWrapper, note_tablet_proximity, util, DEVICE_ID};
 use crate::event::{DeviceEvent, ElementState, Event};
@@ -15,13 +15,19 @@ pub struct AppClass(pub *const Class);
 unsafe impl Send for AppClass {}
 unsafe impl Sync for AppClass {}
 
-pub static APP_CLASS: Lazy<AppClass> = Lazy::new(|| unsafe {
+pub static APP_CLASS: LazyLock<AppClass> = LazyLock::new(|| unsafe {
   let superclass = class!(NSApplication);
   let mut decl =
     ClassDecl::new(CStr::from_bytes_with_nul(b"TaoApp\0").unwrap(), superclass).unwrap();
 
-  decl.add_method(sel!(sendEvent:), send_event as extern "C" fn(_, _, _));
-  decl.add_method(sel!(terminate:), terminate as extern "C" fn(_, _, _));
+  decl.add_method(
+    sel!(sendEvent:),
+    send_event as extern "C-unwind" fn(_, _, _),
+  );
+  decl.add_method(
+    sel!(terminate:),
+    terminate as extern "C-unwind" fn(_, _, _),
+  );
 
   AppClass(decl.register())
 });
@@ -38,7 +44,7 @@ extern "C" {
 // returns, so the quit Apple event is answered "OK" and loginwindow waits for
 // the process to exit instead of aborting the logout at once. Once the event
 // loop is gone (the fatal-error dialog after it) the real terminate runs.
-extern "C" fn terminate(this: &NSApplication, _sel: Sel, sender: *mut objc2::runtime::AnyObject) {
+extern "C-unwind" fn terminate(this: &NSApplication, _sel: Sel, sender: *mut objc2::runtime::AnyObject) {
   if unsafe { nucleus_tao_post_quit_requested() } {
     return;
   }
@@ -51,7 +57,7 @@ extern "C" fn terminate(this: &NSApplication, _sel: Sel, sender: *mut objc2::run
 // Normally, holding Cmd + any key never sends us a `keyUp` event for that key.
 // Overriding `sendEvent:` like this fixes that. (https://stackoverflow.com/a/15294196)
 // Fun fact: Firefox still has this bug! (https://bugzilla.mozilla.org/show_bug.cgi?id=1299553)
-extern "C" fn send_event(this: &NSApplication, _sel: Sel, event: &NSEvent) {
+extern "C-unwind" fn send_event(this: &NSApplication, _sel: Sel, event: &NSEvent) {
   unsafe {
     // For posterity, there are some undocumented event types
     // (https://github.com/servo/cocoa-rs/issues/155)
