@@ -211,8 +211,9 @@ public fun ApplicationScope.DecoratedDialog(
     DisposableEffect(parent, dialogWindow.value, visible) {
         val owner = parent
         if (owner == null || dialogWindow.value == null || !visible) return@DisposableEffect onDispose { }
+        val dialog = dialogWindow.value
         TaoWindowModality.block(owner)
-        onDispose { TaoWindowModality.unblock(owner) }
+        onDispose { TaoWindowModality.unblock(owner, dialog) }
     }
 
     // Bidirectional bridge between DialogState and the WindowState plumbed

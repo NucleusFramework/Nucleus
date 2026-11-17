@@ -75,6 +75,7 @@ internal class TaoPopupSceneLayerWindows(
 
     private val rendererToken: Any = Any()
     private val moveListenerToken: Any = Any()
+    private val keyHandlerToken: Any = Any()
 
     /**
      * Set in [close] before `nativeRelease` frees the panel. Guards
@@ -341,6 +342,19 @@ internal class TaoPopupSceneLayerWindows(
         }
     }
 
+    /**
+     * Key events forwarded by the owner window, which keeps the keyboard focus.
+     * Preview / scene / post ordering mirrors `ComposeScene.dispatchNativeKeyEvent`;
+     * the scene only sees keys when the popup is focusable, so a tooltip never
+     * swallows typing. Same contract as the Linux layer.
+     */
+    private fun dispatchForwardedKey(event: KeyEvent): Boolean {
+        if (released) return false
+        if (onPreviewKeyEvent?.invoke(event) == true) return true
+        if (_focusable && innerScene.sendKeyEvent(event)) return true
+        return onKeyEvent?.invoke(event) == true
+    }
+
     private inner class PopupOutsideListener : PopupNativeBridgeWindows.OutsideClickListener {
         override fun onOutsideClick(
             type: Int,
@@ -365,6 +379,10 @@ internal class TaoPopupSceneLayerWindows(
         // defer / no-op until the panel exists.
         host.registerRenderer(rendererToken) { renderFrame() }
         host.popupScrims.register(rendererToken) { scrimColorState.value }
+        // The owner window keeps the OS keyboard focus while the popup is open
+        // (the panel is only activated when clicked), so its keys come through
+        // the host's forwarding chain — see [dispatchForwardedKey].
+        host.registerKeyHandler(keyHandlerToken) { dispatchForwardedKey(it) }
         host.registerOwnerMoveListener(moveListenerToken) {
             if (panelHandle != 0L && !contentBounds.isEmpty) {
                 updateNativeFrame()
@@ -437,6 +455,7 @@ internal class TaoPopupSceneLayerWindows(
         host.onLayerClosed(this)
         host.popupScrims.unregister(rendererToken)
         host.unregisterOwnerMoveListener(moveListenerToken)
+        host.unregisterKeyHandler(keyHandlerToken)
         PopupNativeBridgeWindows.nativeUninstallOutsideClickMonitor(panelHandle)
         PopupNativeBridgeWindows.nativeSetEventCallback(panelHandle, null)
         sceneBundle.close()

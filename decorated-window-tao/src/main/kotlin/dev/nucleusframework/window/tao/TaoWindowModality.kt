@@ -29,21 +29,34 @@ internal object TaoWindowModality {
         if (count == 0) setEnabled(owner, false)
     }
 
-    fun unblock(owner: TaoWindow) {
+    /**
+     * Releases one block of [owner]. When the last one goes while [dialog] holds
+     * the focus, the owner is activated explicitly, as `EndDialog` does: Windows
+     * would otherwise activate the next window in z-order, which is not the
+     * owner when it never came to the front (another app's window sits between).
+     */
+    fun unblock(
+        owner: TaoWindow,
+        dialog: TaoWindow?,
+    ) {
         val count = blockCounts[owner] ?: return
         if (count > 1) {
             blockCounts[owner] = count - 1
         } else {
             blockCounts -= owner
             setEnabled(owner, true)
+            if (dialog?.isFocused == true && isNativeModalityActive()) owner.focus()
         }
     }
+
+    private fun isNativeModalityActive(): Boolean =
+        Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded
 
     private fun setEnabled(
         window: TaoWindow,
         enabled: Boolean,
     ) {
-        if (Platform.Current != Platform.Windows || !NativeTaoWindowsDecoBridge.isLoaded) return
+        if (!isNativeModalityActive()) return
         val hwnd = window.nativeHandle
         if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeSetWindowEnabled(hwnd, enabled)
     }

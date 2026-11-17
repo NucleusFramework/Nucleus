@@ -1,3 +1,4 @@
+import dev.nucleusframework.gradle.VerifyNativeResourceTask
 import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
@@ -50,12 +51,12 @@ val nativeTasks =
     }
 
 val verifyNativeResourcePresence =
-    tasks.register("verifyNativeResourcePresence") {
+    tasks.register<VerifyNativeResourceTask>("verifyNativeResourcePresence") {
         description =
             "Verifies the current host native artifact expected from the local build script exists in resources"
         group = "verification"
         dependsOn(nativeTasks)
-        val expectedArtifactPath =
+        expectedArtifactPath.set(
             when {
                 Os.isFamily(Os.FAMILY_MAC) ->
                     File(nativeOutputDir, "${hostArchDir("darwin")}/libnucleus_fs_watcher.dylib").absolutePath
@@ -63,14 +64,8 @@ val verifyNativeResourcePresence =
                     File(nativeOutputDir, "${hostArchDir("win32")}/nucleus_fs_watcher.dll").absolutePath
                 else ->
                     File(nativeOutputDir, "${hostArchDir("linux")}/libnucleus_fs_watcher.so").absolutePath
-            }
-
-        doLast {
-            val expectedArtifact = File(expectedArtifactPath)
-            if (!expectedArtifact.exists()) {
-                throw GradleException("Expected native artifact is missing: $expectedArtifact")
-            }
-        }
+            },
+        )
     }
 
 tasks.processResources {

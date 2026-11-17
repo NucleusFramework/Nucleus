@@ -42,6 +42,7 @@ internal fun configureDesktop(
 
         propagateMainClassToHotReloadRun(project, appInternal)
         injectStartOnFirstThreadForTaoHotReload(project)
+        letHotReloadRecompilerFindGradlew(project)
         configureHotReloadDependencySnapshots(project = project)
     }
 
@@ -203,6 +204,6 @@ private fun projectUsesTaoBackend(project: Project): Boolean =
         config.dependencies.any { it.name in DECORATED_WINDOW_TAO_DEPENDENCY_NAMES }
     }
 
-private fun JavaExec.isHotReloadJavaExec(): Boolean =
+internal fun JavaExec.isHotReloadJavaExec(): Boolean =
     generateSequence<Class<*>>(javaClass) { it.superclass }
         .any { it.name.startsWith("org.jetbrains.compose.reload") }

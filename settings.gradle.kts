@@ -1,3 +1,5 @@
+import org.gradle.api.specs.Specs
+
 pluginManagement {
     repositories {
         google()
@@ -23,9 +25,13 @@ plugins {
 develocity {
     buildScan.termsOfUseUrl = "https://gradle.com/terms-of-service"
     buildScan.termsOfUseAgree = "yes"
-    buildScan.publishing.onlyIf {
-        System.getenv("GITHUB_ACTIONS") == "true" &&
-            it.buildResult.failures.isNotEmpty()
+    // CI publishes a scan for failed builds. Locally nothing is published, through a Gradle spec
+    // rather than a lambda: a settings-script lambda breaks the configuration cache of a
+    // continuous build (`-t`, which Compose Hot Reload's `--auto` runs) once it reconfigures.
+    if (System.getenv("GITHUB_ACTIONS") == "true") {
+        buildScan.publishing.onlyIf { it.buildResult.failures.isNotEmpty() }
+    } else {
+        buildScan.publishing.onlyIf(Specs.satisfyNone())
     }
 }
 
