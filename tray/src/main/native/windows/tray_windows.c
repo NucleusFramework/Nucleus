@@ -228,7 +228,7 @@ static HMENU build_menu(TrayContext *ctx, struct tray_menu_item *m)
 
 static void show_menu(struct tray *tray, TrayContext *ctx)
 {
-    if (ctx->menu_open || ctx->exiting) return;
+    if (ctx->menu_open || ctx->exiting || tray->closing) return;
     if (tray->menu_opened_cb) tray->menu_opened_cb(tray);
     if (!ctx->hmenu || GetMenuItemCount(ctx->hmenu) <= 0) return;
 
@@ -243,7 +243,7 @@ static void show_menu(struct tray *tray, TrayContext *ctx)
     ctx->menu_open = FALSE;
     /* KB135788: lets the shell see the menu as dismissed. */
     PostMessageW(ctx->hwnd, WM_NULL, 0, 0);
-    if (cmd && !ctx->exiting) PostMessageW(ctx->hwnd, WM_COMMAND, cmd, 0);
+    if (cmd && !ctx->exiting && !tray->closing) PostMessageW(ctx->hwnd, WM_COMMAND, cmd, 0);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -377,10 +377,12 @@ int tray_pump(struct tray *tray, int wait)
 {
     if (!tray || !tray->impl) return -1;
     MSG msg;
+    if (tray->closing) return -1;
     if (wait && !PeekMessageW(&msg, NULL, 0, 0, PM_NOREMOVE)) {
         MsgWaitForMultipleObjectsEx(0, NULL, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
     }
-    while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+    /* A closing tray stops here: a backlog of queued clicks must not open menus after dispose. */
+    while (!tray->closing && PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
         if (msg.message == WM_QUIT) continue; /* not ours to honour: the owner ends the loop */
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
@@ -418,6 +420,7 @@ void tray_exit(struct tray *tray)
 void tray_wake(struct tray *tray, int cancel_menu)
 {
     if (!tray) return;
+    if (cancel_menu) InterlockedExchange(&tray->closing, 1);
     HWND hwnd = (HWND)tray->wake_hwnd;
     if (hwnd) PostMessageW(hwnd, WM_TRAY_WAKE, (WPARAM)(cancel_menu != 0), 0);
 }

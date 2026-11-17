@@ -60,7 +60,18 @@ class WindowsTrayTortureTest {
     /** Right-clicks the tray, reads the popup the shell would show, then dismisses it. */
     private fun readMenu(hwnd: Long): List<Win32Probe.Item> {
         check(Win32Probe.post(hwnd, Win32Probe.WM_TRAY_CALLBACK, 0, Win32Probe.WM_RBUTTONUP.toLong()))
-        val (popup, hmenu) = awaitValue("popup menu", timeoutMs = 3000) { Win32Probe.openPopupMenu() }
+        val (popup, hmenu) =
+            try {
+                awaitValue("popup menu", timeoutMs = 3000) { Win32Probe.openPopupMenu() }
+            } catch (e: AssertionError) {
+                val answers = Win32Probe.sendWithTimeout(hwnd, 0, timeoutMs = 1000)
+                val menus = Win32Probe.windowsOfClass("#32768").size
+                val threads =
+                    Thread.getAllStackTraces().filterKeys { it.name.startsWith("NucleusTray-") }.entries.joinToString(" | ") { (t, st) ->
+                        t.name + " " + st.take(4).joinToString(" < ")
+                    }
+                fail("${e.message}; tray window answers=$answers, #32768 windows=$menus; threads: $threads", e)
+            }
         val items = Win32Probe.readMenu(hmenu)
         dismissMenu(hwnd, Pointer(popup))
         return items
@@ -262,7 +273,8 @@ class WindowsTrayTortureTest {
         // Warm up, then measure the steady state.
         repeat(5) {
             WindowsTrayInitializer.update("gdi", icon, "t", null, menu(it))
-            readMenu(hwnd)
+            // The tray starts with no menu: wait for this round's to be applied.
+            awaitTrue("warm-up round $it") { readMenuOrEmpty(hwnd).singleOrNull()?.text == "Sub $it" }
         }
         val (gdiBefore, _) = Win32Probe.guiResources()
         repeat(40) {

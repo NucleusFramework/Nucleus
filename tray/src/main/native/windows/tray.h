@@ -34,6 +34,7 @@ struct tray {
     void *impl;                     /* TrayContext, owned by the tray thread */
     volatile void *wake_hwnd;       /* hidden window, readable from any thread */
     volatile unsigned int uid;      /* Shell icon id */
+    volatile long closing;          /* set by tray_wake(cancel_menu): no more menus, stop pumping */
 };
 
 int  tray_init(struct tray *tray);

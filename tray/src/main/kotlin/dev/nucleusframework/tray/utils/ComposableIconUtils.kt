@@ -9,7 +9,6 @@ import org.jetbrains.skia.FilterMipmap
 import org.jetbrains.skia.FilterMode
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.MipmapMode
-import java.io.File
 import java.util.zip.CRC32
 
 /**
@@ -28,10 +27,7 @@ internal object ComposableIconUtils {
         iconRenderProperties: IconRenderProperties,
         content: @Composable () -> Unit,
     ): String {
-        val tempFile = createTempFile(suffix = ".png")
-        val pngData = renderComposableToPngBytes(iconRenderProperties, content)
-        tempFile.writeBytes(pngData)
-        return tempFile.absolutePath
+        return IconFileCache.store(renderComposableToPngBytes(iconRenderProperties, content), "png")
     }
 
     /**
@@ -72,10 +68,7 @@ internal object ComposableIconUtils {
         iconRenderProperties: IconRenderProperties,
         content: @Composable (() -> Unit),
     ): String {
-        val tempFile = createTempFile(suffix = ".ico")
-        val icoData = renderComposableToIcoBytes(iconRenderProperties, content)
-        tempFile.writeBytes(icoData)
-        return tempFile.absolutePath
+        return IconFileCache.store(renderComposableToIcoBytes(iconRenderProperties, content), "ico")
     }
 
     /**
@@ -101,18 +94,6 @@ internal object ComposableIconUtils {
                 }
             packPngFramesAsIco(frames)
         }
-
-    /**
-     * Creates a temporary file that will be deleted when the JVM exits.
-     */
-    private fun createTempFile(
-        prefix: String = "tray_icon_",
-        suffix: String,
-    ): File {
-        val tempFile = File.createTempFile(prefix, suffix)
-        tempFile.deleteOnExit()
-        return tempFile
-    }
 
     /**
      * Calculates a hash value for the rendered composable content.
