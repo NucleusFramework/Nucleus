@@ -49,7 +49,7 @@ struct HeldKey {
   /// Whether its latest press was an auto-repeat.
   repeat: bool,
   /// Whether that press was withheld from Compose. An input method that
-  /// answers asynchronously (ibus without its key snooper, fcitx) claims a
+  /// answers asynchronously (ibus without its key snooper) claims a
   /// press, then hands the same event back once the engine has declined it;
   /// that second sighting is the press itself, not a repeat of it.
   withheld: bool,
@@ -269,7 +269,7 @@ mod tests {
   }
 
   /// An input method that answers asynchronously (ibus without its key
-  /// snooper, fcitx) claims the press, then hands the same event back once
+  /// snooper) claims the press, then hands the same event back once
   /// the engine has declined it; the release goes the same way. Compose gets
   /// one fresh press, its text and one release — not a "repeat" and no lost
   /// key-up.
