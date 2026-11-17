@@ -15,7 +15,7 @@
 //! `ImeSource` trait; the Linux one needs no trait, because there is nothing to
 //! read back — GTK pushes everything.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::keyboard::ModifiersState;
 
@@ -43,6 +43,18 @@ pub(crate) enum KeyPress {
   Delivered { typed: String },
 }
 
+/// What [`ImeState`] remembers about a key that is physically held.
+#[derive(Debug, Clone, Copy, Default)]
+struct HeldKey {
+  /// Whether its latest press was an auto-repeat.
+  repeat: bool,
+  /// Whether that press was withheld from Compose. An input method that
+  /// answers asynchronously (ibus without its key snooper, fcitx) claims a
+  /// press, then hands the same event back once the engine has declined it;
+  /// that second sighting is the press itself, not a repeat of it.
+  withheld: bool,
+}
+
 /// Per-window input-method state. See the module docs.
 #[derive(Debug, Default)]
 pub(crate) struct ImeState {
@@ -58,8 +70,9 @@ pub(crate) struct ImeState {
   /// so a release with no press behind it activates whatever holds focus —
   /// the Return that merely confirmed a conversion would press a button.
   pressed: HashSet<u16>,
-  /// Text the input method committed outside a composition while it was
-  /// filtering the current key press, or `None` outside such a filter.
+  /// Text the input method committed while it was filtering the current key
+  /// press, or `None` when no press is being filtered or the press began
+  /// inside a composition.
   ///
   /// With no engine composing, `gtk_im_context_filter_keypress` turns a
   /// printable key into text on the spot: it emits `commit` and claims the
@@ -74,7 +87,7 @@ pub(crate) struct ImeState {
   /// Wayland (GDK's own repeat timer only emits presses). Cleared when the
   /// window loses the focus, since a key released elsewhere never reports
   /// its release here.
-  held: HashSet<u16>,
+  held: HashMap<u16, HeldKey>,
   /// Last modifier state published to Compose.
   modifiers: ModifiersState,
 }
@@ -112,8 +125,14 @@ impl ImeState {
 
   /// Call before handing a key press to `gtk_im_context_filter_keypress`:
   /// text committed until [`Self::key_pressed`] belongs to that press.
+  ///
+  /// Not so for a press made while a composition is open. That press is the
+  /// input method's whatever it commits: GTK closes its own sequences
+  /// (`preedit-end`) just before the `commit` they produce, so the Return
+  /// that confirms a Ctrl+Shift+U code point would otherwise look typed and
+  /// reach Compose as a newline.
   pub(crate) fn filter_started(&mut self) {
-    self.typed = Some(String::new());
+    self.typed = (!self.composing).then(String::new);
   }
 
   /// What a key press turns into. `filtered` is what
@@ -124,6 +143,11 @@ impl ImeState {
   pub(crate) fn key_pressed(&mut self, keycode: u16, filtered: bool) -> KeyPress {
     let typed = self.typed.take().unwrap_or_default();
     if filtered && typed.is_empty() {
+      // Whatever release was still paired with this key is stale now.
+      self.pressed.remove(&keycode);
+      if let Some(held) = self.held.get_mut(&keycode) {
+        held.withheld = true;
+      }
       return KeyPress::Withheld;
     }
     self.pressed.insert(keycode);
@@ -132,8 +156,18 @@ impl ImeState {
 
   /// Records a key press and answers whether it is an auto-repeat, i.e. the
   /// key was already held. Called for every press, before the input method.
+  ///
+  /// A press that follows a withheld one is that same press handed back by
+  /// the input method (see [`HeldKey::withheld`]), and keeps its answer.
   pub(crate) fn press_is_repeat(&mut self, keycode: u16) -> bool {
-    !self.held.insert(keycode)
+    match self.held.get_mut(&keycode) {
+      Some(held) if held.withheld => held.withheld = false,
+      Some(held) => held.repeat = true,
+      None => {
+        self.held.insert(keycode, HeldKey::default());
+      }
+    }
+    self.held[&keycode].repeat
   }
 
   /// Records a key release; see [`Self::press_is_repeat`].
@@ -148,9 +182,12 @@ impl ImeState {
 
   /// Whether a key release should reach Compose. Releases whose press was
   /// withheld are dropped, so Compose never sees a KeyUp without its KeyDown.
+  ///
+  /// A filtered release leaves the pairing alone: an input method that
+  /// answers asynchronously claims the release too and hands it back, and
+  /// that second sighting is the one Compose gets.
   pub(crate) fn key_released(&mut self, keycode: u16, filtered: bool) -> bool {
-    let paired = self.pressed.remove(&keycode);
-    paired && !filtered
+    !filtered && self.pressed.remove(&keycode)
   }
 
   /// The modifier state to publish, or `None` when it did not change.
@@ -214,6 +251,65 @@ mod tests {
     s.filter_started();
     assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
     assert!(!s.key_released(KEY_A, false));
+  }
+
+  /// GTK's own sequences end just before they commit: the Return that
+  /// confirms a Ctrl+Shift+U code point arrives with the composition open,
+  /// then `preedit-end`, then `commit`. It was not typed, and must not reach
+  /// Compose as a newline after the character.
+  #[test]
+  fn key_that_ends_a_sequence_is_withheld() {
+    let mut s = ImeState::new();
+    s.preedit_started();
+    s.filter_started();
+    s.preedit_ended();
+    assert_eq!(s.commit("\u{e9}"), Commit::Text);
+    assert_eq!(s.key_pressed(KEY_RETURN, true), KeyPress::Withheld);
+    assert!(!s.key_released(KEY_RETURN, false));
+  }
+
+  /// An input method that answers asynchronously (ibus without its key
+  /// snooper, fcitx) claims the press, then hands the same event back once
+  /// the engine has declined it; the release goes the same way. Compose gets
+  /// one fresh press, its text and one release — not a "repeat" and no lost
+  /// key-up.
+  #[test]
+  fn press_handed_back_by_the_input_method_is_not_a_repeat() {
+    let mut s = ImeState::new();
+    // First sighting: sent to the engine, claimed for now.
+    assert!(!s.press_is_repeat(KEY_A));
+    s.filter_started();
+    assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
+    // Handed back: the fallback context types it.
+    assert!(!s.press_is_repeat(KEY_A));
+    s.filter_started();
+    assert_eq!(s.commit("a"), Commit::Typed);
+    assert_eq!(s.key_pressed(KEY_A, true), delivered("a"));
+    // A real auto-repeat, which makes the same round trip.
+    assert!(s.press_is_repeat(KEY_A));
+    s.filter_started();
+    assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
+    assert!(s.press_is_repeat(KEY_A));
+    s.filter_started();
+    assert_eq!(s.commit("a"), Commit::Typed);
+    assert_eq!(s.key_pressed(KEY_A, true), delivered("a"));
+    // The release: claimed, then handed back.
+    s.release_held(KEY_A);
+    assert!(!s.key_released(KEY_A, true));
+    s.release_held(KEY_A);
+    assert!(s.key_released(KEY_A, false));
+    assert!(!s.press_is_repeat(KEY_A));
+  }
+
+  /// A release the input method kept for good leaves a pairing behind; the
+  /// next press of that key, if withheld, must not inherit it.
+  #[test]
+  fn withheld_press_drops_a_stale_pairing() {
+    let mut s = ImeState::new();
+    assert_eq!(s.key_pressed(KEY_RETURN, false), delivered(""));
+    assert!(!s.key_released(KEY_RETURN, true));
+    assert_eq!(s.key_pressed(KEY_RETURN, true), KeyPress::Withheld);
+    assert!(!s.key_released(KEY_RETURN, false));
   }
 
   /// Text that confirms a composition is the input method's, not the key's,

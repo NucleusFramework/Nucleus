@@ -23,6 +23,7 @@ import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.window.tao.isRepeat
+import java.awt.event.KeyEvent
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -98,7 +99,20 @@ internal object KeyTypedOrderHeadfulCases {
             driver.click(Offset(CLICK_INSET_PX, CLICK_INSET_PX))
             awaitUntil("window focused, with the focus outside the field") { window.isFocused && otherFocused.value }
 
-            TYPED.forEach { driver.type(it) }
+            // Held for as long as a person holds a key, not released in the same
+            // instant: an input method that answers asynchronously hands the press
+            // back while the key is still down.
+            TYPED.forEach { letter ->
+                val code = KeyEvent.getExtendedKeyCodeForChar(letter.code)
+                val typed =
+                    HeadfulRobot.inject { robot ->
+                        robot.keyPress(code)
+                        Thread.sleep(KEY_HOLD_MILLIS)
+                        robot.keyRelease(code)
+                        true
+                    }
+                check(typed == true) { "the AWT Robot could not type '$letter': ${HeadfulRobot.unavailableReason}" }
+            }
 
             val expected = TYPED.flatMap { listOf("down", "typed $it", "up") }
             val state = { "field=\"${text.value}\" events=$seen" }
@@ -116,4 +130,5 @@ internal object KeyTypedOrderHeadfulCases {
 
     private const val TYPED = "quit"
     private const val CLICK_INSET_PX = 40f
+    private const val KEY_HOLD_MILLIS = 80L
 }
