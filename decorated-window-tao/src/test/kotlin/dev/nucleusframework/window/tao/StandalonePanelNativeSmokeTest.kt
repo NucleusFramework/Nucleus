@@ -85,9 +85,11 @@ class StandalonePanelNativeSmokeTest {
  * inbound callbacks.
  */
 private class NoOpInboundDnDCallback : NativeTaoWindowsDndBridge.Callback {
-    override fun onDragFiles(
+    override fun onDragData(
         hwnd: Long,
         files: Array<String>?,
+        text: String?,
+        uris: Array<String>?,
     ) = Unit
 
     override fun onDragEnter(
@@ -95,7 +97,7 @@ private class NoOpInboundDnDCallback : NativeTaoWindowsDndBridge.Callback {
         x: Int,
         y: Int,
         keyState: Int,
-        hasFiles: Boolean,
+        hasData: Boolean,
     ): Int = NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
 
     override fun onDragOver(
@@ -103,7 +105,7 @@ private class NoOpInboundDnDCallback : NativeTaoWindowsDndBridge.Callback {
         x: Int,
         y: Int,
         keyState: Int,
-        hasFiles: Boolean,
+        hasData: Boolean,
     ): Int = NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
 
     override fun onDragLeave(hwnd: Long) = Unit
@@ -114,5 +116,7 @@ private class NoOpInboundDnDCallback : NativeTaoWindowsDndBridge.Callback {
         y: Int,
         keyState: Int,
         files: Array<String>?,
+        text: String?,
+        uris: Array<String>?,
     ): Int = NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
 }
