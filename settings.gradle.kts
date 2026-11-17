@@ -1,3 +1,5 @@
+import org.gradle.api.specs.Specs
+
 pluginManagement {
     repositories {
         google()
@@ -29,7 +31,7 @@ develocity {
     if (System.getenv("GITHUB_ACTIONS") == "true") {
         buildScan.publishing.onlyIf { it.buildResult.failures.isNotEmpty() }
     } else {
-        buildScan.publishing.onlyIf(org.gradle.api.specs.Specs.satisfyNone())
+        buildScan.publishing.onlyIf(Specs.satisfyNone())
     }
 }
 

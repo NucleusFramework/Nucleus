@@ -25,11 +25,11 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
+import androidx.compose.ui.window.rememberDialogState
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.DecoratedDialog
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoWindow
-import androidx.compose.ui.window.rememberDialogState
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import java.util.concurrent.atomic.AtomicInteger
 
