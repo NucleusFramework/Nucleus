@@ -21,22 +21,24 @@ fetch_tao() {
 }
 ```
 
-## The patch
+## Where the changes live
 
-`nucleus.patch` is the whole difference between pristine tao 0.37.2 and
-`../tao/`, as `diff -ruN --exclude=target a b` (27 files). Applied to a
-pristine 0.37.2 with `patch -p1`, it reproduces `../tao/` exactly; regenerate
-it whenever `../tao/` changes (see the end of this file).
+Nucleus's changes are made directly in `../tao/`, marked `PATCH(nucleus)` or
+`Nucleus patch` in the code. No patch file is kept: the changes are whatever
+differs between `../tao/` and pristine tao at the pinned version. To see them,
+from `decorated-window-tao/src/main/native`:
 
-It replaces the numbered series (`0001`–`0019`) the 0.35.0 tree used. That
-series covered about a fifth of the Nucleus commits that touched tao, two of
-its patches (`0001`, `0002`) described code `08bc6b80a` had already removed,
-and its patches overlapped in the same hunks, so they could not be re-based
-one at a time. The catalog below takes over their job of explaining each
-change; the old descriptions are in git history
+```bash
+W=$(mktemp -d) && fetch_tao 0.37.2 "$W/crates"
+diff -ruN --exclude=target "$W/crates/tao-0.37.2" vendor/tao
+```
+
+The 0.35.0 tree kept a numbered patch series (`0001`–`0019`). It covered
+about a fifth of the Nucleus commits that touched tao, two of its patches
+described code `08bc6b80a` had already removed, and its patches overlapped, so
+it could not drive a bump. The catalog below takes over its job of explaining
+each change; the old descriptions are in git history
 (`git log -- decorated-window-tao/src/main/native/vendor/tao-patches`).
-
-In the code, Nucleus changes are marked `PATCH(nucleus)` or `Nucleus patch`.
 
 ## Catalog
 
@@ -189,45 +191,48 @@ After #1420 ships in a release, drop the macOS synchronous-setter change.
 
 ## Bump procedure
 
-The patch is too entangled to re-apply hunk by hunk, so a bump is a three-way
-merge with the old pristine version as the base:
+Diff the vendored tree against pristine tao at the pinned version, then
+re-apply that diff on the new version. Below, the diff is the commit `nucleus`
+(pristine `OLD` → `../tao/`), and `git cherry-pick` re-applies it on pristine
+`NEW` three-way: a hunk whose context upstream changed is merged rather than
+rejected, what cannot be merged is left as conflict markers, and a file that
+upstream deleted or added is a conflict too. (`git apply --3way` on a patch file
+does the same for edits, but gives up on the whole diff when a file it touches
+no longer exists; on the 0.37.2 bump that was `windows/minimal_ime.rs`.) From
+`decorated-window-tao/src/main/native`:
 
 ```bash
-OLD=0.37.2 NEW=0.38.0   # for example
-VENDOR=<nucleus>/decorated-window-tao/src/main/native/vendor/tao
-W=$(mktemp -d) && REG="$W/crates" && fetch_tao $OLD "$REG" && fetch_tao $NEW "$REG"
-cd "$W" && git init -q -b base merge && cd merge
-rsync -a "$REG/tao-$OLD/" . && git add -A && git commit -qm "tao $OLD"
-git checkout -qb nucleus && rsync -a --delete --exclude=.git --exclude=target "$VENDOR/" . \
-  && git add -A && git commit -qm nucleus
-git checkout -qb upstream base && rsync -a --delete --exclude=.git "$REG/tao-$NEW/" . \
+OLD=0.37.2 NEW=0.38.0   # the pinned version, and the one to move to
+NATIVE=$PWD W=$(mktemp -d)
+fetch_tao $OLD "$W/crates" && fetch_tao $NEW "$W/crates"
+cd "$W" && git init -q -b base tree && cd tree
+rsync -a "$W/crates/tao-$OLD/" . && git add -A && git commit -qm "tao $OLD"
+git checkout -qb nucleus && rsync -a --delete --exclude=.git --exclude=target "$NATIVE/vendor/tao/" . \
+  && git add -A && git commit -qm nucleus        # the Nucleus diff: git show nucleus
+git checkout -qb new base && rsync -a --delete --exclude=.git "$W/crates/tao-$NEW/" . \
   && git add -A && git commit -qm "tao $NEW"
-git checkout -qb merge nucleus && git -c merge.conflictStyle=zdiff3 merge upstream
+git -c merge.conflictStyle=zdiff3 cherry-pick --no-commit nucleus   # re-apply it on NEW
+git diff --name-only --diff-filter=U              # files left with conflicts
 ```
 
-Resolve each conflict, then **check every merged file both ways**, conflicted
-or not: `git diff nucleus -- <file>` must show only upstream's changes, and
-`git diff upstream -- <file>` only Nucleus's. A clean merge can still undo a
-Nucleus change, and a `zdiff3` "ours" block can leave Nucleus lines out. On the
-0.37.2 bump this check caught a `Propagation::Stop` flipped back to `Proceed`, a
-removed `is_wayland` that Nucleus still uses, a re-added `RegisterTouchWindow`,
-and upstream's IME text event typing every commit twice.
+Resolve each conflict. Then **check every file the diff touches both ways**,
+conflicted or not: `git diff nucleus -- <file>` must show only upstream's
+changes, and `git diff new -- <file>` only Nucleus's. A hunk can apply cleanly
+and still mean something else on the new code, a hunk upstream already made
+can be merged away silently, and a `zdiff3` conflict block can leave Nucleus
+lines out. On the 0.37.2 bump this check caught a
+`Propagation::Stop` flipped back to `Proceed`, a removed `is_wayland` that
+Nucleus still uses, a re-added `RegisterTouchWindow`, and upstream's IME text
+event typing every commit twice.
 
-Then copy the merged tree into `../tao/`, set `tao = "<NEW>"` in
-`../../Cargo.toml`, `cargo update -p tao`, `cargo check` for each target
-(`x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`),
-run `:decorated-window-tao:check` and the headful suite on each OS, regenerate
-`nucleus.patch`, and update the catalog.
-
-## Regenerating `nucleus.patch`
-
-From `decorated-window-tao/src/main/native`:
+Then copy the result into the vendor directory:
 
 ```bash
-W=$(mktemp -d) && fetch_tao 0.37.2 "$W/crates" && P="$W/crates/tao-0.37.2"
-cp -r "$P" "$W/a" && cp -r vendor/tao "$W/b" && rm -rf "$W/b/target"
-(cd "$W" && diff -ruN --exclude=target a b) > vendor/tao-patches/nucleus.patch || true  # 1 = trees differ
-# check: it must reproduce the tree
-cp -r "$P" "$W/check" && (cd "$W/check" && patch -s -p1) < vendor/tao-patches/nucleus.patch
-diff -r --exclude=target "$W/check" vendor/tao && echo reproduces
+rsync -a --delete --exclude=.git --exclude=target ./ "$NATIVE/vendor/tao/"
 ```
+
+Set `tao = "<NEW>"` in `../../Cargo.toml`, run `cargo update -p tao`,
+`cargo check` for each target (`x86_64-unknown-linux-gnu`,
+`aarch64-apple-darwin`, `x86_64-pc-windows-msvc`),
+`:decorated-window-tao:check`, and the headful suite on each OS. Update the
+pinned version and the catalog in this file.
