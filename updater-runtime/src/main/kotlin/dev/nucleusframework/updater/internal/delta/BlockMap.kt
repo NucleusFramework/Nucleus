@@ -167,6 +167,8 @@ internal object BlockMapCodec {
 /**
  * Reads [input] to the end, failing with [DeltaUnavailableException] instead of buffering more than
  * [maxBytes]: the length of a response or an inflated stream is decided by the server, not by us.
+ * Used for any bounded read — block maps, artifact tails, feed companions — so its message names
+ * no particular kind of data.
  */
 internal fun readAtMost(
     input: InputStream,
@@ -179,7 +181,7 @@ internal fun readAtMost(
         val read = input.read(buffer)
         if (read == -1) break
         total += read
-        if (total > maxBytes) throw DeltaUnavailableException("Block map data exceeds $maxBytes bytes")
+        if (total > maxBytes) throw DeltaUnavailableException("Data exceeds the $maxBytes-byte limit")
         out.write(buffer, 0, read)
     }
     return out.toByteArray()

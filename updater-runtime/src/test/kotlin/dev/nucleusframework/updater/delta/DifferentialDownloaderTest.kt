@@ -153,6 +153,21 @@ class DifferentialDownloaderTest {
     }
 
     @Test
+    fun `an artifact tail whose body stalls fails instead of hanging`() {
+        server.stallNext(PATH, afterBytes = 10)
+        val url = server.baseUrl + PATH
+
+        val elapsed =
+            measureTimeMillis {
+                assertThrows(Exception::class.java) {
+                    downloader(stallTimeout = Duration.ofMillis(500)).readRange(url, 0, 999)
+                }
+            }
+
+        assertTrue("the stalled tail must be abandoned, not waited out ($elapsed ms)", elapsed < 10_000)
+    }
+
+    @Test
     fun `an expired redirect target is re-resolved through the original URL`() {
         val cdnHost = server.baseUrl.replace("127.0.0.1", "localhost")
         // The first pre-signed URL stops working after one range; asking again yields a fresh one.

@@ -1,7 +1,9 @@
 package dev.nucleusframework.updater.internal.delta
 
 import dev.nucleusframework.updater.internal.ChecksumVerifier
+import dev.nucleusframework.updater.internal.StallGuardedInputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.coroutineScope
@@ -20,8 +22,6 @@ import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.security.DigestInputStream
 import java.time.Duration
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 
 /** Everything needed to assemble one artifact from an older copy of it plus ranged requests. */
 internal class DeltaDownload(
@@ -110,7 +110,8 @@ internal class DifferentialDownloader(
 
     /**
      * Fetches `[start, endInclusive]` of [url] into memory, for reading an artifact's own tail.
-     * Reads at most the requested length, however much the server sends.
+     * Reads at most the requested length, however much the server sends. It is not retried: any
+     * failure, a stalled body included, ends the delta and the caller downloads the full artifact.
      */
     fun readRange(
         url: String,
@@ -124,7 +125,7 @@ internal class DifferentialDownloader(
             throw DeltaUnavailableException("Server answered HTTP ${response.statusCode()} for a range on $url")
         }
         val expected = endInclusive - start + 1
-        val body = response.body().use { readAtMost(it, expected) }
+        val body = StallGuardedInputStream(response.body(), stallTimeout).use { readAtMost(it, expected) }
         if (body.size.toLong() != expected) {
             throw DeltaUnavailableException("Range response returned ${body.size} of $expected bytes")
         }
@@ -320,9 +321,9 @@ internal class DifferentialDownloader(
     }
 
     /**
-     * Writes [body] into place and returns how many bytes it held. Nothing else bounds a blocked
-     * read of a response body, so a watchdog closes [body] — which ends the read — once no data has
-     * arrived for [stallTimeout], and also when the download is cancelled.
+     * Writes [body] into place and returns how many bytes it held. The body is closed — which ends a
+     * blocked read — once no data has arrived for [stallTimeout], and also when the download is
+     * cancelled.
      */
     private suspend fun readBody(
         body: InputStream,
@@ -332,29 +333,22 @@ internal class DifferentialDownloader(
     ): Long =
         coroutineScope {
             val operation = placed.operation
-            val lastData = AtomicLong(System.nanoTime())
-            val stalled = AtomicBoolean()
-            val watchdog =
+            val input = StallGuardedInputStream(body, stallTimeout)
+            val closeOnCancel =
                 launch {
                     try {
-                        while (true) {
-                            val idle = Duration.ofNanos(System.nanoTime() - lastData.get())
-                            if (idle >= stallTimeout) break
-                            delay(stallTimeout.minus(idle).toMillis() + 1)
-                        }
-                        stalled.set(true)
+                        awaitCancellation()
                     } finally {
-                        body.close()
+                        input.close()
                     }
                 }
             var received = 0L
             try {
-                body.use { input ->
+                input.use {
                     val buffer = ByteArray(BUFFER_SIZE)
                     while (true) {
                         val read = input.read(buffer)
                         if (read == -1) break
-                        lastData.set(System.nanoTime())
                         if (received + read > operation.length) {
                             throw DeltaUnavailableException(
                                 "${describe(operation)} returned more than ${operation.length} bytes",
@@ -366,12 +360,14 @@ internal class DifferentialDownloader(
                     }
                 }
             } catch (e: IOException) {
-                if (stalled.get()) throw stallException(operation, e)
+                if (input.stalled) throw stallException(operation, e)
                 throw e
             } finally {
-                watchdog.cancel()
+                closeOnCancel.cancel()
             }
-            if (stalled.get()) throw stallException(operation, cause = null)
+            // A stall that closed the body may end the read as end-of-stream rather than an error.
+            // A range that arrived whole before the guard fired is complete all the same.
+            if (input.stalled && received != operation.length) throw stallException(operation, cause = null)
             received
         }
 

@@ -71,6 +71,22 @@ class SeededInstallerTest {
                 currentVersion = "1.0.0",
             ),
         )
+        // Only the path names the release: a version in a signed query string is left alone.
+        assertEquals(
+            "https://cdn.example.com/1.0.0/App-1.0.0.exe?token=2.0.0#2.0.0",
+            SeededInstaller.previousReleaseUrl(
+                "https://cdn.example.com/2.0.0/App-2.0.0.exe?token=2.0.0#2.0.0",
+                newVersion = "2.0.0",
+                currentVersion = "1.0.0",
+            ),
+        )
+        assertNull(
+            SeededInstaller.previousReleaseUrl(
+                "https://cdn.example.com/asset?version=2.0.0",
+                newVersion = "2.0.0",
+                currentVersion = "1.0.0",
+            ),
+        )
         // A private repository's API URL names the asset by id: there is no previous URL to derive.
         assertNull(
             SeededInstaller.previousReleaseUrl(

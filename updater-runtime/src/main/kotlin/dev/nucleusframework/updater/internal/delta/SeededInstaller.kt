@@ -1,6 +1,7 @@
 package dev.nucleusframework.updater.internal.delta
 
 import java.io.File
+import java.net.URI
 import java.util.Locale
 
 /**
@@ -34,6 +35,9 @@ internal object SeededInstaller {
     /**
      * electron-builder's `updaterCacheDirName` for an app whose executable is [executableName]: the
      * plugin's npm-name normalisation (which `sanitizeFileName` leaves unchanged) plus `-updater`.
+     *
+     * The normalisation repeats `toNpmPackageName` in the plugin's `AbstractElectronBuilderPackageTask`,
+     * which is in a separate Gradle build the runtime cannot depend on: change both together.
      */
     fun updaterCacheDirName(executableName: String): String =
         executableName
@@ -46,17 +50,26 @@ internal object SeededInstaller {
      * Where the release for [currentVersion] published the artifact found at [newUrl], assuming the
      * version appears in the URL wherever it differs between releases: the artifact name, as in
      * electron-builder's default `artifactName`, and the release's tag or folder. Deriving it from the
-     * URL keeps whatever tag scheme the release host uses. `null` when [newUrl] does not contain
+     * URL keeps whatever tag scheme the release host uses. Only the path is rewritten: a query or
+     * fragment (a signed token, say) is kept as it is. `null` when the path does not contain
      * [newVersion], as with an API URL that names the asset by id.
      */
     fun previousReleaseUrl(
         newUrl: String,
         newVersion: String,
         currentVersion: String,
-    ): String? =
-        newUrl
-            .takeIf { newVersion.isNotEmpty() && newVersion != currentVersion && it.contains(newVersion) }
-            ?.replace(newVersion, currentVersion)
+    ): String? {
+        if (newVersion.isEmpty() || newVersion == currentVersion) return null
+        val uri = runCatching { URI(newUrl) }.getOrNull() ?: return null
+        val path = uri.rawPath?.takeIf { it.contains(newVersion) } ?: return null
+        return buildString {
+            uri.scheme?.let { append(it).append(':') }
+            uri.rawAuthority?.let { append("//").append(it) }
+            append(path.replace(newVersion, currentVersion))
+            uri.rawQuery?.let { append('?').append(it) }
+            uri.rawFragment?.let { append('#').append(it) }
+        }
+    }
 
     private fun currentExecutablePath(): String? =
         ProcessHandle

@@ -71,6 +71,9 @@ outputs:
   pkg:
     description: 'Path to the universal PKG'
     value: ${{ steps.build.outputs.pkg }}
+  blockmap:
+    description: 'Path to the universal ZIP''s block map, for differential updates; empty if it could not be generated'
+    value: ${{ steps.build.outputs.blockmap }}
 
 runs:
   using: composite

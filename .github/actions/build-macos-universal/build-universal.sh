@@ -626,3 +626,10 @@ ls -lh "$OUTPUT_DIR"
 echo "zip=$ZIP_OUT" >> "$GITHUB_OUTPUT"
 echo "dmg=$DMG_OUT" >> "$GITHUB_OUTPUT"
 echo "pkg=$PKG_OUT" >> "$GITHUB_OUTPUT"
+# Empty when generation failed: the release then ships without a block map, and updaters download
+# the full ZIP.
+if [[ -f "$ZIP_OUT.blockmap" ]]; then
+  echo "blockmap=$ZIP_OUT.blockmap" >> "$GITHUB_OUTPUT"
+else
+  echo "blockmap=" >> "$GITHUB_OUTPUT"
+fi
