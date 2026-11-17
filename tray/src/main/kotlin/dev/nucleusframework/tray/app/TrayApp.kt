@@ -453,6 +453,12 @@ public fun NucleusApplicationScope.TrayApp(
     }
 }
 
+private fun anchorKey(
+    size: DpSize,
+    horizontalOffset: Int,
+    verticalOffset: Int,
+): Any = Triple(size, horizontalOffset, verticalOffset)
+
 // --------------------- Core implementation (Tao backend only) ---------------------
 
 /**
@@ -592,7 +598,9 @@ private fun TrayAppImplPanel(
     var popupScreenPos by remember { mutableStateOf(WindowPosition.Absolute(0.dp, 0.dp)) }
 
     // Position pre-computed at click time so the LaunchedEffect can use it immediately.
-    var pendingPosition by remember { mutableStateOf<WindowPosition?>(null) }
+    // Keyed by the geometry it was computed for: a show that never consumed it (hidden again
+    // first) must not hand a later show, after a resize, the old size's position.
+    var pendingPosition by remember { mutableStateOf<Pair<Any, WindowPosition>?>(null) }
 
     // Visibility controller for exit-finish observation; content will NOT be disposed.
     val visibleState = remember { MutableTransitionState(false) }
@@ -655,6 +663,7 @@ private fun TrayAppImplPanel(
                 val widthPx = currentWindowSize.width.value.toInt()
                 val heightPx = currentWindowSize.height.value.toInt()
                 pendingPosition =
+                    anchorKey(currentWindowSize, horizontalOffset, verticalOffset) to
                     getTrayWindowPositionForInstance(
                         instanceKey,
                         widthPx,
@@ -676,7 +685,10 @@ private fun TrayAppImplPanel(
         if (isVisible) {
             lastShownAtMs.set(System.currentTimeMillis())
             if (!popupOnScreen) {
-                val preComputed = pendingPosition
+                val preComputed =
+                    pendingPosition
+                        ?.takeIf { it.first == anchorKey(currentWindowSize, horizontalOffset, verticalOffset) }
+                        ?.second
                 pendingPosition = null
                 val workArea = TrayScreenGeometry.workAreaLogical()
                 val usable = { pos: WindowPosition -> isUsableAnchorPosition(pos, workArea) }
@@ -746,7 +758,10 @@ private fun TrayAppImplPanel(
     }
 
     // Re-anchor while visible when the popup size or offsets change.
-    LaunchedEffect(currentWindowSize, horizontalOffset, verticalOffset) {
+    // Keyed on popupOnScreen too: a resize or offset change landing while a show is still
+    // resolving its position (the show coroutine captured the old geometry) is applied as soon
+    // as the popup is up.
+    LaunchedEffect(currentWindowSize, horizontalOffset, verticalOffset, popupOnScreen) {
         if (popupOnScreen) {
             val w = currentWindowSize.width.value.toInt()
             val h = currentWindowSize.height.value.toInt()
@@ -860,7 +875,9 @@ private fun NucleusApplicationScope.TrayAppImplWindow(
     var shouldShowWindow by remember { mutableStateOf(false) }
 
     // Position pre-computed at click time so the LaunchedEffect can use it immediately.
-    var pendingPosition by remember { mutableStateOf<WindowPosition?>(null) }
+    // Keyed by the geometry it was computed for: a show that never consumed it (hidden again
+    // first) must not hand a later show, after a resize, the old size's position.
+    var pendingPosition by remember { mutableStateOf<Pair<Any, WindowPosition>?>(null) }
 
     val windowState =
         rememberWindowState(
@@ -910,6 +927,7 @@ private fun NucleusApplicationScope.TrayAppImplWindow(
                 val w = currentWindowSize.width.value.toInt()
                 val h = currentWindowSize.height.value.toInt()
                 pendingPosition =
+                    anchorKey(currentWindowSize, horizontalOffset, verticalOffset) to
                     getTrayWindowPositionForInstance(instanceKey, w, h, horizontalOffset, verticalOffset)
             }
             trayAppState.show()
@@ -920,7 +938,10 @@ private fun NucleusApplicationScope.TrayAppImplWindow(
         visibleState.targetState = isVisible
         if (isVisible) {
             if (!shouldShowWindow) {
-                val preComputed = pendingPosition
+                val preComputed =
+                    pendingPosition
+                        ?.takeIf { it.first == anchorKey(currentWindowSize, horizontalOffset, verticalOffset) }
+                        ?.second
                 pendingPosition = null
                 val widthPx = currentWindowSize.width.value.toInt()
                 val heightPx = currentWindowSize.height.value.toInt()

@@ -15,7 +15,12 @@ class WindowsTrayAppE2ETest {
 
     private fun seed(): Long = System.getProperty("nucleus.tray.torture.seed")?.toLongOrNull() ?: System.nanoTime()
 
-    private fun scenario(name: String) {
+    private fun scenario(
+        name: String,
+        mainClass: String = "dev.nucleusframework.tray.windows.TrayAppProbeMainKt",
+        extra: List<String> = emptyList(),
+        timeoutS: Long = 90,
+    ) {
         if (!isWindows) return
         val seed = seed()
         println("[torture] TrayApp $name seed=$seed")
@@ -25,14 +30,15 @@ class WindowsTrayAppE2ETest {
                 java,
                 "-cp",
                 System.getProperty("java.class.path"),
-                "dev.nucleusframework.tray.windows.TrayAppProbeMainKt",
+                mainClass,
                 name,
                 seed.toString(),
+                *extra.toTypedArray(),
             ).redirectErrorStream(true).start()
         val lines = mutableListOf<String>()
         val reader = Thread { process.inputStream.bufferedReader().forEachLine { synchronized(lines) { lines += it } } }
         reader.start()
-        val exited = process.waitFor(90, TimeUnit.SECONDS)
+        val exited = process.waitFor(timeoutS, TimeUnit.SECONDS)
         if (!exited) process.destroyForcibly()
         reader.join(2000)
         val checks = synchronized(lines) { lines.filter { it.startsWith("CHECK ") || it.startsWith("DONE") } }
@@ -58,4 +64,18 @@ class WindowsTrayAppE2ETest {
     @Test fun `the menu still works next to the popup`() = scenario("menu")
 
     @Test fun `removing TrayApp takes popup and icon away`() = scenario("remove")
+
+    private val rounds = System.getProperty("nucleus.tray.torture.iterations")?.toIntOrNull() ?: 60
+
+    @Test fun `seeded TrayApp fuzz holds every invariant`() =
+        scenario("fuzz", FUZZ_MAIN, listOf(rounds.toString()), timeoutS = 120L + rounds * 4)
+
+    @Test fun `two TrayApps fuzzed together stay on their own icons`() =
+        scenario("multi", FUZZ_MAIN, listOf(rounds.toString()), timeoutS = 120L + rounds * 5)
+
+    @Test fun `outside clicks dismiss per dismissMode`() = scenario("dismiss", FUZZ_MAIN, listOf("0"))
+
+    private companion object {
+        const val FUZZ_MAIN = "dev.nucleusframework.tray.windows.TrayAppFuzzMainKt"
+    }
 }

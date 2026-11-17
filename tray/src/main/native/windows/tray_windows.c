@@ -479,22 +479,21 @@ int tray_get_notification_icons_position(struct tray *tray, int *x, int *y)
 
 const char *tray_get_notification_icons_region(void)
 {
-    RECT r;
-    POINT p = { 0, 0 };
+    /* The notification area sits at the trailing end of the taskbar: right on a horizontal LTR
+     * taskbar, left on RTL, bottom on a vertical one. TrayNotifyWnd no longer locates it on
+     * Windows 11, so read the taskbar edge from the shell instead. */
+    APPBARDATA abd;
+    ZeroMemory(&abd, sizeof(abd));
+    abd.cbSize = sizeof(abd);
     HWND taskbar = FindWindowW(L"Shell_TrayWnd", NULL);
-    HWND notify = taskbar ? FindWindowExW(taskbar, NULL, L"TrayNotifyWnd", NULL) : NULL;
-    if (notify && GetWindowRect(notify, &r)) {
-        p.x = r.left;
-        p.y = r.top;
+    abd.hWnd = taskbar;
+    UINT edge = ABE_BOTTOM;
+    if (SHAppBarMessage(ABM_GETTASKBARPOS, &abd)) edge = abd.uEdge;
+    BOOL rtl = taskbar && (GetWindowLongW(taskbar, GWL_EXSTYLE) & WS_EX_LAYOUTRTL);
+    switch (edge) {
+    case ABE_TOP:   return rtl ? "top-left" : "top-right";
+    case ABE_LEFT:  return "bottom-left";
+    case ABE_RIGHT: return "bottom-right";
+    default:        return rtl ? "bottom-left" : "bottom-right";
     }
-    MONITORINFO mi;
-    ZeroMemory(&mi, sizeof(mi));
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfoW(MonitorFromPoint(p, MONITOR_DEFAULTTOPRIMARY), &mi);
-    LONG mid_x = (mi.rcMonitor.right + mi.rcMonitor.left) / 2;
-    LONG mid_y = (mi.rcMonitor.bottom + mi.rcMonitor.top) / 2;
-    if (p.x < mid_x && p.y < mid_y) return "top-left";
-    if (p.x >= mid_x && p.y < mid_y) return "top-right";
-    if (p.x < mid_x && p.y >= mid_y) return "bottom-left";
-    return "bottom-right";
 }

@@ -4,6 +4,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.tray.internal.MacTrayInitializer
+import dev.nucleusframework.tray.internal.WindowsTrayInitializer
 import dev.nucleusframework.tray.utils.AppIdProvider
 import dev.nucleusframework.tray.utils.TrayClickPoint
 import dev.nucleusframework.tray.utils.TrayClickTracker
@@ -127,7 +128,14 @@ public fun getTrayWindowPositionForInstance(
 ): WindowPosition {
     return when (Platform.Current) {
         Platform.Windows -> {
-            val raw = TrayClickTracker.lastClick(instanceId)
+            // No click yet (a programmatic show, or a tray just recreated): ask the shell now
+            // rather than falling back to a corner guess.
+            val raw =
+                TrayClickTracker.lastClick(instanceId)
+                    ?: run {
+                        WindowsTrayInitializer.refreshPosition(instanceId)
+                        TrayClickTracker.lastClick(instanceId)
+                    }
             if (raw == null) {
                 debugln {
                     "[TrayPosition] getTrayWindowPositionForInstance: no position for $instanceId, using fallback"
@@ -242,17 +250,7 @@ private fun calculateWindowPositionFromClick(
         x += horizontalOffset
         y += verticalOffset
 
-        if (x < sb.x) {
-            x = sb.x
-        } else if (x + windowWidth > sb.x + sb.width) {
-            x = sb.x + sb.width - windowWidth
-        }
-        if (y < sb.y) {
-            y = sb.y
-        } else if (y + windowHeight > sb.y + sb.height) {
-            y = sb.y + sb.height - windowHeight
-        }
-        WindowPosition(x = x.dp, y = y.dp)
+        clampToWorkArea(x, y, windowWidth, windowHeight, sb)
     } else {
         var x = clickX - (windowWidth / 2)
         val anchorY = if (isTop) sb.y else (sb.y + sb.height)
@@ -261,17 +259,7 @@ private fun calculateWindowPositionFromClick(
         x += if (isRight) -horizontalOffset else horizontalOffset
         y += if (isTop) verticalOffset else -verticalOffset
 
-        if (x < sb.x) {
-            x = sb.x
-        } else if (x + windowWidth > sb.x + sb.width) {
-            x = sb.x + sb.width - windowWidth
-        }
-        if (y < sb.y) {
-            y = sb.y
-        } else if (y + windowHeight > sb.y + sb.height) {
-            y = sb.y + sb.height - windowHeight
-        }
-        WindowPosition(x = x.dp, y = y.dp)
+        clampToWorkArea(x, y, windowWidth, windowHeight, sb)
     }
 }
 
@@ -284,23 +272,36 @@ private fun fallbackCornerPosition(
     val screen = TrayScreenGeometry.workAreaLogical()
     return when (getTrayPosition()) {
         TrayPosition.TOP_LEFT ->
-            WindowPosition((screen.x + horizontalOffset).dp, (screen.y + verticalOffset).dp)
+            clampToWorkArea(screen.x + horizontalOffset, screen.y + verticalOffset, w, h, screen)
         TrayPosition.TOP_RIGHT ->
-            WindowPosition(
-                (screen.x + screen.width - w + horizontalOffset).dp,
-                (screen.y + verticalOffset).dp,
-            )
+            clampToWorkArea(screen.x + screen.width - w + horizontalOffset, screen.y + verticalOffset, w, h, screen)
         TrayPosition.BOTTOM_LEFT ->
-            WindowPosition(
-                (screen.x + horizontalOffset).dp,
-                (screen.y + screen.height - h + verticalOffset).dp,
-            )
+            clampToWorkArea(screen.x + horizontalOffset, screen.y + screen.height - h + verticalOffset, w, h, screen)
         TrayPosition.BOTTOM_RIGHT ->
-            WindowPosition(
-                (screen.x + screen.width - w + horizontalOffset).dp,
-                (screen.y + screen.height - h + verticalOffset).dp,
+            clampToWorkArea(
+                screen.x + screen.width - w + horizontalOffset,
+                screen.y + screen.height - h + verticalOffset,
+                w,
+                h,
+                screen,
             )
     }
+}
+
+/**
+ * Keeps a [width] x [height] window inside the work area [sb]. A window larger than the work area
+ * keeps its top-left corner on screen, where content and close affordances usually start.
+ */
+private fun clampToWorkArea(
+    x: Int,
+    y: Int,
+    width: Int,
+    height: Int,
+    sb: ScreenRect,
+): WindowPosition {
+    val cx = if (width >= sb.width) sb.x else x.coerceIn(sb.x, sb.x + sb.width - width)
+    val cy = if (height >= sb.height) sb.y else y.coerceIn(sb.y, sb.y + sb.height - height)
+    return WindowPosition(x = cx.dp, y = cy.dp)
 }
 
 private fun dpiAwareHalfIconOffset(): Int {

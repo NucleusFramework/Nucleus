@@ -265,6 +265,19 @@ class WindowsTrayTortureTest {
     }
 
     @Test
+    fun `the reported notification region is where the icon actually is`() {
+        if (!isWindows) return
+        init("region", menu = { Item("x") {} })
+        val (hwnd, uid) = identity("region")
+        val icon = awaitValue("icon rect") { Win32Probe.shellIconRect(hwnd, uid) }
+        val monitor = Win32Probe.workAreaOf(icon)
+        val bottom = icon.top >= (monitor.top + monitor.bottom) / 2
+        val right = icon.centerX >= (monitor.left + monitor.right) / 2
+        val expected = (if (bottom) "bottom" else "top") + "-" + (if (right) "right" else "left")
+        assertEquals(expected, WindowsTrayInitializer.notificationIconsRegion(), "icon at $icon in $monitor")
+    }
+
+    @Test
     fun `menu icons in submenus are released`() {
         if (!isWindows) return
         init("gdi", menu = null)
