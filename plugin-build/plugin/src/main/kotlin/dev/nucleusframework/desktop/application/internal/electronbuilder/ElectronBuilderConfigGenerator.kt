@@ -96,6 +96,9 @@ internal class ElectronBuilderConfigGenerator(
         appxManifest: AppXManifestFiles? = null,
     ): String {
         val yaml = StringBuilder()
+        // The OS the package is for, not the build host: identical when packaging (each format
+        // builds on its own OS only), but it keeps the generated config host-independent.
+        val targetOS = targetFormat.targetOS
 
         // --- Common settings ---
         // On macOS the product name must equal the prepackaged bundle's directory name: the DMG
@@ -111,8 +114,8 @@ internal class ElectronBuilderConfigGenerator(
         // the filesystem-safe name so it should be preferred it over appName on Linux so the install directory
         // matched what scripts would expect.
         val resolvedProductName =
-            macBundleName?.takeIf { currentOS == OS.MacOS && it.isNotBlank() }
-                ?: (if (currentOS == OS.Linux) executableName else null)
+            macBundleName?.takeIf { targetOS == OS.MacOS && it.isNotBlank() }
+                ?: (if (targetOS == OS.Linux) executableName else null)
                 ?: distributions.appName ?: distributions.packageName ?: executableName
                 ?: error(
                     "No appName, packageName, or executableName available for electron-builder config",
@@ -122,7 +125,7 @@ internal class ElectronBuilderConfigGenerator(
         // On macOS, appId must match the CFBundleIdentifier from the app's Info.plist,
         // otherwise productbuild will fail to find the component package during PKG creation.
         val appId =
-            if (currentOS == OS.MacOS) {
+            if (targetOS == OS.MacOS) {
                 distributions.macOS.bundleID?.takeIf { it.isNotBlank() }
                     ?: distributions.packageName?.let { "com.app.$it" }
             } else {
@@ -146,7 +149,7 @@ internal class ElectronBuilderConfigGenerator(
         appendToolsets(yaml, targetFormat)
 
         // --- Platform-specific config ---
-        when (currentOS) {
+        when (targetOS) {
             OS.MacOS ->
                 generateMacConfig(
                     yaml,
