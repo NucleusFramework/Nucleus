@@ -28,6 +28,8 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation(compose.desktop.currentOs)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.jna.jpms)
+    testImplementation(libs.jna.platform.jpms)
 }
 
 java {

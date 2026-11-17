@@ -3,17 +3,12 @@ package dev.nucleusframework.tray.internal.windows
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 
 /**
- * JNI bridge to the native Windows tray library (WinTray.dll).
- * Replaces the previous JNA-based approach.
- * Follows the same patterns as MacNativeBridge and LinuxNativeBridge.
+ * JNI bridge to `nucleus_tray.dll`. Every call taking a tray handle, except [nativeWakeTray] and
+ * [nativeGetIdentity], must come from that tray's own thread (see `tray.h`).
  */
 internal object WindowsNativeBridge {
     init {
-        NativeLibraryLoader.load(
-            "nucleus_tray",
-            WindowsNativeBridge::class.java,
-            
-        )
+        NativeLibraryLoader.load("nucleus_tray", WindowsNativeBridge::class.java)
     }
 
     // -- Tray lifecycle --
@@ -23,6 +18,7 @@ internal object WindowsNativeBridge {
         tooltip: String,
     ): Long
 
+    /** Removes the icon, destroys the window and frees the tray and its callbacks. */
     @JvmStatic external fun nativeFreeTray(handle: Long)
 
     @JvmStatic external fun nativeSetTrayIcon(
@@ -45,20 +41,28 @@ internal object WindowsNativeBridge {
         callback: Runnable?,
     )
 
+    /** Points the tray at a menu built with [nativeCreateMenuItems] (0 for none). */
     @JvmStatic external fun nativeSetTrayMenu(
         trayHandle: Long,
         menuHandle: Long,
     )
 
-    @JvmStatic external fun nativeClearTrayMenu(trayHandle: Long)
-
     @JvmStatic external fun nativeInitTray(handle: Long): Int
 
-    @JvmStatic external fun nativeLoopTray(blocking: Int): Int
+    /** Dispatches pending messages; with [wait], first sleeps until one arrives. */
+    @JvmStatic external fun nativePumpTray(
+        handle: Long,
+        wait: Boolean,
+    ): Int
 
+    /** Rebuilds the menu and pushes icon + tooltip to the shell. */
     @JvmStatic external fun nativeUpdateTray(handle: Long)
 
-    @JvmStatic external fun nativeExitTray()
+    /** Any thread: wakes [nativePumpTray]; [cancelMenu] also closes an open popup menu. */
+    @JvmStatic external fun nativeWakeTray(
+        handle: Long,
+        cancelMenu: Boolean,
+    )
 
     // -- Menu items --
 
@@ -67,10 +71,11 @@ internal object WindowsNativeBridge {
     @JvmStatic external fun nativeSetMenuItem(
         menuHandle: Long,
         index: Int,
-        text: String,
+        text: String?,
         iconPath: String?,
-        disabled: Int,
-        checked: Int,
+        disabled: Boolean,
+        checked: Boolean,
+        separator: Boolean,
     )
 
     @JvmStatic external fun nativeSetMenuItemCallback(
@@ -85,15 +90,22 @@ internal object WindowsNativeBridge {
         submenuHandle: Long,
     )
 
-    @JvmStatic external fun nativeFreeMenuItems(
-        menuHandle: Long,
-        count: Int,
-    )
+    /** Frees a menu built with [nativeCreateMenuItems], its submenus and their callbacks. */
+    @JvmStatic external fun nativeFreeMenuItems(menuHandle: Long)
 
-    // -- Position --
+    // -- Geometry --
 
-    /** Writes [x, y] into outXY. Returns non-zero if precise. */
-    @JvmStatic external fun nativeGetNotificationIconsPosition(outXY: IntArray): Int
+    /** Writes [hwnd, uid] of an initialized tray into [out]; false when it has none. */
+    @JvmStatic external fun nativeGetIdentity(
+        handle: Long,
+        out: LongArray,
+    ): Boolean
+
+    /** Writes [x, y] (physical px) into [outXY]. Returns non-zero if precise. */
+    @JvmStatic external fun nativeGetNotificationIconsPosition(
+        handle: Long,
+        outXY: IntArray,
+    ): Int
 
     @JvmStatic external fun nativeGetNotificationIconsRegion(): String?
 }

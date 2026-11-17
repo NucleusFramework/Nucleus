@@ -21,16 +21,10 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 internal class WindowsTrayMenuBuilderImpl(
-    private val iconPath: String,
-    private val tooltip: String = "",
-    private val onLeftClick: (() -> Unit)?,
     private val trayManager: WindowsTrayManager? = null,
 ) : TrayMenuBuilder {
     private val menuItems = mutableListOf<WindowsTrayManager.MenuItem>()
     private val lock = ReentrantLock()
-
-    // Maintain persistent references to prevent GC
-    private val persistentMenuItems = mutableListOf<WindowsTrayManager.MenuItem>()
 
     override fun Item(
         label: String,
@@ -47,7 +41,6 @@ internal class WindowsTrayMenuBuilderImpl(
                     onClick = onClick,
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -70,7 +63,6 @@ internal class WindowsTrayMenuBuilderImpl(
                     onClick = onClick,
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -152,6 +144,8 @@ internal class WindowsTrayMenuBuilderImpl(
             // Live state: clicking must toggle the current value, not the one captured
             // when the menu was built (issue #432).
             val liveChecked = AtomicBoolean(checked)
+            // Identity, not the label: two items may share a label and must toggle independently.
+            val token = Any()
             val menuItem =
                 WindowsTrayManager.MenuItem(
                     text = text,
@@ -159,15 +153,15 @@ internal class WindowsTrayMenuBuilderImpl(
                     isEnabled = isEnabled,
                     isCheckable = true,
                     isChecked = checked,
+                    checkToken = token,
                     onClick = {
                         val newChecked = !liveChecked.get()
                         liveChecked.set(newChecked)
                         onCheckedChange(newChecked)
-                        trayManager?.updateMenuItemCheckedState(text, newChecked)
+                        trayManager?.updateMenuItemCheckedState(token, newChecked)
                     },
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -185,6 +179,8 @@ internal class WindowsTrayMenuBuilderImpl(
 
             val text = label.withShortcut(shortcut)
             val liveChecked = AtomicBoolean(checked)
+            // Identity, not the label: two items may share a label and must toggle independently.
+            val token = Any()
             val menuItem =
                 WindowsTrayManager.MenuItem(
                     text = text,
@@ -192,15 +188,15 @@ internal class WindowsTrayMenuBuilderImpl(
                     isEnabled = isEnabled,
                     isCheckable = true,
                     isChecked = checked,
+                    checkToken = token,
                     onClick = {
                         val newChecked = !liveChecked.get()
                         liveChecked.set(newChecked)
                         onCheckedChange(newChecked)
-                        trayManager?.updateMenuItemCheckedState(text, newChecked)
+                        trayManager?.updateMenuItemCheckedState(token, newChecked)
                     },
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -363,13 +359,7 @@ internal class WindowsTrayMenuBuilderImpl(
     ) {
         val subMenuItems = mutableListOf<WindowsTrayManager.MenuItem>()
         if (submenuContent != null) {
-            val subMenuImpl =
-                WindowsTrayMenuBuilderImpl(
-                    this.iconPath,
-                    tooltip,
-                    onLeftClick = onLeftClick,
-                    trayManager = trayManager,
-                ).apply(submenuContent)
+            val subMenuImpl = WindowsTrayMenuBuilderImpl(trayManager).apply(submenuContent)
             subMenuItems.addAll(subMenuImpl.menuItems)
         }
         lock.withLock {
@@ -381,28 +371,17 @@ internal class WindowsTrayMenuBuilderImpl(
                     subMenuItems = subMenuItems,
                 )
             menuItems.add(subMenu)
-            persistentMenuItems.add(subMenu)
         }
     }
 
     override fun Divider() {
         lock.withLock {
-            val divider = WindowsTrayManager.MenuItem(text = "-")
-            menuItems.add(divider)
-            persistentMenuItems.add(divider)
+            menuItems.add(WindowsTrayManager.MenuItem(text = "", isSeparator = true))
         }
     }
 
     override fun dispose() {
-        lock.withLock {
-            WindowsTrayManager(
-                instanceId = "_temp",
-                iconPath = iconPath,
-                tooltip = tooltip,
-                onLeftClick = onLeftClick,
-            ).stopTray()
-            persistentMenuItems.clear()
-        }
+        // Nothing native is held: the menu lives in the tray's own state.
     }
 
     fun build(): List<WindowsTrayManager.MenuItem> = lock.withLock { menuItems.toList() }

@@ -49,7 +49,8 @@ static inline size_t jni_utf8_encode(uint32_t cp, char *out) {
  *
  * Unpaired surrogates cannot be represented in UTF-8 and become U+FFFD, so the
  * result is always valid UTF-8 whatever the Java string contains. An embedded
- * U+0000 truncates the copy, since the consumers are all C string APIs.
+ * U+0000 is dropped, since the consumers are all C string APIs: truncating there would
+ * silently lose the rest of the string (a menu label's shortcut hint, for instance).
  */
 static inline char *jni_utf8_dup(JNIEnv *env, jstring jstr) {
     if (!jstr) return NULL;
@@ -75,7 +76,7 @@ static inline char *jni_utf8_dup(JNIEnv *env, jstring jstr) {
         } else if (cp >= 0xD800 && cp <= 0xDFFF) {
             cp = 0xFFFD;
         }
-        if (cp == 0) break;
+        if (cp == 0) continue;
         written += jni_utf8_encode(cp, out + written);
     }
     out[written] = '\0';

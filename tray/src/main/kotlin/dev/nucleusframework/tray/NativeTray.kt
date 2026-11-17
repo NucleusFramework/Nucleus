@@ -36,49 +36,69 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import kotlin.internal.LowPriorityInOverloadResolution
 
 /**
- * Low-level tray engine shared by the `Tray` composables and by `TrayApp` (in the separate
- * `TrayApp` (`dev.nucleusframework.tray.app`)). Public so the tray-app module can drive it directly; most
- * callers should use the `Tray` / `TrayApp` composables instead.
+ * Low-level tray engine behind the `Tray` composables and `TrayApp`.
+ *
+ * Every change goes through one conflated queue drained by a single worker, so changes reach the
+ * backend in order and a burst collapses to its newest state. [dispose] is final: once it
+ * returns, no queued or in-flight change can recreate the icon.
  */
 internal class NativeTray {
     private val trayScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
     private val os = Platform.Current
-    private val instanceId: String = "tray-" + System.identityHashCode(this)
-    private var initialized = false
 
-    private data class ComposableUpdate(
+    // A counter, not identityHashCode: two live trays sharing a hash would share one native icon.
+    private val instanceId: String = "tray-" + nextInstance.incrementAndGet()
+
+    private val lock = Any()
+    private var initialized = false // guarded by lock
+    private var disposed = false // guarded by lock
+
+    private sealed interface Change {
+        val tooltip: String
+        val primaryAction: (() -> Unit)?
+        val menuContent: (TrayMenuBuilder.() -> Unit)?
+        val onMenuOpened: (() -> Unit)?
+    }
+
+    private class PathChange(
+        val iconPath: String,
+        val windowsIconPath: String,
+        override val tooltip: String,
+        override val primaryAction: (() -> Unit)?,
+        override val menuContent: (TrayMenuBuilder.() -> Unit)?,
+        override val onMenuOpened: (() -> Unit)?,
+    ) : Change
+
+    private class ComposableChange(
         val iconContent: @Composable () -> Unit,
         val iconRenderProperties: IconRenderProperties,
-        val tooltip: String,
-        val primaryAction: (() -> Unit)?,
-        val menuContent: (TrayMenuBuilder.() -> Unit)?,
+        override val tooltip: String,
+        override val primaryAction: (() -> Unit)?,
+        override val menuContent: (TrayMenuBuilder.() -> Unit)?,
         val maxAttempts: Int,
         val backoffMs: Long,
         val lightIconContent: (@Composable () -> Unit)?,
         val darkIconContent: (@Composable () -> Unit)?,
-        val onMenuOpened: (() -> Unit)?,
-    )
+        override val onMenuOpened: (() -> Unit)?,
+    ) : Change
 
-    // Conflated so updates are applied one at a time, in submission order, and a
-    // newer update replaces any queued-but-not-yet-applied one. This prevents a
-    // stale render/menu from landing after a fresher one (issue #432).
-    private val composableUpdates = Channel<ComposableUpdate>(Channel.CONFLATED)
+    // Conflated: a newer change replaces a queued one, so a stale render or menu can never land
+    // after a fresher one (issue #432).
+    private val changes = Channel<Change>(Channel.CONFLATED)
 
     init {
         trayScope.launch {
-            for (update in composableUpdates) {
-                applyComposableUpdate(update)
-            }
+            for (change in changes) apply(change)
         }
     }
 
-    // Expose the unique instance key so UI code (TrayApp) can compute per-instance positions
+    // Exposes the unique instance key so TrayApp can compute per-instance positions.
     fun instanceKey(): String = instanceId
 
     fun update(
@@ -89,52 +109,12 @@ internal class NativeTray {
         menuContent: (TrayMenuBuilder.() -> Unit)?,
         onMenuOpened: (() -> Unit)? = null,
     ) {
-        if (!initialized) {
-            initializeTray(iconPath, windowsIconPath, tooltip, primaryAction, menuContent)
-            initialized = true
-            return
-        }
-
-        try {
-            when (os) {
-                Linux ->
-                    LinuxTrayInitializer.update(
-                        instanceId,
-                        iconPath,
-                        tooltip,
-                        primaryAction,
-                        menuContent,
-                        onMenuOpened,
-                    )
-                Windows ->
-                    WindowsTrayInitializer.update(
-                        instanceId,
-                        windowsIconPath,
-                        tooltip,
-                        primaryAction,
-                        menuContent,
-                        onMenuOpened,
-                    )
-                MacOS ->
-                    MacTrayInitializer.update(
-                        instanceId,
-                        iconPath,
-                        tooltip,
-                        primaryAction,
-                        menuContent,
-                        onMenuOpened,
-                    )
-                Unknown -> errorln { "[NativeTray] Unsupported platform: no system tray backend available" }
-                else -> {}
-            }
-        } catch (th: Throwable) {
-            errorln { "[NativeTray] Error updating tray: $th" }
-        }
+        changes.trySend(PathChange(iconPath, windowsIconPath, tooltip, primaryAction, menuContent, onMenuOpened))
     }
 
     /**
-     * New update path: render the composable icon to PNG/ICO with retries and then update/init the tray.
-     * If rendering keeps failing, we log and **do not create/update** the tray (never crash the app).
+     * Renders the composable icon (with retries) and then creates or updates the tray. If
+     * rendering keeps failing the change is dropped and logged; the app never crashes.
      *
      * @param lightIconContent Optional composable for the light-appearance icon (macOS only).
      * @param darkIconContent Optional composable for the dark-appearance icon (macOS only).
@@ -151,101 +131,94 @@ internal class NativeTray {
         darkIconContent: (@Composable () -> Unit)? = null,
         onMenuOpened: (() -> Unit)? = null,
     ) {
-        composableUpdates.trySend(
-            ComposableUpdate(
-                iconContent = iconContent,
-                iconRenderProperties = iconRenderProperties,
-                tooltip = tooltip,
-                primaryAction = primaryAction,
-                menuContent = menuContent,
-                maxAttempts = maxAttempts,
-                backoffMs = backoffMs,
-                lightIconContent = lightIconContent,
-                darkIconContent = darkIconContent,
-                onMenuOpened = onMenuOpened,
+        changes.trySend(
+            ComposableChange(
+                iconContent,
+                iconRenderProperties,
+                tooltip,
+                primaryAction,
+                menuContent,
+                maxAttempts,
+                backoffMs,
+                lightIconContent,
+                darkIconContent,
+                onMenuOpened,
             ),
         )
     }
 
-    private suspend fun applyComposableUpdate(update: ComposableUpdate) {
-        with(update) {
-            val rendered = renderIconsWithRetry(iconContent, iconRenderProperties, maxAttempts, backoffMs)
-            if (rendered == null) {
-                errorln {
-                    "[NativeTray] Icon rendering failed after $maxAttempts attempts. " +
-                        "Tray will not be created/updated."
-                }
-                return
+    private suspend fun apply(change: Change) {
+        val icons =
+            when (change) {
+                is PathChange -> change.iconPath to change.windowsIconPath
+                is ComposableChange ->
+                    renderIconsWithRetry(change.iconContent, change.iconRenderProperties, change.maxAttempts, change.backoffMs)
             }
+        if (icons == null) {
+            errorln { "[NativeTray] Icon rendering kept failing; change dropped." }
+            return
+        }
 
-            val (pngIconPath, windowsIconPath) = rendered
-
-            if (!initialized) {
-                initializeTray(pngIconPath, windowsIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+        synchronized(lock) {
+            if (disposed) return
+            try {
+                applyToBackend(icons.first, icons.second, change)
                 initialized = true
-            } else {
-                try {
-                    when (os) {
-                        Linux ->
-                            LinuxTrayInitializer.update(
-                                instanceId,
-                                pngIconPath,
-                                tooltip,
-                                primaryAction,
-                                menuContent,
-                                onMenuOpened,
-                            )
-                        Windows ->
-                            WindowsTrayInitializer.update(
-                                instanceId,
-                                windowsIconPath,
-                                tooltip,
-                                primaryAction,
-                                menuContent,
-                                onMenuOpened,
-                            )
-                        MacOS ->
-                            MacTrayInitializer.update(
-                                instanceId,
-                                pngIconPath,
-                                tooltip,
-                                primaryAction,
-                                menuContent,
-                                onMenuOpened,
-                            )
-                        Unknown ->
-                            errorln { "[NativeTray] Unsupported platform: no system tray backend available" }
-                        else -> {}
-                    }
-                } catch (th: Throwable) {
-                    errorln { "[NativeTray] Error updating tray after successful render: $th" }
-                }
+            } catch (t: Throwable) {
+                errorln { "[NativeTray] Error applying tray change: $t" }
             }
+        }
 
-            // On macOS, pre-render light/dark variants for instant appearance switching
-            val light = lightIconContent
-            val dark = darkIconContent
-            if (os == MacOS && light != null && dark != null) {
-                try {
-                    val lightPath = ComposableIconUtils.renderComposableToPngFile(iconRenderProperties, light)
-                    val darkPath = ComposableIconUtils.renderComposableToPngFile(iconRenderProperties, dark)
-                    MacTrayInitializer.setAppearanceIcons(instanceId, lightPath, darkPath)
-                } catch (th: Throwable) {
-                    errorln { "[NativeTray] Failed to render appearance icons: $th" }
-                }
+        // On macOS, pre-render light/dark variants for instant appearance switching.
+        if (change is ComposableChange && os == MacOS) {
+            val light = change.lightIconContent ?: return
+            val dark = change.darkIconContent ?: return
+            try {
+                val lightPath = ComposableIconUtils.renderComposableToPngFile(change.iconRenderProperties, light)
+                val darkPath = ComposableIconUtils.renderComposableToPngFile(change.iconRenderProperties, dark)
+                synchronized(lock) { if (!disposed) MacTrayInitializer.setAppearanceIcons(instanceId, lightPath, darkPath) }
+            } catch (t: Throwable) {
+                errorln { "[NativeTray] Failed to render appearance icons: $t" }
             }
         }
     }
 
-    /**
-     * Set macOS appearance icons directly from file paths.
-     */
+    // Caller holds [lock].
+    private fun applyToBackend(
+        pngIconPath: String,
+        windowsIconPath: String,
+        change: Change,
+    ) {
+        val first = !initialized
+        with(change) {
+            when (os) {
+                Linux ->
+                    if (first) {
+                        LinuxTrayInitializer.initialize(instanceId, pngIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                    } else {
+                        LinuxTrayInitializer.update(instanceId, pngIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                    }
+                Windows ->
+                    WindowsTrayInitializer.update(instanceId, windowsIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                MacOS ->
+                    if (first) {
+                        MacTrayInitializer.initialize(instanceId, pngIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                    } else {
+                        MacTrayInitializer.update(instanceId, pngIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                    }
+                Unknown -> errorln { "[NativeTray] Unsupported platform: no system tray backend available" }
+                else -> {}
+            }
+        }
+    }
+
+    /** Sets macOS appearance icons directly from file paths. */
     fun setMacOSAppearanceIcons(
         lightPath: String,
         darkPath: String,
     ) {
-        if (os == MacOS && initialized) {
-            MacTrayInitializer.setAppearanceIcons(instanceId, lightPath, darkPath)
+        synchronized(lock) {
+            if (os == MacOS && initialized && !disposed) MacTrayInitializer.setAppearanceIcons(instanceId, lightPath, darkPath)
         }
     }
 
@@ -258,27 +231,17 @@ internal class NativeTray {
         var attempt = 0
         while (attempt < maxAttempts) {
             try {
-                // Render the composable to PNG for general platforms
                 val pngIconPath = ComposableIconUtils.renderComposableToPngFile(iconRenderProperties, iconContent)
-
-                // On Windows, also render to ICO; on other OSes reuse PNG path
                 val windowsIconPath =
                     if (os == Windows) {
                         ComposableIconUtils.renderComposableToIcoFile(iconRenderProperties, iconContent)
                     } else {
                         pngIconPath
                     }
-
-                debugln {
-                    "[NativeTray] Rendered tray icons (attempt ${attempt + 1}/$maxAttempts): " +
-                        "PNG=$pngIconPath, WIN=$windowsIconPath"
-                }
+                debugln { "[NativeTray] Rendered tray icons (attempt ${attempt + 1}/$maxAttempts): PNG=$pngIconPath, WIN=$windowsIconPath" }
                 return pngIconPath to windowsIconPath
             } catch (e: Throwable) {
-                errorln {
-                    "[NativeTray] Icon render attempt ${attempt + 1} failed: " +
-                        "${e.message ?: e::class.simpleName}"
-                }
+                errorln { "[NativeTray] Icon render attempt ${attempt + 1} failed: ${e.message ?: e::class.simpleName}" }
                 attempt++
                 if (attempt < maxAttempts) delay(backoffMs)
             }
@@ -286,109 +249,25 @@ internal class NativeTray {
         return null
     }
 
+    /** Removes the icon. Final: later [update] / [updateComposable] calls are ignored. */
     fun dispose() {
-        // Stop the update worker and drop any pending update so a stale in-flight
-        // render cannot re-create the tray after disposal.
-        trayScope.cancel()
-        when (os) {
-            Linux -> LinuxTrayInitializer.dispose(instanceId)
-            Windows -> WindowsTrayInitializer.dispose(instanceId)
-            MacOS -> MacTrayInitializer.dispose(instanceId)
-            Unknown -> {}
-            else -> {}
-        }
-        initialized = false
-    }
-
-    /**
-     * Constructor that accepts file paths for icons
-     * @deprecated Use the Composable-based update path instead
-     */
-    @Deprecated(
-        message = "Use the constructor with composable icon content instead",
-        replaceWith = ReplaceWith("NativeTray(iconContent, tooltip, primaryAction, menuContent)"),
-    )
-    private fun initializeTray(
-        iconPath: String,
-        windowsIconPath: String = iconPath,
-        tooltip: String = "",
-        primaryAction: (() -> Unit)?,
-        menuContent: (TrayMenuBuilder.() -> Unit)? = null,
-        onMenuOpened: (() -> Unit)? = null,
-    ) {
-        trayScope.launch {
-            var trayInitialized = false
-            val os = Platform.Current
-            try {
-                when (os) {
-                    Linux -> {
-                        debugln { "[NativeTray] Initializing Linux tray with icon path: $iconPath" }
-                        LinuxTrayInitializer.initialize(
-                            instanceId,
-                            iconPath,
-                            tooltip,
-                            primaryAction,
-                            menuContent,
-                            onMenuOpened,
-                        )
-                        trayInitialized = true
-                    }
-                    Windows -> {
-                        debugln { "[NativeTray] Initializing Windows tray with icon path: $windowsIconPath" }
-                        WindowsTrayInitializer.initialize(
-                            instanceId,
-                            windowsIconPath,
-                            tooltip,
-                            primaryAction,
-                            menuContent,
-                            onMenuOpened,
-                        )
-                        trayInitialized = true
-                    }
-                    MacOS -> {
-                        debugln { "[NativeTray] Initializing macOS tray with icon path: $iconPath" }
-                        MacTrayInitializer.initialize(
-                            instanceId,
-                            iconPath,
-                            tooltip,
-                            primaryAction,
-                            menuContent,
-                            onMenuOpened,
-                        )
-                        trayInitialized = true
-                    }
-                    else -> {}
-                }
-            } catch (th: Throwable) {
-                errorln { "[NativeTray] Error initializing tray: $th" }
+        synchronized(lock) {
+            if (disposed) return
+            disposed = true
+            changes.close()
+            trayScope.cancel()
+            when (os) {
+                Linux -> LinuxTrayInitializer.dispose(instanceId)
+                Windows -> WindowsTrayInitializer.dispose(instanceId)
+                MacOS -> MacTrayInitializer.dispose(instanceId)
+                else -> {}
             }
-
-            if (os == Unknown || !trayInitialized) {
-                errorln { "[NativeTray] No native tray backend could be initialized on this platform" }
-            }
+            initialized = false
         }
     }
 
-    /**
-     * Constructor that accepts a Composable for the icon — kept for backward compatibility.
-     * Now delegates to the retry-safe render+init/update path.
-     */
-    private fun initializeTray(
-        iconContent: @Composable () -> Unit,
-        iconRenderProperties: IconRenderProperties = IconRenderProperties(),
-        tooltip: String = "",
-        primaryAction: (() -> Unit)?,
-        menuContent: (TrayMenuBuilder.() -> Unit)? = null,
-        onMenuOpened: (() -> Unit)? = null,
-    ) {
-        updateComposable(
-            iconContent = iconContent,
-            iconRenderProperties = iconRenderProperties,
-            tooltip = tooltip,
-            primaryAction = primaryAction,
-            menuContent = menuContent,
-            onMenuOpened = onMenuOpened,
-        )
+    private companion object {
+        val nextInstance = AtomicLong()
     }
 }
 

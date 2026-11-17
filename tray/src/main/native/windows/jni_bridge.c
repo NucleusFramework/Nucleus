@@ -1,384 +1,257 @@
 /*
- * jni_bridge.c - JNI bridge for ComposeNativeTray Windows native library.
+ * jni_bridge.c - JNI bridge of nucleus_tray.dll (Windows).
  *
- * Target Kotlin class: dev.nucleusframework.tray.internal.windows.WindowsNativeBridge
- * JNI prefix:          Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_
+ * Kotlin class: dev.nucleusframework.tray.internal.windows.WindowsNativeBridge
  *
- * Follows the same patterns as macOS MacTrayBridge.m and Linux jni_bridge.c:
- * - JavaVM cache with JNI_OnLoad
- * - GlobalRef-based callback storage
- * - Runnable trampolines for callbacks
- * - Handle-based state (struct tray* as jlong)
+ * Callbacks live in the struct they belong to (a global ref per tray / per menu item), never in
+ * a process-wide list: disposing one tray cannot touch another tray's callbacks, and nothing
+ * here needs a lock because every call for a tray comes from that tray's own thread.
  */
 
 #include <jni.h>
 #include <windows.h>
-#include <stdlib.h>
-#include <string.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "jni_utf8.h"
+#include "../../../../../native-common/nucleus_jni.h"
 #include "tray.h"
 
-/* ========================================================================== */
-/*  JavaVM cache                                                              */
-/* ========================================================================== */
+#define BRIDGE(name) Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_##name
 
 static JavaVM *g_jvm = NULL;
+static jmethodID g_run = NULL;
 
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved)
+{
     (void)reserved;
     g_jvm = vm;
-    return JNI_VERSION_1_8;
+    JNIEnv *env = NULL;
+    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_8) != JNI_OK) return JNI_ERR;
+    /* java.lang.Runnable, not each lambda class: GraalVM only needs Runnable registered. */
+    jclass runnable = (*env)->FindClass(env, "java/lang/Runnable");
+    if (!runnable) return JNI_ERR;
+    g_run = (*env)->GetMethodID(env, runnable, "run", "()V");
+    (*env)->DeleteLocalRef(env, runnable);
+    return g_run ? JNI_VERSION_1_8 : JNI_ERR;
 }
 
-static JNIEnv *getJNIEnv(void) {
+static JNIEnv *current_env(void)
+{
     JNIEnv *env = NULL;
-    if (g_jvm == NULL) return NULL;
-    jint rc = (*g_jvm)->GetEnv(g_jvm, (void **)&env, JNI_VERSION_1_8);
-    if (rc == JNI_EDETACHED) {
-        (*g_jvm)->AttachCurrentThread(g_jvm, (void **)&env, NULL);
-    }
+    if (!g_jvm) return NULL;
+    if ((*g_jvm)->GetEnv(g_jvm, (void **)&env, JNI_VERSION_1_8) == JNI_OK) return env;
+    /* Tray threads are Java threads; this only covers an unexpected native caller. */
+    if ((*g_jvm)->AttachCurrentThreadAsDaemon(g_jvm, (void **)&env, NULL) != JNI_OK) return NULL;
     return env;
 }
 
-/* ========================================================================== */
-/*  Callback storage (GlobalRef linked list, same as Linux/Mac bridges)       */
-/* ========================================================================== */
-
-typedef struct CallbackEntry {
-    uintptr_t key;
-    jobject globalRef;
-    struct CallbackEntry *next;
-} CallbackEntry;
-
-static CallbackEntry *g_trayCallbacks = NULL;
-static CallbackEntry *g_menuCallbacks = NULL;
-static CallbackEntry *g_menuOpenedCallbacks = NULL;
-
-static void storeCallback(CallbackEntry **list, uintptr_t key, JNIEnv *env, jobject callback) {
-    CallbackEntry **pp = list;
-    while (*pp) {
-        if ((*pp)->key == key) {
-            CallbackEntry *old = *pp;
-            *pp = old->next;
-            (*env)->DeleteGlobalRef(env, old->globalRef);
-            free(old);
-            break;
-        }
-        pp = &(*pp)->next;
-    }
-    if (callback == NULL) return;
-    CallbackEntry *entry = (CallbackEntry *)malloc(sizeof(CallbackEntry));
-    entry->key = key;
-    entry->globalRef = (*env)->NewGlobalRef(env, callback);
-    entry->next = *list;
-    *list = entry;
-}
-
-static jobject findCallback(CallbackEntry *list, uintptr_t key) {
-    for (CallbackEntry *e = list; e; e = e->next) {
-        if (e->key == key) return e->globalRef;
-    }
-    return NULL;
-}
-
-static void clearAllCallbacks(CallbackEntry **list) {
-    JNIEnv *env = getJNIEnv();
-    CallbackEntry *e = *list;
-    while (e) {
-        CallbackEntry *next = e->next;
-        if (env) (*env)->DeleteGlobalRef(env, e->globalRef);
-        free(e);
-        e = next;
-    }
-    *list = NULL;
-}
-
-/* ========================================================================== */
-/*  Runnable invocation helper                                                */
-/* ========================================================================== */
-
-/* Cached Runnable class and run() method ID.
- * Using the interface class (java.lang.Runnable) instead of GetObjectClass()
- * so GraalVM native-image can resolve the method without needing to register
- * every lambda class for JNI access. */
-static jclass g_runnableClass = NULL;
-static jmethodID g_runMethod = NULL;
-
-static void ensureRunnableCached(JNIEnv *env) {
-    if (g_runnableClass) return;
-    jclass cls = (*env)->FindClass(env, "java/lang/Runnable");
-    if (!cls) return;
-    g_runnableClass = (*env)->NewGlobalRef(env, cls);
-    g_runMethod = (*env)->GetMethodID(env, g_runnableClass, "run", "()V");
-}
-
-static void invokeRunnable(jobject runnable) {
-    JNIEnv *env = getJNIEnv();
+static void run(jobject runnable)
+{
+    JNIEnv *env = current_env();
     if (!env || !runnable) return;
-    ensureRunnableCached(env);
-    if (!g_runMethod) return;
-    (*env)->CallVoidMethod(env, runnable, g_runMethod);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    (*env)->CallVoidMethod(env, runnable, g_run);
+    nucleus_jni_clear_exception(env);
 }
 
-/* ========================================================================== */
-/*  C callback trampolines                                                    */
-/* ========================================================================== */
-
-static void tray_cb_trampoline(struct tray *t) {
-    uintptr_t key = (uintptr_t)t;
-    jobject runnable = findCallback(g_trayCallbacks, key);
-    if (runnable) invokeRunnable(runnable);
+static void replace_ref(JNIEnv *env, void **slot, jobject value)
+{
+    if (*slot) (*env)->DeleteGlobalRef(env, (jobject)*slot);
+    *slot = value ? (*env)->NewGlobalRef(env, value) : NULL;
 }
 
-static void menu_item_cb_trampoline(struct tray_menu_item *item) {
-    uintptr_t key = (uintptr_t)item;
-    jobject runnable = findCallback(g_menuCallbacks, key);
-    if (runnable) invokeRunnable(runnable);
-}
+static void on_click(struct tray *t) { run((jobject)t->user_click); }
+static void on_menu_opened(struct tray *t) { run((jobject)t->user_menu_opened); }
+static void on_item(struct tray_menu_item *item) { run((jobject)item->user); }
 
-static void menu_opened_cb_trampoline(struct tray *t) {
-    uintptr_t key = (uintptr_t)t;
-    jobject runnable = findCallback(g_menuOpenedCallbacks, key);
-    if (runnable) invokeRunnable(runnable);
-}
+static struct tray *tray_of(jlong handle) { return (struct tray *)(uintptr_t)handle; }
+static struct tray_menu_item *items_of(jlong handle) { return (struct tray_menu_item *)(uintptr_t)handle; }
 
-/* ========================================================================== */
-/*  JNI exports: Tray lifecycle                                               */
-/* ========================================================================== */
+/* ------------------------------------------------------------------ tray */
 
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeCreateTray(
-    JNIEnv *env, jclass clazz, jstring iconPath, jstring tooltip)
+JNIEXPORT jlong JNICALL BRIDGE(nativeCreateTray)(JNIEnv *env, jclass clazz, jstring iconPath, jstring tooltip)
 {
     (void)clazz;
     struct tray *t = (struct tray *)calloc(1, sizeof(struct tray));
     if (!t) return 0;
     t->icon_filepath = jni_utf8_dup(env, iconPath);
     t->tooltip = jni_utf8_dup(env, tooltip);
-    t->cb = NULL;
-    t->menu = NULL;
     return (jlong)(uintptr_t)t;
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeFreeTray(
-    JNIEnv *env, jclass clazz, jlong handle)
+JNIEXPORT void JNICALL BRIDGE(nativeFreeTray)(JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)clazz;
-    struct tray *t = (struct tray *)(uintptr_t)handle;
+    struct tray *t = tray_of(handle);
     if (!t) return;
-
-    /* Remove tray callbacks */
-    storeCallback(&g_trayCallbacks, (uintptr_t)t, env, NULL);
-    storeCallback(&g_menuOpenedCallbacks, (uintptr_t)t, env, NULL);
-
-    free((void *)t->icon_filepath);
-    free((void *)t->tooltip);
-    /* menu is freed separately via nativeFreeMenuItems */
+    tray_exit(t);
+    replace_ref(env, &t->user_click, NULL);
+    replace_ref(env, &t->user_menu_opened, NULL);
+    free(t->icon_filepath);
+    free(t->tooltip);
     free(t);
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeSetTrayIcon(
-    JNIEnv *env, jclass clazz, jlong handle, jstring iconPath)
+JNIEXPORT void JNICALL BRIDGE(nativeSetTrayIcon)(JNIEnv *env, jclass clazz, jlong handle, jstring iconPath)
 {
     (void)clazz;
-    struct tray *t = (struct tray *)(uintptr_t)handle;
+    struct tray *t = tray_of(handle);
     if (!t) return;
-    free((void *)t->icon_filepath);
+    free(t->icon_filepath);
     t->icon_filepath = jni_utf8_dup(env, iconPath);
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeSetTrayTooltip(
-    JNIEnv *env, jclass clazz, jlong handle, jstring tooltip)
+JNIEXPORT void JNICALL BRIDGE(nativeSetTrayTooltip)(JNIEnv *env, jclass clazz, jlong handle, jstring tooltip)
 {
     (void)clazz;
-    struct tray *t = (struct tray *)(uintptr_t)handle;
+    struct tray *t = tray_of(handle);
     if (!t) return;
-    free((void *)t->tooltip);
+    free(t->tooltip);
     t->tooltip = jni_utf8_dup(env, tooltip);
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeSetTrayCallback(
-    JNIEnv *env, jclass clazz, jlong handle, jobject callback)
+JNIEXPORT void JNICALL BRIDGE(nativeSetTrayCallback)(JNIEnv *env, jclass clazz, jlong handle, jobject callback)
 {
     (void)clazz;
-    struct tray *t = (struct tray *)(uintptr_t)handle;
+    struct tray *t = tray_of(handle);
     if (!t) return;
-    storeCallback(&g_trayCallbacks, (uintptr_t)t, env, callback);
-    t->cb = callback ? tray_cb_trampoline : NULL;
+    replace_ref(env, &t->user_click, callback);
+    t->cb = callback ? on_click : NULL;
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeSetMenuOpenedCallback(
-    JNIEnv *env, jclass clazz, jlong handle, jobject callback)
+JNIEXPORT void JNICALL BRIDGE(nativeSetMenuOpenedCallback)(JNIEnv *env, jclass clazz, jlong handle, jobject callback)
 {
     (void)clazz;
-    struct tray *t = (struct tray *)(uintptr_t)handle;
+    struct tray *t = tray_of(handle);
     if (!t) return;
-    storeCallback(&g_menuOpenedCallbacks, (uintptr_t)t, env, callback);
-    tray_set_menu_opened_callback(t, callback ? menu_opened_cb_trampoline : NULL);
+    replace_ref(env, &t->user_menu_opened, callback);
+    t->menu_opened_cb = callback ? on_menu_opened : NULL;
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeSetTrayMenu(
-    JNIEnv *env, jclass clazz, jlong trayHandle, jlong menuHandle)
+JNIEXPORT void JNICALL BRIDGE(nativeSetTrayMenu)(JNIEnv *env, jclass clazz, jlong trayHandle, jlong menuHandle)
 {
     (void)env; (void)clazz;
-    struct tray *t = (struct tray *)(uintptr_t)trayHandle;
-    struct tray_menu_item *m = (struct tray_menu_item *)(uintptr_t)menuHandle;
-    if (t) t->menu = m;
+    struct tray *t = tray_of(trayHandle);
+    if (t) t->menu = items_of(menuHandle);
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeClearTrayMenu(
-    JNIEnv *env, jclass clazz, jlong trayHandle)
+JNIEXPORT jint JNICALL BRIDGE(nativeInitTray)(JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
-    struct tray *t = (struct tray *)(uintptr_t)trayHandle;
-    if (t) t->menu = NULL;
+    return (jint)tray_init(tray_of(handle));
 }
 
-JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeInitTray(
-    JNIEnv *env, jclass clazz, jlong handle)
+JNIEXPORT jint JNICALL BRIDGE(nativePumpTray)(JNIEnv *env, jclass clazz, jlong handle, jboolean wait)
 {
     (void)env; (void)clazz;
-    struct tray *t = (struct tray *)(uintptr_t)handle;
-    if (!t) return -1;
-    return (jint)tray_init(t);
+    return (jint)tray_pump(tray_of(handle), wait ? 1 : 0);
 }
 
-JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeLoopTray(
-    JNIEnv *env, jclass clazz, jint blocking)
+JNIEXPORT void JNICALL BRIDGE(nativeUpdateTray)(JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
-    return (jint)tray_loop((int)blocking);
+    tray_update(tray_of(handle));
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeUpdateTray(
-    JNIEnv *env, jclass clazz, jlong handle)
+JNIEXPORT void JNICALL BRIDGE(nativeWakeTray)(JNIEnv *env, jclass clazz, jlong handle, jboolean cancelMenu)
 {
     (void)env; (void)clazz;
-    struct tray *t = (struct tray *)(uintptr_t)handle;
-    if (t) tray_update(t);
+    tray_wake(tray_of(handle), cancelMenu ? 1 : 0);
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeExitTray(
-    JNIEnv *env, jclass clazz)
+/* ------------------------------------------------------------------ menu items */
+
+JNIEXPORT jlong JNICALL BRIDGE(nativeCreateMenuItems)(JNIEnv *env, jclass clazz, jint count)
 {
     (void)env; (void)clazz;
-    tray_exit();
-    clearAllCallbacks(&g_menuCallbacks);
-    clearAllCallbacks(&g_menuOpenedCallbacks);
-}
-
-/* ========================================================================== */
-/*  JNI exports: Menu items                                                   */
-/* ========================================================================== */
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeCreateMenuItems(
-    JNIEnv *env, jclass clazz, jint count)
-{
-    (void)env; (void)clazz;
-    /* Allocate count+1 items; last one is zero-terminated (text=NULL) */
-    struct tray_menu_item *items = (struct tray_menu_item *)calloc(
-        (size_t)count + 1, sizeof(struct tray_menu_item));
+    if (count < 0) return 0;
+    struct tray_menu_item *items = (struct tray_menu_item *)calloc((size_t)count + 1, sizeof(struct tray_menu_item));
+    if (items) items[count].terminator = 1;
     return (jlong)(uintptr_t)items;
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeSetMenuItem(
-    JNIEnv *env, jclass clazz, jlong menuHandle, jint index,
-    jstring text, jstring iconPath, jint disabled, jint checked)
+JNIEXPORT void JNICALL BRIDGE(nativeSetMenuItem)(JNIEnv *env, jclass clazz, jlong menuHandle, jint index,
+                                                 jstring text, jstring iconPath, jboolean disabled,
+                                                 jboolean checked, jboolean separator)
 {
     (void)clazz;
-    struct tray_menu_item *items = (struct tray_menu_item *)(uintptr_t)menuHandle;
-    if (!items) return;
+    struct tray_menu_item *items = items_of(menuHandle);
+    if (!items || index < 0) return;
     struct tray_menu_item *item = &items[index];
-
-    /* Free old strings if any */
     free(item->text);
     free(item->icon_path);
-
     item->text = jni_utf8_dup(env, text);
     item->icon_path = jni_utf8_dup(env, iconPath);
-    item->disabled = (int)disabled;
-    item->checked = (int)checked;
-    item->cb = NULL;
-    item->submenu = NULL;
+    item->disabled = disabled ? 1 : 0;
+    item->checked = checked ? 1 : 0;
+    item->separator = separator ? 1 : 0;
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeSetMenuItemCallback(
-    JNIEnv *env, jclass clazz, jlong menuHandle, jint index, jobject callback)
+JNIEXPORT void JNICALL BRIDGE(nativeSetMenuItemCallback)(JNIEnv *env, jclass clazz, jlong menuHandle, jint index,
+                                                         jobject callback)
 {
     (void)clazz;
-    struct tray_menu_item *items = (struct tray_menu_item *)(uintptr_t)menuHandle;
-    if (!items) return;
-    struct tray_menu_item *item = &items[index];
-    storeCallback(&g_menuCallbacks, (uintptr_t)item, env, callback);
-    item->cb = callback ? menu_item_cb_trampoline : NULL;
+    struct tray_menu_item *items = items_of(menuHandle);
+    if (!items || index < 0) return;
+    replace_ref(env, &items[index].user, callback);
+    items[index].cb = callback ? on_item : NULL;
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeSetMenuItemSubmenu(
-    JNIEnv *env, jclass clazz, jlong menuHandle, jint index, jlong submenuHandle)
+JNIEXPORT void JNICALL BRIDGE(nativeSetMenuItemSubmenu)(JNIEnv *env, jclass clazz, jlong menuHandle, jint index,
+                                                        jlong submenuHandle)
 {
     (void)env; (void)clazz;
-    struct tray_menu_item *items = (struct tray_menu_item *)(uintptr_t)menuHandle;
-    if (!items) return;
-    items[index].submenu = (struct tray_menu_item *)(uintptr_t)submenuHandle;
+    struct tray_menu_item *items = items_of(menuHandle);
+    if (!items || index < 0) return;
+    items[index].submenu = items_of(submenuHandle);
 }
 
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeFreeMenuItems(
-    JNIEnv *env, jclass clazz, jlong menuHandle, jint count)
+/* Frees an item array and, recursively, its submenus. */
+static void free_items(JNIEnv *env, struct tray_menu_item *items)
 {
-    (void)clazz;
-    struct tray_menu_item *items = (struct tray_menu_item *)(uintptr_t)menuHandle;
     if (!items) return;
-    for (int i = 0; i < count; i++) {
-        struct tray_menu_item *item = &items[i];
-        storeCallback(&g_menuCallbacks, (uintptr_t)item, env, NULL);
-        free(item->text);
-        free(item->icon_path);
-        /* submenus are freed separately by Java */
+    for (struct tray_menu_item *m = items; !m->terminator; ++m) {
+        replace_ref(env, &m->user, NULL);
+        free(m->text);
+        free(m->icon_path);
+        free_items(env, m->submenu);
     }
     free(items);
 }
 
-/* ========================================================================== */
-/*  JNI exports: Position                                                     */
-/* ========================================================================== */
+JNIEXPORT void JNICALL BRIDGE(nativeFreeMenuItems)(JNIEnv *env, jclass clazz, jlong menuHandle)
+{
+    (void)clazz;
+    free_items(env, items_of(menuHandle));
+}
 
-JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeGetNotificationIconsPosition(
-    JNIEnv *env, jclass clazz, jintArray outXY)
+/* ------------------------------------------------------------------ geometry */
+
+JNIEXPORT jboolean JNICALL BRIDGE(nativeGetIdentity)(JNIEnv *env, jclass clazz, jlong handle, jlongArray out)
+{
+    (void)clazz;
+    void *hwnd = NULL;
+    unsigned int uid = 0;
+    if (!tray_get_identity(tray_of(handle), &hwnd, &uid)) return JNI_FALSE;
+    jlong buf[2] = { (jlong)(uintptr_t)hwnd, (jlong)uid };
+    (*env)->SetLongArrayRegion(env, out, 0, 2, buf);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL BRIDGE(nativeGetNotificationIconsPosition)(JNIEnv *env, jclass clazz, jlong handle,
+                                                                  jintArray outXY)
 {
     (void)clazz;
     int x = 0, y = 0;
-    int precise = tray_get_notification_icons_position(&x, &y);
+    int precise = tray_get_notification_icons_position(tray_of(handle), &x, &y);
     jint buf[2] = { (jint)x, (jint)y };
     (*env)->SetIntArrayRegion(env, outXY, 0, 2, buf);
     return (jint)precise;
 }
 
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_tray_internal_windows_WindowsNativeBridge_nativeGetNotificationIconsRegion(
-    JNIEnv *env, jclass clazz)
+JNIEXPORT jstring JNICALL BRIDGE(nativeGetNotificationIconsRegion)(JNIEnv *env, jclass clazz)
 {
     (void)clazz;
-    const char *result = tray_get_notification_icons_region();
-    if (!result) return NULL;
-    return (*env)->NewStringUTF(env, result);
+    const char *region = tray_get_notification_icons_region();
+    return region ? (*env)->NewStringUTF(env, region) : NULL;
 }
