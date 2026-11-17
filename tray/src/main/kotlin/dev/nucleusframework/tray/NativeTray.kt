@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
@@ -86,11 +87,16 @@ internal class NativeTray {
         val lightIconContent: (@Composable () -> Unit)?,
         val darkIconContent: (@Composable () -> Unit)?,
         override val onMenuOpened: (() -> Unit)?,
+        val iconKey: Any?,
     ) : Change
 
     // Conflated: a newer change replaces a queued one, so a stale render or menu can never land
     // after a fresher one (issue #432).
     private val changes = Channel<Change>(Channel.CONFLATED)
+
+    // Last rendered icon, touched only by the worker.
+    private var renderedIconKey: Any? = null
+    private var renderedIcons: Pair<String, String>? = null
 
     init {
         trayScope.launch {
@@ -118,6 +124,8 @@ internal class NativeTray {
      *
      * @param lightIconContent Optional composable for the light-appearance icon (macOS only).
      * @param darkIconContent Optional composable for the dark-appearance icon (macOS only).
+     * @param iconKey Identifies the icon's look: a change carrying the key of the icon already
+     *   shown skips rendering, so a menu-only change reaches the tray at once.
      */
     fun updateComposable(
         iconContent: @Composable () -> Unit,
@@ -130,6 +138,7 @@ internal class NativeTray {
         lightIconContent: (@Composable () -> Unit)? = null,
         darkIconContent: (@Composable () -> Unit)? = null,
         onMenuOpened: (() -> Unit)? = null,
+        iconKey: Any? = null,
     ) {
         changes.trySend(
             ComposableChange(
@@ -143,6 +152,7 @@ internal class NativeTray {
                 lightIconContent,
                 darkIconContent,
                 onMenuOpened,
+                iconKey,
             ),
         )
     }
@@ -152,7 +162,12 @@ internal class NativeTray {
             when (change) {
                 is PathChange -> change.iconPath to change.windowsIconPath
                 is ComposableChange ->
-                    renderIconsWithRetry(change.iconContent, change.iconRenderProperties, change.maxAttempts, change.backoffMs)
+                    renderedIcons.takeIf { change.iconKey != null && change.iconKey == renderedIconKey }
+                        ?: renderIconsWithRetry(change.iconContent, change.iconRenderProperties, change.maxAttempts, change.backoffMs)
+                            ?.also {
+                                renderedIconKey = change.iconKey
+                                renderedIcons = it
+                            }
             }
         if (icons == null) {
             errorln { "[NativeTray] Icon rendering kept failing; change dropped." }
@@ -272,6 +287,17 @@ internal class NativeTray {
 }
 
 /**
+ * A stable lambda that always invokes the latest [callback], or null while [callback] is null:
+ * only the null-ness is a change the tray has to apply.
+ */
+@Composable
+private fun rememberLatestCallback(callback: (() -> Unit)?): (() -> Unit)? {
+    val latest = rememberUpdatedState(callback)
+    val stable = remember { { latest.value?.invoke() ?: Unit } }
+    return if (callback != null) stable else null
+}
+
+/**
  * Composable helpers
  */
 @Deprecated(
@@ -297,14 +323,18 @@ public fun Tray(
             }
         }
 
+    // Stable wrappers calling the latest lambdas: a callback that captured an older
+    // state must not run, and a fresh lambda per recomposition must not re-apply the tray.
+    val latestPrimaryAction = rememberLatestCallback(primaryAction)
+    val latestOnMenuOpened = rememberLatestCallback(onMenuOpened)
     val tray = remember { NativeTray() }
 
     // Calculate menu hash to detect changes
     val menuHash = MenuContentHash.calculateMenuHash(menuContent)
 
     // Update when params change, including menuHash
-    LaunchedEffect(absoluteIconPath, absoluteWindowsIconPath, tooltip, primaryAction, menuContent, menuHash) {
-        tray.update(absoluteIconPath, absoluteWindowsIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+    LaunchedEffect(absoluteIconPath, absoluteWindowsIconPath, tooltip, latestPrimaryAction, menuContent, menuHash, latestOnMenuOpened) {
+        tray.update(absoluteIconPath, absoluteWindowsIconPath, tooltip, latestPrimaryAction, menuContent, latestOnMenuOpened)
     }
 
     // Dispose only when Tray is removed from composition
@@ -334,19 +364,24 @@ public fun Tray(
     // Calculate a hash of the menu content to detect changes
     val menuHash = MenuContentHash.calculateMenuHash(menuContent)
 
+    // Stable wrappers calling the latest lambdas: a callback that captured an older
+    // state must not run, and a fresh lambda per recomposition must not re-apply the tray.
+    val latestPrimaryAction = rememberLatestCallback(primaryAction)
+    val latestOnMenuOpened = rememberLatestCallback(onMenuOpened)
     val tray = remember { NativeTray() }
 
     // On any content/menu change, delegate to retry-safe path
-    LaunchedEffect(contentHash, tooltip, primaryAction, menuContent, menuHash) {
+    LaunchedEffect(contentHash, tooltip, latestPrimaryAction, menuContent, menuHash, latestOnMenuOpened) {
         tray.updateComposable(
             iconContent = iconContent,
             iconRenderProperties = iconRenderProperties,
             tooltip = tooltip,
-            primaryAction = primaryAction,
+            primaryAction = latestPrimaryAction,
             menuContent = menuContent,
             maxAttempts = 3,
             backoffMs = 200,
-            onMenuOpened = onMenuOpened,
+            iconKey = contentHash,
+            onMenuOpened = latestOnMenuOpened,
         )
     }
 
@@ -429,20 +464,25 @@ public fun Tray(
             icon.hashCode() +
             (tint?.hashCode() ?: 0)
 
+    // Stable wrappers calling the latest lambdas: a callback that captured an older
+    // state must not run, and a fresh lambda per recomposition must not re-apply the tray.
+    val latestPrimaryAction = rememberLatestCallback(primaryAction)
+    val latestOnMenuOpened = rememberLatestCallback(onMenuOpened)
     val tray = remember { NativeTray() }
 
-    LaunchedEffect(contentHash, tooltip, primaryAction, menuContent, menuHash) {
+    LaunchedEffect(contentHash, tooltip, latestPrimaryAction, menuContent, menuHash, latestOnMenuOpened) {
         tray.updateComposable(
             iconContent = iconContent,
             iconRenderProperties = iconRenderProperties,
             tooltip = tooltip,
-            primaryAction = primaryAction,
+            primaryAction = latestPrimaryAction,
             menuContent = menuContent,
             maxAttempts = 3,
             backoffMs = 200,
+            iconKey = contentHash,
             lightIconContent = lightIconContent,
             darkIconContent = darkIconContent,
-            onMenuOpened = onMenuOpened,
+            onMenuOpened = latestOnMenuOpened,
         )
     }
 
@@ -484,18 +524,23 @@ public fun Tray(
             isDark.hashCode() +
             icon.hashCode()
 
+    // Stable wrappers calling the latest lambdas: a callback that captured an older
+    // state must not run, and a fresh lambda per recomposition must not re-apply the tray.
+    val latestPrimaryAction = rememberLatestCallback(primaryAction)
+    val latestOnMenuOpened = rememberLatestCallback(onMenuOpened)
     val tray = remember { NativeTray() }
 
-    LaunchedEffect(contentHash, tooltip, primaryAction, menuContent, menuHash) {
+    LaunchedEffect(contentHash, tooltip, latestPrimaryAction, menuContent, menuHash, latestOnMenuOpened) {
         tray.updateComposable(
             iconContent = iconContent,
             iconRenderProperties = iconRenderProperties,
             tooltip = tooltip,
-            primaryAction = primaryAction,
+            primaryAction = latestPrimaryAction,
             menuContent = menuContent,
             maxAttempts = 3,
             backoffMs = 200,
-            onMenuOpened = onMenuOpened,
+            iconKey = contentHash,
+            onMenuOpened = latestOnMenuOpened,
         )
     }
 

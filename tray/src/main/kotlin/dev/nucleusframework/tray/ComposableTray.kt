@@ -2,6 +2,7 @@ package dev.nucleusframework.tray
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -30,8 +31,9 @@ private fun rememberRecordedMenuContent(
     val ops = scope.snapshot()
     val fingerprint = ops.structuralFingerprint()
     // Stabilize the replay lambda so the underlying Tray's LaunchedEffect key only changes when
-    // the recorded menu structure actually changes.
-    return remember(fingerprint) { ops.asTrayMenuBuilderBlock() }
+    // the recorded menu structure actually changes; clicks still reach the latest lambdas.
+    val latestOps = rememberUpdatedState(ops)
+    return remember(fingerprint) { ops.asTrayMenuBuilderBlock { latestOps.value } }
 }
 
 /**
