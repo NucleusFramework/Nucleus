@@ -1295,7 +1295,7 @@ impl<T: 'static> EventLoop<T> {
               let filtered = ime.filter_keypress(event_key);
               if !ime_state_release
                 .borrow_mut()
-                .key_released(event_key.hardware_keycode(), filtered)
+                .key_released(event_key.hardware_keycode(), event_key.time(), filtered)
               {
                 return glib::Propagation::Stop;
               }

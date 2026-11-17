@@ -70,6 +70,19 @@ pub(crate) struct ImeState {
   /// so a release with no press behind it activates whatever holds focus —
   /// the Return that merely confirmed a conversion would press a button.
   pressed: HashSet<u16>,
+  /// Releases the input method claimed while their press was paired, by
+  /// keycode, with the time GDK stamped on the event.
+  ///
+  /// An input method that answers asynchronously claims a release, then hands
+  /// the same event back once the engine has declined it, and that second
+  /// sighting is the one Compose gets. One that answers on the spot keeps the
+  /// release for good. The two look alike when the release is claimed, so the
+  /// pairing waits here instead of in `pressed`: only the same event coming
+  /// back takes it, and a later release of that key with no press behind it
+  /// stays unpaired. The event time is what tells the same event from a new
+  /// one. It could not do that for a press (a Wayland auto-repeat carries the
+  /// time of the press it repeats), but a release has no repeats.
+  claimed_releases: HashMap<u16, u32>,
   /// Text the input method committed while it was filtering the current key
   /// press, or `None` when no press is being filtered or the press began
   /// inside a composition.
@@ -143,8 +156,6 @@ impl ImeState {
   pub(crate) fn key_pressed(&mut self, keycode: u16, filtered: bool) -> KeyPress {
     let typed = self.typed.take().unwrap_or_default();
     if filtered && typed.is_empty() {
-      // Whatever release was still paired with this key is stale now.
-      self.pressed.remove(&keycode);
       if let Some(held) = self.held.get_mut(&keycode) {
         held.withheld = true;
       }
@@ -183,11 +194,21 @@ impl ImeState {
   /// Whether a key release should reach Compose. Releases whose press was
   /// withheld are dropped, so Compose never sees a KeyUp without its KeyDown.
   ///
-  /// A filtered release leaves the pairing alone: an input method that
-  /// answers asynchronously claims the release too and hands it back, and
-  /// that second sighting is the one Compose gets.
-  pub(crate) fn key_released(&mut self, keycode: u16, filtered: bool) -> bool {
-    !filtered && self.pressed.remove(&keycode)
+  /// A release the input method claimed is dropped too, but its pairing is
+  /// kept for that same event (same `time`, GDK's timestamp) in case the
+  /// input method hands it back; see `claimed_releases`.
+  pub(crate) fn key_released(&mut self, keycode: u16, time: u32, filtered: bool) -> bool {
+    if filtered {
+      if self.pressed.remove(&keycode) {
+        self.claimed_releases.insert(keycode, time);
+      }
+      return false;
+    }
+    let handed_back = self.claimed_releases.get(&keycode) == Some(&time);
+    if handed_back {
+      self.claimed_releases.remove(&keycode);
+    }
+    self.pressed.remove(&keycode) || handed_back
   }
 
   /// The modifier state to publish, or `None` when it did not change.
@@ -215,6 +236,10 @@ mod tests {
   const KEY_RETURN: u16 = 36;
   const KEY_BACKSPACE: u16 = 22;
   const KEY_CTRL: u16 = 37;
+  /// Event times, in the order the events happened.
+  const T0: u32 = 1_000;
+  const T1: u32 = 1_100;
+  const T2: u32 = 1_200;
 
   fn delivered(typed: &str) -> KeyPress {
     KeyPress::Delivered {
@@ -226,7 +251,7 @@ mod tests {
   fn plain_typing_round_trips() {
     let mut s = ImeState::new();
     assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
-    assert!(s.key_released(KEY_A, false));
+    assert!(s.key_released(KEY_A, T0, false));
   }
 
   /// With no engine composing, GTK's input method turns a printable key into
@@ -240,7 +265,7 @@ mod tests {
     s.filter_started();
     assert_eq!(s.commit("q"), Commit::Typed);
     assert_eq!(s.key_pressed(KEY_A, true), delivered("q"));
-    assert!(s.key_released(KEY_A, false));
+    assert!(s.key_released(KEY_A, T0, false));
   }
 
   /// A key the engine consumed without typing anything (a dead key, a key
@@ -250,7 +275,7 @@ mod tests {
     let mut s = ImeState::new();
     s.filter_started();
     assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
-    assert!(!s.key_released(KEY_A, false));
+    assert!(!s.key_released(KEY_A, T0, false));
   }
 
   /// GTK's own sequences end just before they commit: the Return that
@@ -265,7 +290,7 @@ mod tests {
     s.preedit_ended();
     assert_eq!(s.commit("\u{e9}"), Commit::Text);
     assert_eq!(s.key_pressed(KEY_RETURN, true), KeyPress::Withheld);
-    assert!(!s.key_released(KEY_RETURN, false));
+    assert!(!s.key_released(KEY_RETURN, T0, false));
   }
 
   /// An input method that answers asynchronously (ibus without its key
@@ -295,21 +320,53 @@ mod tests {
     assert_eq!(s.key_pressed(KEY_A, true), delivered("a"));
     // The release: claimed, then handed back.
     s.release_held(KEY_A);
-    assert!(!s.key_released(KEY_A, true));
+    assert!(!s.key_released(KEY_A, T0, true));
     s.release_held(KEY_A);
-    assert!(s.key_released(KEY_A, false));
+    assert!(s.key_released(KEY_A, T0, false));
     assert!(!s.press_is_repeat(KEY_A));
   }
 
-  /// A release the input method kept for good leaves a pairing behind; the
-  /// next press of that key, if withheld, must not inherit it.
+  /// A release the input method kept for good must not pair with a later
+  /// release of that key. On Wayland the compositor withholds the press of
+  /// the Return that confirms a conversion and delivers its release anyway:
+  /// that release is a new event, and Compose must not see it.
   #[test]
-  fn withheld_press_drops_a_stale_pairing() {
+  fn release_kept_by_the_input_method_pairs_with_nothing_later() {
     let mut s = ImeState::new();
     assert_eq!(s.key_pressed(KEY_RETURN, false), delivered(""));
-    assert!(!s.key_released(KEY_RETURN, true));
+    assert!(!s.key_released(KEY_RETURN, T0, true));
+    // No press in between: the compositor kept it.
+    assert!(!s.key_released(KEY_RETURN, T1, false));
+    // Nor does a withheld press bring the pairing back.
     assert_eq!(s.key_pressed(KEY_RETURN, true), KeyPress::Withheld);
-    assert!(!s.key_released(KEY_RETURN, false));
+    assert!(!s.key_released(KEY_RETURN, T2, false));
+  }
+
+  /// A key tapped twice faster than an asynchronous input method answers:
+  /// the second press is claimed before the first release is handed back.
+  /// Each press still gets its own key-up.
+  #[test]
+  fn handed_back_release_survives_the_next_press_of_its_key() {
+    let mut s = ImeState::new();
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
+    assert!(!s.key_released(KEY_A, T0, true));
+    assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
+    assert!(s.key_released(KEY_A, T0, false));
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
+    assert!(!s.key_released(KEY_A, T1, true));
+    assert!(s.key_released(KEY_A, T1, false));
+    // Handed back once, not twice.
+    assert!(!s.key_released(KEY_A, T1, false));
+  }
+
+  /// A key Compose has the key-down of keeps its key-up when a later repeat
+  /// of it is withheld.
+  #[test]
+  fn withheld_repeat_keeps_the_pairing_of_the_press_before_it() {
+    let mut s = ImeState::new();
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
+    assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
+    assert!(s.key_released(KEY_A, T0, false));
   }
 
   /// Text that confirms a composition is the input method's, not the key's,
@@ -340,7 +397,7 @@ mod tests {
   #[test]
   fn release_without_a_press_is_dropped() {
     let mut s = ImeState::new();
-    assert!(!s.key_released(KEY_RETURN, false));
+    assert!(!s.key_released(KEY_RETURN, T0, false));
   }
 
   /// X11: the press reaches the client but `filter_keypress` claims it. The
@@ -349,7 +406,7 @@ mod tests {
   fn filtered_press_withholds_its_release() {
     let mut s = ImeState::new();
     assert_eq!(s.key_pressed(KEY_BACKSPACE, true), KeyPress::Withheld);
-    assert!(!s.key_released(KEY_BACKSPACE, false));
+    assert!(!s.key_released(KEY_BACKSPACE, T0, false));
   }
 
   /// The observed failure: confirming a conversion with Return delivered only
@@ -361,10 +418,10 @@ mod tests {
     assert_eq!(s.commit("x"), Commit::Ime);
     s.preedit_ended();
     // Only the release arrives; its press was consumed by the input method.
-    assert!(!s.key_released(KEY_RETURN, false));
+    assert!(!s.key_released(KEY_RETURN, T0, false));
     // The next Return is a real one and must go through.
     assert_eq!(s.key_pressed(KEY_RETURN, false), delivered(""));
-    assert!(s.key_released(KEY_RETURN, false));
+    assert!(s.key_released(KEY_RETURN, T0, false));
   }
 
   #[test]
@@ -372,9 +429,9 @@ mod tests {
     let mut s = ImeState::new();
     assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
     assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
-    assert!(s.key_released(KEY_A, false));
+    assert!(s.key_released(KEY_A, T0, false));
     // The repeat collapsed into one entry, so a second release is unpaired.
-    assert!(!s.key_released(KEY_A, false));
+    assert!(!s.key_released(KEY_A, T0, false));
   }
 
   #[test]
@@ -480,8 +537,8 @@ mod tests {
       Some(ModifiersState::CONTROL)
     );
     assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
-    assert!(s.key_released(KEY_A, false));
-    assert!(s.key_released(KEY_CTRL, false));
+    assert!(s.key_released(KEY_A, T0, false));
+    assert!(s.key_released(KEY_CTRL, T0, false));
     assert_eq!(
       s.modifiers_changed(ModifiersState::empty()),
       Some(ModifiersState::empty())
