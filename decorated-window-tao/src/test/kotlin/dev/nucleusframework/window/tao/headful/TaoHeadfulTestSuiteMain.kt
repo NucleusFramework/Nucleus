@@ -448,7 +448,8 @@ public object TaoHeadfulTestSuiteMain {
             NativeViewOverlayInputHeadfulCases.all() +
             TextureViewMonkeyHeadfulCases.all() +
             GpuCacheReclaimHeadfulCases.all() +
-            ModalDialogHeadfulCases.all()
+            ModalDialogHeadfulCases.all() +
+            NativePopupKeyboardHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { case ->
