@@ -6,6 +6,8 @@ package dev.nucleusframework.tray.internal.linux
  * because they are dynamically generated and not registered for JNI access.
  * This wrapper provides a known, statically registered class.
  */
-internal class JniRunnable(private val action: () -> Unit) : Runnable {
+internal class JniRunnable(
+    private val action: () -> Unit,
+) : Runnable {
     override fun run() = action()
 }

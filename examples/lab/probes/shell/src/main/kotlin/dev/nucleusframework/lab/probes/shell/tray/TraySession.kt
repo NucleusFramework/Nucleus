@@ -5,9 +5,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import dev.nucleusframework.tray.Tray
 import dev.nucleusframework.lab.core.LabPaths
 import dev.nucleusframework.lab.core.mvi.stamped
+import dev.nucleusframework.tray.Tray
 
 /**
  * The Lab's tray icon, composed as a session so it outlives navigation, like a real tray

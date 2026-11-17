@@ -1,10 +1,30 @@
 package dev.nucleusframework.tray.demo
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -18,20 +38,21 @@ fun App(
     textVisible: Boolean,
     alwaysShowTray: Boolean,
     hideOnClose: Boolean,
-    onToggleChange: (Boolean, Boolean) -> Unit
+    onToggleChange: (Boolean, Boolean) -> Unit,
 ) {
     var currentScreen by remember { mutableStateOf(Screen.Screen1) }
-    
+
     // Automatically detect system theme
     val isDarkTheme = isSystemInDarkMode()
 
     // Material3 Theme with dark mode support
     MaterialTheme(
-        colorScheme = if (isDarkTheme) {
-            darkColorScheme()
-        } else {
-            lightColorScheme()
-        }
+        colorScheme =
+            if (isDarkTheme) {
+                darkColorScheme()
+            } else {
+                lightColorScheme()
+            },
     ) {
         Scaffold(
             topBar = {
@@ -40,7 +61,7 @@ fun App(
                     actions = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(end = 8.dp)
+                            modifier = Modifier.padding(end = 8.dp),
                         ) {
                             // Always Show Tray Toggle
                             Text("Always Show Tray")
@@ -49,7 +70,7 @@ fun App(
                                 checked = alwaysShowTray,
                                 onCheckedChange = { isChecked ->
                                     onToggleChange(isChecked, hideOnClose)
-                                }
+                                },
                             )
                             Spacer(modifier = Modifier.width(16.dp))
                             // Hide on Close Toggle
@@ -59,46 +80,49 @@ fun App(
                                 checked = hideOnClose,
                                 onCheckedChange = { isChecked ->
                                     onToggleChange(alwaysShowTray, isChecked)
-                                }
+                                },
                             )
                             Spacer(modifier = Modifier.width(16.dp))
                             // Exit Button
                             Button(
                                 onClick = { exitProcess(0) },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                             ) {
                                 Text("Exit")
                             }
                         }
-                    }
+                    },
                 )
-            }
+            },
         ) { innerPadding ->
             Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                color = MaterialTheme.colorScheme.background
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                color = MaterialTheme.colorScheme.background,
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(16.dp),
                     ) {
                         when (currentScreen) {
-                            Screen.Screen1 -> ScreenOne(
-                                onNavigate = { currentScreen = Screen.Screen2 },
-                                textVisible = textVisible
-                            )
+                            Screen.Screen1 ->
+                                ScreenOne(
+                                    onNavigate = { currentScreen = Screen.Screen2 },
+                                    textVisible = textVisible,
+                                )
 
-                            Screen.Screen2 -> ScreenTwo(
-                                onNavigate = { currentScreen = Screen.Screen1 },
-                                textVisible = textVisible
-                            )
+                            Screen.Screen2 ->
+                                ScreenTwo(
+                                    onNavigate = { currentScreen = Screen.Screen1 },
+                                    textVisible = textVisible,
+                                )
                         }
                     }
                 }

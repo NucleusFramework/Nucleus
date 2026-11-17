@@ -91,12 +91,11 @@ public fun rememberTrayAppState(
     initialWindowSize: DpSize = DpSize(300.dp, 200.dp),
     initiallyVisible: Boolean = false,
     initialDismissMode: TrayWindowDismissMode = TrayWindowDismissMode.AUTO,
-): TrayAppState {
-    return remember {
+): TrayAppState =
+    remember {
         TrayAppState(
             initialWindowSize = initialWindowSize,
             initiallyVisible = initiallyVisible,
             initialDismissMode = initialDismissMode,
         )
     }
-}

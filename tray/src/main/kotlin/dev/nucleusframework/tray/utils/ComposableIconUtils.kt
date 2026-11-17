@@ -26,9 +26,7 @@ internal object ComposableIconUtils {
     fun renderComposableToPngFile(
         iconRenderProperties: IconRenderProperties,
         content: @Composable () -> Unit,
-    ): String {
-        return IconFileCache.store(renderComposableToPngBytes(iconRenderProperties, content), "png")
-    }
+    ): String = IconFileCache.store(renderComposableToPngBytes(iconRenderProperties, content), "png")
 
     /**
      * Renders a Composable to a PNG image and returns the result as a byte array.
@@ -67,9 +65,7 @@ internal object ComposableIconUtils {
     fun renderComposableToIcoFile(
         iconRenderProperties: IconRenderProperties,
         content: @Composable (() -> Unit),
-    ): String {
-        return IconFileCache.store(renderComposableToIcoBytes(iconRenderProperties, content), "ico")
-    }
+    ): String = IconFileCache.store(renderComposableToIcoBytes(iconRenderProperties, content), "ico")
 
     /**
      * Renders a Composable to ICO format bytes.
@@ -107,8 +103,8 @@ internal object ComposableIconUtils {
     fun calculateContentHash(
         iconRenderProperties: IconRenderProperties,
         content: @Composable () -> Unit,
-    ): Long {
-        return try {
+    ): Long =
+        try {
             // Render the composable to PNG bytes
             val pngBytes = renderComposableToPngBytes(iconRenderProperties, content)
 
@@ -121,7 +117,6 @@ internal object ComposableIconUtils {
             // Return a time-based hash as fallback
             System.currentTimeMillis()
         }
-    }
 
     private fun <T> withRenderedIcon(
         iconRenderProperties: IconRenderProperties,

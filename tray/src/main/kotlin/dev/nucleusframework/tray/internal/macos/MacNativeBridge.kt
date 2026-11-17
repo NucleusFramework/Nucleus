@@ -12,7 +12,6 @@ internal object MacNativeBridge {
         NativeLibraryLoader.load(
             LIBRARY_NAME,
             MacNativeBridge::class.java,
-            
         )
     val isLoaded: Boolean get() = loaded
 

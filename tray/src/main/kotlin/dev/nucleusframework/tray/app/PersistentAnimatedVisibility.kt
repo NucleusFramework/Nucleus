@@ -95,7 +95,9 @@ private class AVScopeImpl(
     val targetSize = mutableStateOf(IntSize.Zero)
 }
 
-private class AVMeasurePolicy(private val scope: AVScopeImpl) : MeasurePolicy {
+private class AVMeasurePolicy(
+    private val scope: AVScopeImpl,
+) : MeasurePolicy {
     private var hasLookaheadOccurred = false
 
     override fun MeasureScope.measure(
@@ -195,13 +197,16 @@ private fun <T> AnimatedEnterExitImplPersistent(
 private val Transition<EnterExitState>.exitFinished: Boolean
     get() = currentState == EnterExitState.PostExit && targetState == EnterExitState.PostExit
 
-private class AnimatedVisibilityScopeImpl(transition: Transition<EnterExitState>) :
-    AnimatedVisibilityScope {
+private class AnimatedVisibilityScopeImpl(
+    transition: Transition<EnterExitState>,
+) : AnimatedVisibilityScope {
     override var transition: Transition<EnterExitState> = transition
     internal val targetSize = mutableStateOf(IntSize.Zero)
 }
 
-private class AnimatedEnterExitMeasurePolicy(val scope: AnimatedVisibilityScopeImpl) : MeasurePolicy {
+private class AnimatedEnterExitMeasurePolicy(
+    val scope: AnimatedVisibilityScopeImpl,
+) : MeasurePolicy {
     var hasLookaheadOccurred = false
 
     override fun MeasureScope.measure(

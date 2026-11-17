@@ -13,12 +13,18 @@ internal object WindowsTrayInitializer {
         // A JVM that exits with icons still registered leaves "ghost" icons in the notification
         // area until the user hovers them: remove them on the way out.
         Runtime.getRuntime().addShutdownHook(
-            Thread({ synchronized(this) { trayManagers.values.toList() }.forEach { it.stop() } }, "NucleusTray-shutdown"),
+            Thread(
+                { synchronized(this) { trayManagers.values.toList() }.forEach { it.stop() } },
+                "NucleusTray-shutdown",
+            ),
         )
     }
 
     /** Native notification-area region ("top-left" | "top-right" | …), or `null` if unavailable. */
-    fun notificationIconsRegion(): String? = runCatching { WindowsNativeBridge.nativeGetNotificationIconsRegion() }.getOrNull()
+    fun notificationIconsRegion(): String? =
+        runCatching {
+            WindowsNativeBridge.nativeGetNotificationIconsRegion()
+        }.getOrNull()
 
     /** Creates tray [id], or updates it when it exists. Returns at once: the change is applied by the tray's thread. */
     fun initialize(

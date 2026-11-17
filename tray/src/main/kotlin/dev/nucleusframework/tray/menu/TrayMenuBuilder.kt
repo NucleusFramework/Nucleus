@@ -19,7 +19,8 @@ public interface TrayMenuBuilder {
      *
      * @param label The text label for the menu item.
      * @param isEnabled Indicates whether the menu item is enabled. Defaults to true.
-     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does not register a hotkey.
+     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does
+     *   not register a hotkey.
      * @param onClick Lambda function to be invoked when the menu item is clicked. Defaults to an empty lambda.
      */
     public fun Item(
@@ -36,7 +37,8 @@ public interface TrayMenuBuilder {
      * @param iconContent A Composable function that defines the icon.
      * @param iconRenderProperties Properties for rendering the icon. Defaults to 16x16 for menu items.
      * @param isEnabled Indicates whether the menu item is enabled. Defaults to true.
-     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does not register a hotkey.
+     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does
+     *   not register a hotkey.
      * @param onClick Lambda function to be invoked when the menu item is clicked. Defaults to an empty lambda.
      */
     public fun Item(
@@ -56,7 +58,8 @@ public interface TrayMenuBuilder {
      * @param iconTint Optional tint color for the icon. If null, adapts to menu theme.
      * @param iconRenderProperties Properties for rendering the icon. Defaults to 16x16 for menu items.
      * @param isEnabled Indicates whether the menu item is enabled. Defaults to true.
-     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does not register a hotkey.
+     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does
+     *   not register a hotkey.
      * @param onClick Lambda function to be invoked when the menu item is clicked. Defaults to an empty lambda.
      */
     public fun Item(
@@ -76,7 +79,8 @@ public interface TrayMenuBuilder {
      * @param icon The Painter to display as icon.
      * @param iconRenderProperties Properties for rendering the icon. Defaults to 16x16 for menu items.
      * @param isEnabled Indicates whether the menu item is enabled. Defaults to true.
-     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does not register a hotkey.
+     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does
+     *   not register a hotkey.
      * @param onClick Lambda function to be invoked when the menu item is clicked. Defaults to an empty lambda.
      */
     public fun Item(
@@ -107,9 +111,11 @@ public interface TrayMenuBuilder {
      *
      * @param label The text label for the checkable menu item.
      * @param checked The current checked state of the item.
-     * @param onCheckedChange A lambda function called when the user toggles the item. The new checked state is passed as a parameter.
+     * @param onCheckedChange A lambda function called when the user toggles the item. The new
+     *   checked state is passed as a parameter.
      * @param isEnabled Determines if the checkable item is enabled. Defaults to true.
-     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does not register a hotkey.
+     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does
+     *   not register a hotkey.
      */
     public fun CheckableItem(
         label: String,
@@ -128,7 +134,8 @@ public interface TrayMenuBuilder {
      * @param checked The current checked state of the item.
      * @param onCheckedChange A lambda function called when the user toggles the item.
      * @param isEnabled Determines if the checkable item is enabled. Defaults to true.
-     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does not register a hotkey.
+     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does
+     *   not register a hotkey.
      */
     public fun CheckableItem(
         label: String,
@@ -150,7 +157,8 @@ public interface TrayMenuBuilder {
      * @param checked The current checked state of the item.
      * @param onCheckedChange A lambda function called when the user toggles the item.
      * @param isEnabled Determines if the checkable item is enabled. Defaults to true.
-     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does not register a hotkey.
+     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does
+     *   not register a hotkey.
      */
     public fun CheckableItem(
         label: String,
@@ -172,7 +180,8 @@ public interface TrayMenuBuilder {
      * @param checked The current checked state of the item.
      * @param onCheckedChange A lambda function called when the user toggles the item.
      * @param isEnabled Determines if the checkable item is enabled. Defaults to true.
-     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does not register a hotkey.
+     * @param shortcut Optional keyboard shortcut hint displayed next to the item. Display-only, does
+     *   not register a hotkey.
      */
     public fun CheckableItem(
         label: String,

@@ -2,6 +2,7 @@ package dev.nucleusframework.tray.internal.macos
 
 import androidx.compose.runtime.mutableStateOf
 import dev.nucleusframework.tray.menu.KeyShortcut
+import dev.nucleusframework.tray.utils.errorln
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -199,7 +200,7 @@ internal class MacTrayManager(
                 // Set menu-opened callback after init (TrayContext must exist)
                 initializeOnMenuOpenedCallback()
             } catch (e: Exception) {
-                e.printStackTrace()
+                errorln { "[MacTrayManager] ${e.stackTraceToString()}" }
                 running.set(false)
                 cleanupTray()
             }
@@ -326,7 +327,7 @@ internal class MacTrayManager(
                     // Dispose the tray (this frees the struct too)
                     MacNativeBridge.nativeDisposeTray(trayHandle)
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    errorln { "[MacTrayManager] ${e.stackTraceToString()}" }
                 }
                 trayHandle = 0L
             }
@@ -351,9 +352,7 @@ internal class MacTrayManager(
         ioScope = null
     }
 
-    fun getNativeTrayHandle(): Long {
-        return trayHandle
-    }
+    fun getNativeTrayHandle(): Long = trayHandle
 
     fun setAppearanceIcons(
         lightIconPath: String,

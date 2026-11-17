@@ -12,7 +12,6 @@ internal object LinuxNativeBridge {
         NativeLibraryLoader.load(
             "nucleus_tray",
             LinuxNativeBridge::class.java,
-            
         )
     }
 

@@ -28,6 +28,7 @@ import org.jetbrains.compose.resources.DrawableResource
  * transparently rebuilds the menu.
  */
 public interface ComposableTrayMenuScope {
+    /** Adds a clickable item. `shortcut` is a displayed hint only, it registers no hotkey. */
     @Composable
     public fun Item(
         label: String,
@@ -36,6 +37,7 @@ public interface ComposableTrayMenuScope {
         onClick: () -> Unit = {},
     )
 
+    /** Adds a clickable item. `shortcut` is a displayed hint only, it registers no hotkey. */
     @Composable
     public fun Item(
         label: String,
@@ -46,6 +48,7 @@ public interface ComposableTrayMenuScope {
         onClick: () -> Unit = {},
     )
 
+    /** Adds a clickable item. `shortcut` is a displayed hint only, it registers no hotkey. */
     @Composable
     public fun Item(
         label: String,
@@ -57,6 +60,7 @@ public interface ComposableTrayMenuScope {
         onClick: () -> Unit = {},
     )
 
+    /** Adds an item with a check mark; `onCheckedChange` receives the toggled state. */
     @Composable
     public fun CheckableItem(
         label: String,
@@ -66,6 +70,7 @@ public interface ComposableTrayMenuScope {
         shortcut: KeyShortcut? = null,
     )
 
+    /** Adds an item with a check mark; `onCheckedChange` receives the toggled state. */
     @Composable
     public fun CheckableItem(
         label: String,
@@ -77,6 +82,7 @@ public interface ComposableTrayMenuScope {
         shortcut: KeyShortcut? = null,
     )
 
+    /** Adds an item with a check mark; `onCheckedChange` receives the toggled state. */
     @Composable
     public fun CheckableItem(
         label: String,
@@ -89,6 +95,7 @@ public interface ComposableTrayMenuScope {
         shortcut: KeyShortcut? = null,
     )
 
+    /** Adds a submenu whose items are declared in `submenuContent`. */
     @Composable
     public fun SubMenu(
         label: String,
@@ -96,6 +103,7 @@ public interface ComposableTrayMenuScope {
         submenuContent: @Composable ComposableTrayMenuScope.() -> Unit,
     )
 
+    /** Adds a submenu whose items are declared in `submenuContent`. */
     @Composable
     public fun SubMenu(
         label: String,
@@ -105,6 +113,7 @@ public interface ComposableTrayMenuScope {
         submenuContent: @Composable ComposableTrayMenuScope.() -> Unit,
     )
 
+    /** Adds a submenu whose items are declared in `submenuContent`. */
     @Composable
     public fun SubMenu(
         label: String,
@@ -115,6 +124,7 @@ public interface ComposableTrayMenuScope {
         submenuContent: @Composable ComposableTrayMenuScope.() -> Unit,
     )
 
+    /** Adds a clickable item. `shortcut` is a displayed hint only, it registers no hotkey. */
     @Composable
     public fun Item(
         label: String,
@@ -125,6 +135,7 @@ public interface ComposableTrayMenuScope {
         onClick: () -> Unit = {},
     )
 
+    /** Adds an item with a check mark; `onCheckedChange` receives the toggled state. */
     @Composable
     public fun CheckableItem(
         label: String,
@@ -136,6 +147,7 @@ public interface ComposableTrayMenuScope {
         shortcut: KeyShortcut? = null,
     )
 
+    /** Adds a submenu whose items are declared in `submenuContent`. */
     @Composable
     public fun SubMenu(
         label: String,
@@ -145,6 +157,7 @@ public interface ComposableTrayMenuScope {
         submenuContent: @Composable ComposableTrayMenuScope.() -> Unit,
     )
 
+    /** Adds a separator. */
     @Composable
     public fun Divider()
 
@@ -161,6 +174,7 @@ public interface ComposableTrayMenuScope {
         message = "Use CheckableItem with separate checked and onCheckedChange parameters",
         replaceWith = ReplaceWith("CheckableItem(label, checked, onToggle, isEnabled)"),
     )
+    /** Adds an item with a check mark; `onCheckedChange` receives the toggled state. */
     @Composable
     public fun CheckableItem(
         label: String,

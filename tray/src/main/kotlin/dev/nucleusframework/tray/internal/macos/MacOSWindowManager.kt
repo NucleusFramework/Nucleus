@@ -1,7 +1,7 @@
 package dev.nucleusframework.tray.internal.macos
 
-import dev.nucleusframework.tray.utils.debugln
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.tray.utils.debugln
 
 internal class MacOSWindowManager {
     // Detect platform once
@@ -42,9 +42,7 @@ internal class MacOSWindowManager {
     /**
      * Check if the application can be hidden from the Dock
      */
-    fun canHideFromDock(): Boolean {
-        return isMacOs
-    }
+    fun canHideFromDock(): Boolean = isMacOs
 
     /**
      * Configure a window so that macOS moves it to the active Space when it

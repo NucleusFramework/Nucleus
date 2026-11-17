@@ -1,0 +1,315 @@
+public final class dev/nucleusframework/tray/ComposableTrayKt {
+	public static final fun Tray (Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray (Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray (Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray-NZt02no (Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray-NZt02no (Lorg/jetbrains/compose/resources/DrawableResource;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray-zQL3uoY (Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/tray/NativeTrayKt {
+	public static final fun Tray (Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray (Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray (Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray-NZt02no (Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray-NZt02no (Lorg/jetbrains/compose/resources/DrawableResource;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tray-zQL3uoY (Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/tray/app/TrayAppKt {
+	public static final fun TrayApp-GPGae1c (Ldev/nucleusframework/application/NucleusApplicationScope;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+	public static final fun TrayApp-ndtmDTs (Ldev/nucleusframework/application/NucleusApplicationScope;Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun TrayApp-ndtmDTs (Ldev/nucleusframework/application/NucleusApplicationScope;Lorg/jetbrains/compose/resources/DrawableResource;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun TrayApp-p67tCZc (Ldev/nucleusframework/application/NucleusApplicationScope;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+	public static final fun TrayApp-p67tCZc (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+	public static final fun TrayApp-p67tCZc (Ldev/nucleusframework/application/NucleusApplicationScope;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+}
+
+public final class dev/nucleusframework/tray/app/TrayAppState {
+	public static final field $stable I
+	public fun <init> ()V
+	public synthetic fun <init> (JZLdev/nucleusframework/tray/app/TrayWindowDismissMode;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JZLdev/nucleusframework/tray/app/TrayWindowDismissMode;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDismissMode ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getWindowSize ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun hide ()V
+	public final fun isVisible ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun onVisibilityChanged (Lkotlin/jvm/functions/Function1;)V
+	public final fun setDismissMode (Ldev/nucleusframework/tray/app/TrayWindowDismissMode;)V
+	public final fun setWindowSize-EaSLcWc (J)V
+	public final fun setWindowSize-YgX7TsA (FF)V
+	public final fun show ()V
+	public final fun toggle ()V
+}
+
+public final class dev/nucleusframework/tray/app/TrayAppStateKt {
+	public static final fun rememberTrayAppState-csNNkCE (JZLdev/nucleusframework/tray/app/TrayWindowDismissMode;Landroidx/compose/runtime/Composer;II)Ldev/nucleusframework/tray/app/TrayAppState;
+}
+
+public final class dev/nucleusframework/tray/app/TrayPosition : java/lang/Enum {
+	public static final field BOTTOM_LEFT Ldev/nucleusframework/tray/app/TrayPosition;
+	public static final field BOTTOM_RIGHT Ldev/nucleusframework/tray/app/TrayPosition;
+	public static final field TOP_LEFT Ldev/nucleusframework/tray/app/TrayPosition;
+	public static final field TOP_RIGHT Ldev/nucleusframework/tray/app/TrayPosition;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/tray/app/TrayPosition;
+	public static fun values ()[Ldev/nucleusframework/tray/app/TrayPosition;
+}
+
+public final class dev/nucleusframework/tray/app/TrayPositionKt {
+	public static final fun getTrayPosition ()Ldev/nucleusframework/tray/app/TrayPosition;
+}
+
+public final class dev/nucleusframework/tray/app/TrayWindowDismissMode : java/lang/Enum {
+	public static final field AUTO Ldev/nucleusframework/tray/app/TrayWindowDismissMode;
+	public static final field MANUAL Ldev/nucleusframework/tray/app/TrayWindowDismissMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/tray/app/TrayWindowDismissMode;
+	public static fun values ()[Ldev/nucleusframework/tray/app/TrayWindowDismissMode;
+}
+
+public final class dev/nucleusframework/tray/app/TrayWindowPositionKt {
+	public static final fun getTrayWindowPosition (IIII)Landroidx/compose/ui/window/WindowPosition;
+	public static synthetic fun getTrayWindowPosition$default (IIIIILjava/lang/Object;)Landroidx/compose/ui/window/WindowPosition;
+	public static final fun getTrayWindowPositionForInstance (Ljava/lang/String;IIII)Landroidx/compose/ui/window/WindowPosition;
+	public static synthetic fun getTrayWindowPositionForInstance$default (Ljava/lang/String;IIIIILjava/lang/Object;)Landroidx/compose/ui/window/WindowPosition;
+}
+
+public abstract interface class dev/nucleusframework/tray/menu/ComposableTrayMenuScope {
+	public abstract fun CheckableItem (Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZLkotlin/jvm/functions/Function1;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun CheckableItem (Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;ZLkotlin/jvm/functions/Function1;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun CheckableItem (Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;Landroidx/compose/runtime/Composer;I)V
+	public fun CheckableItem (Ljava/lang/String;ZZLkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V
+	public synthetic fun CheckableItem (Ljava/lang/String;ZZLkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V
+	public abstract fun CheckableItem-kbVaWH0 (Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;ZLkotlin/jvm/functions/Function1;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun Divider (Landroidx/compose/runtime/Composer;I)V
+	public abstract fun Item (Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun Item (Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun Item (Ljava/lang/String;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun Item-dgCr-O4 (Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun SubMenu (Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun SubMenu (Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun SubMenu (Ljava/lang/String;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;I)V
+	public abstract fun SubMenu-et4H-rQ (Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;I)V
+	public fun dispose ()V
+}
+
+public final class dev/nucleusframework/tray/menu/ComposableTrayMenuScope$ComposeDefaultImpls {
+	public static final fun CheckableItem$default (Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZLkotlin/jvm/functions/Function1;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun CheckableItem$default (Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;ZLkotlin/jvm/functions/Function1;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun CheckableItem$default (Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun CheckableItem$default (Ljava/lang/String;ZZLkotlin/jvm/functions/Function1;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun CheckableItem$default-eq_XX3s (Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;ZLkotlin/jvm/functions/Function1;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Item$default (Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Item$default (Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Item$default (Ljava/lang/String;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Item$default-NZt02no (Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun SubMenu$default (Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function3;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun SubMenu$default (Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function3;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun SubMenu$default (Ljava/lang/String;ZLkotlin/jvm/functions/Function3;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+	public static final fun SubMenu$default-N55sxy0 (Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function3;Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/tray/menu/ComposableTrayMenuScope$DefaultImpls {
+	public static fun CheckableItem (Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Ljava/lang/String;ZZLkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V
+	public static synthetic fun CheckableItem (Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;Ljava/lang/String;ZZLkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)V
+	public static fun dispose (Ldev/nucleusframework/tray/menu/ComposableTrayMenuScope;)V
+}
+
+public final class dev/nucleusframework/tray/menu/Key : java/lang/Enum {
+	public static final field A Ldev/nucleusframework/tray/menu/Key;
+	public static final field B Ldev/nucleusframework/tray/menu/Key;
+	public static final field Backquote Ldev/nucleusframework/tray/menu/Key;
+	public static final field Backslash Ldev/nucleusframework/tray/menu/Key;
+	public static final field C Ldev/nucleusframework/tray/menu/Key;
+	public static final field Comma Ldev/nucleusframework/tray/menu/Key;
+	public static final field D Ldev/nucleusframework/tray/menu/Key;
+	public static final field Delete Ldev/nucleusframework/tray/menu/Key;
+	public static final field DownArrow Ldev/nucleusframework/tray/menu/Key;
+	public static final field E Ldev/nucleusframework/tray/menu/Key;
+	public static final field End Ldev/nucleusframework/tray/menu/Key;
+	public static final field Equal Ldev/nucleusframework/tray/menu/Key;
+	public static final field Escape Ldev/nucleusframework/tray/menu/Key;
+	public static final field F Ldev/nucleusframework/tray/menu/Key;
+	public static final field F1 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F10 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F11 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F12 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F2 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F3 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F4 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F5 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F6 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F7 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F8 Ldev/nucleusframework/tray/menu/Key;
+	public static final field F9 Ldev/nucleusframework/tray/menu/Key;
+	public static final field ForwardDelete Ldev/nucleusframework/tray/menu/Key;
+	public static final field G Ldev/nucleusframework/tray/menu/Key;
+	public static final field H Ldev/nucleusframework/tray/menu/Key;
+	public static final field Home Ldev/nucleusframework/tray/menu/Key;
+	public static final field I Ldev/nucleusframework/tray/menu/Key;
+	public static final field J Ldev/nucleusframework/tray/menu/Key;
+	public static final field K Ldev/nucleusframework/tray/menu/Key;
+	public static final field L Ldev/nucleusframework/tray/menu/Key;
+	public static final field LeftArrow Ldev/nucleusframework/tray/menu/Key;
+	public static final field LeftBracket Ldev/nucleusframework/tray/menu/Key;
+	public static final field M Ldev/nucleusframework/tray/menu/Key;
+	public static final field Minus Ldev/nucleusframework/tray/menu/Key;
+	public static final field N Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num0 Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num1 Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num2 Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num3 Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num4 Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num5 Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num6 Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num7 Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num8 Ldev/nucleusframework/tray/menu/Key;
+	public static final field Num9 Ldev/nucleusframework/tray/menu/Key;
+	public static final field O Ldev/nucleusframework/tray/menu/Key;
+	public static final field P Ldev/nucleusframework/tray/menu/Key;
+	public static final field PageDown Ldev/nucleusframework/tray/menu/Key;
+	public static final field PageUp Ldev/nucleusframework/tray/menu/Key;
+	public static final field Period Ldev/nucleusframework/tray/menu/Key;
+	public static final field Q Ldev/nucleusframework/tray/menu/Key;
+	public static final field Quote Ldev/nucleusframework/tray/menu/Key;
+	public static final field R Ldev/nucleusframework/tray/menu/Key;
+	public static final field Return Ldev/nucleusframework/tray/menu/Key;
+	public static final field RightArrow Ldev/nucleusframework/tray/menu/Key;
+	public static final field RightBracket Ldev/nucleusframework/tray/menu/Key;
+	public static final field S Ldev/nucleusframework/tray/menu/Key;
+	public static final field Semicolon Ldev/nucleusframework/tray/menu/Key;
+	public static final field Slash Ldev/nucleusframework/tray/menu/Key;
+	public static final field Space Ldev/nucleusframework/tray/menu/Key;
+	public static final field T Ldev/nucleusframework/tray/menu/Key;
+	public static final field Tab Ldev/nucleusframework/tray/menu/Key;
+	public static final field U Ldev/nucleusframework/tray/menu/Key;
+	public static final field UpArrow Ldev/nucleusframework/tray/menu/Key;
+	public static final field V Ldev/nucleusframework/tray/menu/Key;
+	public static final field W Ldev/nucleusframework/tray/menu/Key;
+	public static final field X Ldev/nucleusframework/tray/menu/Key;
+	public static final field Y Ldev/nucleusframework/tray/menu/Key;
+	public static final field Z Ldev/nucleusframework/tray/menu/Key;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/tray/menu/Key;
+	public static fun values ()[Ldev/nucleusframework/tray/menu/Key;
+}
+
+public final class dev/nucleusframework/tray/menu/KeyShortcut {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/tray/menu/Key;ZZZZ)V
+	public synthetic fun <init> (Ldev/nucleusframework/tray/menu/Key;ZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/tray/menu/Key;
+	public final fun component2 ()Z
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun copy (Ldev/nucleusframework/tray/menu/Key;ZZZZ)Ldev/nucleusframework/tray/menu/KeyShortcut;
+	public static synthetic fun copy$default (Ldev/nucleusframework/tray/menu/KeyShortcut;Ldev/nucleusframework/tray/menu/Key;ZZZZILjava/lang/Object;)Ldev/nucleusframework/tray/menu/KeyShortcut;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAlt ()Z
+	public final fun getCtrl ()Z
+	public final fun getKey ()Ldev/nucleusframework/tray/menu/Key;
+	public final fun getMeta ()Z
+	public final fun getShift ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/tray/menu/TrayMenuBuilder {
+	public abstract fun CheckableItem (Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;)V
+	public abstract fun CheckableItem (Ljava/lang/String;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;)V
+	public abstract fun CheckableItem (Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;)V
+	public abstract fun CheckableItem (Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;)V
+	public fun CheckableItem (Ljava/lang/String;ZZLkotlin/jvm/functions/Function1;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;ZZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public abstract fun CheckableItem-et4H-rQ (Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;)V
+	public static synthetic fun CheckableItem-et4H-rQ$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public abstract fun Divider ()V
+	public abstract fun Item (Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;)V
+	public abstract fun Item (Ljava/lang/String;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;)V
+	public abstract fun Item (Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;)V
+	public abstract fun Item (Ljava/lang/String;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;)V
+	public static synthetic fun Item$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public static synthetic fun Item$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public static synthetic fun Item$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public static synthetic fun Item$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public abstract fun Item-drOMvmE (Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;)V
+	public static synthetic fun Item-drOMvmE$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public abstract fun SubMenu (Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;)V
+	public abstract fun SubMenu (Ljava/lang/String;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;)V
+	public abstract fun SubMenu (Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;)V
+	public abstract fun SubMenu (Ljava/lang/String;ZLkotlin/jvm/functions/Function1;)V
+	public static synthetic fun SubMenu$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun SubMenu$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun SubMenu$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun SubMenu$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public abstract fun SubMenu-gKt5lHk (Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;)V
+	public static synthetic fun SubMenu-gKt5lHk$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public abstract fun dispose ()V
+}
+
+public final class dev/nucleusframework/tray/menu/TrayMenuBuilder$DefaultImpls {
+	public static fun CheckableItem (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;ZZLkotlin/jvm/functions/Function1;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public static synthetic fun CheckableItem$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;ZZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun CheckableItem-et4H-rQ$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ZLdev/nucleusframework/tray/menu/KeyShortcut;ILjava/lang/Object;)V
+	public static synthetic fun Item$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public static synthetic fun Item$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public static synthetic fun Item$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public static synthetic fun Item$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public static synthetic fun Item-drOMvmE$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLdev/nucleusframework/tray/menu/KeyShortcut;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public static synthetic fun SubMenu$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun SubMenu$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun SubMenu$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun SubMenu$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun SubMenu-gKt5lHk$default (Ldev/nucleusframework/tray/menu/TrayMenuBuilder;Ljava/lang/String;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+}
+
+public final class dev/nucleusframework/tray/utils/DarkModeDetectorKt {
+	public static final fun isMenuBarInDarkMode (Landroidx/compose/runtime/Composer;I)Z
+}
+
+public final class dev/nucleusframework/tray/utils/IconRenderProperties {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/tray/utils/IconRenderProperties$Companion;
+	public fun <init> ()V
+	public fun <init> (IILandroidx/compose/ui/unit/Density;IIZ)V
+	public synthetic fun <init> (IILandroidx/compose/ui/unit/Density;IIZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()Landroidx/compose/ui/unit/Density;
+	public final fun component4 ()I
+	public final fun component5 ()I
+	public final fun component6 ()Z
+	public final fun copy (IILandroidx/compose/ui/unit/Density;IIZ)Ldev/nucleusframework/tray/utils/IconRenderProperties;
+	public static synthetic fun copy$default (Ldev/nucleusframework/tray/utils/IconRenderProperties;IILandroidx/compose/ui/unit/Density;IIZILjava/lang/Object;)Ldev/nucleusframework/tray/utils/IconRenderProperties;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getJvmOwnsDownscaling ()Z
+	public final fun getRequiresScaling ()Z
+	public final fun getSceneDensity ()Landroidx/compose/ui/unit/Density;
+	public final fun getSceneHeight ()I
+	public final fun getSceneWidth ()I
+	public final fun getTargetHeight ()I
+	public final fun getTargetWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/tray/utils/IconRenderProperties$Companion {
+	public final fun forCurrentOperatingSystem (IILandroidx/compose/ui/unit/Density;)Ldev/nucleusframework/tray/utils/IconRenderProperties;
+	public static synthetic fun forCurrentOperatingSystem$default (Ldev/nucleusframework/tray/utils/IconRenderProperties$Companion;IILandroidx/compose/ui/unit/Density;ILjava/lang/Object;)Ldev/nucleusframework/tray/utils/IconRenderProperties;
+	public final fun forMenuItem (IILandroidx/compose/ui/unit/Density;)Ldev/nucleusframework/tray/utils/IconRenderProperties;
+	public static synthetic fun forMenuItem$default (Ldev/nucleusframework/tray/utils/IconRenderProperties$Companion;IILandroidx/compose/ui/unit/Density;ILjava/lang/Object;)Ldev/nucleusframework/tray/utils/IconRenderProperties;
+	public final fun withoutScalingAndAliasing (IILandroidx/compose/ui/unit/Density;)Ldev/nucleusframework/tray/utils/IconRenderProperties;
+	public static synthetic fun withoutScalingAndAliasing$default (Ldev/nucleusframework/tray/utils/IconRenderProperties$Companion;IILandroidx/compose/ui/unit/Density;ILjava/lang/Object;)Ldev/nucleusframework/tray/utils/IconRenderProperties;
+}
+

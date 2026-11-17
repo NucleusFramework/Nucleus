@@ -1,6 +1,10 @@
 package dev.nucleusframework.tray.demo
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -11,19 +15,22 @@ import androidx.compose.ui.unit.dp
 
 enum class Screen {
     Screen1,
-    Screen2
+    Screen2,
 }
 
 @Composable
-internal fun ScreenOne(onNavigate: () -> Unit, textVisible: Boolean) {
+internal fun ScreenOne(
+    onNavigate: () -> Unit,
+    textVisible: Boolean,
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Text(
             "Welcome to Screen 1",
-            style = MaterialTheme.typography.headlineMedium
+            style = MaterialTheme.typography.headlineMedium,
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onNavigate) {
@@ -33,22 +40,25 @@ internal fun ScreenOne(onNavigate: () -> Unit, textVisible: Boolean) {
         if (textVisible) {
             Text(
                 "This is the additional text displayed based on tray selection.",
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyLarge,
             )
         }
     }
 }
 
 @Composable
-internal fun ScreenTwo(onNavigate: () -> Unit, textVisible: Boolean) {
+internal fun ScreenTwo(
+    onNavigate: () -> Unit,
+    textVisible: Boolean,
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Text(
             "Welcome to Screen 2",
-            style = MaterialTheme.typography.headlineMedium
+            style = MaterialTheme.typography.headlineMedium,
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onNavigate) {
@@ -58,7 +68,7 @@ internal fun ScreenTwo(onNavigate: () -> Unit, textVisible: Boolean) {
         if (textVisible) {
             Text(
                 "This is the additional text displayed based on tray selection.",
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyLarge,
             )
         }
     }

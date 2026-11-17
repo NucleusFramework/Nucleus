@@ -14,69 +14,80 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
-import dev.nucleusframework.tray.Tray
 import dev.nucleusframework.core.runtime.tools.NucleusLoggingLevel
 import dev.nucleusframework.core.runtime.tools.allowNucleusRuntimeLogging
 import dev.nucleusframework.core.runtime.tools.nucleusLoggingLevel
-import dev.nucleusframework.tray.app.getTrayPosition
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
-import dev.nucleusframework.window.NucleusDecoratedWindowTheme
-import dev.nucleusframework.window.TitleBar
+import dev.nucleusframework.tray.Tray
+import dev.nucleusframework.tray.app.getTrayPosition
 import dev.nucleusframework.tray.demo.resources.Res
 import dev.nucleusframework.tray.demo.resources.icon
+import dev.nucleusframework.window.NucleusDecoratedWindowTheme
+import dev.nucleusframework.window.TitleBar
 
-fun main() = nucleusApplication(enableSingleInstance = false) {
-    allowNucleusRuntimeLogging = true
-    nucleusLoggingLevel = NucleusLoggingLevel.DEBUG
+fun main() =
+    nucleusApplication(enableSingleInstance = false) {
+        allowNucleusRuntimeLogging = true
+        nucleusLoggingLevel = NucleusLoggingLevel.DEBUG
 
-    val logTag = "NativeTray"
-    
-    println("$logTag: TrayPosition: ${getTrayPosition()}")
+        val logTag = "NativeTray"
 
-    var isWindowVisible by remember { mutableStateOf(true) }
-    var textVisible by remember { mutableStateOf(false) }
-    var alwaysShowTray by remember { mutableStateOf(false) }
-    var hideOnClose by remember { mutableStateOf(true) }
+        println("$logTag: TrayPosition: ${getTrayPosition()}")
 
-    // Single-instance handling is now managed by nucleusApplication (disabled here)
+        var isWindowVisible by remember { mutableStateOf(true) }
+        var textVisible by remember { mutableStateOf(false) }
+        var alwaysShowTray by remember { mutableStateOf(false) }
+        var hideOnClose by remember { mutableStateOf(true) }
 
-    // Always create the Tray composable, but make it conditional on visibility
-    // This ensures it's recomposed when alwaysShowTray changes
-    val showTray = alwaysShowTray || !isWindowVisible
+        // Single-instance handling is now managed by nucleusApplication (disabled here)
 
-    if (showTray) {
-        Tray(
-            iconContent = {
-                // Use alwaysShowTray as a key to force recomposition when it changes
-                val alpha = if (alwaysShowTray) 0.5f else 0.5f
-                Box(modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(300.dp)).background(Color.Red.copy(alpha = alpha)))
-            },
-            primaryAction = {
-                isWindowVisible = true
-                println("$logTag: On Primary Clicked")
-            },
-            tooltip = "My Application"
-        )
-    }
+        // Always create the Tray composable, but make it conditional on visibility
+        // This ensures it's recomposed when alwaysShowTray changes
+        val showTray = alwaysShowTray || !isWindowVisible
 
-    NucleusDecoratedWindowTheme(isDark = isSystemInDarkMode()) {
-        DecoratedWindow(
-            onCloseRequest = {
-                if (hideOnClose) {
-                    isWindowVisible = false
-                } else {
-                    exitApplication()
+        if (showTray) {
+            Tray(
+                iconContent = {
+                    // Use alwaysShowTray as a key to force recomposition when it changes
+                    val alpha = if (alwaysShowTray) 0.5f else 0.5f
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .clip(
+                                    RoundedCornerShape(300.dp),
+                                ).background(Color.Red.copy(alpha = alpha)),
+                    )
+                },
+                primaryAction = {
+                    isWindowVisible = true
+                    println("$logTag: On Primary Clicked")
+                },
+                tooltip = "My Application",
+            )
+        }
+
+        NucleusDecoratedWindowTheme(isDark = isSystemInDarkMode()) {
+            DecoratedWindow(
+                onCloseRequest = {
+                    if (hideOnClose) {
+                        isWindowVisible = false
+                    } else {
+                        exitApplication()
+                    }
+                },
+                title = "Compose Desktop Application with Two Screens",
+                visible = isWindowVisible,
+                icon =
+                    org.jetbrains.compose.resources
+                        .painterResource(Res.drawable.icon),
+                // Optional: Set window icon
+            ) {
+                TitleBar { Text("Compose Desktop Application with Two Screens") }
+                App(textVisible, alwaysShowTray, hideOnClose) { alwaysShow, hideOnCloseState ->
+                    alwaysShowTray = alwaysShow
+                    hideOnClose = hideOnCloseState
                 }
-            },
-            title = "Compose Desktop Application with Two Screens",
-            visible = isWindowVisible,
-            icon = org.jetbrains.compose.resources.painterResource(Res.drawable.icon) // Optional: Set window icon
-        ) {
-            TitleBar { Text("Compose Desktop Application with Two Screens") }
-            App(textVisible, alwaysShowTray, hideOnClose) { alwaysShow, hideOnCloseState ->
-                alwaysShowTray = alwaysShow
-                hideOnClose = hideOnCloseState
             }
         }
     }
-}

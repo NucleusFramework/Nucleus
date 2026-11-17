@@ -48,5 +48,10 @@ class MacTrayWindowPositionE2ETest {
     }
 
     private val isMac: Boolean
-        get() = System.getProperty("os.name").orEmpty().lowercase().contains("mac")
+        get() =
+            System
+                .getProperty("os.name")
+                .orEmpty()
+                .lowercase()
+                .contains("mac")
 }

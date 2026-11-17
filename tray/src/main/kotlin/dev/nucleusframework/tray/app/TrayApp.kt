@@ -5,7 +5,6 @@
 
 package dev.nucleusframework.tray.app
 
-import dev.nucleusframework.tray.utils.debugln
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.EaseInOut
@@ -42,15 +41,16 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusApplicationScope
-import dev.nucleusframework.tray.menu.TrayMenuBuilder
+import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.tray.NativeTray
 import dev.nucleusframework.tray.internal.WindowsTrayInitializer
+import dev.nucleusframework.tray.menu.TrayMenuBuilder
 import dev.nucleusframework.tray.utils.ComposableIconUtils
 import dev.nucleusframework.tray.utils.IconRenderProperties
 import dev.nucleusframework.tray.utils.MenuContentHash
+import dev.nucleusframework.tray.utils.debugln
 import dev.nucleusframework.tray.utils.isMenuBarInDarkMode
-import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
-import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.TaoStandalonePopup
 import dev.nucleusframework.window.tao.isTaoStandalonePopupAvailable
 import kotlinx.coroutines.CoroutineScope
@@ -142,6 +142,13 @@ private suspend fun requestGcWhileHidden() {
 
 // --------------------- Public API (overloads) ---------------------
 
+/**
+ * Tray icon whose click toggles a popup window anchored to it, the icon drawn from an
+ * [ImageVector]. See the composable-icon overload for the shared parameters.
+ *
+ * @param icon The icon. Without [tint] it follows the menu bar theme.
+ * @param tint Fixed icon color, or `null` to follow the menu bar theme.
+ */
 @Composable
 public fun NucleusApplicationScope.TrayApp(
     icon: ImageVector,
@@ -197,6 +204,12 @@ public fun NucleusApplicationScope.TrayApp(
     )
 }
 
+/**
+ * Tray icon whose click toggles a popup window anchored to it, the icon drawn from a [Painter].
+ * See the composable-icon overload for the shared parameters.
+ *
+ * @param icon The icon.
+ */
 @Composable
 public fun NucleusApplicationScope.TrayApp(
     icon: Painter,
@@ -313,6 +326,12 @@ public fun NucleusApplicationScope.TrayApp(
     }
 }
 
+/**
+ * Tray icon whose click toggles a popup window anchored to it, the icon from a Compose resource.
+ * See the composable-icon overload for the shared parameters.
+ *
+ * @param icon The icon resource.
+ */
 @Composable
 public fun NucleusApplicationScope.TrayApp(
     icon: DrawableResource,
@@ -356,6 +375,14 @@ public fun NucleusApplicationScope.TrayApp(
     )
 }
 
+/**
+ * Tray icon whose click toggles a popup window anchored to it: a resource icon on Windows, an
+ * [ImageVector] on macOS and Linux. See the composable-icon overload for the shared parameters.
+ *
+ * @param windowsIcon Icon used on Windows.
+ * @param macLinuxIcon Icon used on macOS and Linux.
+ * @param tint Fixed color of [macLinuxIcon], or `null` to follow the menu bar theme.
+ */
 @Composable
 public fun NucleusApplicationScope.TrayApp(
     windowsIcon: DrawableResource,
@@ -470,15 +497,41 @@ public fun NucleusApplicationScope.TrayApp(
         }
     if (panelAvailable) {
         TrayAppImplPanel(
-            iconContent, iconRenderProperties, tooltip, state, windowSize, visibleOnStart,
-            enterTransition, exitTransition,
-            horizontalOffset, verticalOffset, onPreviewKeyEvent, onKeyEvent, menu, content,
+            iconContent,
+            iconRenderProperties,
+            tooltip,
+            state,
+            windowSize,
+            visibleOnStart,
+            enterTransition,
+            exitTransition,
+            horizontalOffset,
+            verticalOffset,
+            onPreviewKeyEvent,
+            onKeyEvent,
+            menu,
+            content,
         )
     } else {
         TrayAppImplWindow(
-            iconContent, iconRenderProperties, tooltip, state, windowSize, visibleOnStart,
-            enterTransition, exitTransition, windowsTitle, windowIcon, undecorated, resizable,
-            horizontalOffset, verticalOffset, onPreviewKeyEvent, onKeyEvent, menu, content,
+            iconContent,
+            iconRenderProperties,
+            tooltip,
+            state,
+            windowSize,
+            visibleOnStart,
+            enterTransition,
+            exitTransition,
+            windowsTitle,
+            windowIcon,
+            undecorated,
+            resizable,
+            horizontalOffset,
+            verticalOffset,
+            onPreviewKeyEvent,
+            onKeyEvent,
+            menu,
+            content,
         )
     }
 }
@@ -602,7 +655,11 @@ private fun TrayAppImplPanel(
                 val heightPx = currentWindowSize.height.value.toInt()
                 pendingPosition =
                     getTrayWindowPositionForInstance(
-                        instanceKey, widthPx, heightPx, horizontalOffset, verticalOffset,
+                        instanceKey,
+                        widthPx,
+                        heightPx,
+                        horizontalOffset,
+                        verticalOffset,
                     )
             }
             // Stamp before show(): a leftover Finder mouseDown on the desktop

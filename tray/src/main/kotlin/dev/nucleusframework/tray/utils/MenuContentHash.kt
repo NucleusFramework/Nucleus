@@ -241,9 +241,11 @@ internal object MenuContentHash {
             val content = operations.joinToString("|")
             val md = MessageDigest.getInstance("SHA-256")
             val digest = md.digest(content.toByteArray())
-            return digest.fold(
-                "",
-            ) { str, it -> str + "%02x".format(it) }.take(16) // Use only first 16 chars for performance
+            return digest
+                .fold(
+                    "",
+                ) { str, it -> str + "%02x".format(it) }
+                .take(16) // Use only first 16 chars for performance
         }
     }
 }

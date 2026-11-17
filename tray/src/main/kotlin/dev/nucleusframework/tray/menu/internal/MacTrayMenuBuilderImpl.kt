@@ -8,12 +8,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
+import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import dev.nucleusframework.tray.internal.macos.MacTrayManager
 import dev.nucleusframework.tray.menu.KeyShortcut
 import dev.nucleusframework.tray.menu.TrayMenuBuilder
 import dev.nucleusframework.tray.utils.ComposableIconUtils
 import dev.nucleusframework.tray.utils.IconRenderProperties
-import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import java.util.concurrent.atomic.AtomicBoolean

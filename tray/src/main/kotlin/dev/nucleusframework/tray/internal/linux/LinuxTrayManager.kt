@@ -1,10 +1,10 @@
 package dev.nucleusframework.tray.internal.linux
 
+import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.tray.utils.TrayClickTracker
 import dev.nucleusframework.tray.utils.errorln
 import dev.nucleusframework.tray.utils.infoln
 import dev.nucleusframework.tray.utils.warnln
-import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean

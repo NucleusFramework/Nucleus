@@ -1,13 +1,13 @@
 package dev.nucleusframework.tray.app
 
-import dev.nucleusframework.tray.utils.debugln
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.tray.internal.MacTrayInitializer
 import dev.nucleusframework.tray.utils.AppIdProvider
 import dev.nucleusframework.tray.utils.TrayClickPoint
 import dev.nucleusframework.tray.utils.TrayClickTracker
-import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.tray.utils.debugln
 import java.io.File
 import java.util.Properties
 import kotlin.math.roundToInt

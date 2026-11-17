@@ -10,7 +10,9 @@
             "methods": [
                 {
                     "name": "onThemeChanged",
-                    "parameterTypes": ["int"]
+                    "parameterTypes": [
+                        "int"
+                    ]
                 }
             ]
         },
@@ -33,16 +35,6 @@
             ]
         },
         {
-            "type": "sun.awt.X11GraphicsConfig",
-            "jniAccessible": true,
-            "methods": [
-                {
-                    "name": "createDCM32",
-                    "parameterTypes": ["int", "int", "int", "int", "boolean"]
-                }
-            ]
-        },
-        {
             "type": "java.lang.Runnable",
             "jniAccessible": true,
             "methods": [
@@ -52,8 +44,5 @@
                 }
             ]
         }
-    ],
-    "resources": [
-        {"glob": "composetray/native/**"}
     ]
 }

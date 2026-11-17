@@ -1,0 +1,77 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ExplicitItLambdaMultipleParameters:MenuContentHash.kt:MenuContentHash.CapturingMenuBuilder${ str, it -&gt; str + "%02x".format(it) }</ID>
+    <ID>LongMethod:RecordingComposableScope.kt:private fun fingerprint</ID>
+    <ID>MagicNumber:AppIdProvider.kt:AppIdProvider$128</ID>
+    <ID>MagicNumber:AwaitAnchoredWindowPosition.kt:1.5f</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:0xFF</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:12</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:16</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:20</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:24</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:256</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:3</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:32</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:4</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:40</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:48</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:5</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:6</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:64</ID>
+    <ID>MagicNumber:ComposableIconUtils.kt:8</ID>
+    <ID>MagicNumber:IconFileCache.kt:IconFileCache$0.75f</ID>
+    <ID>MagicNumber:IconFileCache.kt:IconFileCache$16</ID>
+    <ID>MagicNumber:IconFileCache.kt:IconFileCache$32</ID>
+    <ID>MagicNumber:IconFileCache.kt:IconFileCache$4</ID>
+    <ID>MagicNumber:IconFileCache.kt:IconFileCache$64</ID>
+    <ID>MagicNumber:IconRenderProperties.kt:IconRenderProperties.Companion$16</ID>
+    <ID>MagicNumber:IconRenderProperties.kt:IconRenderProperties.Companion$24</ID>
+    <ID>MagicNumber:IconRenderProperties.kt:IconRenderProperties.Companion$32</ID>
+    <ID>MagicNumber:IconRenderProperties.kt:IconRenderProperties.Companion$44</ID>
+    <ID>MagicNumber:JarResourceExtractor.kt:1024</ID>
+    <ID>MagicNumber:KeyShortcut.kt:KeyShortcut$17</ID>
+    <ID>MagicNumber:KeyShortcut.kt:KeyShortcut$18</ID>
+    <ID>MagicNumber:KeyShortcut.kt:KeyShortcut$19</ID>
+    <ID>MagicNumber:KeyShortcut.kt:KeyShortcut$20</ID>
+    <ID>MagicNumber:LinuxTrayManager.kt:LinuxTrayManager$500</ID>
+    <ID>MagicNumber:MenuContentHash.kt:MenuContentHash.CapturingMenuBuilder$16</ID>
+    <ID>MagicNumber:TrayApp.kt:10</ID>
+    <ID>MagicNumber:TrayApp.kt:100L</ID>
+    <ID>MagicNumber:TrayApp.kt:150L</ID>
+    <ID>MagicNumber:TrayApp.kt:200</ID>
+    <ID>MagicNumber:TrayApp.kt:200L</ID>
+    <ID>MagicNumber:TrayApp.kt:250</ID>
+    <ID>MagicNumber:TrayApp.kt:250L</ID>
+    <ID>MagicNumber:TrayApp.kt:280L</ID>
+    <ID>MagicNumber:TrayApp.kt:30</ID>
+    <ID>MagicNumber:TrayApp.kt:300</ID>
+    <ID>MagicNumber:TrayApp.kt:350L</ID>
+    <ID>MagicNumber:TrayApp.kt:400</ID>
+    <ID>MagicNumber:TrayApp.kt:5</ID>
+    <ID>MagicNumber:TrayApp.kt:50</ID>
+    <ID>MagicNumber:TrayScreenGeometry.kt:TrayScreenGeometry$3</ID>
+    <ID>MagicNumber:TrayScreenGeometry.kt:TrayScreenGeometry$4</ID>
+    <ID>MagicNumber:TrayWindowPosition.kt:100</ID>
+    <ID>MagicNumber:TrayWindowPosition.kt:15</ID>
+    <ID>SwallowedException:JarResourceExtractor.kt:e: IllegalArgumentException</ID>
+    <ID>TooGenericExceptionCaught:ComposableIconUtils.kt:ComposableIconUtils$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:LinuxTrayManager.kt:LinuxTrayManager$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MacOSWindowManager.kt:MacOSWindowManager$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MacOSWindowManager.kt:MacOSWindowManager$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MacTrayManager.kt:MacTrayManager$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:NativeTray.kt:NativeTray$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:NativeTray.kt:NativeTray$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:WindowsTrayManager.kt:WindowsTrayManager$t: Throwable</ID>
+    <ID>TooManyFunctions:ComposableTrayMenuScope.kt:ComposableTrayMenuScope</ID>
+    <ID>TooManyFunctions:LinuxNativeBridge.kt:LinuxNativeBridge</ID>
+    <ID>TooManyFunctions:MacNativeBridge.kt:MacNativeBridge</ID>
+    <ID>TooManyFunctions:MacTrayInitializer.kt:MacTrayInitializer</ID>
+    <ID>TooManyFunctions:TrayMenuBuilder.kt:TrayMenuBuilder</ID>
+    <ID>TooManyFunctions:TrayWindowPosition.kt:dev.nucleusframework.tray.app.TrayWindowPosition.kt</ID>
+    <ID>TooManyFunctions:WindowsNativeBridge.kt:WindowsNativeBridge</ID>
+    <ID>UnusedParameter:PersistentAnimatedVisibility.kt:shouldDisposeBlock: (EnterExitState, EnterExitState) -&gt; Boolean</ID>
+    <ID>UnusedPrivateClass:PersistentAnimatedVisibility.kt:AnimatedEnterExitMeasurePolicy : MeasurePolicy</ID>
+  </CurrentIssues>
+</SmellBaseline>

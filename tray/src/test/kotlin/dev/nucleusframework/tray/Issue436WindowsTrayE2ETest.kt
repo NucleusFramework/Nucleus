@@ -65,7 +65,10 @@ class Issue436WindowsTrayE2ETest {
         )
         assertTrue(16 in menuFrames, "menu ICO missing the 16px frame: $menuFrames")
 
-        val trayFile = kotlin.io.path.createTempFile(prefix = "issue436-tray-", suffix = ".ico").toFile()
+        val trayFile =
+            kotlin.io.path
+                .createTempFile(prefix = "issue436-tray-", suffix = ".ico")
+                .toFile()
         trayFile.writeBytes(trayIco)
         trayFile.deleteOnExit()
 
@@ -113,7 +116,12 @@ class Issue436WindowsTrayE2ETest {
     }
 
     private val isWindows: Boolean
-        get() = System.getProperty("os.name").orEmpty().lowercase().contains("win")
+        get() =
+            System
+                .getProperty("os.name")
+                .orEmpty()
+                .lowercase()
+                .contains("win")
 
     /**
      * Asks user32 to load the ICO at [SM_CXSMICON] — the same size the tray
@@ -169,7 +177,11 @@ class Issue436WindowsTrayE2ETest {
             ProcessBuilder(exe.absolutePath, ico.absolutePath)
                 .redirectErrorStream(true)
                 .start()
-        val output = run.inputStream.bufferedReader().readText().trim()
+        val output =
+            run.inputStream
+                .bufferedReader()
+                .readText()
+                .trim()
         check(run.waitFor() == 0) { "icon probe failed: $output" }
         val sm =
             Regex("""SM_CXSMICON=(\d+)""")

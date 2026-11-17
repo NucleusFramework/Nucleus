@@ -104,7 +104,14 @@ internal class RecordingComposableScope : ComposableTrayMenuScope {
     ) {
         ops +=
             MenuOp.VectorCheckable(
-                label, icon, iconTint, iconRenderProperties, checked, onCheckedChange, isEnabled, shortcut,
+                label,
+                icon,
+                iconTint,
+                iconRenderProperties,
+                checked,
+                onCheckedChange,
+                isEnabled,
+                shortcut,
             )
     }
 
@@ -284,11 +291,8 @@ internal sealed interface MenuOp {
 }
 
 /**
- * Replays a recorded list of [MenuOp]s into a [TrayMenuBuilder]. The resulting lambda is plain
- * Kotlin (non-composable), suitable for the native menu impls.
- */
-/**
- * Replays the recorded menu. The structure comes from this list, but every click resolves its
+ * Replays the recorded menu into a [TrayMenuBuilder], as a plain (non-composable) lambda for the
+ * native menu impls. The structure comes from this list, but every click resolves its
  * handler in [latest] at click time: a recomposition that keeps the structure (and so the native
  * menu) still hands its fresh lambdas, with their fresh captured values, to the next click.
  */
@@ -403,44 +407,107 @@ private fun fingerprint(
     for (op in ops) {
         when (op) {
             is MenuOp.PlainItem ->
-                sb.append("I:").append(op.label).append(':').append(op.isEnabled)
-                    .append(':').append(op.shortcut)
+                sb
+                    .append("I:")
+                    .append(op.label)
+                    .append(':')
+                    .append(op.isEnabled)
+                    .append(':')
+                    .append(op.shortcut)
             is MenuOp.PainterItem ->
-                sb.append("PI:").append(op.label).append(':').append(op.isEnabled)
-                    .append(':').append(op.icon.hashCode()).append(':').append(op.shortcut)
+                sb
+                    .append("PI:")
+                    .append(op.label)
+                    .append(':')
+                    .append(op.isEnabled)
+                    .append(':')
+                    .append(op.icon.hashCode())
+                    .append(':')
+                    .append(op.shortcut)
             is MenuOp.VectorItem ->
-                sb.append("VI:").append(op.label).append(':').append(op.isEnabled)
+                sb
+                    .append("VI:")
+                    .append(op.label)
+                    .append(':')
+                    .append(op.isEnabled)
                     .append(
                         ':',
-                    ).append(op.icon.hashCode()).append(':').append(op.iconTint).append(':').append(op.shortcut)
+                    ).append(op.icon.hashCode())
+                    .append(':')
+                    .append(op.iconTint)
+                    .append(':')
+                    .append(op.shortcut)
             is MenuOp.PlainCheckable ->
-                sb.append("C:").append(op.label).append(':').append(op.checked)
-                    .append(':').append(op.isEnabled).append(':').append(op.shortcut)
+                sb
+                    .append("C:")
+                    .append(op.label)
+                    .append(':')
+                    .append(op.checked)
+                    .append(':')
+                    .append(op.isEnabled)
+                    .append(':')
+                    .append(op.shortcut)
             is MenuOp.PainterCheckable ->
-                sb.append("PC:").append(op.label).append(':').append(op.checked)
+                sb
+                    .append("PC:")
+                    .append(op.label)
+                    .append(':')
+                    .append(op.checked)
                     .append(
                         ':',
-                    ).append(op.isEnabled).append(':').append(op.icon.hashCode()).append(':').append(op.shortcut)
+                    ).append(op.isEnabled)
+                    .append(':')
+                    .append(op.icon.hashCode())
+                    .append(':')
+                    .append(op.shortcut)
             is MenuOp.VectorCheckable ->
-                sb.append("VC:").append(op.label).append(':').append(op.checked)
+                sb
+                    .append("VC:")
+                    .append(op.label)
+                    .append(':')
+                    .append(op.checked)
                     .append(
                         ':',
-                    ).append(op.isEnabled).append(':').append(op.icon.hashCode()).append(':').append(op.iconTint)
-                    .append(':').append(op.shortcut)
+                    ).append(op.isEnabled)
+                    .append(':')
+                    .append(op.icon.hashCode())
+                    .append(':')
+                    .append(op.iconTint)
+                    .append(':')
+                    .append(op.shortcut)
             is MenuOp.PlainSubMenu -> {
-                sb.append("S:").append(op.label).append(':').append(op.isEnabled).append('{')
+                sb
+                    .append("S:")
+                    .append(op.label)
+                    .append(':')
+                    .append(op.isEnabled)
+                    .append('{')
                 fingerprint(op.children, sb)
                 sb.append('}')
             }
             is MenuOp.PainterSubMenu -> {
-                sb.append("PS:").append(op.label).append(':').append(op.isEnabled)
-                    .append(':').append(op.icon.hashCode()).append('{')
+                sb
+                    .append("PS:")
+                    .append(op.label)
+                    .append(':')
+                    .append(op.isEnabled)
+                    .append(':')
+                    .append(op.icon.hashCode())
+                    .append('{')
                 fingerprint(op.children, sb)
                 sb.append('}')
             }
             is MenuOp.VectorSubMenu -> {
-                sb.append("VS:").append(op.label).append(':').append(op.isEnabled)
-                    .append(':').append(op.icon.hashCode()).append(':').append(op.iconTint).append('{')
+                sb
+                    .append("VS:")
+                    .append(op.label)
+                    .append(':')
+                    .append(op.isEnabled)
+                    .append(':')
+                    .append(op.icon.hashCode())
+                    .append(':')
+                    .append(op.iconTint)
+                    .append('{')
                 fingerprint(op.children, sb)
                 sb.append('}')
             }

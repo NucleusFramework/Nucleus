@@ -33,6 +33,7 @@ public data class IconRenderProperties(
     public val requiresScaling: Boolean =
         jvmOwnsDownscaling && (sceneWidth != targetWidth || sceneHeight != targetHeight)
 
+    /** Ready-made render settings for tray icons and menu-item icons. */
     public companion object {
         /**
          * Provides an [IconRenderProperties] configured for the current operating system.
@@ -77,19 +78,20 @@ public data class IconRenderProperties(
          * @param sceneWidth Width of the [androidx.compose.ui.ImageComposeScene] in pixels.
          * @param sceneHeight Height of the [androidx.compose.ui.ImageComposeScene] in pixels.
          * @param density Density of the [androidx.compose.ui.ImageComposeScene].
-         * @return An instance of [IconRenderProperties] with the appropriate target width and height based on the operating system.
+         * @return An [IconRenderProperties] with the target width and height of the operating system.
          */
         public fun withoutScalingAndAliasing(
             sceneWidth: Int = 192,
             sceneHeight: Int = 192,
             density: Density = Density(2f),
-        ): IconRenderProperties = IconRenderProperties(
-            sceneWidth = sceneWidth,
-            sceneHeight = sceneHeight,
-            sceneDensity = density,
-            targetWidth = sceneWidth,
-            targetHeight = sceneHeight,
-        )
+        ): IconRenderProperties =
+            IconRenderProperties(
+                sceneWidth = sceneWidth,
+                sceneHeight = sceneHeight,
+                sceneDensity = density,
+                targetWidth = sceneWidth,
+                targetHeight = sceneHeight,
+            )
 
         /**
          * Provides an [IconRenderProperties] configured for menu items.

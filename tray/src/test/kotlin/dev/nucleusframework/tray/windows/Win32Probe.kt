@@ -129,6 +129,7 @@ internal object Win32Probe {
     private val pid: Int = Kernel32.INSTANCE.GetCurrentProcessId()
 
     const val WM_USER: Int = 0x0400
+
     // Must match WM_TRAY_CALLBACK in tray_windows.c.
     const val WM_TRAY_CALLBACK: Int = 0x8000 + 1
     const val WM_COMMAND: Int = 0x0111

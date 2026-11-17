@@ -61,6 +61,18 @@ public fun Tray(
     )
 }
 
+/**
+ * Tray icon drawn from an [ImageVector], with a composable menu ([ComposableTrayMenuScope]).
+ *
+ * @param icon The icon. Without [tint] it follows the menu bar theme (white on dark, black on light).
+ * @param tint Fixed icon color, or `null` to follow the menu bar theme.
+ * @param iconRenderProperties How the icon is rasterized for the platform.
+ *
+ * @param tooltip Text shown when hovering the icon.
+ * @param primaryAction Runs on a left click; `null` opens the menu instead.
+ * @param onMenuOpened Runs just before the menu shows.
+ * @param menuContent The menu; `null` for an icon without one.
+ */
 @Composable
 public fun Tray(
     icon: ImageVector,
@@ -83,6 +95,17 @@ public fun Tray(
     )
 }
 
+/**
+ * Tray icon from a Compose resource, with a composable menu ([ComposableTrayMenuScope]).
+ *
+ * @param icon The icon resource.
+ * @param iconRenderProperties How the icon is rasterized for the platform.
+ *
+ * @param tooltip Text shown when hovering the icon.
+ * @param primaryAction Runs on a left click; `null` opens the menu instead.
+ * @param onMenuOpened Runs just before the menu shows.
+ * @param menuContent The menu; `null` for an icon without one.
+ */
 @Composable
 public fun Tray(
     icon: DrawableResource,
@@ -104,6 +127,17 @@ public fun Tray(
     )
 }
 
+/**
+ * Tray icon rendered from any composable, with a composable menu ([ComposableTrayMenuScope]).
+ *
+ * @param iconContent Composable drawn into the icon; it re-renders when what it reads changes.
+ * @param iconRenderProperties How the icon is rasterized for the platform.
+ *
+ * @param tooltip Text shown when hovering the icon.
+ * @param primaryAction Runs on a left click; `null` opens the menu instead.
+ * @param onMenuOpened Runs just before the menu shows.
+ * @param menuContent The menu; `null` for an icon without one.
+ */
 @Composable
 public fun Tray(
     iconContent: @Composable () -> Unit,
@@ -151,6 +185,20 @@ public fun Tray(
     )
 }
 
+/**
+ * Platform-polymorphic tray icon with a composable menu: a resource on Windows, an
+ * [ImageVector] on macOS and Linux (where icons are usually monochrome).
+ *
+ * @param windowsIcon Icon used on Windows.
+ * @param macLinuxIcon Icon used on macOS and Linux.
+ * @param tint Fixed color of [macLinuxIcon], or `null` to follow the menu bar theme.
+ * @param iconRenderProperties How the icon is rasterized for the platform.
+ *
+ * @param tooltip Text shown when hovering the icon.
+ * @param primaryAction Runs on a left click; `null` opens the menu instead.
+ * @param onMenuOpened Runs just before the menu shows.
+ * @param menuContent The menu; `null` for an icon without one.
+ */
 @Composable
 public fun Tray(
     windowsIcon: DrawableResource,

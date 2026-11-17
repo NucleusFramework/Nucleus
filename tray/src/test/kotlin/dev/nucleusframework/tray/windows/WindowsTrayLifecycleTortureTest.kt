@@ -58,7 +58,11 @@ class WindowsTrayLifecycleTortureTest {
         return found!!
     }
 
-    private fun trayThreads() = Thread.getAllStackTraces().keys.filter { it.name.startsWith("NucleusTray-") && it.isAlive }
+    private fun trayThreads() =
+        Thread.getAllStackTraces().keys.filter {
+            it.name.startsWith("NucleusTray-") &&
+                it.isAlive
+        }
 
     private fun trayWindows() = Win32Probe.windowsOfClass(TrayFixtures.windowClass())
 
@@ -119,7 +123,9 @@ class WindowsTrayLifecycleTortureTest {
         val ids = List(3) { "storm-$it" }
         val stop = AtomicBoolean(false)
         val errors = ConcurrentLinkedQueue<Throwable>()
-        val fired = java.util.concurrent.atomic.AtomicInteger()
+        val fired =
+            java.util.concurrent.atomic
+                .AtomicInteger()
         val pool = Executors.newFixedThreadPool(7)
         repeat(4) { worker ->
             pool.execute {
@@ -175,9 +181,16 @@ class WindowsTrayLifecycleTortureTest {
             await("storm trays gone (seed=$seed)", 10_000) { trayWindows().isEmpty() && trayThreads().isEmpty() }
         } catch (e: AssertionError) {
             val dump =
-                Thread.getAllStackTraces().filterKeys { it.name.startsWith("NucleusTray-") }.entries.joinToString(NL) { (t, st) ->
-                    "${t.name} ${t.state}" + NL + st.take(25).joinToString(NL) { "    at $it" }
-                }
+                Thread
+                    .getAllStackTraces()
+                    .filterKeys {
+                        it.name.startsWith(
+                            "NucleusTray-",
+                        )
+                    }.entries
+                    .joinToString(NL) { (t, st) ->
+                        "${t.name} ${t.state}" + NL + st.take(25).joinToString(NL) { "    at $it" }
+                    }
             fail("${e.message}" + NL + "windows=${trayWindows().size}" + NL + dump, e)
         }
         println("[torture] click storm callbacks fired=${fired.get()}")
@@ -190,7 +203,13 @@ class WindowsTrayLifecycleTortureTest {
         val clicks = ids.associateWith { CountDownLatch(1) }
         ids.forEach { id ->
             created += id
-            WindowsTrayInitializer.initialize(id, TrayFixtures.icoPath, id, { clicks.getValue(id).countDown() }, { Item(id) {} })
+            WindowsTrayInitializer.initialize(
+                id,
+                TrayFixtures.icoPath,
+                id,
+                { clicks.getValue(id).countDown() },
+                { Item(id) {} },
+            )
         }
         val identities = ids.associateWith { identity(it) }
         identities.forEach { (id, ident) ->
@@ -199,7 +218,9 @@ class WindowsTrayLifecycleTortureTest {
         }
         clicks.forEach { (id, latch) -> assertTrue(latch.await(3, TimeUnit.SECONDS), "$id click lost") }
         ids.shuffled(Random(seed())).forEach { WindowsTrayInitializer.dispose(it) }
-        identities.forEach { (id, ident) -> assertTrue(!Win32Probe.shellHasIcon(ident.first, ident.second), "$id icon left") }
+        identities.forEach { (id, ident) ->
+            assertTrue(!Win32Probe.shellHasIcon(ident.first, ident.second), "$id icon left")
+        }
         await("tray threads ended") { trayThreads().isEmpty() }
     }
 
@@ -220,16 +241,20 @@ class WindowsTrayLifecycleTortureTest {
             Thread.sleep(1500)
             // Same content, same file: a steady icon re-rendered on every recomposition is free.
             repeat(5) {
-                seen += ComposableIconUtils.renderComposableToIcoFile(IconRenderProperties.forCurrentOperatingSystem()) {
-                    Box(Modifier.fillMaxSize().background(Color.Red))
-                }
+                seen +=
+                    ComposableIconUtils.renderComposableToIcoFile(IconRenderProperties.forCurrentOperatingSystem()) {
+                        Box(Modifier.fillMaxSize().background(Color.Red))
+                    }
             }
         } finally {
             tray.dispose()
         }
         assertEquals(1, seen.size, "identical renders produced distinct files: $seen")
         val onDisk = File(seen.single()).parentFile.listFiles()?.size ?: 0
-        assertTrue(IconFileCache.size() <= 64 && onDisk <= 64, "150 icon frames left ${IconFileCache.size()} / $onDisk files")
+        assertTrue(
+            IconFileCache.size() <= 64 && onDisk <= 64,
+            "150 icon frames left ${IconFileCache.size()} / $onDisk files",
+        )
     }
 
     @Test

@@ -27,9 +27,7 @@ internal object MacOSMenuBarThemeDetector {
         MacNativeBridge.nativeSetThemeCallback(themeChangedCallback)
     }
 
-    fun isDark(): Boolean {
-        return MacNativeBridge.nativeIsMenuDark() != 0
-    }
+    fun isDark(): Boolean = MacNativeBridge.nativeIsMenuDark() != 0
 
     fun registerListener(listener: Consumer<Boolean>) {
         listeners.add(listener)

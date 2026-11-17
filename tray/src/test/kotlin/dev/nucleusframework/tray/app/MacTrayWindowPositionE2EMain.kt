@@ -23,7 +23,12 @@ object MacTrayWindowPositionE2EMain {
 
     @JvmStatic
     fun main(args: Array<String>) {
-        if (!System.getProperty("os.name").orEmpty().lowercase().contains("mac")) {
+        if (!System
+                .getProperty("os.name")
+                .orEmpty()
+                .lowercase()
+                .contains("mac")
+        ) {
             println("RESULT=SKIP")
             return
         }

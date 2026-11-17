@@ -84,7 +84,13 @@ internal object MenuFuzzer {
                     Plain(
                         label(random),
                         random.nextInt(5) != 0,
-                        if (random.nextInt(4) == 0) KeyShortcut(Key.entries.random(random), ctrl = random.nextBoolean()) else null,
+                        if (random.nextInt(4) ==
+                            0
+                        ) {
+                            KeyShortcut(Key.entries.random(random), ctrl = random.nextBoolean())
+                        } else {
+                            null
+                        },
                     )
             }
         }
@@ -149,7 +155,11 @@ internal object MenuFuzzer {
             val e = expected.getOrNull(i)
             val a = actual.getOrNull(i)
             if (e == null || a == null) return "$path[$i]: expected $e, got $a"
-            if (e.copy(children = emptyList()) != a.copy(children = emptyList())) return "$path[$i]: expected $e, got $a"
+            if (e.copy(children = emptyList()) !=
+                a.copy(children = emptyList())
+            ) {
+                return "$path[$i]: expected $e, got $a"
+            }
             firstDiff(e.children, a.children, "$path[$i]")?.let { return it }
         }
         return null

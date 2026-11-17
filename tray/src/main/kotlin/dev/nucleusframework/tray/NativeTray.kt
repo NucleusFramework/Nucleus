@@ -13,10 +13,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
-import dev.nucleusframework.tray.menu.TrayMenuBuilder
+import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.core.runtime.Platform.Linux
+import dev.nucleusframework.core.runtime.Platform.MacOS
+import dev.nucleusframework.core.runtime.Platform.Unknown
+import dev.nucleusframework.core.runtime.Platform.Windows
+import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import dev.nucleusframework.tray.internal.LinuxTrayInitializer
 import dev.nucleusframework.tray.internal.MacTrayInitializer
 import dev.nucleusframework.tray.internal.WindowsTrayInitializer
+import dev.nucleusframework.tray.menu.TrayMenuBuilder
 import dev.nucleusframework.tray.utils.ComposableIconUtils
 import dev.nucleusframework.tray.utils.IconRenderProperties
 import dev.nucleusframework.tray.utils.MenuContentHash
@@ -24,12 +30,6 @@ import dev.nucleusframework.tray.utils.debugln
 import dev.nucleusframework.tray.utils.errorln
 import dev.nucleusframework.tray.utils.extractToTempIfDifferent
 import dev.nucleusframework.tray.utils.isMenuBarInDarkMode
-import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.core.runtime.Platform.Linux
-import dev.nucleusframework.core.runtime.Platform.MacOS
-import dev.nucleusframework.core.runtime.Platform.Unknown
-import dev.nucleusframework.core.runtime.Platform.Windows
-import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,9 +37,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicLong
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.internal.LowPriorityInOverloadResolution
 
 /**
@@ -163,11 +163,15 @@ internal class NativeTray {
                 is PathChange -> change.iconPath to change.windowsIconPath
                 is ComposableChange ->
                     renderedIcons.takeIf { change.iconKey != null && change.iconKey == renderedIconKey }
-                        ?: renderIconsWithRetry(change.iconContent, change.iconRenderProperties, change.maxAttempts, change.backoffMs)
-                            ?.also {
-                                renderedIconKey = change.iconKey
-                                renderedIcons = it
-                            }
+                        ?: renderIconsWithRetry(
+                            change.iconContent,
+                            change.iconRenderProperties,
+                            change.maxAttempts,
+                            change.backoffMs,
+                        )?.also {
+                            renderedIconKey = change.iconKey
+                            renderedIcons = it
+                        }
             }
         if (icons == null) {
             errorln { "[NativeTray] Icon rendering kept failing; change dropped." }
@@ -191,7 +195,9 @@ internal class NativeTray {
             try {
                 val lightPath = ComposableIconUtils.renderComposableToPngFile(change.iconRenderProperties, light)
                 val darkPath = ComposableIconUtils.renderComposableToPngFile(change.iconRenderProperties, dark)
-                synchronized(lock) { if (!disposed) MacTrayInitializer.setAppearanceIcons(instanceId, lightPath, darkPath) }
+                synchronized(
+                    lock,
+                ) { if (!disposed) MacTrayInitializer.setAppearanceIcons(instanceId, lightPath, darkPath) }
             } catch (t: Throwable) {
                 errorln { "[NativeTray] Failed to render appearance icons: $t" }
             }
@@ -209,17 +215,52 @@ internal class NativeTray {
             when (os) {
                 Linux ->
                     if (first) {
-                        LinuxTrayInitializer.initialize(instanceId, pngIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                        LinuxTrayInitializer.initialize(
+                            instanceId,
+                            pngIconPath,
+                            tooltip,
+                            primaryAction,
+                            menuContent,
+                            onMenuOpened,
+                        )
                     } else {
-                        LinuxTrayInitializer.update(instanceId, pngIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                        LinuxTrayInitializer.update(
+                            instanceId,
+                            pngIconPath,
+                            tooltip,
+                            primaryAction,
+                            menuContent,
+                            onMenuOpened,
+                        )
                     }
                 Windows ->
-                    WindowsTrayInitializer.update(instanceId, windowsIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                    WindowsTrayInitializer.update(
+                        instanceId,
+                        windowsIconPath,
+                        tooltip,
+                        primaryAction,
+                        menuContent,
+                        onMenuOpened,
+                    )
                 MacOS ->
                     if (first) {
-                        MacTrayInitializer.initialize(instanceId, pngIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                        MacTrayInitializer.initialize(
+                            instanceId,
+                            pngIconPath,
+                            tooltip,
+                            primaryAction,
+                            menuContent,
+                            onMenuOpened,
+                        )
                     } else {
-                        MacTrayInitializer.update(instanceId, pngIconPath, tooltip, primaryAction, menuContent, onMenuOpened)
+                        MacTrayInitializer.update(
+                            instanceId,
+                            pngIconPath,
+                            tooltip,
+                            primaryAction,
+                            menuContent,
+                            onMenuOpened,
+                        )
                     }
                 Unknown -> errorln { "[NativeTray] Unsupported platform: no system tray backend available" }
                 else -> {}
@@ -233,7 +274,12 @@ internal class NativeTray {
         darkPath: String,
     ) {
         synchronized(lock) {
-            if (os == MacOS && initialized && !disposed) MacTrayInitializer.setAppearanceIcons(instanceId, lightPath, darkPath)
+            if (os == MacOS &&
+                initialized &&
+                !disposed
+            ) {
+                MacTrayInitializer.setAppearanceIcons(instanceId, lightPath, darkPath)
+            }
         }
     }
 
@@ -253,10 +299,15 @@ internal class NativeTray {
                     } else {
                         pngIconPath
                     }
-                debugln { "[NativeTray] Rendered tray icons (attempt ${attempt + 1}/$maxAttempts): PNG=$pngIconPath, WIN=$windowsIconPath" }
+                debugln {
+                    "[NativeTray] Rendered tray icons (attempt ${attempt + 1}/$maxAttempts): " +
+                        "PNG=$pngIconPath, WIN=$windowsIconPath"
+                }
                 return pngIconPath to windowsIconPath
             } catch (e: Throwable) {
-                errorln { "[NativeTray] Icon render attempt ${attempt + 1} failed: ${e.message ?: e::class.simpleName}" }
+                errorln {
+                    "[NativeTray] Icon render attempt ${attempt + 1} failed: ${e.message ?: e::class.simpleName}"
+                }
                 attempt++
                 if (attempt < maxAttempts) delay(backoffMs)
             }
@@ -333,8 +384,23 @@ public fun Tray(
     val menuHash = MenuContentHash.calculateMenuHash(menuContent)
 
     // Update when params change, including menuHash
-    LaunchedEffect(absoluteIconPath, absoluteWindowsIconPath, tooltip, latestPrimaryAction, menuContent, menuHash, latestOnMenuOpened) {
-        tray.update(absoluteIconPath, absoluteWindowsIconPath, tooltip, latestPrimaryAction, menuContent, latestOnMenuOpened)
+    LaunchedEffect(
+        absoluteIconPath,
+        absoluteWindowsIconPath,
+        tooltip,
+        latestPrimaryAction,
+        menuContent,
+        menuHash,
+        latestOnMenuOpened,
+    ) {
+        tray.update(
+            absoluteIconPath,
+            absoluteWindowsIconPath,
+            tooltip,
+            latestPrimaryAction,
+            menuContent,
+            latestOnMenuOpened,
+        )
     }
 
     // Dispose only when Tray is removed from composition
@@ -346,6 +412,17 @@ public fun Tray(
     }
 }
 
+/**
+ * Tray icon rendered from any composable, with a [TrayMenuBuilder] menu.
+ *
+ * @param iconContent Composable drawn into the icon; it re-renders when what it reads changes.
+ * @param iconRenderProperties How the icon is rasterized for the platform.
+ *
+ * @param tooltip Text shown when hovering the icon.
+ * @param primaryAction Runs on a left click; `null` opens the menu instead.
+ * @param onMenuOpened Runs just before the menu shows.
+ * @param menuContent The menu; `null` for an icon without one.
+ */
 @Composable
 @LowPriorityInOverloadResolution
 public fun Tray(
@@ -393,6 +470,19 @@ public fun Tray(
     }
 }
 
+/**
+ * Tray icon drawn from an [ImageVector], with a [TrayMenuBuilder] menu. On macOS an untinted
+ * icon is pre-rendered for both menu bar appearances so a theme switch is instant.
+ *
+ * @param icon The icon. Without [tint] it follows the menu bar theme (white on dark, black on light).
+ * @param tint Fixed icon color, or `null` to follow the menu bar theme.
+ * @param iconRenderProperties How the icon is rasterized for the platform.
+ *
+ * @param tooltip Text shown when hovering the icon.
+ * @param primaryAction Runs on a left click; `null` opens the menu instead.
+ * @param onMenuOpened Runs just before the menu shows.
+ * @param menuContent The menu; `null` for an icon without one.
+ */
 @Composable
 @LowPriorityInOverloadResolution
 public fun Tray(
@@ -415,11 +505,16 @@ public fun Tray(
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             colorFilter =
-                tint?.let { androidx.compose.ui.graphics.ColorFilter.tint(it) }
+                tint?.let {
+                    androidx.compose.ui.graphics.ColorFilter
+                        .tint(it)
+                }
                     ?: if (isDark) {
-                        androidx.compose.ui.graphics.ColorFilter.tint(Color.White)
+                        androidx.compose.ui.graphics.ColorFilter
+                            .tint(Color.White)
                     } else {
-                        androidx.compose.ui.graphics.ColorFilter.tint(Color.Black)
+                        androidx.compose.ui.graphics.ColorFilter
+                            .tint(Color.Black)
                     },
         )
     }
@@ -432,7 +527,9 @@ public fun Tray(
                     imageVector = icon,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.Black),
+                    colorFilter =
+                        androidx.compose.ui.graphics.ColorFilter
+                            .tint(Color.Black),
                 )
             }
         } else {
@@ -446,7 +543,9 @@ public fun Tray(
                     imageVector = icon,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
-                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color.White),
+                    colorFilter =
+                        androidx.compose.ui.graphics.ColorFilter
+                            .tint(Color.White),
                 )
             }
         } else {
@@ -494,6 +593,17 @@ public fun Tray(
     }
 }
 
+/**
+ * Tray icon drawn from a [Painter], with a [TrayMenuBuilder] menu.
+ *
+ * @param icon The icon.
+ * @param iconRenderProperties How the icon is rasterized for the platform.
+ *
+ * @param tooltip Text shown when hovering the icon.
+ * @param primaryAction Runs on a left click; `null` opens the menu instead.
+ * @param onMenuOpened Runs just before the menu shows.
+ * @param menuContent The menu; `null` for an icon without one.
+ */
 @Composable
 @LowPriorityInOverloadResolution
 public fun Tray(
@@ -618,6 +728,20 @@ public fun Tray(
     )
 }
 
+/**
+ * Platform-polymorphic tray icon with a [TrayMenuBuilder] menu: a resource on Windows, an
+ * [ImageVector] on macOS and Linux.
+ *
+ * @param windowsIcon Icon used on Windows.
+ * @param macLinuxIcon Icon used on macOS and Linux.
+ * @param tint Fixed color of [macLinuxIcon], or `null` to follow the menu bar theme.
+ * @param iconRenderProperties How the icon is rasterized for the platform.
+ *
+ * @param tooltip Text shown when hovering the icon.
+ * @param primaryAction Runs on a left click; `null` opens the menu instead.
+ * @param onMenuOpened Runs just before the menu shows.
+ * @param menuContent The menu; `null` for an icon without one.
+ */
 @Composable
 @LowPriorityInOverloadResolution
 public fun Tray(

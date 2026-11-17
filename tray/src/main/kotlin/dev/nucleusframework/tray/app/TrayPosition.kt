@@ -1,10 +1,11 @@
 package dev.nucleusframework.tray.app
 
-import dev.nucleusframework.tray.internal.MacTrayInitializer
-import dev.nucleusframework.tray.internal.WindowsTrayInitializer
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.tray.internal.MacTrayInitializer
+import dev.nucleusframework.tray.internal.WindowsTrayInitializer
 
+/** Screen corner holding the notification area / menu bar extras, where TrayApp anchors its popup. */
 public enum class TrayPosition { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
 
 internal fun getWindowsTrayPosition(nativeResult: String?): TrayPosition =

@@ -29,8 +29,7 @@ class WindowsTrayTortureTest {
     private val created = ConcurrentLinkedQueue<String>()
     private val iterations = System.getProperty("nucleus.tray.torture.iterations")?.toIntOrNull() ?: 60
 
-    private fun seed(): Long =
-        System.getProperty("nucleus.tray.torture.seed")?.toLongOrNull() ?: System.nanoTime()
+    private fun seed(): Long = System.getProperty("nucleus.tray.torture.seed")?.toLongOrNull() ?: System.nanoTime()
 
     @AfterTest
     fun cleanup() {
@@ -67,13 +66,20 @@ class WindowsTrayTortureTest {
                 val answers = Win32Probe.sendWithTimeout(hwnd, 0, timeoutMs = 1000)
                 val menus = Win32Probe.windowsOfClass("#32768").size
                 val threads =
-                    Thread.getAllStackTraces().filterKeys { it.name.startsWith("NucleusTray-") }.entries.joinToString(" | ") { (t, st) ->
-                        t.name + " " + st.take(4).joinToString(" < ")
-                    }
+                    Thread
+                        .getAllStackTraces()
+                        .filterKeys {
+                            it.name.startsWith(
+                                "NucleusTray-",
+                            )
+                        }.entries
+                        .joinToString(" | ") { (t, st) ->
+                            t.name + " " + st.take(4).joinToString(" < ")
+                        }
                 fail("${e.message}; tray window answers=$answers, #32768 windows=$menus; threads: $threads", e)
             }
         val items = Win32Probe.readMenu(hmenu)
-        dismissMenu(hwnd, Pointer(popup))
+        dismissMenu(hwnd)
         return items
     }
 
@@ -84,7 +90,7 @@ class WindowsTrayTortureTest {
         while (System.nanoTime() < deadline) {
             Win32Probe.openPopupMenu()?.let { (popup, hmenu) ->
                 val items = Win32Probe.readMenu(hmenu)
-                dismissMenu(hwnd, Pointer(popup))
+                dismissMenu(hwnd)
                 return items
             }
             Thread.sleep(10)
@@ -92,12 +98,11 @@ class WindowsTrayTortureTest {
         return emptyList()
     }
 
-    private fun Pointer(hwnd:com.sun.jna.platform.win32.WinDef.HWND): Long = com.sun.jna.Pointer.nativeValue(hwnd.pointer)
+    private fun rawHandle(hwnd: com.sun.jna.platform.win32.WinDef.HWND): Long =
+        com.sun.jna.Pointer
+            .nativeValue(hwnd.pointer)
 
-    private fun dismissMenu(
-        owner: Long,
-        popup: Long,
-    ) {
+    private fun dismissMenu(owner: Long) {
         // Only WM_CANCELMODE: the system reuses `#32768` windows, so a stray Esc left in the
         // queue would close the *next* popup the instant it opens.
         Win32Probe.post(owner, Win32Probe.WM_CANCELMODE)
@@ -197,7 +202,7 @@ class WindowsTrayTortureTest {
                 "tray B's window stopped answering while tray A's menu is open",
             )
         } finally {
-            dismissMenu(hwndA, Pointer(popup))
+            dismissMenu(hwndA)
         }
     }
 
@@ -265,11 +270,13 @@ class WindowsTrayTortureTest {
         init("gdi", menu = null)
         val (hwnd, _) = identity("gdi")
         val icon = icon()
-        fun menu(round: Int): TrayMenuBuilder.() -> Unit = {
-            SubMenu("Sub $round") {
-                repeat(8) { Item("leaf $it", iconContent = {}, onClick = {}) }
+
+        fun menu(round: Int): TrayMenuBuilder.() -> Unit =
+            {
+                SubMenu("Sub $round") {
+                    repeat(8) { Item("leaf $it", iconContent = {}, onClick = {}) }
+                }
             }
-        }
         // Warm up, then measure the steady state.
         repeat(5) {
             WindowsTrayInitializer.update("gdi", icon, "t", null, menu(it))
@@ -321,9 +328,10 @@ class WindowsTrayTortureTest {
                                 )
                             }
                             2 -> WindowsTrayInitializer.dispose(id)
-                            else -> WindowsTrayInitializer.nativeIdentity(id)?.let { (h, _) ->
-                                Win32Probe.post(h, Win32Probe.WM_COMMAND, 1000L + random.nextInt(20))
-                            }
+                            else ->
+                                WindowsTrayInitializer.nativeIdentity(id)?.let { (h, _) ->
+                                    Win32Probe.post(h, Win32Probe.WM_COMMAND, 1000L + random.nextInt(20))
+                                }
                         }
                     }
                 }.onFailure { errors += it }
@@ -359,7 +367,7 @@ class WindowsTrayTortureTest {
         try {
             repeat(30) { n -> tray.update(icon(), icon(), "v$n", null, { Item("v$n") {} }) }
             val hwnd =
-                awaitValue("tray window") { trayWindows().singleOrNull()?.let { Pointer(it) } }
+                awaitValue("tray window") { trayWindows().singleOrNull()?.let { rawHandle(it) } }
             awaitTrue("menu converged on v29", timeoutMs = 5000) { readMenu(hwnd).singleOrNull()?.text == "v29" }
         } finally {
             tray.dispose()
@@ -394,5 +402,9 @@ class WindowsTrayTortureTest {
         awaitTrue("tray still answers") { readMenu(hwnd).size == 2 }
     }
 
-    private fun createTempDir(): File = kotlin.io.path.createTempDirectory("tray-torture").toFile().apply { deleteOnExit() }
+    private fun createTempDir(): File =
+        kotlin.io.path
+            .createTempDirectory("tray-torture")
+            .toFile()
+            .apply { deleteOnExit() }
 }

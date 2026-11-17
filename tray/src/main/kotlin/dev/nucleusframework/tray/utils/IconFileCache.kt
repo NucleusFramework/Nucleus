@@ -20,7 +20,10 @@ internal object IconFileCache {
     private val directory: File by lazy {
         Files.createTempDirectory("nucleus-tray-").toFile().also { dir ->
             Runtime.getRuntime().addShutdownHook(
-                Thread({ dir.listFiles()?.forEach { it.delete() }; dir.delete() }, "NucleusTray-icon-cleanup"),
+                Thread({
+                    dir.listFiles()?.forEach { it.delete() }
+                    dir.delete()
+                }, "NucleusTray-icon-cleanup"),
             )
         }
     }
