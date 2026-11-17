@@ -81,6 +81,11 @@ pub(super) struct ViewState {
   /// must not be forwarded either (Nucleus patch, nucleusframework#595).
   ime_consumed_keydown: bool,
 
+  /// Text `insertText:` produced for the event `keyDown` is interpreting,
+  /// or `None` outside `keyDown`. Held here so that the key-down is queued
+  /// ahead of the text it typed (Nucleus patch).
+  key_down_text: Option<String>,
+
   /// Selection within marked text, as last given by `setMarkedText:`.
   /// UTF-16 units relative to the start of the marked range. `EMPTY_RANGE`
   /// when there is no marked text.
@@ -110,6 +115,7 @@ pub fn new_view(ns_window: &NSWindow) -> (Option<Retained<NSView>>, Weak<Mutex<C
     in_ime_preedit: false,
     key_triggered_ime: false,
     ime_consumed_keydown: false,
+    key_down_text: None,
     ime_selected_range: util::EMPTY_RANGE,
     is_key_down: false,
     modifiers: Default::default(),
@@ -711,7 +717,12 @@ extern "C" fn insert_text(
         },
       );
     } else if !string.is_empty() {
-      queue_window_event(state, WindowEvent::ReceivedImeText(string));
+      // Nucleus patch: text typed by the key `keyDown` is interpreting is
+      // queued by `keyDown`, after the key-down itself.
+      match state.key_down_text.as_mut() {
+        Some(typed) => typed.push_str(&string),
+        None => queue_window_event(state, WindowEvent::ReceivedImeText(string)),
+      }
     }
   }
   trace!("Completed `insertText`");
@@ -863,8 +874,18 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
     state.key_triggered_ime = false;
     let was_preediting: bool = state.in_ime_preedit;
 
+    // Nucleus patch: `insertText:` runs inside `interpretKeyEvents`, before
+    // the key-down below is queued. Collect what it types and queue it after
+    // the key-down instead: that is the order AWT delivers KEY_PRESSED and
+    // KEY_TYPED in, and a handler that moves focus to a text field on
+    // key-down relies on it — the character would otherwise reach whatever
+    // had focus before. The outer value is restored for a nested `keyDown`.
+    let outer_text = state.key_down_text.replace(String::new());
+
     let array: id = msg_send![class!(NSArray), arrayWithObject: event];
     let () = msg_send![&*this, interpretKeyEvents: array];
+
+    let typed = std::mem::replace(&mut state.key_down_text, outer_text).unwrap_or_default();
 
     // The `interpretKeyEvents` above may invoke `set_marked_text` or `insert_text`.
     let in_ime = state.key_triggered_ime;
@@ -906,6 +927,9 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
         },
       };
       AppState::queue_event(EventWrapper::StaticEvent(window_event));
+    }
+    if !typed.is_empty() {
+      queue_window_event(state, WindowEvent::ReceivedImeText(typed));
     }
   }
   trace!("Completed `keyDown`");

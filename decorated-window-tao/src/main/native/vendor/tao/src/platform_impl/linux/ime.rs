@@ -27,6 +27,20 @@ pub(crate) enum Commit {
   /// Ordinary character insert with no composition behind it — an input
   /// method still delivers plain typing this way once it is in the path.
   Text,
+  /// Ordinary character insert produced by the key press being filtered.
+  /// Nothing to send yet: [`ImeState::key_pressed`] hands the text back, to
+  /// follow the press.
+  Typed,
+}
+
+/// What [`ImeState::key_pressed`] decided for a key press.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum KeyPress {
+  /// The input method consumed it; Compose sees neither it nor its release.
+  Withheld,
+  /// It goes to Compose, and `typed` — the text it produced, empty for a key
+  /// that types nothing — follows it.
+  Delivered { typed: String },
 }
 
 /// Per-window input-method state. See the module docs.
@@ -44,6 +58,15 @@ pub(crate) struct ImeState {
   /// so a release with no press behind it activates whatever holds focus —
   /// the Return that merely confirmed a conversion would press a button.
   pressed: HashSet<u16>,
+  /// Text the input method committed outside a composition while it was
+  /// filtering the current key press, or `None` outside such a filter.
+  ///
+  /// With no engine composing, `gtk_im_context_filter_keypress` turns a
+  /// printable key into text on the spot: it emits `commit` and claims the
+  /// press. That key was typed, not consumed. Holding the text here is what
+  /// lets [`Self::key_pressed`] tell the two apart, and lets the press reach
+  /// Compose ahead of the text it produced — AWT's KEY_PRESSED, KEY_TYPED.
+  typed: Option<String>,
   /// Hardware keycodes physically held, filtered or not — what tells a held
   /// key's auto-repeat from a new press. GDK reports neither flag nor count:
   /// a held key arrives as a run of presses and one release, on X11 (GDK turns
@@ -73,23 +96,38 @@ impl ImeState {
     self.composing = false;
   }
 
-  /// Which event the `commit` signal should produce.
-  pub(crate) fn commit(&self) -> Commit {
+  /// Which event the `commit` signal carrying `text` should produce.
+  pub(crate) fn commit(&mut self, text: &str) -> Commit {
     if self.composing {
-      Commit::Ime
-    } else {
-      Commit::Text
+      return Commit::Ime;
+    }
+    match self.typed.as_mut() {
+      Some(typed) => {
+        typed.push_str(text);
+        Commit::Typed
+      }
+      None => Commit::Text,
     }
   }
 
-  /// Whether a key press should reach Compose. `filtered` is what
-  /// `gtk_im_context_filter_keypress` returned.
-  pub(crate) fn key_pressed(&mut self, keycode: u16, filtered: bool) -> bool {
-    if filtered {
-      return false;
+  /// Call before handing a key press to `gtk_im_context_filter_keypress`:
+  /// text committed until [`Self::key_pressed`] belongs to that press.
+  pub(crate) fn filter_started(&mut self) {
+    self.typed = Some(String::new());
+  }
+
+  /// What a key press turns into. `filtered` is what
+  /// `gtk_im_context_filter_keypress` returned for it.
+  ///
+  /// A press the input method claimed is withheld, unless all it did was
+  /// type: then the press is delivered like any other, followed by its text.
+  pub(crate) fn key_pressed(&mut self, keycode: u16, filtered: bool) -> KeyPress {
+    let typed = self.typed.take().unwrap_or_default();
+    if filtered && typed.is_empty() {
+      return KeyPress::Withheld;
     }
     self.pressed.insert(keycode);
-    true
+    KeyPress::Delivered { typed }
   }
 
   /// Records a key press and answers whether it is an auto-repeat, i.e. the
@@ -141,11 +179,64 @@ mod tests {
   const KEY_BACKSPACE: u16 = 22;
   const KEY_CTRL: u16 = 37;
 
+  fn delivered(typed: &str) -> KeyPress {
+    KeyPress::Delivered {
+      typed: typed.to_string(),
+    }
+  }
+
   #[test]
   fn plain_typing_round_trips() {
     let mut s = ImeState::new();
-    assert!(s.key_pressed(KEY_A, false));
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
     assert!(s.key_released(KEY_A, false));
+  }
+
+  /// With no engine composing, GTK's input method turns a printable key into
+  /// text itself: `commit` fires inside `filter_keypress`, which then claims
+  /// the press. Compose must still get the press, then the text, then the
+  /// release — a press that only ever showed up as text left "focus the field
+  /// on key-down" handlers dead for every printable key.
+  #[test]
+  fn typed_key_is_delivered_ahead_of_its_text() {
+    let mut s = ImeState::new();
+    s.filter_started();
+    assert_eq!(s.commit("q"), Commit::Typed);
+    assert_eq!(s.key_pressed(KEY_A, true), delivered("q"));
+    assert!(s.key_released(KEY_A, false));
+  }
+
+  /// A key the engine consumed without typing anything (a dead key, a key
+  /// that only extended a composition) stays withheld.
+  #[test]
+  fn filtered_press_that_types_nothing_is_withheld() {
+    let mut s = ImeState::new();
+    s.filter_started();
+    assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
+    assert!(!s.key_released(KEY_A, false));
+  }
+
+  /// Text that confirms a composition is the input method's, not the key's,
+  /// even when it lands while a press is being filtered.
+  #[test]
+  fn composition_commit_during_a_filter_is_not_typed() {
+    let mut s = ImeState::new();
+    s.preedit_started();
+    s.filter_started();
+    assert_eq!(s.commit("\u{65e5}\u{672c}"), Commit::Ime);
+    assert_eq!(s.key_pressed(KEY_RETURN, true), KeyPress::Withheld);
+  }
+
+  /// Text committed with no key press being filtered (an engine answering
+  /// asynchronously, an on-screen keyboard) has no press to follow.
+  #[test]
+  fn commit_outside_a_filter_is_sent_at_once() {
+    let mut s = ImeState::new();
+    assert_eq!(s.commit("q"), Commit::Text);
+    s.filter_started();
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
+    // The filter window closed with the press.
+    assert_eq!(s.commit("q"), Commit::Text);
   }
 
   /// Wayland: the compositor withholds the press of a key the input method
@@ -161,7 +252,7 @@ mod tests {
   #[test]
   fn filtered_press_withholds_its_release() {
     let mut s = ImeState::new();
-    assert!(!s.key_pressed(KEY_BACKSPACE, true));
+    assert_eq!(s.key_pressed(KEY_BACKSPACE, true), KeyPress::Withheld);
     assert!(!s.key_released(KEY_BACKSPACE, false));
   }
 
@@ -171,20 +262,20 @@ mod tests {
   fn confirming_return_does_not_reach_compose() {
     let mut s = ImeState::new();
     s.preedit_started();
-    assert_eq!(s.commit(), Commit::Ime);
+    assert_eq!(s.commit("x"), Commit::Ime);
     s.preedit_ended();
     // Only the release arrives; its press was consumed by the input method.
     assert!(!s.key_released(KEY_RETURN, false));
     // The next Return is a real one and must go through.
-    assert!(s.key_pressed(KEY_RETURN, false));
+    assert_eq!(s.key_pressed(KEY_RETURN, false), delivered(""));
     assert!(s.key_released(KEY_RETURN, false));
   }
 
   #[test]
   fn autorepeat_press_stays_paired() {
     let mut s = ImeState::new();
-    assert!(s.key_pressed(KEY_A, false));
-    assert!(s.key_pressed(KEY_A, false));
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
     assert!(s.key_released(KEY_A, false));
     // The repeat collapsed into one entry, so a second release is unpaired.
     assert!(!s.key_released(KEY_A, false));
@@ -223,11 +314,11 @@ mod tests {
   fn commit_routes_on_composition_state() {
     let mut s = ImeState::new();
     // Plain typing through the input method, no composition open.
-    assert_eq!(s.commit(), Commit::Text);
+    assert_eq!(s.commit("x"), Commit::Text);
     s.preedit_started();
-    assert_eq!(s.commit(), Commit::Ime);
+    assert_eq!(s.commit("x"), Commit::Ime);
     s.preedit_ended();
-    assert_eq!(s.commit(), Commit::Text);
+    assert_eq!(s.commit("x"), Commit::Text);
   }
 
   #[test]
@@ -287,12 +378,12 @@ mod tests {
   #[test]
   fn shortcuts_pass_through() {
     let mut s = ImeState::new();
-    assert!(s.key_pressed(KEY_CTRL, false));
+    assert_eq!(s.key_pressed(KEY_CTRL, false), delivered(""));
     assert_eq!(
       s.modifiers_changed(ModifiersState::CONTROL),
       Some(ModifiersState::CONTROL)
     );
-    assert!(s.key_pressed(KEY_A, false));
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
     assert!(s.key_released(KEY_A, false));
     assert!(s.key_released(KEY_CTRL, false));
     assert_eq!(
