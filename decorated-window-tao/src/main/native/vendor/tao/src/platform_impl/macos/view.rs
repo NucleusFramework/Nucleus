@@ -529,6 +529,18 @@ extern "C" fn set_marked_text(
     let state = &mut *(state_ptr as *mut ViewState);
     state.key_triggered_ime = true;
 
+    // Nucleus patch: text the key `keyDown` is interpreting typed before
+    // opening this composition goes out now, ahead of the preedit, rather
+    // than after it, where it would land inside the composition.
+    let typed = state
+      .key_down_text
+      .as_mut()
+      .map(std::mem::take)
+      .unwrap_or_default();
+    if !typed.is_empty() {
+      queue_window_event(state, WindowEvent::ReceivedImeText(typed));
+    }
+
     // Nucleus patch (nucleusframework#595): forward the preedit to the app.
     // The IME's inner selection is not representable through Compose's
     // TextEditingScope and is not forwarded. Corporate characters stay in

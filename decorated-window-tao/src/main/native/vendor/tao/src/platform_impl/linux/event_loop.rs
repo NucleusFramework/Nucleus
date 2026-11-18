@@ -1133,7 +1133,23 @@ impl<T: 'static> EventLoop<T> {
 
             {
               let ime_state = ime_state.clone();
-              ime.connect_preedit_start(move |_| ime_state.borrow_mut().preedit_started());
+              let tx_clone = event_tx.clone();
+              ime.connect_preedit_start(move |_| {
+                // Text the press committed before opening this composition
+                // goes out ahead of the preedit, not after it.
+                let Some(text) = ime_state.borrow_mut().preedit_started() else {
+                  return;
+                };
+                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event: WindowEvent::ReceivedImeText(text),
+                }) {
+                  log::warn!(
+                    "Failed to send received IME text event to event channel: {}",
+                    e
+                  );
+                }
+              });
             }
 
             {

@@ -84,8 +84,8 @@ pub(crate) struct ImeState {
   /// time of the press it repeats), but a release has no repeats.
   claimed_releases: HashMap<u16, u32>,
   /// Text the input method committed while it was filtering the current key
-  /// press, or `None` when no press is being filtered or the press began
-  /// inside a composition.
+  /// press, or `None` when no press is being filtered or a composition is
+  /// open (the press began inside one, or opened one).
   ///
   /// With no engine composing, `gtk_im_context_filter_keypress` turns a
   /// printable key into text on the spot: it emits `commit` and claims the
@@ -114,8 +114,15 @@ impl ImeState {
     self.composing
   }
 
-  pub(crate) fn preedit_started(&mut self) {
+  /// Returns text the press being filtered committed before it opened this
+  /// composition, to be sent now, ahead of the preedit.
+  ///
+  /// That press is the input method's, not typed: it is withheld like any
+  /// press that opens a composition, and its earlier text has to reach
+  /// Compose before the preedit rather than land inside it.
+  pub(crate) fn preedit_started(&mut self) -> Option<String> {
     self.composing = true;
+    self.typed.take().filter(|typed| !typed.is_empty())
   }
 
   pub(crate) fn preedit_ended(&mut self) {
@@ -204,11 +211,13 @@ impl ImeState {
       }
       return false;
     }
-    let handed_back = self.claimed_releases.get(&keycode) == Some(&time);
-    if handed_back {
+    // A handed-back release answers for the press it was claimed from. A
+    // newer press of the key, delivered meanwhile, keeps its own pairing.
+    if self.claimed_releases.get(&keycode) == Some(&time) {
       self.claimed_releases.remove(&keycode);
+      return true;
     }
-    self.pressed.remove(&keycode) || handed_back
+    self.pressed.remove(&keycode)
   }
 
   /// The modifier state to publish, or `None` when it did not change.
@@ -359,6 +368,19 @@ mod tests {
     assert!(!s.key_released(KEY_A, T1, false));
   }
 
+  /// A press delivered before the input method hands back the release of
+  /// the press before it keeps its own pairing: each key-down gets its
+  /// key-up, and the key does not stay held in Compose.
+  #[test]
+  fn handed_back_release_leaves_a_newer_press_paired() {
+    let mut s = ImeState::new();
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
+    assert!(!s.key_released(KEY_A, T0, true));
+    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
+    assert!(s.key_released(KEY_A, T0, false));
+    assert!(s.key_released(KEY_A, T1, false));
+  }
+
   /// A key Compose has the key-down of keeps its key-up when a later repeat
   /// of it is withheld.
   #[test]
@@ -378,6 +400,28 @@ mod tests {
     s.filter_started();
     assert_eq!(s.commit("\u{65e5}\u{672c}"), Commit::Ime);
     assert_eq!(s.key_pressed(KEY_RETURN, true), KeyPress::Withheld);
+  }
+
+  /// A press that commits text and then opens a composition was consumed,
+  /// not typed: it is withheld, and its text goes out before the preedit
+  /// instead of after it.
+  #[test]
+  fn press_that_commits_then_composes_is_withheld() {
+    let mut s = ImeState::new();
+    s.filter_started();
+    assert_eq!(s.commit("q"), Commit::Typed);
+    assert_eq!(s.preedit_started(), Some("q".to_string()));
+    assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
+    assert!(!s.key_released(KEY_A, T0, false));
+  }
+
+  /// A press that only opens a composition has no text to send ahead of it.
+  #[test]
+  fn press_that_only_composes_sends_nothing_ahead() {
+    let mut s = ImeState::new();
+    s.filter_started();
+    assert_eq!(s.preedit_started(), None);
+    assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
   }
 
   /// Text committed with no key press being filtered (an engine answering

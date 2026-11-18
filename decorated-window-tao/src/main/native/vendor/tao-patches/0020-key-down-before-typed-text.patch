@@ -9,7 +9,32 @@
  use crate::{
    dpi::{LogicalPosition, LogicalSize, PhysicalPosition},
    error::ExternalError,
-@@ -1169,9 +1169,11 @@ impl<T: 'static> EventLoop<T> {
+@@ -1133,7 +1133,23 @@ impl<T: 'static> EventLoop<T> {
+ 
+             {
+               let ime_state = ime_state.clone();
+-              ime.connect_preedit_start(move |_| ime_state.borrow_mut().preedit_started());
++              let tx_clone = event_tx.clone();
++              ime.connect_preedit_start(move |_| {
++                // Text the press committed before opening this composition
++                // goes out ahead of the preedit, not after it.
++                let Some(text) = ime_state.borrow_mut().preedit_started() else {
++                  return;
++                };
++                if let Err(e) = tx_clone.send(Event::WindowEvent {
++                  window_id: RootWindowId(id),
++                  event: WindowEvent::ReceivedImeText(text),
++                }) {
++                  log::warn!(
++                    "Failed to send received IME text event to event channel: {}",
++                    e
++                  );
++                }
++              });
+             }
+ 
+             {
+@@ -1169,9 +1185,11 @@ impl<T: 'static> EventLoop<T> {
                let ime_state = ime_state.clone();
                let tx_clone = event_tx.clone();
                ime.connect_commit(move |_, s| {
@@ -22,7 +47,7 @@
                  };
                  if let Err(e) = tx_clone.send(Event::WindowEvent {
                    window_id: RootWindowId(id),
-@@ -1232,6 +1234,7 @@ impl<T: 'static> EventLoop<T> {
+@@ -1232,6 +1250,7 @@ impl<T: 'static> EventLoop<T> {
              let handler = keyboard_handler.clone();
              let ime_ = ime.clone();
              let ime_state_press = ime_state.clone();
@@ -30,7 +55,7 @@
              window.connect_key_press_event(move |window, event_key| {
                // Tracked before the embed check, so a key pressed or released
                // while an embedded view owns the keyboard is not left stale.
-@@ -1246,14 +1249,32 @@ impl<T: 'static> EventLoop<T> {
+@@ -1246,14 +1265,32 @@ impl<T: 'static> EventLoop<T> {
                // also inserts a newline, and the BackSpace that edits the
                // composition also deletes committed text (the Linux twin of the
                // VK_PROCESSKEY leak fixed for Windows in nucleusframework#558).
@@ -66,7 +91,7 @@
  
                // Compose owns the keyboard and has the key: stop here so GtkWindow's
                // own bindings do not run on it too — an arrow or a Tab would
-@@ -1274,7 +1295,7 @@ impl<T: 'static> EventLoop<T> {
+@@ -1274,7 +1311,7 @@ impl<T: 'static> EventLoop<T> {
                let filtered = ime.filter_keypress(event_key);
                if !ime_state_release
                  .borrow_mut()
@@ -137,8 +162,8 @@
 +  /// time of the press it repeats), but a release has no repeats.
 +  claimed_releases: HashMap<u16, u32>,
 +  /// Text the input method committed while it was filtering the current key
-+  /// press, or `None` when no press is being filtered or the press began
-+  /// inside a composition.
++  /// press, or `None` when no press is being filtered or a composition is
++  /// open (the press began inside one, or opened one).
 +  ///
 +  /// With no engine composing, `gtk_im_context_filter_keypress` turns a
 +  /// printable key into text on the spot: it emits `commit` and claims the
@@ -158,7 +183,23 @@
    /// Last modifier state published to Compose.
    modifiers: ModifiersState,
  }
-@@ -73,29 +122,63 @@ impl ImeState {
+@@ -65,37 +114,78 @@ impl ImeState {
+     self.composing
+   }
+ 
+-  pub(crate) fn preedit_started(&mut self) {
++  /// Returns text the press being filtered committed before it opened this
++  /// composition, to be sent now, ahead of the preedit.
++  ///
++  /// That press is the input method's, not typed: it is withheld like any
++  /// press that opens a composition, and its earlier text has to reach
++  /// Compose before the preedit rather than land inside it.
++  pub(crate) fn preedit_started(&mut self) -> Option<String> {
+     self.composing = true;
++    self.typed.take().filter(|typed| !typed.is_empty())
+   }
+ 
+   pub(crate) fn preedit_ended(&mut self) {
      self.composing = false;
    }
  
@@ -234,7 +275,7 @@
    }
  
    /// Records a key release; see [`Self::press_is_repeat`].
-@@ -110,9 +193,22 @@ impl ImeState {
+@@ -110,9 +200,24 @@ impl ImeState {
  
    /// Whether a key release should reach Compose. Releases whose press was
    /// withheld are dropped, so Compose never sees a KeyUp without its KeyDown.
@@ -252,15 +293,17 @@
 +      }
 +      return false;
 +    }
-+    let handed_back = self.claimed_releases.get(&keycode) == Some(&time);
-+    if handed_back {
++    // A handed-back release answers for the press it was claimed from. A
++    // newer press of the key, delivered meanwhile, keeps its own pairing.
++    if self.claimed_releases.get(&keycode) == Some(&time) {
 +      self.claimed_releases.remove(&keycode);
++      return true;
 +    }
-+    self.pressed.remove(&keycode) || handed_back
++    self.pressed.remove(&keycode)
    }
  
    /// The modifier state to publish, or `None` when it did not change.
-@@ -140,12 +236,160 @@ mod tests {
+@@ -140,12 +245,195 @@ mod tests {
    const KEY_RETURN: u16 = 36;
    const KEY_BACKSPACE: u16 = 22;
    const KEY_CTRL: u16 = 37;
@@ -389,6 +432,19 @@
 +    assert!(!s.key_released(KEY_A, T1, false));
 +  }
 +
++  /// A press delivered before the input method hands back the release of
++  /// the press before it keeps its own pairing: each key-down gets its
++  /// key-up, and the key does not stay held in Compose.
++  #[test]
++  fn handed_back_release_leaves_a_newer_press_paired() {
++    let mut s = ImeState::new();
++    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
++    assert!(!s.key_released(KEY_A, T0, true));
++    assert_eq!(s.key_pressed(KEY_A, false), delivered(""));
++    assert!(s.key_released(KEY_A, T0, false));
++    assert!(s.key_released(KEY_A, T1, false));
++  }
++
 +  /// A key Compose has the key-down of keeps its key-up when a later repeat
 +  /// of it is withheld.
 +  #[test]
@@ -410,6 +466,28 @@
 +    assert_eq!(s.key_pressed(KEY_RETURN, true), KeyPress::Withheld);
 +  }
 +
++  /// A press that commits text and then opens a composition was consumed,
++  /// not typed: it is withheld, and its text goes out before the preedit
++  /// instead of after it.
++  #[test]
++  fn press_that_commits_then_composes_is_withheld() {
++    let mut s = ImeState::new();
++    s.filter_started();
++    assert_eq!(s.commit("q"), Commit::Typed);
++    assert_eq!(s.preedit_started(), Some("q".to_string()));
++    assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
++    assert!(!s.key_released(KEY_A, T0, false));
++  }
++
++  /// A press that only opens a composition has no text to send ahead of it.
++  #[test]
++  fn press_that_only_composes_sends_nothing_ahead() {
++    let mut s = ImeState::new();
++    s.filter_started();
++    assert_eq!(s.preedit_started(), None);
++    assert_eq!(s.key_pressed(KEY_A, true), KeyPress::Withheld);
++  }
++
 +  /// Text committed with no key press being filtered (an engine answering
 +  /// asynchronously, an on-screen keyboard) has no press to follow.
 +  #[test]
@@ -423,7 +501,7 @@
    }
  
    /// Wayland: the compositor withholds the press of a key the input method
-@@ -153,7 +397,7 @@ mod tests {
+@@ -153,7 +441,7 @@ mod tests {
    #[test]
    fn release_without_a_press_is_dropped() {
      let mut s = ImeState::new();
@@ -432,7 +510,7 @@
    }
  
    /// X11: the press reaches the client but `filter_keypress` claims it. The
-@@ -161,8 +405,8 @@ mod tests {
+@@ -161,8 +449,8 @@ mod tests {
    #[test]
    fn filtered_press_withholds_its_release() {
      let mut s = ImeState::new();
@@ -443,7 +521,7 @@
    }
  
    /// The observed failure: confirming a conversion with Return delivered only
-@@ -171,23 +415,23 @@ mod tests {
+@@ -171,23 +459,23 @@ mod tests {
    fn confirming_return_does_not_reach_compose() {
      let mut s = ImeState::new();
      s.preedit_started();
@@ -475,7 +553,7 @@
    }
  
    #[test]
-@@ -223,11 +467,11 @@ mod tests {
+@@ -223,11 +511,11 @@ mod tests {
    fn commit_routes_on_composition_state() {
      let mut s = ImeState::new();
      // Plain typing through the input method, no composition open.
@@ -490,7 +568,7 @@
    }
  
    #[test]
-@@ -287,14 +531,14 @@ mod tests {
+@@ -287,14 +575,14 @@ mod tests {
    #[test]
    fn shortcuts_pass_through() {
      let mut s = ImeState::new();
@@ -531,7 +609,26 @@
      ime_selected_range: util::EMPTY_RANGE,
      is_key_down: false,
      modifiers: Default::default(),
-@@ -711,7 +717,12 @@ extern "C" fn insert_text(
+@@ -523,6 +529,18 @@ extern "C" fn set_marked_text(
+     let state = &mut *(state_ptr as *mut ViewState);
+     state.key_triggered_ime = true;
+ 
++    // Nucleus patch: text the key `keyDown` is interpreting typed before
++    // opening this composition goes out now, ahead of the preedit, rather
++    // than after it, where it would land inside the composition.
++    let typed = state
++      .key_down_text
++      .as_mut()
++      .map(std::mem::take)
++      .unwrap_or_default();
++    if !typed.is_empty() {
++      queue_window_event(state, WindowEvent::ReceivedImeText(typed));
++    }
++
+     // Nucleus patch (nucleusframework#595): forward the preedit to the app.
+     // The IME's inner selection is not representable through Compose's
+     // TextEditingScope and is not forwarded. Corporate characters stay in
+@@ -711,7 +729,12 @@ extern "C" fn insert_text(
          },
        );
      } else if !string.is_empty() {
@@ -545,7 +642,7 @@
      }
    }
    trace!("Completed `insertText`");
-@@ -863,9 +874,19 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
+@@ -863,9 +886,19 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
      state.key_triggered_ime = false;
      let was_preediting: bool = state.in_ime_preedit;
  
@@ -565,7 +662,7 @@
      // The `interpretKeyEvents` above may invoke `set_marked_text` or `insert_text`.
      let in_ime = state.key_triggered_ime;
      let key_event = create_key_event(event, true, is_repeat, in_ime, None);
-@@ -907,6 +928,9 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
+@@ -907,6 +940,9 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
        };
        AppState::queue_event(EventWrapper::StaticEvent(window_event));
      }
