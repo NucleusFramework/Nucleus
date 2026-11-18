@@ -123,20 +123,14 @@ impl Cursor {
           None => Cursor::builtin(*icon).load(),
         }
       }
-      // PATCH(nucleus): the HIServices cursor bundle is not guaranteed to be
-      // there (#746); a missing one falls back to the arrow instead of
-      // panicking inside AppKit's `resetCursorRects` callback.
-      Cursor::WebKit(cursor_name) => Some(
-        load_webkit_cursor(&NSString::from_str(cursor_name))
-          .unwrap_or_else(|| NSCursor::arrowCursor()),
-      ),
+      Cursor::WebKit(cursor_name) => Some(load_webkit_cursor(&NSString::from_str(cursor_name))),
     }
   }
 }
 
 // Note that loading `busybutclickable` with this code won't animate
 // the frames; instead you'll just get them all in a column.
-unsafe fn load_webkit_cursor(name: &NSString) -> Option<Retained<NSCursor>> {
+unsafe fn load_webkit_cursor(name: &NSString) -> Retained<NSCursor> {
   // Snatch a cursor from WebKit; They fit the style of the native
   // cursors, and will seem completely standard to macOS users.
   //
@@ -148,17 +142,13 @@ unsafe fn load_webkit_cursor(name: &NSString) -> Option<Retained<NSCursor>> {
   let cursor_path = root.stringByAppendingPathComponent(name);
 
   let pdf_path = cursor_path.stringByAppendingPathComponent(ns_string!("cursor.pdf"));
-  // PATCH(nucleus): every lookup is fallible — upstream unwrapped them all.
-  let image = NSImage::initByReferencingFile(NSImage::alloc(), &pdf_path)?;
-  if !image.isValid() {
-    return None;
-  }
+  let image = NSImage::initByReferencingFile(NSImage::alloc(), &pdf_path).unwrap();
 
   // TODO: Handle PLists better
   let info_path = cursor_path.stringByAppendingPathComponent(ns_string!("info.plist"));
   #[allow(deprecated)]
   let info: Retained<NSDictionary<NSObject, NSObject>> =
-    unsafe { NSDictionary::dictionaryWithContentsOfFile(&info_path) }?;
+    unsafe { NSDictionary::dictionaryWithContentsOfFile(&info_path) }.unwrap();
   let mut x = 0.0;
   if let Some(n) = info.objectForKey(ns_string!("hotx")) {
     if let Ok(n) = n.downcast::<NSNumber>() {
@@ -173,11 +163,7 @@ unsafe fn load_webkit_cursor(name: &NSString) -> Option<Retained<NSCursor>> {
   }
 
   let hotspot = NSPoint::new(x, y);
-  Some(NSCursor::initWithImage_hotSpot(
-    NSCursor::alloc(),
-    &image,
-    hotspot,
-  ))
+  NSCursor::initWithImage_hotSpot(NSCursor::alloc(), &image, hotspot)
 }
 
 pub(crate) fn invisible_cursor() -> Retained<NSCursor> {
