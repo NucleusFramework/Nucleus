@@ -1,19 +1,19 @@
 package dev.nucleusframework.tray.internal
 
+import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
+import dev.nucleusframework.tray.internal.linux.LinuxNativeBridge
 import dev.nucleusframework.tray.internal.linux.LinuxTrayManager
 import dev.nucleusframework.tray.menu.TrayMenuBuilder
 import dev.nucleusframework.tray.menu.internal.LinuxTrayMenuBuilderImpl
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
+import dev.nucleusframework.tray.utils.AppIdProvider
 
+/** StatusNotifierItems by id. Every call is thread-safe and returns without waiting for a tray thread. */
 internal object LinuxTrayInitializer {
-    private const val DEFAULT_ID: String = "_default"
+    private val trayManagers = HashMap<String, LinuxTrayManager>()
 
-    private val trayMenuImpls: MutableMap<String, LinuxTrayMenuBuilderImpl> = mutableMapOf()
-    private val linuxTrayManagers: MutableMap<String, LinuxTrayManager> = mutableMapOf()
-    private val lock = ReentrantLock()
+    private fun manager(id: String): LinuxTrayManager? = synchronized(this) { trayManagers[id] }
 
-    @Synchronized
+    /** Creates tray [id], or updates it when it exists. Returns at once. */
     fun initialize(
         id: String,
         iconPath: String,
@@ -22,34 +22,19 @@ internal object LinuxTrayInitializer {
         menuContent: (TrayMenuBuilder.() -> Unit)? = null,
         onMenuOpened: (() -> Unit)? = null,
     ) {
-        lock.withLock {
-            val existing = linuxTrayManagers[id]
-            if (existing == null) {
-                val manager = LinuxTrayManager(id, iconPath, tooltip, onLeftClick, onMenuOpened)
-                linuxTrayManagers[id] = manager
-
-                val menuImpl =
-                    if (menuContent != null) {
-                        LinuxTrayMenuBuilderImpl(iconPath, tooltip, onLeftClick, trayManager = manager).apply {
-                            menuContent()
-                        }
-                    } else {
-                        null
-                    }
-                menuImpl?.let { impl ->
-                    trayMenuImpls[id]?.dispose()
-                    trayMenuImpls[id] = impl
-                    impl.build().forEach { item -> manager.addMenuItem(item) }
-                }
-
-                manager.startTray()
-            } else {
-                update(id, iconPath, tooltip, onLeftClick, menuContent, onMenuOpened)
+        val manager =
+            synchronized(this) {
+                trayManagers.getOrPut(id) { LinuxTrayManager(id, "${AppIdProvider.appId()}-$id") }
             }
+        var menuItems = LinuxTrayMenuBuilderImpl(manager).apply { menuContent?.invoke(this) }.build()
+        // Plasma treats an item whose menu has no entry as broken; a lone separator shows nothing.
+        if (menuItems.isEmpty() && LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE) {
+            menuItems = listOf(LinuxTrayManager.MenuItem(text = "", isSeparator = true))
         }
+        manager.submit(LinuxTrayManager.State(iconPath, tooltip, onLeftClick, onMenuOpened, menuItems))
     }
 
-    @Synchronized
+    /** Same as [initialize]: creates or updates tray [id]. */
     fun update(
         id: String,
         iconPath: String,
@@ -57,75 +42,22 @@ internal object LinuxTrayInitializer {
         onLeftClick: (() -> Unit)? = null,
         menuContent: (TrayMenuBuilder.() -> Unit)? = null,
         onMenuOpened: (() -> Unit)? = null,
-    ) {
-        lock.withLock {
-            val manager = linuxTrayManagers[id]
-            if (manager == null) {
-                initialize(id, iconPath, tooltip, onLeftClick, menuContent, onMenuOpened)
-                return
-            }
+    ): Unit = initialize(id, iconPath, tooltip, onLeftClick, menuContent, onMenuOpened)
 
-            val newMenuItems =
-                if (menuContent != null) {
-                    val newImpl =
-                        LinuxTrayMenuBuilderImpl(iconPath, tooltip, onLeftClick, trayManager = manager).apply {
-                            menuContent()
-                        }
-                    trayMenuImpls[id]?.dispose()
-                    trayMenuImpls[id] = newImpl
-                    newImpl.build()
-                } else {
-                    null
-                }
-
-            manager.update(iconPath, tooltip, onLeftClick, newMenuItems, onMenuOpened)
-        }
-    }
-
-    @Synchronized
+    /** Removes tray [id]. */
     fun dispose(id: String) {
-        // Remove references under lock quickly to avoid holding the lock during teardown
-        val manager: LinuxTrayManager?
-        val menuImpl: LinuxTrayMenuBuilderImpl?
-        lock.withLock {
-            manager = linuxTrayManagers.remove(id)
-            menuImpl = trayMenuImpls.remove(id)
-        }
-        // Dispose menu builder immediately (cheap)
-        try {
-            menuImpl?.dispose()
-        } catch (_: Throwable) {
-        }
-        // Stop tray asynchronously to avoid freezing the UI thread and avoid holding the lock
-        manager?.let { m ->
-            Thread({
-                try {
-                    m.stopTray()
-                } catch (_: Throwable) {
-                }
-            }, "LinuxTray-Dispose-$id").apply {
-                isDaemon = true
-                start()
-            }
-        }
+        synchronized(this) { trayManagers.remove(id) }?.stop()
     }
 
-    // Backward-compatible single-tray API
-    fun initialize(
-        iconPath: String,
-        tooltip: String,
-        onLeftClick: (() -> Unit)? = null,
-        menuContent: (TrayMenuBuilder.() -> Unit)? = null,
-        onMenuOpened: (() -> Unit)? = null,
-    ) = initialize(DEFAULT_ID, iconPath, tooltip, onLeftClick, menuContent, onMenuOpened)
+    /** Ids of the live trays (diagnostics and tests). */
+    fun debugIds(): List<String> = synchronized(this) { trayManagers.keys.toList() }
 
-    fun update(
-        iconPath: String,
-        tooltip: String,
-        onLeftClick: (() -> Unit)? = null,
-        menuContent: (TrayMenuBuilder.() -> Unit)? = null,
-        onMenuOpened: (() -> Unit)? = null,
-    ) = update(DEFAULT_ID, iconPath, tooltip, onLeftClick, menuContent, onMenuOpened)
+    /** Trays whose native thread still runs, disposed ones that are still closing included (tests). */
+    fun debugLiveNativeTrays(): Int = LinuxNativeBridge.nativeDebugLiveTrays()
 
-    fun dispose() = dispose(DEFAULT_ID)
+    /** The `Id` property tray [id] publishes (tests find it on the bus by this). */
+    fun debugItemId(id: String): String = "${AppIdProvider.appId()}-$id"
+
+    /** True while tray [id] exists (tests). */
+    fun debugHas(id: String): Boolean = manager(id) != null
 }

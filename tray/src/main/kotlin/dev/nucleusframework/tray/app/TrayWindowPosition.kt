@@ -218,6 +218,22 @@ public fun getTrayWindowPositionForInstance(
             debugln { "[TrayPosition] mac instance $instanceId not ready, PlatformDefault" }
             WindowPosition.PlatformDefault
         }
+        Platform.Linux -> {
+            // This tray's own last Activate: with two TrayApps, the global last click may be the
+            // other icon's. Before any click, the shared fallback (persisted click, then corner).
+            val resolved =
+                TrayClickTracker.lastClick(instanceId)?.let { resolveLogicalClick(it) }?.also { savePersistedClick(it) }
+                    ?: return getTrayWindowPosition(windowWidth, windowHeight, horizontalOffset, verticalOffset)
+            calculateWindowPositionFromClick(
+                resolved.x,
+                resolved.y,
+                resolved.corner,
+                windowWidth,
+                windowHeight,
+                horizontalOffset,
+                verticalOffset,
+            )
+        }
         else -> getTrayWindowPosition(windowWidth, windowHeight, horizontalOffset, verticalOffset)
     }
 }

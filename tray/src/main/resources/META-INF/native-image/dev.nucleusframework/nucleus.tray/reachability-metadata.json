@@ -25,12 +25,15 @@
             "jniAccessible": true
         },
         {
-            "type": "dev.nucleusframework.tray.internal.linux.JniRunnable",
+            "type": "dev.nucleusframework.tray.internal.linux.LinuxNativeBridge$ClickCallback",
             "jniAccessible": true,
             "methods": [
                 {
-                    "name": "run",
-                    "parameterTypes": []
+                    "name": "onClick",
+                    "parameterTypes": [
+                        "int",
+                        "int"
+                    ]
                 }
             ]
         },

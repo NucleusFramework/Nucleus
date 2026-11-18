@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build libnucleus_tray.so – C-based Linux system tray library with JNI bridge.
+# Build libnucleus_tray.so – Linux system tray (StatusNotifierItem + DBusMenu over sd-bus, JNI).
 # Dependencies: libsystemd-dev (for sd-bus), JDK (for jni.h)
 
 set -e
@@ -51,37 +51,20 @@ echo "Detected platform: $PLATFORM_DIR"
 
 mkdir -p "$OUTPUT_DIR/$PLATFORM_DIR"
 
-# Compile sni.c (includes stb_image implementation)
-echo "Compiling sni.c..."
-gcc -c -o "$SCRIPT_DIR/sni.o" \
-    -fPIC -O2 -Wall -Wextra -Wno-unused-parameter \
+# One translation unit: the tray, its D-Bus interfaces, stb_image and the JNI bridge.
+echo "Compiling nucleus_tray_linux.c..."
+gcc -shared -o "$OUTPUT_DIR/$PLATFORM_DIR/libnucleus_tray.so" \
+    -fPIC -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function \
     -I "$SCRIPT_DIR" \
-    $SDBUS_CFLAGS \
-    "$SCRIPT_DIR/sni.c"
-
-# Compile jni_bridge.c
-echo "Compiling jni_bridge.c..."
-gcc -c -o "$SCRIPT_DIR/jni_bridge.o" \
-    -fPIC -O2 -Wall -Wextra -Wno-unused-parameter \
-    -I "$SCRIPT_DIR" \
-    -I "$SCRIPT_DIR/../shared" \
     -I "$JNI_INCLUDE" \
     -I "$JNI_INCLUDE_LINUX" \
-    "$SCRIPT_DIR/jni_bridge.c"
-
-# Link into shared library
-echo "Linking libnucleus_tray.so..."
-gcc -shared -o "$OUTPUT_DIR/$PLATFORM_DIR/libnucleus_tray.so" \
-    "$SCRIPT_DIR/sni.o" \
-    "$SCRIPT_DIR/jni_bridge.o" \
+    $SDBUS_CFLAGS \
+    "$SCRIPT_DIR/nucleus_tray_linux.c" \
     $SDBUS_LIBS \
-    -lpthread -lm -ldl
+    -lpthread -lm
 
 # Strip debug symbols for smaller binary
 strip --strip-unneeded "$OUTPUT_DIR/$PLATFORM_DIR/libnucleus_tray.so"
-
-# Clean up object files
-rm -f "$SCRIPT_DIR/sni.o" "$SCRIPT_DIR/jni_bridge.o"
 
 # Content-addressed Nucleus cache: evict every copy of this library so a
 # same-size rebuild cannot keep serving the stale fingerprint directory.

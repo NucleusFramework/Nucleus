@@ -21,16 +21,10 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 internal class LinuxTrayMenuBuilderImpl(
-    private val iconPath: String,
-    private val tooltip: String = "",
-    private val onLeftClick: (() -> Unit)?,
     private val trayManager: LinuxTrayManager? = null,
 ) : TrayMenuBuilder {
     private val menuItems = mutableListOf<LinuxTrayManager.MenuItem>()
     private val lock = ReentrantLock()
-
-    // Maintain persistent references to prevent GC
-    private val persistentMenuItems = mutableListOf<LinuxTrayManager.MenuItem>()
 
     override fun Item(
         label: String,
@@ -42,12 +36,12 @@ internal class LinuxTrayMenuBuilderImpl(
             val menuItem =
                 LinuxTrayManager.MenuItem(
                     text = label,
+                    iconPath = null,
                     isEnabled = isEnabled,
                     shortcut = shortcut,
                     onClick = onClick,
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -65,13 +59,12 @@ internal class LinuxTrayMenuBuilderImpl(
             val menuItem =
                 LinuxTrayManager.MenuItem(
                     text = label,
-                    isEnabled = isEnabled,
                     iconPath = iconPath,
+                    isEnabled = isEnabled,
                     shortcut = shortcut,
                     onClick = onClick,
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -86,7 +79,6 @@ internal class LinuxTrayMenuBuilderImpl(
     ) {
         val iconContent: @Composable () -> Unit = {
             val isDark = isMenuBarInDarkMode()
-
             Image(
                 imageVector = icon,
                 contentDescription = null,
@@ -152,23 +144,25 @@ internal class LinuxTrayMenuBuilderImpl(
             // Live state: clicking must toggle the current value, not the one captured
             // when the menu was built (issue #432).
             val liveChecked = AtomicBoolean(checked)
-
+            // Identity, not the label: two items may share a label and must toggle independently.
+            val token = Any()
             val menuItem =
                 LinuxTrayManager.MenuItem(
                     text = label,
+                    iconPath = null,
                     isEnabled = isEnabled,
                     isCheckable = true,
                     isChecked = checked,
                     shortcut = shortcut,
+                    checkToken = token,
                     onClick = {
                         val newChecked = !liveChecked.get()
                         liveChecked.set(newChecked)
                         onCheckedChange(newChecked)
-                        trayManager?.updateMenuItemCheckedState(label, newChecked)
+                        trayManager?.updateMenuItemCheckedState(token, newChecked)
                     },
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -185,24 +179,25 @@ internal class LinuxTrayMenuBuilderImpl(
             val iconPath = ComposableIconUtils.renderComposableToPngFile(iconRenderProperties, iconContent)
 
             val liveChecked = AtomicBoolean(checked)
-
+            // Identity, not the label: two items may share a label and must toggle independently.
+            val token = Any()
             val menuItem =
                 LinuxTrayManager.MenuItem(
                     text = label,
+                    iconPath = iconPath,
                     isEnabled = isEnabled,
                     isCheckable = true,
                     isChecked = checked,
-                    iconPath = iconPath,
                     shortcut = shortcut,
+                    checkToken = token,
                     onClick = {
                         val newChecked = !liveChecked.get()
                         liveChecked.set(newChecked)
                         onCheckedChange(newChecked)
-                        trayManager?.updateMenuItemCheckedState(label, newChecked)
+                        trayManager?.updateMenuItemCheckedState(token, newChecked)
                     },
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -218,7 +213,6 @@ internal class LinuxTrayMenuBuilderImpl(
     ) {
         val iconContent: @Composable () -> Unit = {
             val isDark = isMenuBarInDarkMode()
-
             Image(
                 imageVector = icon,
                 contentDescription = null,
@@ -280,27 +274,7 @@ internal class LinuxTrayMenuBuilderImpl(
         isEnabled: Boolean,
         submenuContent: (TrayMenuBuilder.() -> Unit)?,
     ) {
-        val subMenuItems = mutableListOf<LinuxTrayManager.MenuItem>()
-        if (submenuContent != null) {
-            val subMenuImpl =
-                LinuxTrayMenuBuilderImpl(
-                    iconPath,
-                    tooltip,
-                    onLeftClick,
-                    trayManager,
-                ).apply(submenuContent)
-            subMenuItems.addAll(subMenuImpl.menuItems)
-        }
-        lock.withLock {
-            val subMenu =
-                LinuxTrayManager.MenuItem(
-                    text = label,
-                    isEnabled = isEnabled,
-                    subMenuItems = subMenuItems,
-                )
-            menuItems.add(subMenu)
-            persistentMenuItems.add(subMenu)
-        }
+        createSubMenu(label, null, isEnabled, submenuContent)
     }
 
     override fun SubMenu(
@@ -310,31 +284,8 @@ internal class LinuxTrayMenuBuilderImpl(
         isEnabled: Boolean,
         submenuContent: (TrayMenuBuilder.() -> Unit)?,
     ) {
-        val subMenuItems = mutableListOf<LinuxTrayManager.MenuItem>()
-        if (submenuContent != null) {
-            val subMenuImpl =
-                LinuxTrayMenuBuilderImpl(
-                    iconPath,
-                    tooltip,
-                    onLeftClick,
-                    trayManager,
-                ).apply(submenuContent)
-            subMenuItems.addAll(subMenuImpl.menuItems)
-        }
-
-        lock.withLock {
-            val iconPath = ComposableIconUtils.renderComposableToPngFile(iconRenderProperties, iconContent)
-
-            val subMenu =
-                LinuxTrayManager.MenuItem(
-                    text = label,
-                    isEnabled = isEnabled,
-                    iconPath = iconPath,
-                    subMenuItems = subMenuItems,
-                )
-            menuItems.add(subMenu)
-            persistentMenuItems.add(subMenu)
-        }
+        val iconPath = ComposableIconUtils.renderComposableToPngFile(iconRenderProperties, iconContent)
+        createSubMenu(label, iconPath, isEnabled, submenuContent)
     }
 
     override fun SubMenu(
@@ -399,18 +350,38 @@ internal class LinuxTrayMenuBuilderImpl(
         SubMenu(label, iconContent, iconRenderProperties, isEnabled, submenuContent)
     }
 
+    private fun createSubMenu(
+        label: String,
+        iconPath: String?,
+        isEnabled: Boolean,
+        submenuContent: (TrayMenuBuilder.() -> Unit)?,
+    ) {
+        val subMenuItems = mutableListOf<LinuxTrayManager.MenuItem>()
+        if (submenuContent != null) {
+            val subMenuImpl = LinuxTrayMenuBuilderImpl(trayManager).apply(submenuContent)
+            subMenuItems.addAll(subMenuImpl.menuItems)
+        }
+        lock.withLock {
+            val subMenu =
+                LinuxTrayManager.MenuItem(
+                    text = label,
+                    iconPath = iconPath,
+                    isEnabled = isEnabled,
+                    subMenuItems = subMenuItems,
+                    isSubmenu = true,
+                )
+            menuItems.add(subMenu)
+        }
+    }
+
     override fun Divider() {
         lock.withLock {
-            val divider = LinuxTrayManager.MenuItem(text = "-")
-            menuItems.add(divider)
-            persistentMenuItems.add(divider)
+            menuItems.add(LinuxTrayManager.MenuItem(text = "", isSeparator = true))
         }
     }
 
     override fun dispose() {
-        lock.withLock {
-            persistentMenuItems.clear()
-        }
+        // Nothing native is held: the menu lives in the tray's own state.
     }
 
     fun build(): List<LinuxTrayManager.MenuItem> = lock.withLock { menuItems.toList() }

@@ -1,6 +1,7 @@
 package dev.nucleusframework.tray.app
 
 import androidx.compose.ui.window.WindowPosition
+import dev.nucleusframework.core.runtime.Platform
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -61,11 +62,20 @@ internal fun isLaidOutMacStatusItem(
     screen: ScreenRect,
 ): Boolean = (x - screen.x) >= MAC_STATUS_ITEM_MIN_RELATIVE_X_PX
 
+/**
+ * True when [pos] is a real anchor rather than a tray that is not laid out yet. The origin and
+ * left-edge rejections exist for macOS, whose new status items sit at the menu bar's left edge
+ * until they get a slot. On Linux the position comes from the click the panel reported, so a
+ * popup clamped to the left edge or the origin is a real one (a left or bottom-left panel): rejecting it
+ * held every such popup back for the whole [awaitAnchoredWindowPosition] timeout.
+ */
 internal fun isUsableAnchorPosition(
     pos: WindowPosition,
     workArea: ScreenRect? = null,
+    platform: Platform = Platform.Current,
 ): Boolean {
     if (pos !is WindowPosition.Absolute) return false
+    if (platform == Platform.Linux) return true
     if (pos.x.value == 0f && pos.y.value == 0f) return false
     return workArea == null || abs(pos.x.value - workArea.x) >= 1.5f
 }

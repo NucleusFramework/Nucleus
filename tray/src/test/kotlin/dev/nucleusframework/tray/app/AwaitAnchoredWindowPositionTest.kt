@@ -2,6 +2,7 @@ package dev.nucleusframework.tray.app
 
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
+import dev.nucleusframework.core.runtime.Platform
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -28,7 +29,7 @@ class AwaitAnchoredWindowPositionTest {
                 awaitAnchoredWindowPosition(
                     timeoutMs = 2_000,
                     pollDelayMs = 1,
-                    isUsable = { isUsableAnchorPosition(it, workArea) },
+                    isUsable = { isUsableAnchorPosition(it, workArea, Platform.MacOS) },
                 ) {
                     if (frames.isEmpty()) {
                         WindowPosition.Absolute(1_280.dp, 25.dp)
@@ -56,9 +57,17 @@ class AwaitAnchoredWindowPositionTest {
     @Test
     fun `work-area origin window is not a usable mac tray anchor`() {
         val workArea = ScreenRect(x = 0, y = 25, width = 1_440, height = 875)
-        assertFalse(isUsableAnchorPosition(WindowPosition.PlatformDefault, workArea))
-        assertFalse(isUsableAnchorPosition(WindowPosition.Absolute(0.dp, 0.dp), workArea))
-        assertFalse(isUsableAnchorPosition(WindowPosition.Absolute(0.dp, 25.dp), workArea))
-        assertTrue(isUsableAnchorPosition(WindowPosition.Absolute(1_100.dp, 25.dp), workArea))
+        assertFalse(isUsableAnchorPosition(WindowPosition.PlatformDefault, workArea, Platform.MacOS))
+        assertFalse(isUsableAnchorPosition(WindowPosition.Absolute(0.dp, 0.dp), workArea, Platform.MacOS))
+        assertFalse(isUsableAnchorPosition(WindowPosition.Absolute(0.dp, 25.dp), workArea, Platform.MacOS))
+        assertTrue(isUsableAnchorPosition(WindowPosition.Absolute(1_100.dp, 25.dp), workArea, Platform.MacOS))
+    }
+
+    @Test
+    fun `a Linux popup clamped to the left edge or the origin is a real anchor`() {
+        val workArea = ScreenRect(x = 0, y = 0, width = 1_600, height = 1_174)
+        assertFalse(isUsableAnchorPosition(WindowPosition.PlatformDefault, workArea, Platform.Linux))
+        assertTrue(isUsableAnchorPosition(WindowPosition.Absolute(0.dp, 974.dp), workArea, Platform.Linux))
+        assertTrue(isUsableAnchorPosition(WindowPosition.Absolute(0.dp, 0.dp), workArea, Platform.Linux))
     }
 }
