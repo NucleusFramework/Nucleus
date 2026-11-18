@@ -7,8 +7,8 @@ import kotlin.test.fail
 
 /**
  * End-to-end coverage for the AeroDL "window opens at the top-left instead of
- * the tray" race. Spawns a dedicated JVM with `-XstartOnFirstThread` so AppKit
- * can create a real NSStatusItem, then asserts [awaitAnchoredWindowPosition]
+ * the tray" race. Spawns a dedicated JVM, whose launcher keeps the process main
+ * thread in a run loop where AppKit creates a real NSStatusItem, then asserts [awaitAnchoredWindowPosition]
  * never latches the unlaid-out origin.
  */
 class MacTrayWindowPositionE2ETest {
@@ -24,7 +24,6 @@ class MacTrayWindowPositionE2ETest {
         val process =
             ProcessBuilder(
                 java,
-                "-XstartOnFirstThread",
                 "-Djava.awt.headless=false",
                 "-cp",
                 classpath,

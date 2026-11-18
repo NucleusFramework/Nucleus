@@ -21,16 +21,10 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 internal class MacTrayMenuBuilderImpl(
-    private val iconPath: String,
-    private val tooltip: String = "",
-    private val onLeftClick: (() -> Unit)?,
     private val trayManager: MacTrayManager? = null,
 ) : TrayMenuBuilder {
     private val menuItems = mutableListOf<MacTrayManager.MenuItem>()
     private val lock = ReentrantLock()
-
-    // Maintain persistent references to prevent GC
-    private val persistentMenuItems = mutableListOf<MacTrayManager.MenuItem>()
 
     override fun Item(
         label: String,
@@ -42,13 +36,12 @@ internal class MacTrayMenuBuilderImpl(
             val menuItem =
                 MacTrayManager.MenuItem(
                     text = label,
-                    icon = null,
+                    iconPath = null,
                     isEnabled = isEnabled,
                     shortcut = shortcut,
                     onClick = onClick,
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -66,13 +59,12 @@ internal class MacTrayMenuBuilderImpl(
             val menuItem =
                 MacTrayManager.MenuItem(
                     text = label,
-                    icon = iconPath,
+                    iconPath = iconPath,
                     isEnabled = isEnabled,
                     shortcut = shortcut,
                     onClick = onClick,
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -152,23 +144,25 @@ internal class MacTrayMenuBuilderImpl(
             // Live state: clicking must toggle the current value, not the one captured
             // when the menu was built (issue #432).
             val liveChecked = AtomicBoolean(checked)
+            // Identity, not the label: two items may share a label and must toggle independently.
+            val token = Any()
             val menuItem =
                 MacTrayManager.MenuItem(
                     text = label,
-                    icon = null,
+                    iconPath = null,
                     isEnabled = isEnabled,
                     isCheckable = true,
                     isChecked = checked,
                     shortcut = shortcut,
+                    checkToken = token,
                     onClick = {
                         val newChecked = !liveChecked.get()
                         liveChecked.set(newChecked)
                         onCheckedChange(newChecked)
-                        trayManager?.updateMenuItemCheckedState(label, newChecked)
+                        trayManager?.updateMenuItemCheckedState(token, newChecked)
                     },
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -185,23 +179,25 @@ internal class MacTrayMenuBuilderImpl(
             val iconPath = ComposableIconUtils.renderComposableToPngFile(iconRenderProperties, iconContent)
 
             val liveChecked = AtomicBoolean(checked)
+            // Identity, not the label: two items may share a label and must toggle independently.
+            val token = Any()
             val menuItem =
                 MacTrayManager.MenuItem(
                     text = label,
-                    icon = iconPath,
+                    iconPath = iconPath,
                     isEnabled = isEnabled,
                     isCheckable = true,
                     isChecked = checked,
                     shortcut = shortcut,
+                    checkToken = token,
                     onClick = {
                         val newChecked = !liveChecked.get()
                         liveChecked.set(newChecked)
                         onCheckedChange(newChecked)
-                        trayManager?.updateMenuItemCheckedState(label, newChecked)
+                        trayManager?.updateMenuItemCheckedState(token, newChecked)
                     },
                 )
             menuItems.add(menuItem)
-            persistentMenuItems.add(menuItem)
         }
     }
 
@@ -362,40 +358,29 @@ internal class MacTrayMenuBuilderImpl(
     ) {
         val subMenuItems = mutableListOf<MacTrayManager.MenuItem>()
         if (submenuContent != null) {
-            val subMenuImpl =
-                MacTrayMenuBuilderImpl(
-                    iconPath = this.iconPath,
-                    tooltip = tooltip,
-                    onLeftClick = onLeftClick,
-                    trayManager = trayManager,
-                ).apply(submenuContent)
+            val subMenuImpl = MacTrayMenuBuilderImpl(trayManager).apply(submenuContent)
             subMenuItems.addAll(subMenuImpl.menuItems)
         }
         lock.withLock {
             val subMenu =
                 MacTrayManager.MenuItem(
                     text = label,
-                    icon = iconPath,
+                    iconPath = iconPath,
                     isEnabled = isEnabled,
                     subMenuItems = subMenuItems,
                 )
             menuItems.add(subMenu)
-            persistentMenuItems.add(subMenu)
         }
     }
 
     override fun Divider() {
         lock.withLock {
-            val divider = MacTrayManager.MenuItem(text = "-")
-            menuItems.add(divider)
-            persistentMenuItems.add(divider)
+            menuItems.add(MacTrayManager.MenuItem(text = "", isSeparator = true))
         }
     }
 
     override fun dispose() {
-        lock.withLock {
-            persistentMenuItems.clear()
-        }
+        // Nothing native is held: the menu lives in the tray's own state.
     }
 
     fun build(): List<MacTrayManager.MenuItem> = lock.withLock { menuItems.toList() }

@@ -120,6 +120,9 @@ private val defaultVerticalOffset =
 
 private const val GC_AFTER_HIDE_DELAY_MS = 1_500L
 
+/** How often a visible macOS popup re-reads its status item position. */
+private const val MAC_ICON_FOLLOW_INTERVAL_MS = 250L
+
 /**
  * Trims the heap after the popup leaves the screen. The popup keeps its
  * composition alive while hidden (so state survives hide/show), which means
@@ -765,8 +768,16 @@ private fun TrayAppImplPanel(
         if (popupOnScreen) {
             val w = currentWindowSize.width.value.toInt()
             val h = currentWindowSize.height.value.toInt()
-            val pos = getTrayWindowPositionForInstance(instanceKey, w, h, horizontalOffset, verticalOffset)
-            if (pos is WindowPosition.Absolute && isUsableAnchorPosition(pos)) popupScreenPos = pos
+            do {
+                val pos = getTrayWindowPositionForInstance(instanceKey, w, h, horizontalOffset, verticalOffset)
+                if (pos is WindowPosition.Absolute && isUsableAnchorPosition(pos) && pos != popupScreenPos) {
+                    popupScreenPos = pos
+                }
+                // macOS: the status item slides whenever another menu-bar item comes or goes;
+                // follow it while the popup is up (a cached read on the main thread).
+                val follow = Platform.Current == Platform.MacOS
+                if (follow) delay(MAC_ICON_FOLLOW_INTERVAL_MS)
+            } while (follow)
         }
     }
 

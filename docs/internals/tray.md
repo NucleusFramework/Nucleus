@@ -38,6 +38,28 @@ Not covered on a real screen: HiDPI and top/side taskbars (the dev machine is 10
 
 Seeds are printed (`[torture] … seed=`); rerun with `-PtraySeed=<seed>`, scale with `-PtrayIterations=<n>`. Dismiss popups with `WM_CANCELMODE` only: `#32768` windows are reused, so a stray Esc closes the next popup. `Shell_NotifyIconGetRect` fails for a dead window, so it cannot tell a removed icon from a visual ghost.
 
-## macOS / Linux
+## macOS
+
+`nucleus_tray_macos.m` (Objective-C, ARC; the Swift + C-struct bridge it replaces read menu structs the JVM had already freed: two quick menu updates crashed the JVM).
+
+- **Message passing.** `nativeSubmit` gets the whole state (icon, tooltip, callbacks, the menu flattened in pre-order with depths) and turns it into immutable Objective-C objects on the calling thread; the main thread applies the newest one (conflated, like Windows). AppKit never reads JVM-owned memory, each callback is a JNI global ref owned by its `NTCallback` (released with the menu that holds it), and no call waits for the main thread, so a caller holding a lock the main thread needs cannot deadlock.
+- Work reaches the main thread with `CFRunLoopPerformBlock` in the common modes (each block in its own autorelease pool: a plain JVM's main loop drains none), so updates and disposals apply while a menu tracks.
+- **Menus.** Left click without a primary action, right click or Ctrl+click open the menu (`statusItem.menu` set around `performClick:`). A click while a tray menu is up only closes it, as AppKit does with a real click: opening a second menu inside the first one's tracking loop orphaned the outer session and left the main thread in `NSEventTrackingRunLoopMode` for good. AppKit presents the menu asynchronously and drops a cancel that lands meanwhile, and a menu left tracking blocks every other menu of the system: a cancel (dispose included) is retried every 50 ms until the menu is closed. The tray is retained for the whole tracking (`objc_precise_lifetime`): a dispose landing while its menu was open freed it under `popUpMenu`'s frame.
+- Items under a disabled submenu read back as disabled (AppKit derives it). Separators are a flag, labels are literal, checkables are patched by identity token, a bad icon path keeps the current icon.
+- **Geometry.** Positions are cached under a lock, refreshed on the main thread (apply, click, window move / screen notifications, and every query: off the main thread the query answers from the cache and schedules a refresh). A visible `TrayApp` popup re-reads its item every 250 ms: the item slides whenever another menu-bar item comes or goes. The status item's window is drawn by the system menu bar on macOS 26+ and never shows in `CGWindowList`; a new item may take seconds to be placed after a burst of others.
+
+### E2E (macOS)
+
+`./gradlew :tray:test` with `MallocScribble=1` (a use after free crashes instead of reading stale values). Real `NSStatusItem`s; the test hooks (`MacTrayInitializer.debug*`) read AppKit's own state (button, tooltip, `NSMenu` tree, open menu, main run-loop mode), select items with `performActionForItemAtIndex:` and click through the button's own action: the item's window belongs to the system menu bar, no event reaches it from inside the process. The click hook runs from a one-shot timer, never a perform block (a menu opened from a perform block holds back every block queued behind it, cancels included) and calls the tray unretained, like AppKit with its weak target.
+
+- `MacTrayTortureTest`: seeded menu fuzzer (shared `MenuFuzzer`), callbacks of fuzzed items, multi-tray isolation, updates and creation while another tray's menu tracks, primary / menu clicks, throwing callbacks, duplicate checkable labels, reported position, lifecycle churn, dispose racing creation, rapid updates, garbage icons, callbacks released (weak references collected).
+- `MacTrayLifecycleTortureTest`: dispose with the menu open, a click while a menu is open, a callback disposing its own tray, click storm with rebuilds and disposals, 30 trays, create/dispose x100, JVM exit with a live tray and an open menu, position across rebuilds. Every test ends with no status item alive (counted through weak references; status-bar windows are no oracle in a plain JVM).
+- `MacTrayAppE2ETest`: `MacTrayAppProbeMain` in its own JVM (`nucleusApplication`, Tao); the popup is read from `CGWindowListCopyWindowInfo` (own windows need no Screen Recording permission; the panel sits at the pop-up menu level, told apart by its size): click toggles, `visibleOnStart`, click storm, concurrent `show` / `hide` / `toggle`, resize, menu, removal; `fuzz` / `multi` with sizes 1x1 to 5000, offsets, tooltips, menus, ticking content, dismiss mode, removal and reinsertion. Oracle: size, top right below the menu bar plus the vertical offset, centered on the icon (offset away from the nearer edge) or clamped, inside the work area.
+
+A JVM that crashes leaves `~/Library/Application Support/CrashReporter/java_<uuid>.plist`; until it is moved away every java process that starts `NSApp` hangs in a modal "reopen windows?" alert (only `sample` shows it).
+
+Not covered: outside-click dismissal with a real mouse, multiple displays.
+
+## Linux
 
 Not yet covered by the torture suite (ported as-is from ComposeNativeTray).

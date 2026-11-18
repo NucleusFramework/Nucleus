@@ -50,6 +50,16 @@ tasks.test {
     maxParallelForks = 1
     systemProperty("nucleus.tray.torture.seed", providers.gradleProperty("traySeed").orNull ?: "")
     systemProperty("nucleus.tray.torture.iterations", providers.gradleProperty("trayIterations").orNull ?: "")
+    // macOS: freed memory is overwritten, so a use after free in the AppKit backend crashes the
+    // test JVM instead of reading stale but plausible values.
+    if (System
+            .getProperty("os.name")
+            .orEmpty()
+            .lowercase()
+            .contains("mac")
+    ) {
+        environment("MallocScribble", "1")
+    }
 }
 
 nucleusNative {

@@ -61,7 +61,6 @@ object MacTrayWindowPositionE2EMain {
                                         )
                                 },
                             ) {
-                                MacTrayInitializer.pumpEventLoop()
                                 readTrayAnchor(id)
                             }
                         }
@@ -112,13 +111,8 @@ object MacTrayWindowPositionE2EMain {
         return WindowPosition.Absolute(xy[0].dp, xy[1].dp)
     }
 
-    private fun pumpFor(ms: Long) {
-        val deadline = System.currentTimeMillis() + ms
-        while (System.currentTimeMillis() < deadline) {
-            MacTrayInitializer.pumpEventLoop()
-            Thread.sleep(5)
-        }
-    }
+    // The launcher parks the process main thread in its run loop, where AppKit work runs.
+    private fun pumpFor(ms: Long) = Thread.sleep(ms)
 
     private fun writeTempPng(): File {
         // 1×1 PNG — NSStatusItem only needs a file on disk; layout, not pixels, is under test.

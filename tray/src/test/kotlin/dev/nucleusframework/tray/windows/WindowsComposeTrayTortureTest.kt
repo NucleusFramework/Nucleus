@@ -34,7 +34,7 @@ class WindowsComposeTrayTortureTest {
     fun cleanup() {
         scene?.close()
         scene = null
-        await("trays of the closed composition gone") { trayWindows().isEmpty() }
+        if (isWindows) await("trays of the closed composition gone") { trayWindows().isEmpty() }
     }
 
     private fun compose(content: @Composable () -> Unit) {

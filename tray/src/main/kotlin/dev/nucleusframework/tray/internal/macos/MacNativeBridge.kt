@@ -3,156 +3,92 @@ package dev.nucleusframework.tray.internal.macos
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 
 /**
- * JNI bridge to the native macOS tray library (libMacTray.dylib).
- * All methods are static JNI calls into MacTrayBridge.m.
+ * JNI bridge to `libnucleus_tray.dylib` (`nucleus_tray_macos.m`).
+ *
+ * Every call is thread-safe and returns without waiting for the AppKit main thread: the native
+ * side applies published states there, newest first. A handle from [nativeCreateTray] stays valid
+ * until [nativeDispose].
  */
 internal object MacNativeBridge {
-    private const val LIBRARY_NAME = "nucleus_tray"
-    private val loaded =
-        NativeLibraryLoader.load(
-            LIBRARY_NAME,
-            MacNativeBridge::class.java,
-        )
+    private val loaded = NativeLibraryLoader.load("nucleus_tray", MacNativeBridge::class.java)
     val isLoaded: Boolean get() = loaded
 
-    // ── Tray lifecycle ──────────────────────────────────────────────────
+    /** Menu entry flags of [nativeSubmit]. */
+    const val FLAG_DISABLED: Int = 1
+    const val FLAG_CHECKED: Int = 2
+    const val FLAG_SEPARATOR: Int = 4
 
-    @JvmStatic external fun nativeCreateTray(
-        iconPath: String,
-        tooltip: String,
-    ): Long
+    @JvmStatic external fun nativeCreateTray(): Long
 
-    @JvmStatic external fun nativeFreeTray(handle: Long)
-
-    @JvmStatic external fun nativeSetTrayIcon(
+    /**
+     * Publishes everything the status item shows. The menu is flattened in pre-order: entry `i`
+     * is a child of the closest previous entry whose depth is `depths[i] - 1`.
+     */
+    @JvmStatic external fun nativeSubmit(
         handle: Long,
         iconPath: String,
-    )
-
-    @JvmStatic external fun nativeSetTrayTooltip(
-        handle: Long,
         tooltip: String,
+        click: Runnable?,
+        menuOpened: Runnable?,
+        titles: Array<String?>,
+        iconPaths: Array<String?>,
+        keyEquivalents: Array<String?>,
+        modifierMasks: LongArray,
+        flags: IntArray,
+        depths: IntArray,
+        callbacks: Array<Runnable?>,
     )
 
-    @JvmStatic external fun nativeSetTrayCallback(
-        handle: Long,
-        callback: Runnable?,
-    )
-
-    @JvmStatic external fun nativeSetMenuOpenedCallback(
-        handle: Long,
-        callback: Runnable?,
-    )
-
-    @JvmStatic external fun nativeSetTrayMenu(
-        trayHandle: Long,
-        menuHandle: Long,
-    )
-
-    @JvmStatic external fun nativeClearTrayMenu(trayHandle: Long)
-
-    @JvmStatic external fun nativeInitTray(handle: Long): Int
-
-    @JvmStatic external fun nativeLoopTray(blocking: Int): Int
-
-    @JvmStatic external fun nativeUpdateTray(handle: Long)
-
-    @JvmStatic external fun nativeDisposeTray(handle: Long)
-
-    @JvmStatic external fun nativeExitTray()
-
-    // ── Menu items ──────────────────────────────────────────────────────
-
-    @JvmStatic external fun nativeCreateMenuItems(count: Int): Long
-
-    @JvmStatic external fun nativeSetMenuItem(
-        menuHandle: Long,
-        index: Int,
-        text: String,
-        iconPath: String?,
-        disabled: Int,
-        checked: Int,
-    )
-
-    @JvmStatic external fun nativeSetMenuItemCallback(
-        menuHandle: Long,
-        index: Int,
-        callback: Runnable?,
-    )
-
-    @JvmStatic external fun nativeSetMenuItemShortcut(
-        menuHandle: Long,
-        index: Int,
-        keyEquivalent: String?,
-        modifierMask: Long,
-    )
-
-    @JvmStatic external fun nativeSetMenuItemSubmenu(
-        menuHandle: Long,
-        index: Int,
-        submenuHandle: Long,
-    )
-
-    @JvmStatic external fun nativeFreeMenuItems(
-        menuHandle: Long,
-        count: Int,
-    )
-
-    // ── Theme ───────────────────────────────────────────────────────────
-
-    @JvmStatic external fun nativeSetThemeCallback(callback: ThemeChangeCallback?)
-
-    @JvmStatic external fun nativeIsMenuDark(): Int
-
-    // ── Position ────────────────────────────────────────────────────────
-
-    /** Writes [x, y] into outXY. Returns 1 if precise, 0 if fallback. */
-    @JvmStatic external fun nativeGetStatusItemPosition(outXY: IntArray): Int
-
-    @JvmStatic external fun nativeGetStatusItemRegion(): String
-
-    @JvmStatic external fun nativeGetStatusItemPositionFor(
-        handle: Long,
-        outXY: IntArray,
-    ): Int
-
-    @JvmStatic external fun nativeGetStatusItemRegionFor(handle: Long): String
-
-    // ── Appearance ──────────────────────────────────────────────────────
-
+    /** Light / dark variants of the last published icon, swapped with the menu bar appearance. */
     @JvmStatic external fun nativeSetIconsForAppearance(
         handle: Long,
         lightIcon: String,
         darkIcon: String,
     )
 
-    // ── Window management ───────────────────────────────────────────────
+    /** Removes the status item (closing its menu if open) and releases [handle]. Final. */
+    @JvmStatic external fun nativeDispose(handle: Long)
 
-    @JvmStatic external fun nativeShowInDock(): Int
+    /** Writes [x, y] (points, top-left origin) into [outXY]; 0 while the item is not laid out. */
+    @JvmStatic external fun nativeGetStatusItemPosition(
+        handle: Long,
+        outXY: IntArray,
+    ): Int
 
-    @JvmStatic external fun nativeHideFromDock(): Int
+    /** "top-left" | "top-right", or null while the item is not laid out. */
+    @JvmStatic external fun nativeGetStatusItemRegion(handle: Long): String?
 
-    @JvmStatic external fun nativeSetMoveToActiveSpace()
+    @JvmStatic external fun nativeSetThemeCallback(callback: ThemeChangeCallback?)
 
-    @JvmStatic external fun nativeSetMoveToActiveSpaceForWindow(viewPtr: Long): Int
+    @JvmStatic external fun nativeIsMenuDark(): Int
 
-    @JvmStatic external fun nativeIsFloatingWindowOnActiveSpace(): Int
+    // -- Diagnostics and tests --
 
-    @JvmStatic external fun nativeBringFloatingWindowToFront(): Int
+    /** Snapshot of the AppKit state of a tray (status item and menu), null on timeout. */
+    @JvmStatic external fun nativeDebugDescribe(handle: Long): String?
 
-    @JvmStatic external fun nativeIsOnActiveSpaceForView(viewPtr: Long): Int
+    /** Status items created by this library still alive (held weakly), -1 on timeout. */
+    @JvmStatic external fun nativeDebugStatusItemCount(): Int
 
-    // ── Mouse ───────────────────────────────────────────────────────────
+    /** The AppKit main thread's current run-loop mode, read without waiting for it. */
+    @JvmStatic external fun nativeDebugMainMode(): String?
 
-    @JvmStatic external fun nativeGetMouseButtonState(button: Int): Int
+    /** Queues a real mouse click on the status item. */
+    @JvmStatic external fun nativeDebugClick(
+        handle: Long,
+        secondary: Boolean,
+    )
 
-    // ── JAWT ────────────────────────────────────────────────────────────
+    /** Queues the selection of the menu item at [path] (indices from the root menu). */
+    @JvmStatic external fun nativeDebugPerformItem(
+        handle: Long,
+        path: IntArray,
+    )
 
-    /** Returns the NSView pointer for an AWT component, or 0 on failure. */
-    @JvmStatic external fun nativeGetAWTViewPtr(awtComponent: Any): Long
+    /** Queues the dismissal of the open menu. */
+    @JvmStatic external fun nativeDebugCancelMenu(handle: Long)
 
-    // ── Callback interface ──────────────────────────────────────────────
-
+    /** Menu-bar appearance changes, called on the AppKit main thread. */
     interface ThemeChangeCallback {
         fun onThemeChanged(isDark: Int)
     }
