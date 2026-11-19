@@ -26,7 +26,7 @@ import java.awt.dnd.DropTargetDropEvent
  * To make `event.awtTransferable` work transparently on the Tao backend, we
  * publish the OS payload as a synthetic [DropTargetDragEvent] /
  * [DropTargetDropEvent] subclass whose [getTransferable] is overridden to
- * return our [TaoFilesTransferable] adapter. AWT's class hierarchy requires a
+ * return our [TaoDropTransferable] adapter. AWT's class hierarchy requires a
  * real [DropTargetContext] in the constructor — we pin a single shadow
  * `Component`/`DropTarget` pair that is never displayed, mirroring the pattern
  * already used elsewhere in the backend (e.g. the `KEY_TYPED` synthetic

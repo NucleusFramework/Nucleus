@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao
 import dev.nucleusframework.window.TitleBarHitTestTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
 import dev.nucleusframework.window.tao.deco.FullscreenOverlayVisibilityTest
+import dev.nucleusframework.window.tao.dnd.TaoDropTransferableTest
 import dev.nucleusframework.window.tao.dnd.TaoSyntheticDndTest
 import dev.nucleusframework.window.tao.dnd.TaoTransferableAccessGuardTest
 import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
@@ -154,6 +155,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneRectManagerRaceTest::class.java to
                 "races the real AWT EDT against wall-clock frames; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
+            TaoDropTransferableTest::class.java to "pure payload-to-DataFlavor mapping, not a scene behaviour",
             TaoReachabilityMetadataDriftTest::class.java to
                 "reads the source tree's metadata file and resolves its classes reflectively",
             TaoScrollWireDriftTest::class.java to

@@ -5,6 +5,11 @@
  * RegisterDragDrop, and forwards the four DnD callbacks (DragEnter, DragOver,
  * DragLeave, Drop) to a Java object passed at registration time.
  *
+ * Accepted data (#930): files (CF_HDROP), text (CF_UNICODETEXT, else CF_TEXT)
+ * and a URL (UniformResourceLocatorW, else UniformResourceLocator) — what a
+ * browser offers for a dragged link or image. Each is forwarded separately;
+ * Kotlin decides what a drop target sees.
+ *
  * Linked libraries: kernel32.lib user32.lib ole32.lib oleaut32.lib uuid.lib shell32.lib
  *
  * Threading: RegisterDragDrop / RevokeDragDrop must run on the thread that
@@ -64,11 +69,15 @@ static JavaVM *g_vm = NULL;
 
 /* Cached Kotlin callback class + methods (resolved on first register). */
 static jclass    g_callback_class       = NULL; /* GlobalRef */
-static jmethodID g_method_on_enter      = NULL; /* (JIIIZ)I  hwnd, x, y, keyState, hasFiles → effect */
+static jmethodID g_method_on_enter      = NULL; /* (JIIIZ)I  hwnd, x, y, keyState, hasData → effect */
 static jmethodID g_method_on_over       = NULL; /* (JIIIZ)I */
 static jmethodID g_method_on_leave      = NULL; /* (J)V */
-static jmethodID g_method_on_drop       = NULL; /* (JIII[Ljava/lang/String;)I  hwnd, x, y, keyState, files → effect */
-static jmethodID g_method_on_files      = NULL;
+static jmethodID g_method_on_drop       = NULL; /* (JIII[String;String;[String;)I  hwnd, x, y, keyState, files, text, uris → effect */
+static jmethodID g_method_on_data       = NULL; /* (J[String;String;[String;)V  hwnd, files, text, uris */
+
+/* Registered clipboard formats for a dragged URL (shell's CFSTR_INETURL[W]). */
+static CLIPFORMAT g_cf_url_w = 0;
+static CLIPFORMAT g_cf_url_a = 0;
 
 #define DROPEFFECT_NONE_LOCAL 0
 #define DROPEFFECT_COPY_LOCAL 1
@@ -77,11 +86,18 @@ static jmethodID g_method_on_files      = NULL;
 /* IDropTarget implementation                                              */
 /* ---------------------------------------------------------------------- */
 
+/* Everything a drag offers, as JNI references (local or global by context). */
+typedef struct NucleusDropData {
+    jobject files; /* String[] or NULL */
+    jobject text;  /* String or NULL */
+    jobject uris;  /* String[] or NULL */
+} NucleusDropData;
+
 typedef struct NucleusDragPreview {
     LONG refCount;
     LONG ready;
     IStream *stream;
-    jobject files;
+    NucleusDropData data; /* GlobalRefs */
 } NucleusDragPreview;
 
 typedef struct NucleusDropTarget {
@@ -114,11 +130,89 @@ static void detach_if_needed(BOOL attachedHere) {
     if (attachedHere && g_vm) (*g_vm)->DetachCurrentThread(g_vm);
 }
 
-/* Walks the IDataObject's formats and returns TRUE if CF_HDROP is present. */
-static BOOL data_has_files(IDataObject *pDataObj) {
-    if (!pDataObj) return FALSE;
-    FORMATETC fmt = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+static void ensure_formats(void) {
+    if (!g_cf_url_w) g_cf_url_w = (CLIPFORMAT)RegisterClipboardFormatW(L"UniformResourceLocatorW");
+    if (!g_cf_url_a) g_cf_url_a = (CLIPFORMAT)RegisterClipboardFormatW(L"UniformResourceLocator");
+}
+
+static BOOL data_has_format(IDataObject *pDataObj, CLIPFORMAT cf) {
+    if (!pDataObj || !cf) return FALSE;
+    FORMATETC fmt = { cf, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
     return IDataObject_QueryGetData(pDataObj, &fmt) == S_OK;
+}
+
+/* TRUE if the drag offers anything the Kotlin side can read: files, text or a URL. */
+static BOOL data_is_acceptable(IDataObject *pDataObj) {
+    return data_has_format(pDataObj, CF_HDROP) ||
+           data_has_format(pDataObj, CF_UNICODETEXT) ||
+           data_has_format(pDataObj, CF_TEXT) ||
+           data_has_format(pDataObj, g_cf_url_w) ||
+           data_has_format(pDataObj, g_cf_url_a);
+}
+
+/*
+ * Reads a NUL-terminated HGLOBAL string format as a Java String. [wide] picks
+ * UTF-16 (CF_UNICODETEXT, UniformResourceLocatorW) over the ANSI code page
+ * (CF_TEXT, UniformResourceLocator). Reads never run past GlobalSize, since
+ * a source is free not to terminate its buffer. Returns NULL when the format
+ * is missing or empty. Caller owns the local ref.
+ */
+static jstring read_string_format(JNIEnv *env, IDataObject *pDataObj, CLIPFORMAT cf, BOOL wide) {
+    if (!pDataObj || !cf) return NULL;
+    FORMATETC fmt = { cf, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+    STGMEDIUM stg = { 0 };
+    if (IDataObject_GetData(pDataObj, &fmt, &stg) != S_OK) return NULL;
+    jstring result = NULL;
+    if (stg.tymed == TYMED_HGLOBAL && stg.hGlobal) {
+        SIZE_T size = GlobalSize(stg.hGlobal);
+        const void *p = GlobalLock(stg.hGlobal);
+        if (p) {
+            if (wide) {
+                const WCHAR *w = (const WCHAR *)p;
+                SIZE_T max = size / sizeof(WCHAR), n = 0;
+                while (n < max && w[n]) n++;
+                if (n > 0 && n <= 0x7FFFFFFF) result = (*env)->NewString(env, (const jchar *)w, (jsize)n);
+            } else {
+                const char *a = (const char *)p;
+                SIZE_T n = 0;
+                while (n < size && a[n]) n++;
+                if (n > 0 && n <= 0x7FFFFFFF) {
+                    int wn = MultiByteToWideChar(CP_ACP, 0, a, (int)n, NULL, 0);
+                    WCHAR *buf = wn > 0
+                        ? (WCHAR *)HeapAlloc(GetProcessHeap(), 0, (SIZE_T)wn * sizeof(WCHAR))
+                        : NULL;
+                    if (buf) {
+                        MultiByteToWideChar(CP_ACP, 0, a, (int)n, buf, wn);
+                        result = (*env)->NewString(env, (const jchar *)buf, (jsize)wn);
+                        HeapFree(GetProcessHeap(), 0, buf);
+                    }
+                }
+            }
+            GlobalUnlock(stg.hGlobal);
+        }
+    }
+    ReleaseStgMedium(&stg);
+    return result;
+}
+
+static jstring extract_text(JNIEnv *env, IDataObject *pDataObj) {
+    jstring text = read_string_format(env, pDataObj, CF_UNICODETEXT, TRUE);
+    return text ? text : read_string_format(env, pDataObj, CF_TEXT, FALSE);
+}
+
+/* A URL offered through UniformResourceLocator[W], as a one-element String[]. */
+static jobjectArray extract_uris(JNIEnv *env, IDataObject *pDataObj) {
+    jstring url = read_string_format(env, pDataObj, g_cf_url_w, TRUE);
+    if (!url) url = read_string_format(env, pDataObj, g_cf_url_a, FALSE);
+    if (!url) return NULL;
+    jobjectArray result = NULL;
+    jclass strClass = (*env)->FindClass(env, "java/lang/String");
+    if (strClass) {
+        result = (*env)->NewObjectArray(env, 1, strClass, url);
+        (*env)->DeleteLocalRef(env, strClass);
+    }
+    (*env)->DeleteLocalRef(env, url);
+    return result;
 }
 
 /* Extracts file paths from a CF_HDROP IDataObject. Returns a Java String[]
@@ -162,12 +256,41 @@ static jobjectArray extract_files(JNIEnv *env, IDataObject *pDataObj) {
     return result;
 }
 
+/* Reads files, text and URL into local refs; a pending JNI exception is dropped. */
+static void extract_data(JNIEnv *env, IDataObject *pDataObj, NucleusDropData *out) {
+    out->files = extract_files(env, pDataObj);
+    nucleus_jni_clear_exception(env);
+    out->text = extract_text(env, pDataObj);
+    nucleus_jni_clear_exception(env);
+    out->uris = extract_uris(env, pDataObj);
+    nucleus_jni_clear_exception(env);
+}
+
+static void delete_local_data(JNIEnv *env, NucleusDropData *data) {
+    if (data->files) (*env)->DeleteLocalRef(env, data->files);
+    if (data->text) (*env)->DeleteLocalRef(env, data->text);
+    if (data->uris) (*env)->DeleteLocalRef(env, data->uris);
+}
+
+static void delete_global_data(JNIEnv *env, NucleusDropData *data) {
+    if (data->files) (*env)->DeleteGlobalRef(env, data->files);
+    if (data->text) (*env)->DeleteGlobalRef(env, data->text);
+    if (data->uris) (*env)->DeleteGlobalRef(env, data->uris);
+}
+
+static jobject to_global(JNIEnv *env, jobject local) {
+    if (!local) return NULL;
+    jobject global = (*env)->NewGlobalRef(env, local);
+    (*env)->DeleteLocalRef(env, local);
+    return global;
+}
+
 static void release_preview(NucleusDragPreview *preview) {
     if (!preview || InterlockedDecrement(&preview->refCount) != 0) return;
-    if (preview->files) {
+    if (preview->data.files || preview->data.text || preview->data.uris) {
         BOOL attached = FALSE;
         JNIEnv *env = attach_thread(&attached);
-        if (env) (*env)->DeleteGlobalRef(env, preview->files);
+        if (env) delete_global_data(env, &preview->data);
         detach_if_needed(attached);
     }
     HeapFree(GetProcessHeap(), 0, preview);
@@ -187,22 +310,17 @@ static DWORD WINAPI read_preview(LPVOID parameter) {
         HRESULT hr = CoGetInterfaceAndReleaseStream(
             preview->stream, &IID_IDataObject, (void **)&data);
         if (SUCCEEDED(hr)) {
-            FORMATETC fmt = { CF_HDROP, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-            STGMEDIUM stg = { 0 };
-            if (IDataObject_GetData(data, &fmt, &stg) == S_OK) {
-                BOOL attached = FALSE;
-                JNIEnv *env = attach_thread(&attached);
-                if (env) {
-                    jobjectArray files = extract_hdrop(env, stg.hGlobal);
-                    if (files) {
-                        preview->files = (*env)->NewGlobalRef(env, files);
-                        (*env)->DeleteLocalRef(env, files);
-                    }
-                    nucleus_jni_clear_exception(env);
-                }
-                detach_if_needed(attached);
-                ReleaseStgMedium(&stg);
+            BOOL attached = FALSE;
+            JNIEnv *env = attach_thread(&attached);
+            if (env) {
+                NucleusDropData local = { 0 };
+                extract_data(env, data, &local);
+                preview->data.files = to_global(env, local.files);
+                preview->data.text = to_global(env, local.text);
+                preview->data.uris = to_global(env, local.uris);
+                nucleus_jni_clear_exception(env);
             }
+            detach_if_needed(attached);
             IDataObject_Release(data);
         }
         CoUninitialize();
@@ -236,10 +354,14 @@ static void start_preview(NucleusDropTarget *target, IDataObject *data) {
     CloseHandle(thread);
 }
 
-static void dispatch_files(JNIEnv *env, NucleusDropTarget *target, jobject files) {
-    if (g_method_on_files) {
-        (*env)->CallVoidMethod(env, target->callbackRef, g_method_on_files,
-                              (jlong)(intptr_t)target->hwnd, files);
+/* Pushes the hover preview to Kotlin; a NULL [data] clears it. */
+static void dispatch_data(JNIEnv *env, NucleusDropTarget *target, const NucleusDropData *data) {
+    if (g_method_on_data) {
+        (*env)->CallVoidMethod(env, target->callbackRef, g_method_on_data,
+                              (jlong)(intptr_t)target->hwnd,
+                              data ? data->files : NULL,
+                              data ? data->text : NULL,
+                              data ? data->uris : NULL);
         nucleus_jni_clear_exception(env);
     }
 }
@@ -305,7 +427,7 @@ static HRESULT STDMETHODCALLTYPE NDT_DragEnter(
     NucleusDropTarget *t = (NucleusDropTarget *)self;
     clear_preview(t);
     t->entered = FALSE;
-    t->hasAcceptableData = data_has_files(pDataObj);
+    t->hasAcceptableData = data_is_acceptable(pDataObj);
     if (t->hasAcceptableData) {
         start_preview(t, pDataObj);
     }
@@ -335,7 +457,7 @@ static HRESULT STDMETHODCALLTYPE NDT_DragOver(
     jint effect = t->entered ? DROPEFFECT_NONE_LOCAL : DROPEFFECT_COPY_LOCAL;
     if (!t->entered && (!t->preview ||
         InterlockedCompareExchange(&t->preview->ready, 0, 0))) {
-        dispatch_files(env, t, t->preview ? t->preview->files : NULL);
+        dispatch_data(env, t, t->preview ? &t->preview->data : NULL);
         effect = dispatch_enter(env, t, x, y, grfKeyState);
         clear_preview(t);
     } else if (t->entered && g_method_on_over) {
@@ -357,7 +479,7 @@ static HRESULT STDMETHODCALLTYPE NDT_DragLeave(IDropTarget *self) {
     BOOL attached = FALSE;
     JNIEnv *env = attach_thread(&attached);
     clear_preview(t);
-    if (env) dispatch_files(env, t, NULL);
+    if (env) dispatch_data(env, t, NULL);
     if (env && t->entered && g_method_on_leave) {
         (*env)->CallVoidMethod(env, t->callbackRef, g_method_on_leave,
                                (jlong)(intptr_t)t->hwnd);
@@ -382,12 +504,13 @@ static HRESULT STDMETHODCALLTYPE NDT_Drop(
         return S_OK;
     }
 
-    jobjectArray files = extract_files(env, pDataObj);
+    NucleusDropData data = { 0 };
+    extract_data(env, pDataObj, &data);
     jint x, y;
     to_client(t->hwnd, pt, &x, &y);
 
-    if (!t->entered && data_has_files(pDataObj)) {
-        dispatch_files(env, t, files);
+    if (!t->entered && data_is_acceptable(pDataObj)) {
+        dispatch_data(env, t, &data);
         dispatch_enter(env, t, x, y, grfKeyState);
     }
 
@@ -395,14 +518,15 @@ static HRESULT STDMETHODCALLTYPE NDT_Drop(
     if (g_method_on_drop) {
         effect = (*env)->CallIntMethod(
             env, t->callbackRef, g_method_on_drop,
-            (jlong)(intptr_t)t->hwnd, x, y, (jint)grfKeyState, files);
+            (jlong)(intptr_t)t->hwnd, x, y, (jint)grfKeyState,
+            data.files, data.text, data.uris);
         if (nucleus_jni_clear_exception(env)) {
             effect = DROPEFFECT_NONE_LOCAL;
         }
     }
-    if (files) (*env)->DeleteLocalRef(env, files);
+    delete_local_data(env, &data);
 
-    dispatch_files(env, t, NULL);
+    dispatch_data(env, t, NULL);
     detach_if_needed(attached);
     t->entered = FALSE;
     t->hasAcceptableData = FALSE;
@@ -433,7 +557,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 
 /* Resolves the Kotlin callback class & method IDs. Idempotent. */
 static BOOL ensure_callback_methods(JNIEnv *env, jobject callback) {
-    if (g_callback_class && g_method_on_files && g_method_on_enter && g_method_on_over &&
+    if (g_callback_class && g_method_on_data && g_method_on_enter && g_method_on_over &&
         g_method_on_leave && g_method_on_drop) return TRUE;
 
     jclass local = (*env)->GetObjectClass(env, callback);
@@ -443,14 +567,14 @@ static BOOL ensure_callback_methods(JNIEnv *env, jobject callback) {
     if (!g_callback_class) return FALSE;
 
     g_method_on_enter = (*env)->GetMethodID(env, g_callback_class, "onDragEnter", "(JIIIZ)I");
-    g_method_on_files = (*env)->GetMethodID(env, g_callback_class, "onDragFiles",
-        "(J[Ljava/lang/String;)V");
+    g_method_on_data  = (*env)->GetMethodID(env, g_callback_class, "onDragData",
+        "(J[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)V");
     g_method_on_over  = (*env)->GetMethodID(env, g_callback_class, "onDragOver",  "(JIIIZ)I");
     g_method_on_leave = (*env)->GetMethodID(env, g_callback_class, "onDragLeave", "(J)V");
     g_method_on_drop  = (*env)->GetMethodID(env, g_callback_class, "onDrop",
-        "(JIII[Ljava/lang/String;)I");
+        "(JIII[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)I");
 
-    return g_method_on_files && g_method_on_enter && g_method_on_over && g_method_on_leave && g_method_on_drop;
+    return g_method_on_data && g_method_on_enter && g_method_on_over && g_method_on_leave && g_method_on_drop;
 }
 
 /*
@@ -465,6 +589,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDndBridge_nativeRegiste
     (void)cls;
     if (!hwnd || !callback) return -1;
     if (!ensure_callback_methods(env, callback)) return -2;
+    ensure_formats();
 
     HRESULT hr = OleInitialize(NULL);
     /* OleInitialize returns S_FALSE if already initialized — both are OK. */

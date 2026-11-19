@@ -9,7 +9,6 @@ import androidx.compose.ui.scene.ComposeSceneDragAndDropNode
 import dev.nucleusframework.window.tao.TaoDragAndDropPayload
 import java.awt.Point
 import java.awt.dnd.DnDConstants
-import java.io.File
 
 /**
  * Platform-agnostic drag-and-drop scene wiring, shared by the macOS, Windows and
@@ -26,14 +25,19 @@ import java.io.File
  * thin `InboundDnDCallback` override rather than folded in here, because they
  * are genuine behavioural differences, not duplication:
  *  - `TaoDnDDiagnostics.log(...)` calls (macOS/Windows log; Linux does not);
- *  - the `if (!hasFiles) return NONE` short-circuit in `onDragEnter`
- *    (macOS/Windows guard non-file drags; Linux intentionally does not).
+ *  - the `if (!hasData) return NONE` short-circuit in `onDragEnter`
+ *    (macOS/Windows guard drags carrying nothing they can read; Linux
+ *    intentionally does not).
  * Folding either in here would silently change Linux behaviour.
  *
  * Inbound handlers return a plain `Boolean` (accepted?) rather than a
  * `DROP_EFFECT_*` constant: each host maps `true → its own DROP_EFFECT_COPY` and
  * `false → its own DROP_EFFECT_NONE`, so nothing here depends on the three
  * bridges happening to share the same integer values.
+ *
+ * Inbound data is a [TaoDragAndDropPayload] — files, plain text and non-file
+ * URIs (#930). A host that only reads files goes through the `files` overloads;
+ * one that also reads text or URIs builds the payload with [inboundPayload].
  *
  * Each host keeps its own named `InboundDnDCallback` implementing that bridge's
  * `Callback` interface (required for GraalVM JNI reachability — anonymous
@@ -42,26 +46,31 @@ import java.io.File
 @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
 internal object TaoSceneDnD {
     class InboundState {
-        private var hoverFiles: Array<String>? = null
+        private var hoverData: TaoDragAndDropPayload? = null
+
+        /** Updates the hover preview for this drag; `null` clears it. */
+        fun onDragData(data: TaoDragAndDropPayload?) {
+            hoverData = data?.takeUnless { it.isEmpty }
+        }
 
         fun onDragFiles(files: Array<String>?) {
-            hoverFiles = files?.takeIf { it.isNotEmpty() }
+            onDragData(inboundPayload(files = files))
         }
 
         fun onDragEnter(
             node: ComposeSceneDragAndDropNode?,
             x: Int,
             y: Int,
-        ): Boolean = TaoSceneDnD.onDragEnter(node = node, x = x, y = y, files = hoverFiles)
+        ): Boolean = TaoSceneDnD.onDragEnter(node = node, x = x, y = y, data = hoverData)
 
         fun onDragOver(
             node: ComposeSceneDragAndDropNode?,
             x: Int,
             y: Int,
-        ): Boolean = TaoSceneDnD.onDragOver(node = node, x = x, y = y, files = hoverFiles)
+        ): Boolean = TaoSceneDnD.onDragOver(node = node, x = x, y = y, data = hoverData)
 
         fun onDragLeave(node: ComposeSceneDragAndDropNode?) {
-            hoverFiles = null
+            hoverData = null
             TaoSceneDnD.onDragLeave(node = node)
         }
 
@@ -69,33 +78,63 @@ internal object TaoSceneDnD {
             node: ComposeSceneDragAndDropNode?,
             x: Int,
             y: Int,
-            files: Array<String>?,
+            data: TaoDragAndDropPayload?,
         ): Boolean {
-            hoverFiles = null
-            return TaoSceneDnD.onDrop(node = node, x = x, y = y, files = files)
+            hoverData = null
+            return TaoSceneDnD.onDrop(node = node, x = x, y = y, data = data)
         }
+
+        fun onDrop(
+            node: ComposeSceneDragAndDropNode?,
+            x: Int,
+            y: Int,
+            files: Array<String>?,
+        ): Boolean = onDrop(node = node, x = x, y = y, data = inboundPayload(files = files))
     }
+
+    /**
+     * Builds the inbound payload from what a native bridge read. Empty text and
+     * blank URIs are dropped, and so is any `file:` URI: files belong in
+     * [TaoDragAndDropPayload.files] only, so a `text/uri-list` mixing both kinds
+     * can be passed as is once its file URIs were also converted to paths.
+     */
+    fun inboundPayload(
+        files: Array<String>? = null,
+        text: String? = null,
+        uris: Array<String>? = null,
+    ): TaoDragAndDropPayload =
+        TaoDragAndDropPayload(
+            files = files?.filter { it.isNotEmpty() }.orEmpty(),
+            text = text?.takeIf { it.isNotEmpty() },
+            uris =
+                uris
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() && !it.startsWith("file:", ignoreCase = true) }
+                    .orEmpty(),
+        )
+
+    private val EMPTY_PAYLOAD = TaoDragAndDropPayload(files = emptyList())
 
     private fun makeDragEvent(
         xPx: Int,
         yPx: Int,
-        files: Array<String>?,
-    ): DragAndDropEvent = makeEvent(xPx, yPx, files, drop = false)
+        data: TaoDragAndDropPayload?,
+    ): DragAndDropEvent = makeEvent(xPx, yPx, data, drop = false)
 
     private fun makeDropEvent(
         xPx: Int,
         yPx: Int,
-        files: Array<String>?,
-    ): DragAndDropEvent = makeEvent(xPx, yPx, files, drop = true)
+        data: TaoDragAndDropPayload?,
+    ): DragAndDropEvent = makeEvent(xPx, yPx, data, drop = true)
 
     private fun makeEvent(
         xPx: Int,
         yPx: Int,
-        files: Array<String>?,
+        data: TaoDragAndDropPayload?,
         drop: Boolean,
     ): DragAndDropEvent {
-        val payload = TaoDragAndDropPayload(files = files?.toList() ?: emptyList())
-        val transferable = TaoFilesTransferable(files = payload.files.map { File(it) })
+        val payload = data ?: EMPTY_PAYLOAD
+        val transferable = TaoDropTransferable(payload)
         val cursor = Point(xPx, yPx)
         val native =
             if (drop) {
@@ -122,16 +161,17 @@ internal object TaoSceneDnD {
 
     /**
      * @return true if the drag was accepted (host maps to DROP_EFFECT_COPY, else
-     *   NONE). Callers that guard non-file drags must do so before calling.
+     *   NONE). Callers that guard drags carrying no readable data must do so
+     *   before calling.
      */
     fun onDragEnter(
         node: ComposeSceneDragAndDropNode?,
         x: Int,
         y: Int,
-        files: Array<String>? = null,
+        data: TaoDragAndDropPayload? = null,
     ): Boolean {
         if (node == null) return false
-        val ev = makeDragEvent(x, y, files)
+        val ev = makeDragEvent(x, y, data)
         val accepted = node.acceptDragAndDropTransfer(ev)
         if (accepted) {
             node.onStarted(ev)
@@ -152,10 +192,10 @@ internal object TaoSceneDnD {
         node: ComposeSceneDragAndDropNode?,
         x: Int,
         y: Int,
-        files: Array<String>? = null,
+        data: TaoDragAndDropPayload? = null,
     ): Boolean {
         if (node == null) return false
-        val ev = makeDragEvent(x, y, files)
+        val ev = makeDragEvent(x, y, data)
         node.onMoved(ev)
         return node.hasEligibleDropTarget
     }
@@ -173,9 +213,17 @@ internal object TaoSceneDnD {
         x: Int,
         y: Int,
         files: Array<String>?,
+    ): Boolean = onDrop(node = node, x = x, y = y, data = inboundPayload(files = files))
+
+    /** @return true if the drop was accepted. */
+    fun onDrop(
+        node: ComposeSceneDragAndDropNode?,
+        x: Int,
+        y: Int,
+        data: TaoDragAndDropPayload?,
     ): Boolean {
         if (node == null) return false
-        val ev = makeDropEvent(x, y, files)
+        val ev = makeDropEvent(x, y, data)
         val accepted = node.onDrop(ev)
         node.onEnded(ev)
         return accepted

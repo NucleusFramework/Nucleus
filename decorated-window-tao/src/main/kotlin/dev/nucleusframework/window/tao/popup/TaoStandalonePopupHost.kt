@@ -544,11 +544,16 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             dev.nucleusframework.window.tao.dnd.TaoSceneDnD
                 .InboundState()
 
-        override fun onDragFiles(
+        override fun onDragData(
             hwnd: Long,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ) {
-            dnd.onDragFiles(files = files)
+            dnd.onDragData(
+                dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                    .inboundPayload(files = files, text = text, uris = uris),
+            )
         }
 
         override fun onDragEnter(
@@ -556,10 +561,10 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             x: Int,
             y: Int,
             keyState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int {
-            TaoDnDDiagnostics.log("standalone popup onDragEnter x=$x y=$y hasFiles=$hasFiles")
-            if (!hasFiles) return NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+            TaoDnDDiagnostics.log("standalone popup onDragEnter x=$x y=$y hasData=$hasData")
+            if (!hasData) return NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             return if (dnd.onDragEnter(node = node(), x = x, y = y)) {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
@@ -572,7 +577,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             x: Int,
             y: Int,
             keyState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int =
             if (dnd.onDragOver(node = node(), x = x, y = y)) {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
@@ -591,9 +596,21 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             y: Int,
             keyState: Int,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ): Int {
-            TaoDnDDiagnostics.log("standalone popup onDrop x=$x y=$y files=${files?.size ?: 0}")
-            return if (dnd.onDrop(node(), x, y, files)) {
+            TaoDnDDiagnostics.log(
+                "standalone popup onDrop x=$x y=$y files=${files?.size ?: 0} " +
+                    "text=${text != null} uris=${uris?.size ?: 0}",
+            )
+            return if (dnd.onDrop(
+                    node(),
+                    x,
+                    y,
+                    dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                        .inboundPayload(files = files, text = text, uris = uris),
+                )
+            ) {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {
                 NativeTaoWindowsDndBridge.DROP_EFFECT_NONE

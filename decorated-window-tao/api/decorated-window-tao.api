@@ -1231,6 +1231,8 @@ public final class dev/nucleusframework/window/tao/TaoDockPolicy {
 public final class dev/nucleusframework/window/tao/TaoDragAndDropPayload {
 	public static final field $stable I
 	public final fun getFiles ()Ljava/util/List;
+	public final fun getText ()Ljava/lang/String;
+	public final fun getUris ()Ljava/util/List;
 }
 
 public final class dev/nucleusframework/window/tao/TaoDragAndDropPayloadKt {
