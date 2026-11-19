@@ -11,10 +11,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.tray.LinuxTrayHooks
 import dev.nucleusframework.tray.app.TrayApp
 import dev.nucleusframework.tray.app.TrayAppState
 import dev.nucleusframework.tray.app.TrayScreenGeometry
-import dev.nucleusframework.tray.internal.LinuxTrayInitializer
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -198,8 +198,8 @@ private fun run(
 ) {
     check(X11Probe.isAvailable, "X server reachable")
     // Bind each app to its tray: trays come up in composition order (tray-1, tray-2, ...).
-    check(waitFor(15_000) { LinuxTrayInitializer.debugIds().size == h.apps.size }, "trays created")
-    val ids = LinuxTrayInitializer.debugIds().sortedBy { it.substringAfterLast('-').toIntOrNull() ?: 0 }
+    check(waitFor(15_000) { LinuxTrayHooks.debugIds().size == h.apps.size }, "trays created")
+    val ids = LinuxTrayHooks.debugIds().sortedBy { it.substringAfterLast('-').toIntOrNull() ?: 0 }
     for ((app, id) in h.apps.zip(ids)) {
         app.trayId = id
         app.service = h.panel.serviceOf(id, timeoutMs = 10_000)

@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
  * enabled. Settings live in memory (`GSETTINGS_BACKEND=memory`), so the user's desktop is never
  * touched. [GnomeShellDriver] reads and drives it.
  */
-internal class GnomeShell private constructor(
+public class GnomeShell private constructor(
     private val process: Process,
     val busAddress: String,
     val waylandDisplay: String,
@@ -164,7 +164,7 @@ internal class GnomeShell private constructor(
  * AppIndicator actors, window actors, the work area, and a Clutter virtual pointer, the way a
  * user's mouse reaches the shell.
  */
-internal class GnomeShellDriver(
+public class GnomeShellDriver(
     address: String,
 ) : AutoCloseable {
     private val bus = SdBus.connect(address, "gnome-driver")

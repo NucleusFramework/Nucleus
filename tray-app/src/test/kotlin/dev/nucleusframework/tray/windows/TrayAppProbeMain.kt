@@ -12,9 +12,9 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.application.NucleusApplicationScope
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.tray.WindowsTrayHooks
 import dev.nucleusframework.tray.app.TrayApp
 import dev.nucleusframework.tray.app.TrayAppState
-import dev.nucleusframework.tray.internal.WindowsTrayInitializer
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlin.random.Random
@@ -63,7 +63,7 @@ private class Harness(
     fun tray(): Pair<Long, Int> {
         var found: Pair<Long, Int>? = null
         waitFor(10_000) {
-            WindowsTrayInitializer
+            WindowsTrayHooks
                 .nativeIdentities()
                 .values
                 .singleOrNull()

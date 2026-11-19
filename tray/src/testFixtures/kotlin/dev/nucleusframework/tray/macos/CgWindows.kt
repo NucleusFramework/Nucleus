@@ -13,7 +13,7 @@ import com.sun.jna.Structure
  * the primary display, like the status-item positions. Reading bounds of one's own windows needs
  * no Screen Recording permission.
  */
-internal object CgWindows {
+public object CgWindows {
     data class Box(
         val x: Int,
         val y: Int,

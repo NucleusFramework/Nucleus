@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  * (sd-bus objects are single-threaded); every public call hops onto it.
  */
 @Suppress("FunctionName", "ktlint:standard:function-naming")
-internal interface LibSystemd : Library {
+public interface LibSystemd : Library {
     fun sd_bus_new(ret: PointerByReference): Int
 
     fun sd_bus_set_address(
@@ -172,19 +172,19 @@ internal interface LibSystemd : Library {
 }
 
 /** A D-Bus error reply (or a local failure), with its D-Bus name. */
-internal class DBusException(
+public class DBusException(
     val name: String,
     message: String,
 ) : RuntimeException("$name: $message")
 
 /** A value of a `v` (variant) slot, with its signature. */
-internal data class Variant(
+public data class Variant(
     val signature: String,
     val value: Any?,
 )
 
 /** A received signal. */
-internal data class Signal(
+public data class Signal(
     val sender: String?,
     val path: String?,
     val iface: String?,
@@ -193,7 +193,7 @@ internal data class Signal(
     val atNanos: Long = System.nanoTime(),
 )
 
-internal class SdBus private constructor(
+public class SdBus private constructor(
     address: String,
     label: String,
 ) : AutoCloseable {
@@ -572,7 +572,7 @@ internal class SdBus private constructor(
 }
 
 /** A private session bus for the test JVM: `dbus-daemon --session` on a socket in a temp dir. */
-internal class PrivateBus private constructor(
+public class PrivateBus private constructor(
     private val process: Process,
     val address: String,
     private val dir: File,
@@ -609,7 +609,7 @@ internal class PrivateBus private constructor(
 }
 
 /** `setenv(3)` of this process, so the tray's `sd_bus_open_user` lands on a private bus. */
-internal object ProcessEnv {
+public object ProcessEnv {
     @Suppress("FunctionName", "ktlint:standard:function-naming")
     private interface LibC : Library {
         fun setenv(

@@ -19,7 +19,7 @@ import com.sun.jna.win32.W32APIOptions
  * their Shell icons, the popup menu the shell would show, and the process GDI/USER handle counts.
  * Test-only (JNA is never a runtime dependency of the tray module).
  */
-internal object Win32Probe {
+public object Win32Probe {
     @Suppress("FunctionName", "ktlint:standard:function-naming")
     private interface User32 : StdCallLibrary {
         fun EnumWindows(

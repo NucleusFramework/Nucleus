@@ -19,10 +19,10 @@ import androidx.compose.ui.window.rememberWindowState
 import com.sun.jna.platform.win32.WinDef.HWND
 import dev.nucleusframework.application.Window
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.tray.WindowsTrayHooks
 import dev.nucleusframework.tray.app.TrayApp
 import dev.nucleusframework.tray.app.TrayAppState
 import dev.nucleusframework.tray.app.TrayWindowDismissMode
-import dev.nucleusframework.tray.internal.WindowsTrayInitializer
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlin.random.Random
@@ -117,7 +117,7 @@ private fun outsideClick(app: FuzzApp) {
     }
 }
 
-private fun identity(app: FuzzApp): Pair<Long, Int>? = app.trayId?.let { WindowsTrayInitializer.nativeIdentities()[it] }
+private fun identity(app: FuzzApp): Pair<Long, Int>? = app.trayId?.let { WindowsTrayHooks.nativeIdentities()[it] }
 
 private fun click(app: FuzzApp) {
     identity(app)?.let { (hwnd, _) ->
@@ -132,9 +132,9 @@ private fun learnTray(
 ) {
     app.trayId = null
     val taken = others.mapNotNull { it.trayId }.toSet()
-    until(10_000) { WindowsTrayInitializer.nativeIdentities().keys.any { it !in taken } }
+    until(10_000) { WindowsTrayHooks.nativeIdentities().keys.any { it !in taken } }
     Thread.sleep(500)
-    for ((id, ident) in WindowsTrayInitializer.nativeIdentities()) {
+    for ((id, ident) in WindowsTrayHooks.nativeIdentities()) {
         if (id in taken) continue
         val before = app.state.isVisible.value
         Win32Probe.post(ident.first, Win32Probe.WM_TRAY_CALLBACK, 0, Win32Probe.WM_LBUTTONUP.toLong())

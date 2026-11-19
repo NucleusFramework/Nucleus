@@ -49,7 +49,8 @@ import kotlin.internal.LowPriorityInOverloadResolution
  * backend in order and a burst collapses to its newest state. [dispose] is final: once it
  * returns, no queued or in-flight change can recreate the icon.
  */
-internal class NativeTray {
+@InternalNucleusTrayApi
+public class NativeTray {
     private val trayScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val os = Platform.Current
 
@@ -104,10 +105,11 @@ internal class NativeTray {
         }
     }
 
-    // Exposes the unique instance key so TrayApp can compute per-instance positions.
-    fun instanceKey(): String = instanceId
+    /** Unique key of this tray instance, which TrayApp uses to compute its own icon's position. */
+    public fun instanceKey(): String = instanceId
 
-    fun update(
+    /** Creates or updates the tray from icon files. */
+    public fun update(
         iconPath: String,
         windowsIconPath: String = iconPath,
         tooltip: String,
@@ -127,7 +129,7 @@ internal class NativeTray {
      * @param iconKey Identifies the icon's look: a change carrying the key of the icon already
      *   shown skips rendering, so a menu-only change reaches the tray at once.
      */
-    fun updateComposable(
+    internal fun updateComposable(
         iconContent: @Composable () -> Unit,
         iconRenderProperties: IconRenderProperties = IconRenderProperties(),
         tooltip: String,
@@ -269,7 +271,7 @@ internal class NativeTray {
     }
 
     /** Sets macOS appearance icons directly from file paths. */
-    fun setMacOSAppearanceIcons(
+    internal fun setMacOSAppearanceIcons(
         lightPath: String,
         darkPath: String,
     ) {
@@ -316,7 +318,7 @@ internal class NativeTray {
     }
 
     /** Removes the icon. Final: later [update] / [updateComposable] calls are ignored. */
-    fun dispose() {
+    public fun dispose() {
         synchronized(lock) {
             if (disposed) return
             disposed = true

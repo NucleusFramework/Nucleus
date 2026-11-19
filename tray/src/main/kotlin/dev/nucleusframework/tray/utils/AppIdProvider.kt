@@ -1,5 +1,7 @@
 package dev.nucleusframework.tray.utils
 
+import dev.nucleusframework.tray.InternalNucleusTrayApi
+
 /**
  * Provides a unique, stable application identifier to namespace shared resources
  * (temp files, locks, properties) and avoid conflicts when multiple apps use
@@ -11,11 +13,13 @@ package dev.nucleusframework.tray.utils
  * 3) Main class from system property "sun.java.command" (first token)
  * 4) Fallback to "ComposeNativeTrayApp"
  */
-internal object AppIdProvider {
+@InternalNucleusTrayApi
+public object AppIdProvider {
     private const val FALLBACK_ID = "ComposeNativeTrayApp"
     private val cached by lazy { computeAppId() }
 
-    fun appId(): String = cached
+    /** The resolved application id. */
+    public fun appId(): String = cached
 
     private fun computeAppId(): String {
         val sunCmd = System.getProperty("sun.java.command")?.trim().orEmpty()

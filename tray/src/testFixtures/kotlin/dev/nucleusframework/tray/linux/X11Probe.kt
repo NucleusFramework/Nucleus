@@ -15,7 +15,7 @@ import com.sun.jna.ptr.PointerByReference
  * Declared by hand with the exact C types of x86_64 Linux (XIDs are `unsigned long`); the
  * generic `jna-platform` X11 mapping got `XGetWindowProperty` refused with BadRequest here.
  */
-internal object X11Probe {
+public object X11Probe {
     data class Box(
         val x: Int,
         val y: Int,

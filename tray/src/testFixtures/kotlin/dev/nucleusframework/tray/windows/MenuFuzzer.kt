@@ -6,7 +6,7 @@ import dev.nucleusframework.tray.menu.TrayMenuBuilder
 import kotlin.random.Random
 
 /** Seeded random tray menus, plus what the Windows popup must show for each of them. */
-internal object MenuFuzzer {
+public object MenuFuzzer {
     sealed interface Node
 
     data class Plain(

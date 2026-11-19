@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.tray.MacTrayHooks
 import dev.nucleusframework.tray.app.TrayApp
 import dev.nucleusframework.tray.app.TrayAppState
 import dev.nucleusframework.tray.app.TrayScreenGeometry
@@ -84,7 +85,7 @@ private class Harness(
         // The system menu bar sometimes takes many seconds to place a new item.
         val ok =
             waitFor(30_000) {
-                val ids = MacTrayInitializer.debugIds().sortedBy { it.removePrefix("tray-").toIntOrNull() ?: 0 }
+                val ids = MacTrayHooks.debugIds().sortedBy { it.removePrefix("tray-").toIntOrNull() ?: 0 }
                 assign()
                 ids.size == apps.count { it.shown } &&
                     apps.filter { it.shown }.all { it.trayId != null } &&
@@ -96,7 +97,7 @@ private class Harness(
         check(
             ok,
             "every tray laid out in the menu bar: " +
-                MacTrayInitializer.debugIds().map { id ->
+                MacTrayHooks.debugIds().map { id ->
                     val xy = IntArray(2)
                     val laidOut = MacTrayInitializer.statusItemPositionFor(id, xy)
                     "$id tooltip=${MacProbe.snapshot(
@@ -109,12 +110,12 @@ private class Harness(
 
     /** Finds each app's tray by its tooltip (creation order changes with removal and reinsertion). */
     fun assign() {
-        val byTooltip = MacTrayInitializer.debugIds().associateBy { MacProbe.snapshot(it)?.tooltip.orEmpty() }
+        val byTooltip = MacTrayHooks.debugIds().associateBy { MacProbe.snapshot(it)?.tooltip.orEmpty() }
         for (app in apps) app.trayId = byTooltip.entries.firstOrNull { it.key.startsWith(app.tag) }?.value
     }
 
     fun click(app: App) {
-        app.trayId?.let { MacTrayInitializer.debugClick(it, secondary = false) }
+        app.trayId?.let { MacTrayHooks.debugClick(it, secondary = false) }
     }
 
     /**
@@ -327,13 +328,13 @@ private fun run(
         }
         "menu" -> {
             val id = app.trayId!!
-            MacTrayInitializer.debugClick(id, secondary = true)
+            MacTrayHooks.debugClick(id, secondary = true)
             check(waitFor(3000) { MacProbe.snapshot(id)?.menuOpen == true }, "right click shows the menu")
             val item = MacProbe.snapshot(id)?.menu?.singleOrNull()
             check(item?.title == "Menu item 0", "menu reads back (${item?.title})")
-            MacTrayInitializer.debugPerformItem(id, intArrayOf(0))
+            MacTrayHooks.debugPerformItem(id, intArrayOf(0))
             check(waitFor(3000) { app.menuClicks.get() == 1 }, "menu item callback")
-            MacTrayInitializer.debugCancelMenu(id)
+            MacTrayHooks.debugCancelMenu(id)
             check(waitFor(3000) { MacProbe.snapshot(id)?.menuOpen == false }, "menu closed")
             check(h.popupOf(app) == null, "the menu did not open the popup")
         }
@@ -342,10 +343,10 @@ private fun run(
             check(waitFor(3000) { h.popupOf(app) != null }, "popup shown")
             app.shown = false
             check(waitFor(5000) { h.popupOf(app) == null }, "popup gone with TrayApp")
-            check(waitFor(5000) { MacTrayInitializer.debugIds().isEmpty() }, "tray gone with TrayApp")
-            check(waitFor(5000) { MacTrayInitializer.debugStatusItemCount() == 0 }, "status item released")
+            check(waitFor(5000) { MacTrayHooks.debugIds().isEmpty() }, "tray gone with TrayApp")
+            check(waitFor(5000) { MacTrayHooks.debugStatusItemCount() == 0 }, "status item released")
             app.shown = true
-            check(waitFor(5000) { MacTrayInitializer.debugIds().size == 1 }, "tray back with TrayApp")
+            check(waitFor(5000) { MacTrayHooks.debugIds().size == 1 }, "tray back with TrayApp")
         }
         "fuzz", "multi" -> fuzz(h, random, rounds)
         else -> check(false, "unknown scenario $scenario")
@@ -411,17 +412,17 @@ private fun fuzz(
             val app = h.apps.random(random)
             app.shown = false
             check(
-                waitFor(5000) { MacTrayInitializer.debugIds().size == h.apps.count { it.shown } },
+                waitFor(5000) { MacTrayHooks.debugIds().size == h.apps.count { it.shown } },
                 "round $round: tray removed",
             )
             app.shown = true
-            check(waitFor(5000) { MacTrayInitializer.debugIds().size == h.apps.size }, "round $round: tray reinserted")
+            check(waitFor(5000) { MacTrayHooks.debugIds().size == h.apps.size }, "round $round: tray reinserted")
             h.awaitTrays()
         }
         h.consistent("round $round")
         for (app in h.apps) {
             if (app.state.isVisible.value) h.checkAnchored(app, "round $round app ${app.index}")
         }
-        check(MacTrayInitializer.debugStatusItemCount() == h.apps.size, "round $round: one status item per app")
+        check(MacTrayHooks.debugStatusItemCount() == h.apps.size, "round $round: one status item per app")
     }
 }

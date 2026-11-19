@@ -1,0 +1,28 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:AwaitAnchoredWindowPosition.kt:1.5f</ID>
+    <ID>MagicNumber:TrayApp.kt:10</ID>
+    <ID>MagicNumber:TrayApp.kt:100L</ID>
+    <ID>MagicNumber:TrayApp.kt:150L</ID>
+    <ID>MagicNumber:TrayApp.kt:200</ID>
+    <ID>MagicNumber:TrayApp.kt:200L</ID>
+    <ID>MagicNumber:TrayApp.kt:250</ID>
+    <ID>MagicNumber:TrayApp.kt:250L</ID>
+    <ID>MagicNumber:TrayApp.kt:280L</ID>
+    <ID>MagicNumber:TrayApp.kt:30</ID>
+    <ID>MagicNumber:TrayApp.kt:300</ID>
+    <ID>MagicNumber:TrayApp.kt:350L</ID>
+    <ID>MagicNumber:TrayApp.kt:400</ID>
+    <ID>MagicNumber:TrayApp.kt:5</ID>
+    <ID>MagicNumber:TrayApp.kt:50</ID>
+    <ID>MagicNumber:TrayScreenGeometry.kt:TrayScreenGeometry$3</ID>
+    <ID>MagicNumber:TrayScreenGeometry.kt:TrayScreenGeometry$4</ID>
+    <ID>MagicNumber:TrayWindowPosition.kt:100</ID>
+    <ID>MagicNumber:TrayWindowPosition.kt:15</ID>
+    <ID>TooManyFunctions:TrayWindowPosition.kt:dev.nucleusframework.tray.app.TrayWindowPosition.kt</ID>
+    <ID>UnusedParameter:PersistentAnimatedVisibility.kt:shouldDisposeBlock: (EnterExitState, EnterExitState) -&gt; Boolean</ID>
+    <ID>UnusedPrivateClass:PersistentAnimatedVisibility.kt:AnimatedEnterExitMeasurePolicy : MeasurePolicy</ID>
+  </CurrentIssues>
+</SmellBaseline>

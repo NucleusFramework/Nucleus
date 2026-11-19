@@ -1,12 +1,14 @@
 package dev.nucleusframework.tray.internal
 
+import dev.nucleusframework.tray.InternalNucleusTrayApi
 import dev.nucleusframework.tray.internal.windows.WindowsNativeBridge
 import dev.nucleusframework.tray.internal.windows.WindowsTrayManager
 import dev.nucleusframework.tray.menu.TrayMenuBuilder
 import dev.nucleusframework.tray.menu.internal.WindowsTrayMenuBuilderImpl
 
 /** Windows tray icons by id. Every call is thread-safe and never waits on a tray thread except [dispose]. */
-internal object WindowsTrayInitializer {
+@InternalNucleusTrayApi
+public object WindowsTrayInitializer {
     private val trayManagers = HashMap<String, WindowsTrayManager>()
 
     init {
@@ -21,13 +23,13 @@ internal object WindowsTrayInitializer {
     }
 
     /** Native notification-area region ("top-left" | "top-right" | …), or `null` if unavailable. */
-    fun notificationIconsRegion(): String? =
+    public fun notificationIconsRegion(): String? =
         runCatching {
             WindowsNativeBridge.nativeGetNotificationIconsRegion()
         }.getOrNull()
 
     /** Creates tray [id], or updates it when it exists. Returns at once: the change is applied by the tray's thread. */
-    fun initialize(
+    internal fun initialize(
         id: String,
         iconPath: String,
         tooltip: String,
@@ -41,7 +43,7 @@ internal object WindowsTrayInitializer {
     }
 
     /** Same as [initialize]: creates or updates tray [id]. */
-    fun update(
+    internal fun update(
         id: String,
         iconPath: String,
         tooltip: String,
@@ -51,27 +53,28 @@ internal object WindowsTrayInitializer {
     ): Unit = initialize(id, iconPath, tooltip, onLeftClick, menuContent, onMenuOpened)
 
     /** Removes tray [id] and waits for its thread to end. */
-    fun dispose(id: String) {
+    internal fun dispose(id: String) {
         synchronized(this) { trayManagers.remove(id) }?.stop()
     }
 
     /** Forces a fresh capture of the icon position: Windows may reorganize icons after creation. */
-    fun refreshPosition(id: String) {
+    public fun refreshPosition(id: String) {
         synchronized(this) { trayManagers[id] }?.refreshPosition()
     }
 
     /** Hidden window and Shell icon id of tray [id], for diagnostics and tests. */
-    fun nativeIdentity(id: String): Pair<Long, Int>? = synchronized(this) { trayManagers[id] }?.nativeIdentity()
+    internal fun nativeIdentity(id: String): Pair<Long, Int>? =
+        synchronized(this) { trayManagers[id] }?.nativeIdentity()
 
     /** Hidden window and Shell icon id of every live tray, by id (diagnostics and tests). */
-    fun nativeIdentities(): Map<String, Pair<Long, Int>> =
+    internal fun nativeIdentities(): Map<String, Pair<Long, Int>> =
         synchronized(this) { trayManagers.toMap() }
             .mapNotNull { (id, m) ->
                 m.nativeIdentity()?.let { id to it }
             }.toMap()
 
     /** Waits until tray [id] exists natively (or failed to); false on timeout. */
-    fun awaitInitialized(
+    internal fun awaitInitialized(
         id: String,
         timeoutMs: Long,
     ): Boolean = synchronized(this) { trayManagers[id] }?.awaitInitialized(timeoutMs) ?: false

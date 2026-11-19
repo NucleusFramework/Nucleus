@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
     id("nucleus.native-module")
+    `java-test-fixtures`
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -18,9 +19,6 @@ val publishVersion =
 dependencies {
     implementation(project(":core-runtime"))
     implementation(project(":darkmode-detector"))
-    // api: NucleusApplicationScope is the receiver of the public TrayApp API.
-    api(project(":nucleus-application"))
-    implementation(project(":decorated-window-tao"))
     implementation(libs.compose.desktop.common)
     implementation(libs.compose.components.resources)
     implementation(libs.coroutines.core)
@@ -30,6 +28,22 @@ dependencies {
     testImplementation(libs.coroutines.test)
     testImplementation(libs.jna.jpms)
     testImplementation(libs.jna.platform.jpms)
+
+    // Probes shared with tray-app's tests (X11, D-Bus, AppKit, a headless GNOME Shell).
+    testFixturesImplementation(kotlin("test"))
+    testFixturesImplementation(compose.desktop.currentOs)
+    testFixturesImplementation(libs.coroutines.core)
+    testFixturesImplementation(libs.jna.jpms)
+    testFixturesImplementation(libs.jna.platform.jpms)
+}
+
+// The test fixtures are for tray-app's tests only: never published.
+// afterEvaluate: the sources variant is only added once the publishing plugin has configured itself.
+afterEvaluate {
+    val java = components["java"] as AdhocComponentWithVariants
+    listOf("testFixturesApiElements", "testFixturesRuntimeElements", "testFixturesSourcesElements").forEach { name ->
+        configurations.findByName(name)?.let { java.withVariantsFromConfiguration(it) { skip() } }
+    }
 }
 
 java {
@@ -40,7 +54,7 @@ java {
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
-        optIn.add("dev.nucleusframework.window.ExperimentalNucleusApi")
+        optIn.add("dev.nucleusframework.tray.InternalNucleusTrayApi")
     }
 }
 
@@ -76,7 +90,7 @@ mavenPublishing {
     pom {
         name.set("Nucleus Tray")
         description.set(
-            "Native system tray icon, menu and anchored TrayApp popup for Compose Desktop " +
+            "Native system tray icon and menu for Compose Desktop " +
                 "(Shell_NotifyIcon, NSStatusItem, StatusNotifierItem)",
         )
         url.set("https://github.com/NucleusFramework/Nucleus")

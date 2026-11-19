@@ -16,7 +16,7 @@ import javax.imageio.ImageIO
  * and their menus and calling into them. The tray under test reaches this bus because
  * [LinuxTestBus] points `DBUS_SESSION_BUS_ADDRESS` at it before any tray opens its connection.
  */
-internal class SniPanel(
+public class SniPanel(
     private val address: String,
 ) : AutoCloseable {
     data class Registration(
@@ -227,7 +227,7 @@ internal class SniPanel(
 }
 
 /** One private bus + panel for the whole test JVM, set up before the first tray connects. */
-internal object LinuxTestBus {
+public object LinuxTestBus {
     val isLinux: Boolean =
         System
             .getProperty("os.name")
@@ -258,7 +258,7 @@ internal object LinuxTestBus {
     val panel: SniPanel by lazy { SniPanel(bus.address) }
 }
 
-internal object LinuxFixtures {
+public object LinuxFixtures {
     private val cache = ConcurrentHashMap<Pair<Int, Int>, String>()
 
     /** A solid square PNG of [argb], [size] px. */
@@ -286,7 +286,7 @@ internal object LinuxFixtures {
             }.absolutePath
 }
 
-internal fun <T : Any> awaitValue(
+public fun <T : Any> awaitValue(
     what: String,
     timeoutMs: Long = 5_000,
     probe: () -> T?,
@@ -304,7 +304,7 @@ internal fun <T : Any> awaitValue(
     throw AssertionError("timed out waiting for $what" + (last?.let { " (last error: $it)" } ?: ""), last)
 }
 
-internal fun awaitTrue(
+public fun awaitTrue(
     what: String,
     timeoutMs: Long = 5_000,
     probe: () -> Boolean,

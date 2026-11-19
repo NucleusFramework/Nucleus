@@ -8,7 +8,6 @@ import dev.nucleusframework.tray.internal.WindowsTrayInitializer
 import dev.nucleusframework.tray.utils.AppIdProvider
 import dev.nucleusframework.tray.utils.TrayClickPoint
 import dev.nucleusframework.tray.utils.TrayClickTracker
-import dev.nucleusframework.tray.utils.debugln
 import java.io.File
 import java.util.Properties
 import kotlin.math.roundToInt

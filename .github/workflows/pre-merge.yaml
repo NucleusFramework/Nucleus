@@ -237,7 +237,7 @@ jobs:
           for i in $(seq 1 50); do xdpyinfo -display :98 >/dev/null 2>&1 && break; sleep 0.2; done
           openbox &
           sleep 1
-          ./gradlew :tray:test --tests 'dev.nucleusframework.tray.linux.LinuxTrayAppE2ETest' -PtrayE2eRequired=true
+          ./gradlew :tray-app:test --tests 'dev.nucleusframework.tray.linux.LinuxTrayAppE2ETest' -PtrayE2eRequired=true
 
       - name: Run headful suite
         if: runner.os != 'Linux'

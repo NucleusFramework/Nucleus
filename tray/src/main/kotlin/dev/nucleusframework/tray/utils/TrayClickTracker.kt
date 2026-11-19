@@ -1,12 +1,14 @@
 package dev.nucleusframework.tray.utils
 
+import dev.nucleusframework.tray.InternalNucleusTrayApi
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicReference
 
 /** A tray-icon click position in the native backend's coordinates (physical px on Windows, logical elsewhere). */
-internal data class TrayClickPoint(
-    val x: Int,
-    val y: Int,
+@InternalNucleusTrayApi
+public data class TrayClickPoint(
+    public val x: Int,
+    public val y: Int,
 )
 
 /**
@@ -16,19 +18,20 @@ internal data class TrayClickPoint(
  * managers record the raw click coordinates here and the `TrayApp` (`dev.nucleusframework.tray.app`) reads them
  * to compute the popup position against the (Tao-backed) screen geometry it owns.
  */
-internal object TrayClickTracker {
+@InternalNucleusTrayApi
+public object TrayClickTracker {
     private val last = AtomicReference<TrayClickPoint?>(null)
     private val perInstance: MutableMap<String, TrayClickPoint> =
         Collections.synchronizedMap(mutableMapOf())
 
-    fun recordClick(
+    internal fun recordClick(
         x: Int,
         y: Int,
     ) {
         last.set(TrayClickPoint(x, y))
     }
 
-    fun recordClick(
+    internal fun recordClick(
         instanceId: String,
         x: Int,
         y: Int,
@@ -38,7 +41,9 @@ internal object TrayClickTracker {
         last.set(point)
     }
 
-    fun lastClick(): TrayClickPoint? = last.get()
+    /** Last click on any tray icon, or null. */
+    public fun lastClick(): TrayClickPoint? = last.get()
 
-    fun lastClick(instanceId: String): TrayClickPoint? = perInstance[instanceId]
+    /** Last click on the tray icon [instanceId], or null. */
+    public fun lastClick(instanceId: String): TrayClickPoint? = perInstance[instanceId]
 }

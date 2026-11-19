@@ -1,6 +1,11 @@
 # tray internals
 
-`tray` - system tray icon + native menu (`Tray(…)` composables, the `TrayMenuBuilder` / composable `ComposableTrayMenuScope` DSL) and `TrayApp` (an icon whose click toggles a popup anchored to it). Imported from NucleusFramework/ComposeNativeTray; one module, package `dev.nucleusframework.tray`, natives `nucleus_tray`.
+Imported from NucleusFramework/ComposeNativeTray as two modules:
+
+- `tray` (`nucleus.tray`): system tray icon + native menu (`Tray(…)` composables, the `TrayMenuBuilder` / composable `ComposableTrayMenuScope` DSL), package `dev.nucleusframework.tray`, natives `nucleus_tray`. No window backend: a daemon or an app without Nucleus windows gets a tray without Tao or `nucleus-application`.
+- `tray-app` (`nucleus.tray-app`): `TrayApp` (an icon whose click toggles a popup anchored to it), package `dev.nucleusframework.tray.app`, on top of `tray`, `nucleus-application` and `decorated-window-tao`.
+
+What `tray-app` needs from `tray` (`NativeTray`, icon rendering, the icon's position from the backends, the recorded clicks) is public but marked `@InternalNucleusTrayApi` (opt-in level ERROR). The backends' `debug*` hooks stay `internal`: `tray`'s test fixtures (`java-test-fixtures`, never published) expose them to `tray-app`'s tests (`LinuxTrayHooks`, `WindowsTrayHooks`, `MacTrayHooks`), next to the shared probes (`SniPanel` / `SdBus`, `X11Probe`, `GnomeShell`, `Win32Probe`, `MacProbe`, `CgWindows`, `MenuFuzzer`). The `TrayApp` suites (`*TrayAppE2ETest`, `TrayAppFuzzMain`, `LinuxGnomeTrayE2ETest`, the popup placement tests) run with `./gradlew :tray-app:test`; the backend torture suites with `./gradlew :tray:test`.
 
 ## Shared design
 

@@ -50,7 +50,6 @@ import dev.nucleusframework.tray.menu.TrayMenuBuilder
 import dev.nucleusframework.tray.utils.ComposableIconUtils
 import dev.nucleusframework.tray.utils.IconRenderProperties
 import dev.nucleusframework.tray.utils.MenuContentHash
-import dev.nucleusframework.tray.utils.debugln
 import dev.nucleusframework.tray.utils.isMenuBarInDarkMode
 import dev.nucleusframework.window.tao.TaoStandalonePopup
 import dev.nucleusframework.window.tao.isTaoStandalonePopupAvailable

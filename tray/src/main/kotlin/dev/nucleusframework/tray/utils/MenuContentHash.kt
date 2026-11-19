@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
+import dev.nucleusframework.tray.InternalNucleusTrayApi
 import dev.nucleusframework.tray.menu.KeyShortcut
 import dev.nucleusframework.tray.menu.TrayMenuBuilder
 import org.jetbrains.compose.resources.DrawableResource
@@ -12,13 +13,14 @@ import java.security.MessageDigest
 /**
  * Utility class for calculating a hash of menu content to detect changes
  */
-internal object MenuContentHash {
+@InternalNucleusTrayApi
+public object MenuContentHash {
     /**
      * Calculates a hash of the menu content by capturing the menu structure
      * This function should be called from a @Composable context to track state changes
      */
     @Composable
-    fun calculateMenuHash(menuContent: (TrayMenuBuilder.() -> Unit)?): String {
+    public fun calculateMenuHash(menuContent: (TrayMenuBuilder.() -> Unit)?): String {
         if (menuContent == null) return "empty"
 
         // Create a capturing menu builder that records all operations

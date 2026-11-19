@@ -2,6 +2,7 @@ package dev.nucleusframework.tray.utils
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ImageComposeScene
+import dev.nucleusframework.tray.InternalNucleusTrayApi
 import kotlinx.coroutines.Dispatchers
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.EncodedImageFormat
@@ -14,7 +15,8 @@ import java.util.zip.CRC32
 /**
  * Utility functions for rendering Composable icons to image files for use in system tray.
  */
-internal object ComposableIconUtils {
+@InternalNucleusTrayApi
+public object ComposableIconUtils {
     /**
      * Renders a Composable to a PNG file and returns the path to the file.
      *
@@ -23,7 +25,7 @@ internal object ComposableIconUtils {
      * @return Path to the generated PNG file
      * @throws Exception if rendering fails completely
      */
-    fun renderComposableToPngFile(
+    public fun renderComposableToPngFile(
         iconRenderProperties: IconRenderProperties,
         content: @Composable () -> Unit,
     ): String = IconFileCache.store(renderComposableToPngBytes(iconRenderProperties, content), "png")
@@ -41,7 +43,7 @@ internal object ComposableIconUtils {
      * @return A byte array containing the rendered PNG image data.
      * @throws Exception if rendering fails
      */
-    fun renderComposableToPngBytes(
+    public fun renderComposableToPngBytes(
         iconRenderProperties: IconRenderProperties,
         content: @Composable () -> Unit,
     ): ByteArray =
@@ -62,7 +64,7 @@ internal object ComposableIconUtils {
      * @return Path to the generated ICO file
      * @throws Exception if rendering fails
      */
-    fun renderComposableToIcoFile(
+    public fun renderComposableToIcoFile(
         iconRenderProperties: IconRenderProperties,
         content: @Composable (() -> Unit),
     ): String = IconFileCache.store(renderComposableToIcoBytes(iconRenderProperties, content), "ico")
@@ -79,7 +81,7 @@ internal object ComposableIconUtils {
      * @return Byte array containing the ICO data
      * @throws Exception if rendering fails
      */
-    fun renderComposableToIcoBytes(
+    public fun renderComposableToIcoBytes(
         iconRenderProperties: IconRenderProperties,
         content: @Composable () -> Unit,
     ): ByteArray =
@@ -100,7 +102,7 @@ internal object ComposableIconUtils {
      * @return A hash value representing the current state of the composable content
      */
     @Composable
-    fun calculateContentHash(
+    public fun calculateContentHash(
         iconRenderProperties: IconRenderProperties,
         content: @Composable () -> Unit,
     ): Long =

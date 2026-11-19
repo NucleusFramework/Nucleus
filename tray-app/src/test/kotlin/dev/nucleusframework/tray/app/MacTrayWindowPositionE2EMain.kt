@@ -2,6 +2,7 @@ package dev.nucleusframework.tray.app
 
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
+import dev.nucleusframework.tray.MacTrayHooks
 import dev.nucleusframework.tray.internal.MacTrayInitializer
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -37,7 +38,7 @@ object MacTrayWindowPositionE2EMain {
         try {
             repeat(TRIALS) { trial ->
                 val id = "e2e-tray-$trial"
-                MacTrayInitializer.initialize(id, icon.absolutePath, "e2e")
+                MacTrayHooks.initialize(id, icon.absolutePath, "e2e")
                 try {
                     val immediate = IntArray(2)
                     val immediatePrecise = MacTrayInitializer.statusItemPositionFor(id, immediate)
@@ -87,7 +88,7 @@ object MacTrayWindowPositionE2EMain {
                         println("TRIAL=$trial RESULT=OK")
                     }
                 } finally {
-                    MacTrayInitializer.dispose(id)
+                    MacTrayHooks.dispose(id)
                 }
             }
         } finally {

@@ -12,6 +12,7 @@ plugins {
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(project(":tray"))
+    implementation(project(":tray-app"))
     implementation(project(":core-runtime"))
     implementation(project(":darkmode-detector"))
     implementation(project(":decorated-window-tao"))

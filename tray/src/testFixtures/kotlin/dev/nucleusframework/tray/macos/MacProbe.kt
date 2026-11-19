@@ -15,7 +15,7 @@ import kotlin.test.fail
  * Reads what AppKit actually holds for a tray (the `NSStatusItem`, its button and the `NSMenu`
  * tree), through `nativeDebugDescribe`, and what it must hold for a [MenuFuzzer] model.
  */
-internal object MacProbe {
+public object MacProbe {
     val isMac: Boolean =
         System
             .getProperty("os.name")
