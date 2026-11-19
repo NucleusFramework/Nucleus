@@ -33,10 +33,16 @@ internal object NativeTaoLinuxDndBridge {
     val isLoaded: Boolean get() = loaded
 
     interface Callback {
-        /** Updates the file preview for this drag; null clears the preview. */
-        fun onDragFiles(
+        /**
+         * Updates the preview for this drag: local [files] (paths), plain
+         * [text] and non-file [uris] read from the negotiated target, each
+         * `null` when absent (#930). All three `null` clears the preview.
+         */
+        fun onDragData(
             handle: Long,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         )
 
         @Suppress("FunctionParameterNaming")
@@ -45,7 +51,7 @@ internal object NativeTaoLinuxDndBridge {
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int
 
         @Suppress("FunctionParameterNaming")
@@ -54,7 +60,7 @@ internal object NativeTaoLinuxDndBridge {
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int
 
         fun onDragLeave(handle: Long)
@@ -66,6 +72,8 @@ internal object NativeTaoLinuxDndBridge {
             y: Int,
             modState: Int,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ): Int
     }
 

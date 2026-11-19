@@ -525,7 +525,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
      * JNI arrives on the panel's X event thread. Hop async onto Tao main
      * like pointer events — the dispatcher queue keeps enter/over/drop in
      * order. [XdndStatus] uses an optimistic COPY when the source offers
-     * files: a tray popup is a drop zone, and blocking the event thread
+     * files, a URI or text: a tray popup is a drop zone, and blocking the event thread
      * for Compose would deadlock dispose.
      */
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
@@ -543,10 +543,10 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int {
-            TaoDnDDiagnostics.log("linux standalone popup onDragEnter x=$x y=$y hasFiles=$hasFiles")
-            if (!hasFiles) return PopupNativeBridgeLinux.DROP_EFFECT_NONE
+            TaoDnDDiagnostics.log("linux standalone popup onDragEnter x=$x y=$y hasData=$hasData")
+            if (!hasData) return PopupNativeBridgeLinux.DROP_EFFECT_NONE
             onMain { TaoSceneDnD.onDragEnter(node(), x, y) }
             return PopupNativeBridgeLinux.DROP_EFFECT_COPY
         }
@@ -556,7 +556,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int {
             onMain { TaoSceneDnD.onDragOver(node(), x, y) }
             return PopupNativeBridgeLinux.DROP_EFFECT_COPY
@@ -573,9 +573,15 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
             y: Int,
             modState: Int,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ): Int {
-            TaoDnDDiagnostics.log("linux standalone popup onDrop x=$x y=$y files=${files?.size ?: 0}")
-            onMain { TaoSceneDnD.onDrop(node(), x, y, files) }
+            TaoDnDDiagnostics.log(
+                "linux standalone popup onDrop x=$x y=$y files=${files?.size ?: 0} " +
+                    "text=${text != null} uris=${uris?.size ?: 0}",
+            )
+            val data = TaoSceneDnD.inboundPayload(files = files, text = text, uris = uris)
+            onMain { TaoSceneDnD.onDrop(node(), x, y, data) }
             return PopupNativeBridgeLinux.DROP_EFFECT_COPY
         }
     }

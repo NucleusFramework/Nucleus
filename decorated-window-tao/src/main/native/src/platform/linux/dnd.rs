@@ -66,7 +66,7 @@ use tao::platform::unix::WindowExtUnix;
 
 use crate::state::{JAVA_VM, WINDOWS};
 
-use super::drag_data::{DragDataState, DropPosition, ReceivedData};
+use super::drag_data::{DragDataState, DropPosition, InboundPayload, ReceivedData};
 
 // ── Drop-effect constants (must match Kotlin DROP_EFFECT_*) ────────────────
 
@@ -289,7 +289,7 @@ fn dispatch_motion(
     method: &str,
     x: jint,
     y: jint,
-    has_files: bool,
+    has_data: bool,
 ) -> jint {
     let Some(vm) = JAVA_VM.get() else {
         return DROP_EFFECT_NONE;
@@ -306,7 +306,7 @@ fn dispatch_motion(
             JValue::Int(x),
             JValue::Int(y),
             JValue::Int(0),
-            JValue::Bool(if has_files { JNI_TRUE } else { JNI_FALSE }),
+            JValue::Bool(if has_data { JNI_TRUE } else { JNI_FALSE }),
         ],
     );
     if env.exception_check().unwrap_or(false) {
@@ -317,26 +317,53 @@ fn dispatch_motion(
     res.and_then(|v| v.i()).unwrap_or(DROP_EFFECT_NONE)
 }
 
-fn dispatch_files(handle: u64, callback: &GlobalRef, files: &[String]) {
+/// `String[]` for a non-empty list, `null` otherwise (the Kotlin side reads
+/// `null` as "none").
+fn string_array_or_null<'a>(env: &mut JNIEnv<'a>, items: &[String]) -> Option<JObject<'a>> {
+    if items.is_empty() {
+        Some(JObject::null())
+    } else {
+        build_string_array(env, items)
+    }
+}
+
+fn string_or_null<'a>(env: &mut JNIEnv<'a>, text: Option<&str>) -> Option<JObject<'a>> {
+    match text {
+        Some(text) => env.new_string(text).ok().map(JObject::from),
+        None => Some(JObject::null()),
+    }
+}
+
+/// JNI local refs the payload needs: two arrays, one per element, the text.
+fn payload_ref_capacity(payload: &InboundPayload) -> i32 {
+    (payload.files.len() + payload.uris.len()) as i32 + 8
+}
+
+fn dispatch_data(handle: u64, callback: &GlobalRef, payload: &InboundPayload) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(mut env) = vm.attach_current_thread_permanently() else {
         return;
     };
     let _ = env.with_local_frame(
-        files.len() as i32 + 6,
+        payload_ref_capacity(payload),
         |env| -> Result<(), jni::errors::Error> {
-            let arr = if files.is_empty() {
-                JObject::null()
-            } else if let Some(arr) = build_string_array(env, files) {
-                arr.into()
-            } else {
+            let (Some(files), Some(text), Some(uris)) = (
+                string_array_or_null(env, &payload.files),
+                string_or_null(env, payload.text.as_deref()),
+                string_array_or_null(env, &payload.uris),
+            ) else {
                 return Ok(());
             };
             let _ = env.call_method(
                 callback.as_obj(),
-                "onDragFiles",
-                "(J[Ljava/lang/String;)V",
-                &[JValue::Long(handle as jlong), JValue::Object(&arr)],
+                "onDragData",
+                "(J[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)V",
+                &[
+                    JValue::Long(handle as jlong),
+                    JValue::Object(&files),
+                    JValue::Object(&text),
+                    JValue::Object(&uris),
+                ],
             );
             if env.exception_check().unwrap_or(false) {
                 let _ = env.exception_describe();
@@ -369,7 +396,7 @@ fn dispatch_drop(
     callback: &GlobalRef,
     x: jint,
     y: jint,
-    files: &[String],
+    payload: &InboundPayload,
 ) -> jint {
     let Some(vm) = JAVA_VM.get() else {
         return DROP_EFFECT_NONE;
@@ -377,33 +404,41 @@ fn dispatch_drop(
     let Ok(mut env) = vm.attach_current_thread_permanently() else {
         return DROP_EFFECT_NONE;
     };
-    // The String[] and its elements are JNI local refs. This runs on the Tao
-    // loop thread (attached permanently, frame never popped), so scope them in
-    // a local frame or every drop leaks the array + one ref per file.
-    env.with_local_frame(files.len() as i32 + 6, |env| -> Result<jint, jni::errors::Error> {
-        let arr = match build_string_array(env, files) {
-            Some(a) => a,
-            None => return Ok(DROP_EFFECT_NONE),
-        };
-        let res = env.call_method(
-            callback.as_obj(),
-            "onDrop",
-            "(JIII[Ljava/lang/String;)I",
-            &[
-                JValue::Long(handle as jlong),
-                JValue::Int(x),
-                JValue::Int(y),
-                JValue::Int(0),
-                JValue::Object(&arr),
-            ],
-        );
-        if env.exception_check().unwrap_or(false) {
-            let _ = env.exception_describe();
-            let _ = env.exception_clear();
-            return Ok(DROP_EFFECT_NONE);
-        }
-        Ok(res.and_then(|v| v.i()).unwrap_or(DROP_EFFECT_NONE))
-    })
+    // The arrays, their elements and the text are JNI local refs. This runs on
+    // the Tao loop thread (attached permanently, frame never popped), so scope
+    // them in a local frame or every drop leaks them.
+    env.with_local_frame(
+        payload_ref_capacity(payload),
+        |env| -> Result<jint, jni::errors::Error> {
+            let (Some(files), Some(text), Some(uris)) = (
+                string_array_or_null(env, &payload.files),
+                string_or_null(env, payload.text.as_deref()),
+                string_array_or_null(env, &payload.uris),
+            ) else {
+                return Ok(DROP_EFFECT_NONE);
+            };
+            let res = env.call_method(
+                callback.as_obj(),
+                "onDrop",
+                "(JIII[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)I",
+                &[
+                    JValue::Long(handle as jlong),
+                    JValue::Int(x),
+                    JValue::Int(y),
+                    JValue::Int(0),
+                    JValue::Object(&files),
+                    JValue::Object(&text),
+                    JValue::Object(&uris),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+                return Ok(DROP_EFFECT_NONE);
+            }
+            Ok(res.and_then(|v| v.i()).unwrap_or(DROP_EFFECT_NONE))
+        },
+    )
     .unwrap_or(DROP_EFFECT_NONE)
 }
 
@@ -472,6 +507,34 @@ fn percent_encode_path(input: &str) -> String {
 
 // ── Inbound: gtk_drag_dest_set + signal handlers ───────────────────────────
 
+/// The target to preview this drag through: the first entry of
+/// [`target_entries`] the source offers (`gtk_drag_dest_find_target` walks the
+/// destination list in order, and the drop requests the same one), so a
+/// `text/uri-list` wins over the text targets a browser offers next to it.
+/// `None` when nothing is readable — including the private in-process target,
+/// which carries no data for the scene and still drops with an empty payload.
+fn readable_target(widget: &gtk::Window, ctx: &gtk::gdk::DragContext) -> Option<gtk::gdk::Atom> {
+    widget
+        .drag_dest_find_target(ctx, None)
+        .filter(|target| target.name() != PRIVATE_TARGET)
+}
+
+/// Reads the payload from `drag-data-received` according to the target it was
+/// requested with: a URI list is split into files and URIs, every other
+/// target is text (`gtk_selection_data_get_text` converts `STRING` and the
+/// `text/plain` charsets to UTF-8, and answers `NULL` for the private target).
+fn read_payload(data: &gtk::SelectionData) -> InboundPayload {
+    if data.length() < 0 {
+        return InboundPayload::default();
+    }
+    if data.target().name() == "text/uri-list" {
+        let uris: Vec<String> = data.uris().iter().map(|uri| uri.to_string()).collect();
+        InboundPayload::from_uri_list(&uris, uri_to_path)
+    } else {
+        InboundPayload::from_text(data.text().map(|text| text.to_string()))
+    }
+}
+
 fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str> {
     let widget: gtk::Window =
         with_window(handle, |w| w.gtk_window().clone()).ok_or("window not found")?;
@@ -521,22 +584,19 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
             *context_motion.borrow_mut() = Some(ctx.clone());
             *data_motion.borrow_mut() = DragDataState::default();
             ready_motion.set(false);
-            dispatch_files(handle, &cb_motion, &[]);
+            dispatch_data(handle, &cb_motion, &InboundPayload::default());
         }
         position_motion.set((x, y, time));
 
-        let has_files = ctx
-            .list_targets()
-            .iter()
-            .any(|atom| atom.name() == "text/uri-list");
+        let target = readable_target(w, ctx);
+        let has_data = target.is_some();
 
         let (px, py) = translate_to_content_phys(&widget_motion, x, y);
 
-        // Defer the enter until the paths arrive so acceptance can inspect them.
-        if has_files && !ready_motion.get() {
+        // Defer the enter until the data arrives so acceptance can inspect it.
+        if let Some(target) = target.as_ref().filter(|_| !ready_motion.get()) {
             if data_motion.borrow_mut().request_preview() {
-                let target = gtk::gdk::Atom::intern("text/uri-list");
-                w.drag_get_data(ctx, &target, time);
+                w.drag_get_data(ctx, target, time);
             }
             ctx.drag_status(DragAction::COPY, time);
             acc_motion.set(true);
@@ -549,12 +609,7 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
             ent_motion.set(true);
             "onDragEnter"
         };
-        let effect = dispatch_motion(handle, &cb_motion, method, px, py, has_files);
-        let request_preview = has_files && data_motion.borrow_mut().request_preview();
-        if request_preview {
-            let target = gtk::gdk::Atom::intern("text/uri-list");
-            w.drag_get_data(ctx, &target, time);
-        }
+        let effect = dispatch_motion(handle, &cb_motion, method, px, py, has_data);
         let action = map_effect_to_action(effect);
         if effect == DROP_EFFECT_NONE {
             ctx.drag_status(DragAction::empty(), time);
@@ -667,19 +722,11 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
                 }
                 return;
             }
-            let mut paths: Vec<String> = Vec::new();
-            if data.length() >= 0 {
-                let uris = data.uris();
-                if !uris.is_empty() {
-                    paths.extend(uris.iter().map(|uri| uri_to_path(uri.as_str())));
-                } else if let Some(text) = data.text() {
-                    paths.push(text.to_string());
-                }
-            }
+            let payload = read_payload(data);
             match received {
                 ReceivedData::Preview => {
                     ready_received.set(true);
-                    dispatch_files(handle, &cb_received, &paths);
+                    dispatch_data(handle, &cb_received, &payload);
                     if pending_received.borrow().is_some() {
                         return;
                     }
@@ -704,10 +751,10 @@ fn install_inbound(handle: u64, callback: GlobalRef) -> Result<(), &'static str>
                         translate_to_content_phys(&widget_received, position.x, position.y);
                     // Released before the preview arrived: enter with the real payload first.
                     if !ent_received.replace(true) {
-                        dispatch_files(handle, &cb_received, &paths);
+                        dispatch_data(handle, &cb_received, &payload);
                         dispatch_motion(handle, &cb_received, "onDragEnter", px, py, true);
                     }
-                    let effect = dispatch_drop(handle, &cb_received, px, py, &paths);
+                    let effect = dispatch_drop(handle, &cb_received, px, py, &payload);
                     ctx.drag_finish(effect != DROP_EFFECT_NONE, false, position.time);
                     ent_received.set(false);
                     acc_received.set(false);
