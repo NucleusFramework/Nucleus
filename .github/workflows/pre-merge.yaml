@@ -226,6 +226,19 @@ jobs:
           sleep 1
           ./gradlew :decorated-window-tao:taoHeadfulTest
 
+      - name: Tray TrayApp E2E (Linux, under Xvfb + openbox)
+        if: runner.os == 'Linux' && !cancelled()
+        # LinuxTrayAppE2ETest skips without a display, so preMerge never runs it: a real
+        # nucleusApplication + TrayApp per scenario, its popups read back from the X server.
+        # Its own Xvfb, so it runs whether or not the headful suite passed.
+        run: |
+          export DISPLAY=:98
+          Xvfb :98 -screen 0 1600x1200x24 &
+          for i in $(seq 1 50); do xdpyinfo -display :98 >/dev/null 2>&1 && break; sleep 0.2; done
+          openbox &
+          sleep 1
+          ./gradlew :tray-app:test --tests 'dev.nucleusframework.tray.linux.LinuxTrayAppE2ETest' -PtrayE2eRequired=true
+
       - name: Run headful suite
         if: runner.os != 'Linux'
         run: ./gradlew :decorated-window-tao:taoHeadfulTest

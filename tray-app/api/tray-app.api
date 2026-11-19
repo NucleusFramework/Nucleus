@@ -1,0 +1,59 @@
+public final class dev/nucleusframework/tray/app/TrayAppKt {
+	public static final fun TrayApp-GPGae1c (Ldev/nucleusframework/application/NucleusApplicationScope;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+	public static final fun TrayApp-ndtmDTs (Ldev/nucleusframework/application/NucleusApplicationScope;Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun TrayApp-ndtmDTs (Ldev/nucleusframework/application/NucleusApplicationScope;Lorg/jetbrains/compose/resources/DrawableResource;Landroidx/compose/ui/graphics/vector/ImageVector;Landroidx/compose/ui/graphics/Color;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun TrayApp-p67tCZc (Ldev/nucleusframework/application/NucleusApplicationScope;Landroidx/compose/ui/graphics/painter/Painter;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+	public static final fun TrayApp-p67tCZc (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function2;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+	public static final fun TrayApp-p67tCZc (Ldev/nucleusframework/application/NucleusApplicationScope;Lorg/jetbrains/compose/resources/DrawableResource;Ldev/nucleusframework/tray/utils/IconRenderProperties;Ljava/lang/String;Ldev/nucleusframework/tray/app/TrayAppState;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/animation/EnterTransition;Landroidx/compose/animation/ExitTransition;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZIILkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;III)V
+}
+
+public final class dev/nucleusframework/tray/app/TrayAppState {
+	public static final field $stable I
+	public fun <init> ()V
+	public synthetic fun <init> (JZLdev/nucleusframework/tray/app/TrayWindowDismissMode;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JZLdev/nucleusframework/tray/app/TrayWindowDismissMode;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getDismissMode ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getWindowSize ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun hide ()V
+	public final fun isVisible ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun onVisibilityChanged (Lkotlin/jvm/functions/Function1;)V
+	public final fun setDismissMode (Ldev/nucleusframework/tray/app/TrayWindowDismissMode;)V
+	public final fun setWindowSize-EaSLcWc (J)V
+	public final fun setWindowSize-YgX7TsA (FF)V
+	public final fun show ()V
+	public final fun toggle ()V
+}
+
+public final class dev/nucleusframework/tray/app/TrayAppStateKt {
+	public static final fun rememberTrayAppState-csNNkCE (JZLdev/nucleusframework/tray/app/TrayWindowDismissMode;Landroidx/compose/runtime/Composer;II)Ldev/nucleusframework/tray/app/TrayAppState;
+}
+
+public final class dev/nucleusframework/tray/app/TrayPosition : java/lang/Enum {
+	public static final field BOTTOM_LEFT Ldev/nucleusframework/tray/app/TrayPosition;
+	public static final field BOTTOM_RIGHT Ldev/nucleusframework/tray/app/TrayPosition;
+	public static final field TOP_LEFT Ldev/nucleusframework/tray/app/TrayPosition;
+	public static final field TOP_RIGHT Ldev/nucleusframework/tray/app/TrayPosition;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/tray/app/TrayPosition;
+	public static fun values ()[Ldev/nucleusframework/tray/app/TrayPosition;
+}
+
+public final class dev/nucleusframework/tray/app/TrayPositionKt {
+	public static final fun getTrayPosition ()Ldev/nucleusframework/tray/app/TrayPosition;
+}
+
+public final class dev/nucleusframework/tray/app/TrayWindowDismissMode : java/lang/Enum {
+	public static final field AUTO Ldev/nucleusframework/tray/app/TrayWindowDismissMode;
+	public static final field MANUAL Ldev/nucleusframework/tray/app/TrayWindowDismissMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/tray/app/TrayWindowDismissMode;
+	public static fun values ()[Ldev/nucleusframework/tray/app/TrayWindowDismissMode;
+}
+
+public final class dev/nucleusframework/tray/app/TrayWindowPositionKt {
+	public static final fun getTrayWindowPosition (IIII)Landroidx/compose/ui/window/WindowPosition;
+	public static synthetic fun getTrayWindowPosition$default (IIIIILjava/lang/Object;)Landroidx/compose/ui/window/WindowPosition;
+	public static final fun getTrayWindowPositionForInstance (Ljava/lang/String;IIII)Landroidx/compose/ui/window/WindowPosition;
+	public static synthetic fun getTrayWindowPositionForInstance$default (Ljava/lang/String;IIIIILjava/lang/Object;)Landroidx/compose/ui/window/WindowPosition;
+}
+

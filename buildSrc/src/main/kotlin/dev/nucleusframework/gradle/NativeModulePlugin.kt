@@ -130,6 +130,8 @@ open class NativeModuleExtension(
                 // only the launcher script under the per-OS directory.
                 include("Cargo.toml", "Cargo.lock", "build.rs", "src/**")
                 include("${target.sourceDirName}/**")
+                // Headers shared by the per-OS bridges of one module (tray's jni_utf8.h).
+                include("shared/**")
                 // Vendored tao is patched in-tree (#533 discrete scroll lives
                 // there). Other vendor trees (accesskit forks, ANGLE headers)
                 // are large and rarely change independently of `src/**`.

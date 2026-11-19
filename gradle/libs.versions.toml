@@ -10,7 +10,6 @@ batik = "1.19"
 coilVersion = "3.6.3"
 compose = "1.12.1"
 coroutines = "1.11.0"
-composenativetray = "2.1.6"
 composewebview = "1.0.3"
 detekt = "2.0.0-alpha.6"
 downloadTask = "5.7.0"
@@ -116,10 +115,10 @@ compose-desktop-common = { module = "org.jetbrains.compose.desktop:desktop", ver
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose" }
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose" }
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose" }
+compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose" }
 compose-material = { module = "org.jetbrains.compose.material:material", version.ref = "compose" }
 compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
 compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "materialIcons" }
-composenativetray = { module = "dev.nucleusframework:composenativetray", version.ref = "composenativetray" }
 composewebview = { module = "dev.nucleusframework:composewebview", version.ref = "composewebview" }
 filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }

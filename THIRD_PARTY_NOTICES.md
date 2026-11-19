@@ -178,6 +178,32 @@ and FFI with a JSON protocol of its own, and reworked the parts listed in the fi
 
 ---
 
+## 9. stb_image / stb_image_resize2 — vendored source, compiled into a shipped binary (MIT OR public domain)
+
+`tray/src/main/native/linux/stb_image.h` and `stb_image_resize2.h` (Sean Barrett and contributors,
+https://github.com/nothings/stb) are compiled into `libnucleus_tray.so` to decode and scale tray
+icons. They are dual-licensed; Nucleus uses them under the MIT License (Alternative A at the end of
+each header):
+
+```
+Copyright (c) 2017 Sean Barrett
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Build-time tools (not redistributed)
 
 These are resolved on the build machine and are **not** shipped inside any Nucleus artifact. They
