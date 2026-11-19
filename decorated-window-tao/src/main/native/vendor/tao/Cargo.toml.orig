@@ -1,6 +1,6 @@
 [package]
 name = "tao"
-version = "0.37.2"
+version = "0.37.3"
 description = "Cross-platform window manager library."
 authors = [
   "Tauri Programme within The Commons Conservancy",
@@ -148,8 +148,10 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSGraphics",
   "NSGraphicsContext",
   "NSImage",
+  "NSImageView",
   "NSOpenGLView",
   "NSPasteboard",
+  "NSProgressIndicator",
   "NSResponder",
   "NSTextInputClient",
   "NSTextInputContext",

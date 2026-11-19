@@ -1364,16 +1364,27 @@ impl<T: 'static> EventLoop<T> {
             taskbar.update_count(count, desktop_filename);
           }
           WindowRequest::SetTheme(theme) => {
+            // `None` means "follow the system", not light.
+            #[cfg(feature = "dbus")]
+            let theme = theme.or_else(|| super::portal::theme().ok());
             if let Some(settings) = Settings::default() {
               settings.set_gtk_application_prefer_dark_theme(theme == Some(Theme::Dark));
-              if let Err(e) = event_tx.send(Event::WindowEvent {
-                window_id: RootWindowId(id),
-                event: WindowEvent::ThemeChanged(theme.unwrap_or_default()),
-              }) {
-                log::warn!(
-                  "Failed to send window theme changed event to event channel: {}",
-                  e
-                );
+              // The dark preference is the application's, so every window changes with it.
+              // Each one is told under its own id: `id` here is the dummy one.
+              let theme = theme.unwrap_or_default();
+              for window in app_.windows() {
+                let Some(window) = window.downcast_ref::<gtk::ApplicationWindow>() else {
+                  continue;
+                };
+                if let Err(e) = event_tx.send(Event::WindowEvent {
+                  window_id: RootWindowId(WindowId(window.id())),
+                  event: WindowEvent::ThemeChanged(theme),
+                }) {
+                  log::warn!(
+                    "Failed to send window theme changed event to event channel: {}",
+                    e
+                  );
+                }
               }
             }
           }

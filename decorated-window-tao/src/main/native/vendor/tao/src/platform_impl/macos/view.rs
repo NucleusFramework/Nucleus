@@ -592,13 +592,23 @@ define_class!(
     #[unsafe(method(otherMouseDown:))]
     fn other_mouse_down(&self, event: &NSEvent) {
       mouse_motion(self, event);
-      mouse_click(self, event, other_mouse_button(event), ElementState::Pressed);
+      mouse_click(
+        self,
+        event,
+        other_mouse_button(event),
+        ElementState::Pressed,
+      );
     }
 
     #[unsafe(method(otherMouseUp:))]
     fn other_mouse_up(&self, event: &NSEvent) {
       mouse_motion(self, event);
-      mouse_click(self, event, other_mouse_button(event), ElementState::Released);
+      mouse_click(
+        self,
+        event,
+        other_mouse_button(event),
+        ElementState::Released,
+      );
     }
 
     #[unsafe(method(mouseMoved:))]
@@ -1202,6 +1212,15 @@ fn update_potentially_stale_modifiers(state: &ViewState, event: &NSEvent) {
   }
 }
 
+/// The button of an `otherMouseDown:` or `otherMouseUp:` event. Back and
+/// forward are usually 3 and 4.
+fn other_mouse_button(event: &NSEvent) -> MouseButton {
+  match unsafe { event.buttonNumber() } {
+    2 => MouseButton::Middle,
+    n => MouseButton::Other(n as u16),
+  }
+}
+
 fn mouse_click(this: &TaoView, event: &NSEvent, button: MouseButton, button_state: ElementState) {
   unsafe {
     let state = this.ivars();
@@ -1219,16 +1238,6 @@ fn mouse_click(this: &TaoView, event: &NSEvent, button: MouseButton, button_stat
     };
 
     AppState::queue_event(EventWrapper::StaticEvent(window_event));
-  }
-}
-
-// Nucleus: `otherMouseDown:` fires for every button past the right one, so
-// read `buttonNumber` instead of assuming Middle — 3/4 are the back/forward
-// side buttons, surfaced as `Other(3)` / `Other(4)`.
-fn other_mouse_button(event: &NSEvent) -> MouseButton {
-  match event.buttonNumber() {
-    2 => MouseButton::Middle,
-    n => MouseButton::Other(n as u16),
   }
 }
 

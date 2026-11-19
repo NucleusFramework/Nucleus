@@ -6,7 +6,8 @@ tao should take.
 
 ## Pinned upstream version
 
-- **tao**: `0.37.2` (crates.io), taken by the bump from 0.35.0.
+- **tao**: `0.37.3` (crates.io), taken by the bumps from 0.35.0 to 0.37.2 and
+  then to 0.37.3.
 - Pristine source: the `.crate` from crates.io, checked against the checksum in
   the crates.io index. Cargo never downloads it here, since `[patch.crates-io]`
   points tao at `../tao/`:
@@ -29,8 +30,8 @@ differs between `../tao/` and pristine tao at the pinned version. To see them,
 from `decorated-window-tao/src/main/native`:
 
 ```bash
-W=$(mktemp -d) && fetch_tao 0.37.2 "$W/crates"
-diff -ruN --exclude=target "$W/crates/tao-0.37.2" vendor/tao
+W=$(mktemp -d) && fetch_tao 0.37.3 "$W/crates"
+diff -ruN --exclude=target "$W/crates/tao-0.37.3" vendor/tao
 ```
 
 The 0.35.0 tree kept a numbered patch series (`0001`–`0019`). It covered
@@ -42,9 +43,15 @@ each change; the old descriptions are in git history
 
 ## Catalog
 
-**Outcome on 0.37.2**: *kept* (re-applied unchanged in meaning), *ported*
+**Outcome on 0.37.2 and 0.37.3**: *kept* (re-applied unchanged in meaning), *ported*
 (re-expressed on upstream's new structure), *dropped* (upstream now does it, or
-it no longer applies).
+it no longer applies). Where 0.37.3 changed a row's outcome, the row says so.
+Everything else in 0.37.3 was taken as is: on Linux, `set_theme(None)` follows
+the portal (#1378) and `ThemeChanged` goes to each window's own id (#1413); on
+macOS, main-thread window methods (#1420), redraws queued while the handler
+runs (#1386) and the maximizable fix (#1411); on Windows, logical positions
+matched to the closest monitor (#1397), `drag_window` from other threads
+(#1400) and size constraints for undecorated windows with shadows (#1436).
 
 **Upstream**: *send* (a bug in stock tao that a small, self-contained PR would
 fix), *maybe* (useful, but needs new public API or a design discussion first),
@@ -68,7 +75,7 @@ is what was found in tao's issues, PRs and `dev` branch on 2026-11-17.
 | Drain the draw queue; never park with redraws pending (old `0004`) | 66b34a26a | kept | send | Open upstream work: #1335 / #1336. Comment there instead of a duplicate PR. |
 | Real X server timestamp for focus and restore (old `0005`) | 1b582e9e9 | kept | send | Related: tauri#6310, tauri#5974. Mutter ignores the requests without it. |
 | Native GTK CSD shadow on undecorated Wayland windows (hidden title bar) | de5e20ff9 | kept | maybe | Tauri users ask for a native shadow; needs API design. |
-| Discrete wheel scroll gives a unit delta | f81fca49e | kept | send | The bug is in stock 0.37.2 (no `SMOOTH_SCROLL_MASK` handling). |
+| Discrete wheel scroll gives a unit delta | f81fca49e | kept | send | The bug is in stock 0.37.3 (no `SMOOTH_SCROLL_MASK` handling). |
 | Empty, reversible click-through input region (old `0006`) | d1aa1d3a9 | kept | send | Open upstream work: #1409, #1204, #1425. Offer the empty-region part. |
 | Force one window onto X11 in a Wayland session | 446c3237b | kept | no | |
 | Input method: `IMMulticontext`, preedit/commit events, filter-first key path, press/release pairing, `set_ime_position` | 3d58c5279, 7bc9ea602, 105b6c9e3 | kept | split | The `IMMulticontext` switch and `set_ime_position`: send (CJK input does not work in stock tao). Preedit/commit events: maybe, needs a cross-platform `Ime` event. WebKit runs its own input context, so offer it opt-in. |
@@ -108,22 +115,22 @@ Taken: #1173 (`RwLock` fields), #1351 (null display checks), #1228 (JIS keys),
 
 | Change | Commits | Outcome | Upstream | Upstream status / notes |
 |---|---|---|---|---|
-| `setFrameTopLeftPoint` / `setContentSize` applied synchronously on the main thread | 6d7f082f6, 558c8162f | ported | drop at the next release | Fixed on upstream `dev` by #1420 (closes #1406; supersedes #1024), not yet released. |
+| `setFrameTopLeftPoint` / `setContentSize` applied synchronously on the main thread | 6d7f082f6, 558c8162f | dropped on 0.37.3 | — | Upstream #1420 (closes #1406) runs every window method on the main thread, synchronously. |
 | `PanicInfo` Weak gone after the loop exits: return instead of panicking in `wakeup` / `cleared` | dc02669df, 93fad99f2 | kept | send | Two-line fix; still `.expect` on `dev`. Closest report: winit#2282. |
 | Force-set the cursor when it changes inside the current cursor rect | f213b9533 | ported | maybe | |
 | No hidden `NSTextView` first responder (no forced I-beam) | ff3871d76 | kept | no | |
-| Maximize at creation without the zoom animation; `is_zoomed` against `visibleFrame` | feb07a2f4, a3a799d33 | ported | maybe | |
-| Resize steps delivered during AppKit's zoom animation, one present per resize, and AppKit's own frame animations stepped (#576) | 3642e16b5, b92531fc7, 9c8fff627 | ported (`setFrame:display:animate:` is now a `define_class!` method) | maybe | Open upstream PR #1207 takes a different route (`windowShouldZoom:toFrame:`). Comment there. |
+| Maximize at creation without the zoom animation; `is_zoomed` against `visibleFrame` | feb07a2f4, a3a799d33 | ported; on 0.37.3 re-ported onto `WindowDelegate`'s ivars (#1420 removed `UnownedWindow` and `SharedState`) | maybe | |
+| Resize steps delivered during AppKit's zoom animation, one present per resize, and AppKit's own frame animations stepped (#576) | 3642e16b5, b92531fc7, 9c8fff627 | ported (`setFrame:display:animate:` is now a `define_class!` method); on 0.37.3 the zoom state moved to `WindowDelegate`'s ivars, and the animation holds the delegate weakly | maybe | Open upstream PR #1207 takes a different route (`windowShouldZoom:toFrame:`). Comment there. |
 | Input method (#595): preedit and commit events, `markedRange` length, `selectedRange`, `attributedSubstringForProposedRange`, `characterIndexForPoint`, input-method-consumed key events | 95e3b4bbb, 3b9fdcbc3 | ported to the `define_class!` view | split | `markedRange` and the stub answers: send (winit already returns `{0, len}`). Events and consumed keys: maybe, needs an `Ime` event. |
 | Press-and-hold accent picker: repeats go to `interpretKeyEvents`, commits through `replacementRange` (#611, #612) | 94b50c656, e37a77777, cf83ec2e0 | ported | send | winit has no repeat gate. Needs a test that repeats don't type twice. |
 | Overlay-safe detach; `set_focusable` retain leak (#494) | 5c63ce0f2 | detach kept, leak fix dropped | no | Upstream's `AtomicBool` ivar no longer leaks. |
-| Cancelable quit: `terminate:` override, Electron's semantics | ff38b93b1, a4801d8e3 | ported (`extern "C-unwind"`, like upstream's `sendEvent:`) | maybe | Upstream's `ExitRequested` work (#1003) is open and conflicting. |
+| Cancelable quit: `terminate:` override, Electron's semantics | ff38b93b1, a4801d8e3 | ported; on 0.37.3 a `define_class!` method of `TaoApp`, as upstream's `sendEvent:` became | maybe | Upstream's `ExitRequested` work (#1003) is open and conflicting. |
 | Trackpad scrolling as AWT does it: `ScrollPhase`, horizontal sign not negated, `PixelDelta` in logical points (#652–#656) | fe7b213f9 | ported | split | Sign: send, following winit #2105, but it changes behavior for existing users. Phase: maybe, model it on winit's `ScrollSource`. Logical points: no. |
 | Hover kept through AppKit's phantom `mouseExited`; position on `mouseEntered` | 2c7ea4165 | ported | maybe | |
-| Back and forward mouse buttons from `buttonNumber` | c784a8863 | ported | send | `dev` maps every other button to `Middle`; winit reads `buttonNumber`. |
+| Back and forward mouse buttons from `buttonNumber` | c784a8863 | dropped on 0.37.3 | — | Upstream #1434, the same mapping. |
 | Cursor hook for the embedder; WebKit cursor loading that can fail (#746) | 2029e9c82, 24e00fd3b | ported to `Retained<NSCursor>`; upstream's lenient hotspot parsing taken | split | Fallible loading: send (`dev` still unwraps). Hook: no. A missing hotspot now gives (0, 0) where it gave the arrow. |
 | Tablet pen device ids (old `0012`) | f1a4f58eb | ported | maybe | |
-| Minimize/deminimize hook in the window delegate | (with the above) | ported | no | |
+| Minimize/deminimize hook in the window delegate | (with the above) | ported (0.37.3: on `WindowDelegate` itself) | no | |
 
 ### Windows
 
@@ -131,7 +138,7 @@ Taken: #1173 (`RwLock` fields), #1351 (null display checks), #1228 (JIS keys),
 |---|---|---|---|---|
 | Nucleus's IMM32 state machine: preedit and commit events | 327ce6a6f, 096172a23, b15a1e0a6 | kept; replaces upstream's `ime.rs`, and upstream's `WM_IME_ENDCOMPOSITION` text event is dropped (it typed every commit twice) | maybe | `dev` has `// TODO: Catch up with winit on the IME events`. Needs an `Ime` event. |
 | `VK_PROCESSKEY` keys not delivered (#558) | 327ce6a6f | kept on upstream's keyboard refactor (#1238) | send | |
-| `set_ime_position` places the candidate window too | 327ce6a6f | kept | send | `dev` calls only `ImmSetCompositionWindow`. |
+| `set_ime_position` places the candidate window too | 327ce6a6f | dropped on 0.37.3 | — | Upstream #1437, the same code. |
 | Key-event locks not held across `PeekMessageW` (#640) | 5ccfec799 | dropped | — | Upstream #1215 / #1238. |
 | Input locks released before pumping calls (#644) | 34847dde2 | kept, except the `TaskbarCreated` part | — | `TaskbarCreated` is upstream #1264. |
 | No `RegisterTouchWindow` (caption drags by touch) | 507b904c9 | kept (the call moved to `InitData::create_window`) | send | Open upstream issue #525; add the root cause there. |
@@ -176,8 +183,8 @@ In rough order of value for effort:
    extents, the size echo for hidden windows, the non-resizable content size
    (#561).
 2. Small macOS fixes: the `PanicInfo` return, fallible WebKit cursor loading,
-   `buttonNumber`, `markedRange` and the `NSTextInputClient` stubs.
-3. Small Windows fixes: the candidate window in `set_ime_position`, the
+   `markedRange` and the `NSTextInputClient` stubs.
+3. Small Windows fixes: the
    `VK_PROCESSKEY` drop, `GetCursorPos` for the synthetic `WM_LBUTTONUP`, the
    `FlashWindow` guard, un-minimize to maximized, `set_min_inner_size`.
 4. Comments on existing threads instead of new PRs: #1335/#1336 (draw queue),
@@ -186,8 +193,6 @@ In rough order of value for effort:
 5. Proposals that need API design first: a cross-platform `Ime` event
    (preedit and commit; Linux `IMMulticontext` as an opt-in), a scroll phase
    modelled on winit's `ScrollSource`, pointer source device ids.
-
-After #1420 ships in a release, drop the macOS synchronous-setter change.
 
 ## Bump procedure
 
@@ -202,7 +207,7 @@ no longer exists; on the 0.37.2 bump that was `windows/minimal_ime.rs`.) From
 `decorated-window-tao/src/main/native`:
 
 ```bash
-OLD=0.37.2 NEW=0.38.0   # the pinned version, and the one to move to
+OLD=0.37.3 NEW=0.38.0   # the pinned version, and the one to move to
 NATIVE=$PWD W=$(mktemp -d)
 fetch_tao $OLD "$W/crates" && fetch_tao $NEW "$W/crates"
 cd "$W" && git init -q -b base tree && cd tree
@@ -224,6 +229,13 @@ lines out. On the 0.37.2 bump this check caught a
 `Propagation::Stop` flipped back to `Proceed`, a removed `is_wayland` that
 Nucleus still uses, a re-added `RegisterTouchWindow`, and upstream's IME text
 event typing every commit twice.
+
+A patch release can restructure as much as a minor one: 0.37.3 (#1420) moved
+the macOS window methods and their state from `UnownedWindow` and `SharedState`
+into `WindowDelegate` and its ivars, and turned `TaoApp` into a `define_class!`.
+Where upstream rewrote a file like that, it is simpler to start from upstream's
+version (`git show new:<file> > <file>`) and re-express each hunk of
+`git diff base nucleus -- <file>` on it than to resolve the conflict blocks.
 
 Then copy the result into the vendor directory:
 

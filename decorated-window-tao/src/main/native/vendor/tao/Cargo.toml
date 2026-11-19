@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.85"
 name = "tao"
-version = "0.37.2"
+version = "0.37.3"
 authors = [
     "Tauri Programme within The Commons Conservancy",
     "The winit contributors",
@@ -339,8 +339,10 @@ features = [
     "NSGraphics",
     "NSGraphicsContext",
     "NSImage",
+    "NSImageView",
     "NSOpenGLView",
     "NSPasteboard",
+    "NSProgressIndicator",
     "NSResponder",
     "NSTextInputClient",
     "NSTextInputContext",
