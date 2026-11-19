@@ -328,6 +328,7 @@ typedef struct nt_tray {
     sd_bus         *bus;
     int             bus_dead;
     char            bus_name[96];
+    char            registered_name[96]; /* what the watcher knows us by: bus_name, or our unique name */
     char           *item_id;
     nt_state       *current;
     uint32_t        revision;
@@ -798,7 +799,7 @@ static int registered_reply(sd_bus_message *m, void *userdata, sd_bus_error *err
 
 static void register_with_watcher(nt_tray *t) {
     sd_bus_call_method_async(t->bus, NULL, WATCHER_BUS, WATCHER_PATH, WATCHER_IFACE,
-                             "RegisterStatusNotifierItem", registered_reply, t, "s", t->bus_name);
+                             "RegisterStatusNotifierItem", registered_reply, t, "s", t->registered_name);
 }
 
 /* A panel that (re)starts brings a new watcher, which knows nothing of us: register again. */
@@ -927,6 +928,26 @@ static void apply_state(nt_tray *t, nt_state *now) {
 /*  Loop                                                                      */
 /* ========================================================================== */
 
+/*
+ * The item's well-known name, or, when it cannot be had, the connection's unique name: the
+ * spec lets an item register either, and Plasma and GNOME's extension accept both. The name is
+ * taken when another process has the same pid, which every Flatpak sandbox makes likely (each
+ * one numbers its own pids), and a sandbox may not be allowed to own it at all.
+ */
+static int take_name(nt_tray *t) {
+    int r = sd_bus_request_name(t->bus, t->bus_name, 0);
+    if (r >= 0) {
+        snprintf(t->registered_name, sizeof(t->registered_name), "%s", t->bus_name);
+        return 0;
+    }
+    const char *unique = NULL;
+    int u = sd_bus_get_unique_name(t->bus, &unique);
+    if (u < 0 || !unique) return r;
+    snprintf(t->registered_name, sizeof(t->registered_name), "%s", unique);
+    fprintf(stderr, "nucleus_tray: %s unavailable (%s), registering as %s\n", t->bus_name, strerror(-r), unique);
+    return 0;
+}
+
 static int open_bus(nt_tray *t) {
     int r = sd_bus_open_user(&t->bus);
     if (r < 0) {
@@ -936,7 +957,7 @@ static int open_bus(nt_tray *t) {
     }
     r = sd_bus_add_object_vtable(t->bus, NULL, SNI_PATH, SNI_IFACE, sni_vtable, t);
     if (r >= 0) r = sd_bus_add_object_vtable(t->bus, NULL, MENU_PATH, MENU_IFACE, menu_vtable, t);
-    if (r >= 0) r = sd_bus_request_name(t->bus, t->bus_name, 0);
+    if (r >= 0) r = take_name(t);
     if (r >= 0)
         r = sd_bus_match_signal(t->bus, NULL, "org.freedesktop.DBus", "/org/freedesktop/DBus",
                                 "org.freedesktop.DBus", "NameOwnerChanged", watcher_owner_changed, t);

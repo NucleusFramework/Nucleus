@@ -20,6 +20,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
+/** Enough names to cover every tray id this JVM can have reached before the test runs. */
+private const val SQUATTED_NAMES = 2_000
+
 /**
  * Torture suite for the Linux tray backend, driven black-box over D-Bus.
  *
@@ -31,6 +34,7 @@ import kotlin.test.fail
  * Seeded: every random test prints its seed; rerun one with `-PtraySeed=<seed>`, and scale the
  * fuzzers with `-PtrayIterations=<n>`.
  */
+
 class LinuxTrayTortureTest : LinuxTrayTestBase() {
     @Test
     fun `seeded menu fuzzer - the host reads exactly the menu, clicks reach exactly their item`() =
@@ -473,6 +477,43 @@ class LinuxTrayTortureTest : LinuxTrayTestBase() {
                 awaitTrue("Menu back") { panel.sni(service, "Menu") == SniPanel.MENU_PATH }
             } finally {
                 ProcessEnv.set("XDG_CURRENT_DESKTOP", "NucleusTest")
+            }
+        }
+
+    @Test
+    fun `an item name taken by another process falls back to the unique name (issue 429)`() =
+        linuxOnly {
+            // What another Flatpak app with the same (sandboxed) pid does: owns our would-be names.
+            val pid = ProcessHandle.current().pid()
+            val clicks = AtomicInteger()
+            val activations = AtomicInteger()
+            SdBus.connect(LinuxTestBus.address, "squatter").use { squatter ->
+                repeat(SQUATTED_NAMES) { n ->
+                    squatter.call(
+                        "org.freedesktop.DBus",
+                        "/org/freedesktop/DBus",
+                        "org.freedesktop.DBus",
+                        "RequestName",
+                        "su",
+                        "org.kde.StatusNotifierItem-$pid-${n + 1}",
+                        4, // DO_NOT_QUEUE
+                    )
+                }
+                init("squatted", onLeftClick = { activations.incrementAndGet() }) {
+                    Item("still works") { clicks.incrementAndGet() }
+                }
+                val service = panel.serviceOf("squatted", timeoutMs = 10_000)
+                assertTrue(service.startsWith(":"), "registered under its unique name ($service)")
+                assertEquals("still works", panel.menu(service).single().label)
+                panel.click(service, panel.menu(service).single().id)
+                awaitTrue("menu click") { clicks.get() == 1 }
+                panel.activate(service, 10, 10)
+                awaitTrue("primary action") { activations.get() == 1 }
+                // A panel restart registers it again under the same unique name.
+                val before = panel.registrations.count { it.service == service }
+                panel.stopWatcher()
+                panel.startWatcher()
+                awaitTrue("registered again") { panel.registrations.count { it.service == service } > before }
             }
         }
 
