@@ -20,7 +20,14 @@ class LinuxTrayAppE2ETest {
         name: String,
         timeoutS: Long = 90,
     ) {
-        if (!runs) return
+        if (!runs) {
+            val required = System.getProperty("nucleus.tray.e2e.required") == "true"
+            val display = System.getenv("DISPLAY")
+            check(
+                !required,
+            ) { "TrayApp E2E required but cannot run (dbus-daemon: ${LinuxTestBus.isAvailable}, DISPLAY: $display)" }
+            return
+        }
         val seed = seed()
         println("[torture] Linux TrayApp $name seed=$seed")
         PrivateBus.start().use { bus ->

@@ -221,7 +221,7 @@ static int is_png(const uint8_t *bytes, size_t len) {
 /* One menu entry. Its DBusMenu id is its pre-order index + 1 (the root is 0), so an unchanged
  * menu keeps its ids and a host's cache stays valid across submits. */
 typedef struct {
-    char     *label;         /* DBusMenu label: every '_' doubled, so it is shown literally */
+    char     *label;         /* DBusMenu label, encoded so the host shows it literally (escape_label) */
     uint32_t  flags;
     int       depth;
     int32_t   parent;        /* id of the parent entry, 0 for top level */
@@ -280,6 +280,27 @@ static char *escape_mnemonics(const char *utf8) {
         if (*p == '_') *o++ = '_';
     }
     *o = '\0';
+    return out;
+}
+
+static int is_gnome(void);
+
+/*
+ * GNOME's AppIndicator extension does not parse mnemonics: it strips the first "_X" whose X is
+ * not '_' and shows "__" as two underscores. A label that would lose an underscore there gets
+ * one '_' in front instead, the only one that extension strips; others go out as they are.
+ */
+static char *escape_label(const char *utf8) {
+    if (!is_gnome()) return escape_mnemonics(utf8);
+    if (!utf8) return strdup("");
+    int stripped = 0;
+    for (const char *p = utf8; *p && !stripped; p++) stripped = p[0] == '_' && p[1] && p[1] != '_';
+    if (!stripped) return strdup(utf8);
+    size_t n = strlen(utf8);
+    char *out = malloc(n + 2);
+    if (!out) return NULL;
+    out[0] = '_';
+    memcpy(out + 1, utf8, n + 1);
     return out;
 }
 
@@ -1111,7 +1132,7 @@ JNIEXPORT void JNICALL BRIDGE(nativeSubmit)(
 
         if (!(it->flags & NT_SEPARATOR)) {
             char *label = string_element(env, labels, i);
-            it->label = escape_mnemonics(label);
+            it->label = escape_label(label);
             free(label);
             if (!it->label) it->label = strdup("");
             char *icon_path = string_element(env, iconPaths, i);

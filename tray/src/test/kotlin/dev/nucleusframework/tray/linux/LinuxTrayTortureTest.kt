@@ -477,6 +477,38 @@ class LinuxTrayTortureTest : LinuxTrayTestBase() {
         }
 
     @Test
+    fun `GNOME - labels survive the AppIndicator extension's own mnemonic rule`() =
+        linuxOnly {
+            // What the extension does to a label (dbusMenu.js `_updateLabel`): the first "_X" whose
+            // X is not '_' loses its underscore, "__" is shown as is. Checked live by LinuxGnomeTrayE2ETest.
+            fun gnomeShows(raw: String) = raw.replaceFirst(Regex("_([^_])"), "$1")
+            val labels =
+                listOf(
+                    "plain",
+                    "Open_File",
+                    "_lead",
+                    "__double",
+                    "trail_",
+                    "a_b_c",
+                    "___",
+                    "_",
+                    "",
+                    "x__y_z",
+                    "ש_לום",
+                )
+            ProcessEnv.set("XDG_CURRENT_DESKTOP", "ubuntu:GNOME")
+            try {
+                init("gnome-labels") { labels.forEach { Item(it) {} } }
+                val service = panel.serviceOf("gnome-labels")
+                awaitTrue("menu up") { panel.menu(service).size == labels.size }
+                val shown = panel.menu(service).map { gnomeShows(it.label.orEmpty()) }
+                assertEquals(labels, shown, "labels as GNOME shows them")
+            } finally {
+                ProcessEnv.set("XDG_CURRENT_DESKTOP", "NucleusTest")
+            }
+        }
+
+    @Test
     fun `shortcut hints and item icons reach the host`() =
         linuxOnly {
             init("hints") {

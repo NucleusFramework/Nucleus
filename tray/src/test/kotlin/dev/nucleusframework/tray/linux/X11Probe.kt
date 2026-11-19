@@ -83,6 +83,35 @@ internal object X11Probe {
         ): Int
 
         fun XFree(data: Pointer): Int
+
+        fun XGetInputFocus(
+            display: Pointer,
+            focus: LongByReference,
+            revert: IntByReference,
+        ): Int
+
+        fun XSetInputFocus(
+            display: Pointer,
+            window: Long,
+            revert: Int,
+            time: Long,
+        ): Int
+
+        fun XChangeProperty(
+            display: Pointer,
+            window: Long,
+            property: Long,
+            type: Long,
+            format: Int,
+            mode: Int,
+            data: ByteArray,
+            count: Int,
+        ): Int
+
+        fun XSync(
+            display: Pointer,
+            discard: Int,
+        ): Int
     }
 
     private val x by lazy { Native.load("X11", Xlib::class.java) }
@@ -95,6 +124,60 @@ internal object X11Probe {
     private const val STANDALONE_POPUP = "NucleusStandalonePopup"
 
     val isAvailable: Boolean by lazy { System.getenv("DISPLAY") != null && runCatching { display }.isSuccess }
+
+    /** The X window holding the input focus (0 = None, 1 = PointerRoot). */
+    @Synchronized
+    fun focus(): Long {
+        val focus = LongByReference()
+        x.XGetInputFocus(display, focus, IntByReference())
+        return focus.value
+    }
+
+    /** The X ids of this process's viewable windows, same order as [ownWindows]. */
+    @Synchronized
+    fun ownWindowIds(): List<Long> {
+        val out = ArrayList<Pair<Long, Box>>()
+        visitIds(x.XDefaultRootWindow(display), 0, out)
+        return out.map { it.first }
+    }
+
+    @Synchronized
+    fun setFocus(window: Long) {
+        x.XSetInputFocus(display, window, 2, 0)
+        x.XSync(display, 0)
+    }
+
+    private fun visitIds(
+        window: Long,
+        depth: Int,
+        out: MutableList<Pair<Long, Box>>,
+    ) {
+        val root = LongByReference()
+        val parent = LongByReference()
+        val children = PointerByReference()
+        val count = IntByReference()
+        if (x.XQueryTree(display, window, root, parent, children, count) == 0) return
+        val ids =
+            if (count.value == 0 ||
+                children.value == null
+            ) {
+                LongArray(0)
+            } else {
+                children.value.getLongArray(0, count.value)
+            }
+        children.value?.let { x.XFree(it) }
+        for (child in ids) {
+            val attrs = Memory(ATTRS_SIZE)
+            if (!viewable(child, attrs)) continue
+            val windowPid = cardinals(child, "_NET_WM_PID")?.firstOrNull()
+            val ours = windowPid == pid || (windowPid == null && text(child, "WM_NAME") == STANDALONE_POPUP)
+            if (ours) {
+                out += child to Box(0, 0, attrs.getInt(8), attrs.getInt(12))
+            } else if (depth < 2) {
+                visitIds(child, depth + 1, out)
+            }
+        }
+    }
 
     /** Viewable windows of this process (by `_NET_WM_PID`, or Tao's popup name), in root coordinates. */
     @Synchronized
@@ -203,6 +286,27 @@ internal object X11Probe {
             x.XFree(ptr)
         }
     }
+
+    /**
+     * Sets `Xft.dpi` in the root window's `RESOURCE_MANAGER`, as `gsd-xsettings` does on a GNOME
+     * session (96 x the Xwayland scale). Only for a display the test owns.
+     */
+    @Synchronized
+    fun setXftDpi(dpi: Int) {
+        val root = x.XDefaultRootWindow(display)
+        val kept =
+            text(root, "RESOURCE_MANAGER")
+                .orEmpty()
+                .lines()
+                .filter { it.isNotBlank() && !it.startsWith("Xft.dpi:") }
+        val db = (kept + "Xft.dpi:\t$dpi").joinToString("\n", postfix = "\n").toByteArray()
+        val atom = x.XInternAtom(display, "RESOURCE_MANAGER", 0)
+        x.XChangeProperty(display, root, atom, XA_STRING, 8, PROP_MODE_REPLACE, db, db.size)
+        x.XSync(display, 0)
+    }
+
+    private const val XA_STRING = 31L
+    private const val PROP_MODE_REPLACE = 0
 
     /** `_NET_WORKAREA` of the current desktop (screen minus panels), physical pixels. */
     @Synchronized

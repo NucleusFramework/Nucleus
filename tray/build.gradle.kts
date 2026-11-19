@@ -50,6 +50,8 @@ tasks.test {
     maxParallelForks = 1
     systemProperty("nucleus.tray.torture.seed", providers.gradleProperty("traySeed").orNull ?: "")
     systemProperty("nucleus.tray.torture.iterations", providers.gradleProperty("trayIterations").orNull ?: "")
+    // CI: an E2E that cannot run (no display, no dbus-daemon) fails instead of skipping.
+    systemProperty("nucleus.tray.e2e.required", providers.gradleProperty("trayE2eRequired").orNull ?: "")
     // macOS: freed memory is overwritten, so a use after free in the AppKit backend crashes the
     // test JVM instead of reading stale but plausible values.
     if (System
