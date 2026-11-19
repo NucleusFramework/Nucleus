@@ -49,7 +49,7 @@ compatibility to keep.
 | C6 | New `Modifier.border` implementation | Jewel, M3 outlined components | Border artifacts, damage tracking misses |
 | C7 | Text layout leak fixed in beta02 (was a beta01 regression) | text-heavy scenes | Stutter growing over time |
 | J1 | Jewel 0.41 → 0.42.0-263.7307.200 (built on Compose 1.12.1), IntelliJ icons 263.7307.200. `copyWithSize` removed (Lab now has a local `withSize`) | `decorated-window-jewel`, `jewel-demo`, Lab design system | Binary mismatch at runtime (`NoSuchMethodError`, `AbstractMethodError`); Lab type scale off |
-| N1 | Navigation3 1.1.1 → 1.2.0, hot reload 1.2.0 → 1.3.0-beta02 | `compose-demo`, `TaoHotReloadBridgeImpl` | Demo navigation crash; hot reload bridge mismatch |
+| N1 | Navigation3 1.1.1 → 1.2.0, hot reload 1.2.0 → 1.3.0-rc01 | `compose-demo`, `TaoHotReloadBridgeImpl` | Demo navigation crash; hot reload bridge mismatch |
 | G1 | Skiko 0.156.1, dead GraalVM metadata removed | plugin `nucleus/graalvm/**` | Native image missing a Skia class |
 
 ## Environments
@@ -207,7 +207,7 @@ Done by the agent that made the bump, on Ubuntu (GNOME session, but builds and
 the headful run under Xvfb + openbox like CI). Do not redo these unless a later
 check points at them.
 
-- Every module, example and the Lab compile on 1.13.0-beta02 (`compileKotlin compileTestKotlin`).
+- Every module, example and the Lab compile on 1.13.0-rc01 (`compileKotlin compileTestKotlin`).
 - `:decorated-window-tao:test` 642 tests, `:nucleus-application:test` 87,
   `:decorated-window-jewel:test` 4: all green.
 - `ApplicationScopeVectorPainterTest` (B1) fails with `CompositionLocal LocalOwner not present`
