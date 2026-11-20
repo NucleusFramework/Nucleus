@@ -9,7 +9,7 @@ name = "nucleus_tao"
 crate-type = ["cdylib"]
 
 [dependencies]
-tao = "0.35"
+tao = "0.37"
 jni = "0.21"
 once_cell = "1.20"
 

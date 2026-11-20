@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.85"
 name = "tao"
-version = "0.35.0"
+version = "0.37.3"
 authors = [
     "Tauri Programme within The Commons Conservancy",
     "The winit contributors",
@@ -78,6 +78,10 @@ x11 = [
 [lib]
 name = "tao"
 path = "src/lib.rs"
+
+[[example]]
+name = "background_color"
+path = "examples/background_color.rs"
 
 [[example]]
 name = "control_flow"
@@ -214,9 +218,6 @@ version = "0.2"
 [dependencies.log]
 version = "0.4"
 
-[dependencies.once_cell]
-version = "1"
-
 [dependencies.rwh_04]
 version = "0.4"
 optional = true
@@ -284,6 +285,9 @@ version = "0.21"
 [target.'cfg(target_os = "android")'.dependencies.ndk]
 version = "0.9"
 
+[target.'cfg(target_os = "android")'.dependencies.ndk-context]
+version = "0.1"
+
 [target.'cfg(target_os = "android")'.dependencies.ndk-sys]
 version = "0.6"
 
@@ -291,7 +295,7 @@ version = "0.6"
 version = "2.3"
 
 [target.'cfg(target_os = "android")'.dependencies.tao-macros]
-version = "0.1.0"
+version = "0.1.4"
 
 [target.'cfg(target_os = "ios")'.dependencies.objc2-foundation]
 version = "0.3"
@@ -305,6 +309,8 @@ features = [
     "UIScene",
     "UISceneOptions",
     "UIOpenURLContext",
+    "UISceneWindowingControlStyle",
+    "UIWindowScene",
 ]
 
 [target.'cfg(target_os = "macos")'.dependencies.core-foundation]
@@ -322,19 +328,29 @@ features = [
     "std",
     "objc2-core-foundation",
     "NSApplication",
+    "NSBezierPath",
     "NSButton",
     "NSColor",
     "NSControl",
+    "NSCursor",
+    "NSDockTile",
+    "NSDragging",
     "NSEvent",
     "NSGraphics",
+    "NSGraphicsContext",
     "NSImage",
+    "NSImageView",
     "NSOpenGLView",
     "NSPasteboard",
+    "NSProgressIndicator",
     "NSResponder",
+    "NSTextInputClient",
+    "NSTextInputContext",
     "NSRunningApplication",
     "NSScreen",
     "NSView",
     "NSWindow",
+    "NSWindowScripting",
     "NSUserActivity",
 ]
 default-features = false
@@ -348,13 +364,18 @@ features = [
     "NSAutoreleasePool",
     "NSDate",
     "NSDictionary",
+    "NSDistributedNotificationCenter",
     "NSEnumerator",
     "NSGeometry",
+    "NSNotification",
     "NSObjCRuntime",
     "NSRange",
     "NSString",
+    "NSPathUtilities",
     "NSThread",
     "NSURL",
+    "NSValue",
+    "NSRunLoop",
 ]
 default-features = false
 
@@ -365,7 +386,7 @@ version = "0.12"
 version = "1.11"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
-version = "0.61"
+version = "0.62"
 features = [
     "Win32_Devices_HumanInterfaceDevice",
     "Win32_Foundation",
@@ -397,7 +418,7 @@ features = [
 ]
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-core]
-version = "0.61"
+version = "0.62"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-version]
 version = "0.1"

@@ -324,11 +324,11 @@ impl WindowFlags {
   }
 
   /// Adjust the window client rectangle to the return value, if present.
-  fn apply_diff(mut self, window: HWND, mut new: WindowFlags) {
-    self = self.mask();
-    new = new.mask();
+  fn apply_diff(self, window: HWND, new: WindowFlags) {
+    let old = self.mask();
+    let new = new.mask();
 
-    let mut diff = self ^ new;
+    let mut diff = old ^ new;
 
     if diff == WindowFlags::empty() {
       return;
@@ -337,23 +337,12 @@ impl WindowFlags {
     // PATCH(nucleus): when the window transitions from invisible -> visible
     // AND should be maximized, combine show + maximize into a single
     // SW_SHOWMAXIMIZED to avoid the "restored flash then maximize animation"
-    // ghost. The MAXIMIZED block below is skipped in that case.
-    let mut handled_show_maximized = false;
-    if new.contains(WindowFlags::VISIBLE) {
-      let becoming_visible = !self.contains(WindowFlags::VISIBLE);
-      let show_cmd = if becoming_visible && new.contains(WindowFlags::MAXIMIZED) {
-        handled_show_maximized = true;
-        SW_SHOWMAXIMIZED
-      } else if self.contains(WindowFlags::MARKER_DONT_FOCUS) {
-        self.set(WindowFlags::MARKER_DONT_FOCUS, false);
-        SW_SHOWNOACTIVATE
-      } else {
-        SW_SHOW
-      };
-      unsafe {
-        let _ = ShowWindow(window, show_cmd);
-      }
-    }
+    // ghost. The MAXIMIZED block below is skipped in that case; the show itself
+    // is issued at the end of this function, where upstream (tao#1296) moved
+    // every show.
+    let becoming_visible =
+      new.contains(WindowFlags::VISIBLE) && !old.contains(WindowFlags::VISIBLE);
+    let handled_show_maximized = becoming_visible && new.contains(WindowFlags::MAXIMIZED);
 
     if diff.contains(WindowFlags::ALWAYS_ON_TOP) {
       unsafe {
@@ -396,9 +385,10 @@ impl WindowFlags {
     // PATCH(nucleus): only invoke ShowWindow(SW_MAXIMIZE) when the window
     // is (and will remain) visible. Calling it on an invisible window would
     // briefly show it before the trailing SW_HIDE below, causing a ghost
-    // flash. The MAXIMIZED bit is still kept in window_state and will be
-    // honored by the SW_SHOWMAXIMIZED branch above on the next visible
-    // transition. Also skip when we already issued SW_SHOWMAXIMIZED.
+    // flash (upstream tao#1306/#1352 now skip it for hidden windows too). The
+    // MAXIMIZED bit is still kept in window_state and will be honored by the
+    // SW_SHOWMAXIMIZED show at the end on the next visible transition. Also
+    // skip when that show is about to happen.
     if !handled_show_maximized
       && new.contains(WindowFlags::VISIBLE)
       && (diff.contains(WindowFlags::MAXIMIZED) || new.contains(WindowFlags::MAXIMIZED))
@@ -459,7 +449,11 @@ impl WindowFlags {
     }
 
     if diff != WindowFlags::empty() {
-      let (style, style_ex) = new.to_window_styles();
+      let (mut style, style_ex) = new.to_window_styles();
+      // Remove `WS_VISIBLE` if we were hidden, this is required for the `ShowWindow` below to work
+      if !old.contains(WindowFlags::VISIBLE) {
+        style &= !WS_VISIBLE;
+      }
 
       unsafe {
         SendMessageW(
@@ -494,6 +488,21 @@ impl WindowFlags {
           Some(WPARAM(0)),
           Some(LPARAM(0)),
         );
+      }
+    }
+
+    // This needs to be after the `SetWindowPos` above or there will be
+    // a title bar flicker on undecorated windows's creation
+    if new.contains(WindowFlags::VISIBLE) {
+      let show_cmd = if handled_show_maximized {
+        SW_SHOWMAXIMIZED
+      } else if old.contains(WindowFlags::MARKER_DONT_FOCUS) {
+        SW_SHOWNOACTIVATE
+      } else {
+        SW_SHOW
+      };
+      unsafe {
+        let _ = ShowWindow(window, show_cmd);
       }
     }
   }

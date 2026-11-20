@@ -11,18 +11,18 @@ use gtk::{
   gdk::{self, keys::constants::*, EventKey},
   glib,
 };
-use once_cell::sync::Lazy;
 use std::{
   collections::HashSet,
   ffi::c_void,
   os::raw::{c_int, c_uint},
   ptr, slice,
-  sync::Mutex,
+  sync::{LazyLock, Mutex},
 };
 
 pub type RawKey = gdk::keys::Key;
 
-static KEY_STRINGS: Lazy<Mutex<HashSet<&'static str>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+static KEY_STRINGS: LazyLock<Mutex<HashSet<&'static str>>> =
+  LazyLock::new(|| Mutex::new(HashSet::new()));
 
 fn insert_or_get_key_str(string: String) -> &'static str {
   let mut string_set = KEY_STRINGS.lock().unwrap();
@@ -115,6 +115,12 @@ pub(crate) fn raw_key_to_key(gdk_key: RawKey) -> Option<Key<'static>> {
     // KP_Separator? What does it map to?
     KP_Tab => Some(Key::Tab),
     KP_Up => Some(Key::ArrowUp),
+
+    // JIS
+    Zenkaku_Hankaku => Some(Key::ZenkakuHankaku),
+    Hiragana_Katakana => Some(Key::HiraganaKatakana),
+    Henkan => Some(Key::Convert),
+    Muhenkan => Some(Key::NonConvert),
     // TODO: more mappings (media etc)
     _ => None,
   }
