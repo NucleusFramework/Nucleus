@@ -100,6 +100,19 @@ internal object NativeMacOsSystemInfoBridge {
 
     @JvmStatic external fun nativeDiskReadOnly(): BooleanArray?
 
+    @JvmStatic external fun nativeDiskVolumeIds(): Array<String>?
+
+    // DiskConnection ordinals, mirrored in nucleus_system_info_disk.c.
+    @JvmStatic external fun nativeDiskConnections(): IntArray?
+
+    @JvmStatic external fun nativeStartDiskMonitor(): Boolean
+
+    @JvmStatic external fun nativeStopDiskMonitor()
+
+    @JvmStatic external fun nativeStartEjectApproval(): Boolean
+
+    @JvmStatic external fun nativeStopEjectApproval()
+
     // Components (temperature sensors)
     @JvmStatic external fun nativeComponentCount(): Int
 
@@ -291,4 +304,16 @@ internal object NativeMacOsSystemInfoBridge {
     ) {
         MacOsSystemInfo.connectivityMonitor.onChanged(connectivityInfoOf(available, metered, level))
     }
+
+    // Called from the DiskArbitration queue whenever a volume appeared, disappeared or was
+    // (un)mounted.
+    @JvmStatic
+    fun onDisksChanged() {
+        MacOsSystemInfo.diskMonitor.onChanged()
+    }
+
+    // Called from the DiskArbitration approval queue before a volume is unmounted; returns
+    // whether the unmount may proceed.
+    @JvmStatic
+    fun onEjectRequest(mountPoint: String): Boolean = MacOsSystemInfo.onEjectRequest(mountPoint)
 }
