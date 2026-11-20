@@ -183,6 +183,7 @@ static jclass sMetalBridgeClass = NULL;       // global ref
 static jmethodID sMetalOnOffsetChanged = NULL;
 static jmethodID sMetalOnFullscreenPrepare = NULL;
 static jmethodID sMetalOnOcclusionChanged = NULL;
+static jmethodID sMetalOnWindowResized = NULL;
 static atomic_bool sMetalCallbacksEnabled = ATOMIC_VAR_INIT(false);
 static atomic_bool sMetalShutdownInProgress = ATOMIC_VAR_INIT(false);
 
@@ -201,6 +202,8 @@ static void ensureMetalJVMCached(JNIEnv *env) {
                 env, sMetalBridgeClass, "onFullscreenPrepare", "(JII)V");
             sMetalOnOcclusionChanged = (*env)->GetStaticMethodID(
                 env, sMetalBridgeClass, "onOcclusionChanged", "(JZ)V");
+            sMetalOnWindowResized = (*env)->GetStaticMethodID(
+                env, sMetalBridgeClass, "onWindowResized", "(JII)V");
             atomic_store(&sMetalCallbacksEnabled, true);
         }
     });
@@ -233,16 +236,12 @@ static void notifyMenuBarOffsetChanged(jlong nsViewPtr, float offset) {
     nucleus_jni_clear_exception(env);
 }
 
-// Calls NativeMetalBridge.onFullscreenPrepare(nsViewPtr, widthPx, heightPx)
-// and BLOCKS until the JVM side has presented that frame. Invoked from
-// `windowWillEnterFullScreen:` on the macOS main thread — the same thread the
-// Tao loop and the Compose host run on, so the host's blocking render runs
-// re-entrantly on this stack. That is the point: AppKit snapshots the window
-// as soon as this notification finishes, so the frame has to exist by then
-// (#327). No-op if the JVM side never registered a prepare for this view.
-static void notifyFullscreenPrepare(jlong nsViewPtr, jint widthPx, jint heightPx) {
+// Calls a static `NativeMetalBridge.<method>(nsViewPtr, widthPx, heightPx)` on
+// the macOS main thread, on the caller's stack: the JVM side renders and
+// presents before this returns.
+static void notifySize(jmethodID method, jlong nsViewPtr, jint widthPx, jint heightPx) {
     if (!atomic_load(&sMetalCallbacksEnabled)) return;
-    if (!sMetalJVM || !sMetalBridgeClass || !sMetalOnFullscreenPrepare) return;
+    if (!sMetalJVM || !sMetalBridgeClass || !method) return;
 
     JNIEnv *env = NULL;
     jint status = (*sMetalJVM)->GetEnv(sMetalJVM, (void **)&env, JNI_VERSION_1_8);
@@ -255,9 +254,30 @@ static void notifyFullscreenPrepare(jlong nsViewPtr, jint widthPx, jint heightPx
     }
     if (!env) return;
 
-    (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnFullscreenPrepare,
-                                 nsViewPtr, widthPx, heightPx);
+    (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, method, nsViewPtr, widthPx, heightPx);
     nucleus_jni_clear_exception(env);
+}
+
+// Calls NativeMetalBridge.onFullscreenPrepare(nsViewPtr, widthPx, heightPx)
+// and BLOCKS until the JVM side has presented that frame. Invoked from
+// `windowWillEnterFullScreen:` on the macOS main thread — the same thread the
+// Tao loop and the Compose host run on, so the host's blocking render runs
+// re-entrantly on this stack. That is the point: AppKit snapshots the window
+// as soon as this notification finishes, so the frame has to exist by then
+// (#327). No-op if the JVM side never registered a prepare for this view.
+static void notifyFullscreenPrepare(jlong nsViewPtr, jint widthPx, jint heightPx) {
+    notifySize(sMetalOnFullscreenPrepare, nsViewPtr, widthPx, heightPx);
+}
+
+// Calls NativeMetalBridge.onWindowResized(nsViewPtr, widthPx, heightPx) from
+// `windowDidResize:`, i.e. inside the `setFrame:` that changed the window,
+// while the Core Animation transaction carrying the new window frame is still
+// open. A frame the JVM presents with `presentsWithTransaction` on this stack
+// joins that transaction, so the window and its content reach the screen in
+// the same commit (#953). The JVM side declines when it is itself on the
+// stack (a resize it asked for) and leaves that one to the Resized event.
+static void notifyWindowResized(jlong nsViewPtr, jint widthPx, jint heightPx) {
+    notifySize(sMetalOnWindowResized, nsViewPtr, widthPx, heightPx);
 }
 
 // Calls NativeMetalBridge.onOcclusionChanged(nsViewPtr, visible) from
@@ -980,8 +1000,29 @@ static void removeMenuBarMonitor(NSWindow *window) {
                    name:NSWindowDidExitFullScreenNotification object:view.window];
         [nc addObserver:self selector:@selector(occlusionChanged:)
                    name:NSWindowDidChangeOcclusionStateNotification object:view.window];
+        [nc addObserver:self selector:@selector(didResize:)
+                   name:NSWindowDidResizeNotification object:view.window];
     }
     return self;
+}
+
+// Posted synchronously from `setFrame:` — a live-resize step or a step of the
+// zoom animation (`animate_frame`) — before the run loop commits the
+// transaction that moves the window. Not during a fullscreen transition: the
+// #327 prepare already presented its final layout, and AppKit animates a
+// snapshot of it.
+- (void)didResize:(NSNotification *)n {
+    NucleusTaoMetalAttachment *att = [self attachment];
+    NSWindow *w = _view.window;
+    if (att == NULL || att->layer == nil || w == nil) return;
+    if (atomic_load(&att->in_transition) != 0) return;
+    // Tao's Resized carries the view's frame in physical pixels; send the same
+    // size so the Resized that follows finds the scene already at it.
+    CGFloat scale = w.backingScaleFactor;
+    NSSize size = _view.frame.size;
+    notifyWindowResized((jlong)(uintptr_t)(__bridge void *) _view,
+                        (jint) lround(size.width * scale),
+                        (jint) lround(size.height * scale));
 }
 
 - (void)occlusionChanged:(NSNotification *)n {
@@ -2501,6 +2542,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresent(
         [commandBuffer presentDrawable:drawable];
     }
     [commandBuffer commit];
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiscardDrawable(
+        JNIEnv *env, jclass clazz, jlong drawablePtr) {
+    (void) env; (void) clazz;
+    if (drawablePtr == 0) return;
+    // Balances nativeBeginFrame's retain; an unpresented drawable returns to
+    // the layer's pool once released.
+    CFRelease((CFTypeRef)(uintptr_t) drawablePtr);
 }
 
 // ── Partial redraw (#755) ────────────────────────────────────────────────
