@@ -197,8 +197,7 @@ internal fun Int.isPrintableTextInput(
  * The AWT event every Nucleus key event carries as its `nativeEvent`, tagged
  * with whether it is an auto-repeat of a held key — which AWT's `KeyEvent`
  * has no field for. Read back by [dev.nucleusframework.window.tao.isRepeat].
- * Only a key-down is ever tagged: on macOS and Linux the typed text reaches
- * Nucleus before the key-down that produced it, so it cannot be matched.
+ * Only a key-down is ever tagged, never the text it types.
  */
 internal class TaoAwtKeyEvent(
     id: Int,

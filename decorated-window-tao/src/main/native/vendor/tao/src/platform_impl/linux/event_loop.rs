@@ -26,7 +26,7 @@ use gtk::{
 
 #[cfg(feature = "x11")]
 use crate::platform_impl::platform::device;
-use crate::platform_impl::platform::ime::{Commit, ImeState};
+use crate::platform_impl::platform::ime::{Commit, ImeState, KeyPress};
 use crate::{
   dpi::{LogicalPosition, LogicalSize, PhysicalPosition},
   error::ExternalError,
@@ -1133,7 +1133,23 @@ impl<T: 'static> EventLoop<T> {
 
             {
               let ime_state = ime_state.clone();
-              ime.connect_preedit_start(move |_| ime_state.borrow_mut().preedit_started());
+              let tx_clone = event_tx.clone();
+              ime.connect_preedit_start(move |_| {
+                // Text the press committed before opening this composition
+                // goes out ahead of the preedit, not after it.
+                let Some(text) = ime_state.borrow_mut().preedit_started() else {
+                  return;
+                };
+                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event: WindowEvent::ReceivedImeText(text),
+                }) {
+                  log::warn!(
+                    "Failed to send received IME text event to event channel: {}",
+                    e
+                  );
+                }
+              });
             }
 
             {
@@ -1169,9 +1185,11 @@ impl<T: 'static> EventLoop<T> {
               let ime_state = ime_state.clone();
               let tx_clone = event_tx.clone();
               ime.connect_commit(move |_, s| {
-                let event = match ime_state.borrow().commit() {
+                let event = match ime_state.borrow_mut().commit(s) {
                   Commit::Ime => WindowEvent::ImeCommit(s.to_string()),
                   Commit::Text => WindowEvent::ReceivedImeText(s.to_string()),
+                  // Sent by the key press handler, after the press.
+                  Commit::Typed => return,
                 };
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                   window_id: RootWindowId(id),
@@ -1232,6 +1250,7 @@ impl<T: 'static> EventLoop<T> {
             let handler = keyboard_handler.clone();
             let ime_ = ime.clone();
             let ime_state_press = ime_state.clone();
+            let typed_tx = event_tx.clone();
             window.connect_key_press_event(move |window, event_key| {
               // Tracked before the embed check, so a key pressed or released
               // while an embedded view owns the keyboard is not left stale.
@@ -1246,14 +1265,32 @@ impl<T: 'static> EventLoop<T> {
               // also inserts a newline, and the BackSpace that edits the
               // composition also deletes committed text (the Linux twin of the
               // VK_PROCESSKEY leak fixed for Windows in nucleusframework#558).
+              //
+              // A key the IME merely turned into text was typed, not consumed:
+              // it reaches Compose too, ahead of that text, which is the order
+              // AWT delivers KEY_PRESSED and KEY_TYPED in. A handler that moves
+              // focus to a text field on key-down relies on it.
+              ime_state_press.borrow_mut().filter_started();
               let filtered = ime_.filter_keypress(event_key);
-              if !ime_state_press
+              let typed = match ime_state_press
                 .borrow_mut()
                 .key_pressed(event_key.hardware_keycode(), filtered)
               {
-                return glib::Propagation::Stop;
-              }
+                KeyPress::Withheld => return glib::Propagation::Stop,
+                KeyPress::Delivered { typed } => typed,
+              };
               handler(event_key.to_owned(), ElementState::Pressed, is_repeat);
+              if !typed.is_empty() {
+                if let Err(e) = typed_tx.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event: WindowEvent::ReceivedImeText(typed),
+                }) {
+                  log::warn!(
+                    "Failed to send received IME text event to event channel: {}",
+                    e
+                  );
+                }
+              }
 
               // Compose owns the keyboard and has the key: stop here so GtkWindow's
               // own bindings do not run on it too — an arrow or a Tab would
@@ -1274,7 +1311,7 @@ impl<T: 'static> EventLoop<T> {
               let filtered = ime.filter_keypress(event_key);
               if !ime_state_release
                 .borrow_mut()
-                .key_released(event_key.hardware_keycode(), filtered)
+                .key_released(event_key.hardware_keycode(), event_key.time(), filtered)
               {
                 return glib::Propagation::Stop;
               }
