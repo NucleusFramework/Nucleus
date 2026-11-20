@@ -134,8 +134,10 @@ impl<T> EventLoopWindowTarget<T> {
       unsafe {
         if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
           let display = (xlib.XOpenDisplay)(std::ptr::null());
-          display_handle.display = display as _;
-          display_handle.screen = (xlib.XDefaultScreen)(display) as _;
+          if !display.is_null() {
+            display_handle.display = display as _;
+            display_handle.screen = (xlib.XDefaultScreen)(display) as _;
+          }
         }
       }
 
@@ -149,21 +151,21 @@ impl<T> EventLoopWindowTarget<T> {
       let display = unsafe {
         gdk_wayland_sys::gdk_wayland_display_get_wl_display(self.display.as_ptr() as *mut _)
       };
-      let display = unsafe { std::ptr::NonNull::new_unchecked(display) };
+      let display = std::ptr::NonNull::new(display).ok_or(rwh_06::HandleError::Unavailable)?;
       let display_handle = rwh_06::WaylandDisplayHandle::new(display);
       Ok(rwh_06::RawDisplayHandle::Wayland(display_handle))
     } else {
       #[cfg(feature = "x11")]
       unsafe {
         if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-          let display = (xlib.XOpenDisplay)(std::ptr::null());
-          let screen = (xlib.XDefaultScreen)(display) as _;
-          let display = std::ptr::NonNull::new_unchecked(display as _);
-          let display_handle = rwh_06::XlibDisplayHandle::new(Some(display), screen);
-          Ok(rwh_06::RawDisplayHandle::Xlib(display_handle))
-        } else {
-          Err(rwh_06::HandleError::Unavailable)
+          let display_ptr = (xlib.XOpenDisplay)(std::ptr::null());
+          if let Some(display) = std::ptr::NonNull::new(display_ptr as *mut std::ffi::c_void) {
+            let screen = (xlib.XDefaultScreen)(display.as_ptr() as *mut _) as _;
+            let display_handle = rwh_06::XlibDisplayHandle::new(Some(display), screen);
+            return Ok(rwh_06::RawDisplayHandle::Xlib(display_handle));
+          }
         }
+        Err(rwh_06::HandleError::Unavailable)
       }
       #[cfg(not(feature = "x11"))]
       Err(rwh_06::HandleError::Unavailable)
@@ -1362,16 +1364,27 @@ impl<T: 'static> EventLoop<T> {
             taskbar.update_count(count, desktop_filename);
           }
           WindowRequest::SetTheme(theme) => {
+            // `None` means "follow the system", not light.
+            #[cfg(feature = "dbus")]
+            let theme = theme.or_else(|| super::portal::theme().ok());
             if let Some(settings) = Settings::default() {
               settings.set_gtk_application_prefer_dark_theme(theme == Some(Theme::Dark));
-              if let Err(e) = event_tx.send(Event::WindowEvent {
-                window_id: RootWindowId(id),
-                event: WindowEvent::ThemeChanged(theme.unwrap_or_default()),
-              }) {
-                log::warn!(
-                  "Failed to send window theme changed event to event channel: {}",
-                  e
-                );
+              // The dark preference is the application's, so every window changes with it.
+              // Each one is told under its own id: `id` here is the dummy one.
+              let theme = theme.unwrap_or_default();
+              for window in app_.windows() {
+                let Some(window) = window.downcast_ref::<gtk::ApplicationWindow>() else {
+                  continue;
+                };
+                if let Err(e) = event_tx.send(Event::WindowEvent {
+                  window_id: RootWindowId(WindowId(window.id())),
+                  event: WindowEvent::ThemeChanged(theme),
+                }) {
+                  log::warn!(
+                    "Failed to send window theme changed event to event channel: {}",
+                    e
+                  );
+                }
               }
             }
           }

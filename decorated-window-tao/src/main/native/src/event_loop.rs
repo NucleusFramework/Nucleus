@@ -309,6 +309,14 @@ pub(crate) fn run_event_loop_blocking() {
     // Tool of the last cursor / button event per window: EVENT_POINTER_KIND is
     // sent only when it changes (absent = the mouse).
     let mut last_pointer_kind: HashMap<u64, jint> = HashMap::new();
+    // macOS: tao windows torn down by `RequestClose` whose own `Destroyed` is
+    // still to come, counted per id. Dropping the window closes the NSWindow,
+    // and `windowWillClose:` queues a `Destroyed` keyed by the NSWindow's
+    // address; the NSWindow is then freed, and a window opened before that
+    // event is delivered can be given the same address — and so the same
+    // `WindowId`. The late event must not destroy the new window.
+    #[cfg(target_os = "macos")]
+    let mut destroyed_owed: HashMap<tao::window::WindowId, u32> = HashMap::new();
     // Windows: handles that asked for a redraw during the batch being
     // processed, served at `MainEventsCleared`. See UserEvent::RequestRedraw.
     #[cfg(target_os = "windows")]
@@ -642,7 +650,13 @@ pub(crate) fn run_event_loop_blocking() {
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
                         let mut guard = WINDOWS.lock().unwrap();
                         if let Some(map) = guard.as_mut() {
-                            map.remove(&handle);
+                            if let Some(window) = map.remove(&handle) {
+                                #[cfg(target_os = "macos")]
+                                {
+                                    *destroyed_owed.entry(window.id()).or_insert(0) += 1;
+                                }
+                                drop(window);
+                            }
                         }
                         #[cfg(target_os = "linux")]
                         crate::state::forget_gtk_destroyed(handle);
@@ -1038,6 +1052,18 @@ pub(crate) fn run_event_loop_blocking() {
             Event::WindowEvent {
                 window_id, event, ..
             } => {
+                // The `Destroyed` of a window `RequestClose` already tore down
+                // (see `destroyed_owed`), whatever window holds its id now.
+                #[cfg(target_os = "macos")]
+                if matches!(event, WindowEvent::Destroyed) {
+                    if let Some(owed) = destroyed_owed.get_mut(&window_id) {
+                        *owed -= 1;
+                        if *owed == 0 {
+                            destroyed_owed.remove(&window_id);
+                        }
+                        return;
+                    }
+                }
                 let Some(handle) = handle_for(window_id) else {
                     return;
                 };

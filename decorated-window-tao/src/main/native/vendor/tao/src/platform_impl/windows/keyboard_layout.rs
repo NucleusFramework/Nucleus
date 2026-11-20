@@ -1,9 +1,9 @@
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::{
   collections::{hash_map::Entry, HashMap, HashSet},
   ffi::OsString,
   os::windows::ffi::OsStringExt,
+  sync::LazyLock,
 };
 
 use windows::Win32::{
@@ -17,8 +17,12 @@ use crate::{
   platform_impl::platform::util,
 };
 
-pub(crate) static LAYOUT_CACHE: Lazy<Mutex<LayoutCache>> =
-  Lazy::new(|| Mutex::new(LayoutCache::default()));
+pub(crate) static LAYOUT_CACHE: LazyLock<Mutex<LayoutCache>> =
+  LazyLock::new(|| Mutex::new(LayoutCache::default()));
+
+pub(crate) fn get_agnostic_mods() -> ModifiersState {
+  LAYOUT_CACHE.lock().get_agnostic_mods()
+}
 
 fn key_pressed(vkey: VIRTUAL_KEY) -> bool {
   unsafe { (GetKeyState(u32::from(vkey.0) as i32) & (1 << 15)) == (1 << 15) }
@@ -43,7 +47,7 @@ const NUMPAD_VKEYS: [VIRTUAL_KEY; 16] = [
   VK_DIVIDE,
 ];
 
-static NUMPAD_KEYCODES: Lazy<HashSet<KeyCode>> = Lazy::new(|| {
+static NUMPAD_KEYCODES: LazyLock<HashSet<KeyCode>> = LazyLock::new(|| {
   let mut keycodes = HashSet::new();
   keycodes.insert(KeyCode::Numpad0);
   keycodes.insert(KeyCode::Numpad1);
@@ -245,7 +249,7 @@ impl LayoutCache {
     }
   }
 
-  pub fn get_agnostic_mods(&mut self) -> ModifiersState {
+  fn get_agnostic_mods(&mut self) -> ModifiersState {
     let (_, layout) = self.get_current_layout();
     let filter_out_altgr = layout.has_alt_graph && key_pressed(VK_RMENU);
     let mut mods = ModifiersState::empty();

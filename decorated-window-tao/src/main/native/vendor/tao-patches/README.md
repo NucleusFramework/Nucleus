@@ -1,66 +1,251 @@
 # tao patches
 
-Local patch series applied on top of vendored tao (see `../tao/`).
+Nucleus carries its own changes on top of the vendored tao in `../tao/`. This
+directory records what they are, why each exists, and which of them upstream
+tao should take.
 
 ## Pinned upstream version
 
-- **tao**: `0.35.0` (crates.io)
-- Copied from: `~/.cargo/registry/src/index.crates.io-*/tao-0.35.0/`
-
-## Patch series
-
-Patches are applied in numeric order on the vendored tree at `../tao/`.
-Tao 0.35.0 is already vendored; this file is the living list of patches.
-
-| #     | File                              | Phase | Platform | Summary |
-| ----- | --------------------------------- | ----- | -------- | ------- |
-| 0001  | `0001-linux-resize-zones.patch`           | 1     | Linux    | Widen resize edge band to 8 px and corner zone to 16 px (logical), set the resize cursor before `begin_resize_drag` so it persists during the drag. Adds a `corner` parameter to `crate::window::hit_test`. |
-| 0002  | `0002-linux-cursor-preserve-on-motion.patch` | 2 | Linux    | Only override the cursor on edge-zone entry / exit. Outside resize zones the application-level cursor (text I-beam, hand, custom icon) is preserved across motion events. |
-| 0003  | `0003-linux-realize-on-build.patch`       | 3     | Linux    | Realise the GtkApplicationWindow at the end of `Window::new` so the underlying GdkWindow (X11 XID / Wayland wl_surface) is valid synchronously when the constructor returns. |
-| 0004  | `0004-linux-drain-draw-queue.patch`       | 4     | Linux    | `run_return`: treat pending redraws like pending events (don't park in the blocking `gtk_main_iteration` while `draws` is non-empty) and drain the whole draw channel per cycle instead of one redraw per wakeup. Fixes multi-window frame starvation (each window rendered at ~refresh/N). |
-| 0005  | `0005-linux-restore-activation-timestamp.patch` | 5 | Linux | Stamp `Focus` and `Minimized(false)` activations with a real X server timestamp (`gdk_x11_get_server_time`). Mutter's focus-stealing prevention drops `_NET_ACTIVE_WINDOW` requests carrying `GDK_CURRENT_TIME` (0) and keeps a deiconified window Iconic with `_NET_WM_STATE_DEMANDS_ATTENTION`, so restore/focus silently no-op and `EVENT_MINIMIZED(false)` never fires on GNOME X11/XWayland (openbox honors the 0 timestamp, which is why CI never saw it). No-op on Wayland. |
-| 0006  | `0006-linux-cursor-ignore-events-region.patch` | 6 | Linux | `CursorIgnoreEvents`: install a genuinely *empty* input region instead of upstream's 1x1 rectangle at the origin (which leaves the top-left pixel clickable), and clear it through the same `GdkWindow` with a NULL region. Upstream cleared it on the `GtkWidget`, which never undid a shape installed on the `GdkWindow`, so click-through could not be switched back off. |
-| 0007  | `0007-linux-outer-geometry-placeholder.patch` | 7 | Linux | Stop latching GDK's `(0, 0, 1, 1)` frame-extents placeholder into `outer_position` / `outer_size`. `gdk_window_get_frame_extents` answers with it until the window is mapped and framed, so a `configure-event` that lands in that window pins it until the *next* one — seconds away, or never, on a software-rendered X server under a lightweight WM (the CI Xvfb + openbox leg). Consumers then read a 1x1 window at the screen origin: a torn-off window 1 dp wide, a satellite anchored against a 1px-tall child, a pointer aimed at a negative screen coordinate. The size falls back to the configure event's own (the whole surface, shadow included — what the frame is under CSD, and what `configure_client_size` subtracts the insets from); the position is kept as it was, since every substitute is wrong in a worse way — `event.position()` is frame-relative under a reparenting WM, `root_origin` goes back through `frame_extents`, and `gdk_window_get_origin` names the client rather than the frame. |
-| 0008  | `0008-macos-scroll-phase-and-horizontal-sign.patch` | 8 | macOS (+ field on all backends) | `WindowEvent::MouseWheel` gains `scroll_phase: ScrollPhase` — the full AppKit `phase` / `momentumPhase` of a trackpad scroll (`None` for a wheel, and on Windows / Linux), which `TouchPhase` cannot express; Nucleus routes gesture steps to Compose Pan events (#654). Also stops negating `scrollingDeltaX` in `scroll_wheel`: AppKit's sign already matches `MouseScrollDelta`'s documented convention (and winit), and the extra flip reversed horizontal trackpad scrolling once the consumer applied the AWT convention (#652). `PixelDelta` carries AppKit's logical points instead of `x backing scale`: AWT's `preciseWheelRotation` never sees the display scale (#653), and undoing the multiplication downstream with a second scale cache disagreed with the view's for a frame during display hops. |
-| 0009  | `0009-macos-cursor-hook.patch` | 9 | macOS | `tao::platform::macos::set_cursor_hook`: with a hook installed, `Cursor::from(CursorIcon)` yields `Cursor::Hooked` and `resetCursorRects` asks the embedder for the `NSCursor` (+0; null = Tao's own table for that icon) instead of Tao's table. Nucleus resolves every icon through `macos/nucleus_tao_cursors.h`, so the cursor rect AppKit re-asserts is the instance `nucleus_tao_set_cursor_icon` just set, and no private `NSCursor` factory is called where an Objective-C exception cannot be caught (`_moveCursor` throws "unrecognized selector" on macOS 27, #746). Also: `load_webkit_cursor` returns `Option` instead of unwrapping the HIServices `cursor.pdf` / `info.plist` lookups (the caller falls back to the arrow), which aborted the JVM inside `resetCursorRects` when the bundle was missing. |
-| 0010  | `0010-linux-key-repeat.patch` | 10 | Linux | Report key auto-repeat: upstream always built `KeyEvent` with `repeat: false` (`// todo: implement repeat?`). GDK carries no repeat flag, but a held key arrives as a run of presses and a single release on both X11 (detectable auto-repeat) and Wayland (GDK's repeat timer), so `ImeState` keeps the set of physically held keycodes (before the input method and the embed check, cleared on focus-out) and a press of a held key is a repeat. Unit-tested in `ime.rs`. |
-| 0011  | `0011-linux-pointer-source-device-id.patch` | 11 | Linux | Tell tablet tools from the mouse (#827): `CursorMoved` and `MouseInput` carry a `DeviceId` derived from the GDK event's *source* device — `GDK_SOURCE_PEN` and `GDK_SOURCE_ERASER` get ids of their own, everything else keeps the shared dummy id — and `platform::unix::DeviceIdExtUnix::pointer_source()` reads it back as a `PointerSource`. GDK delivers a tablet (Wayland `zwp_tablet_v2`, X11 XI2) as ordinary motion / button events, so without it Nucleus reported every pen as `PointerType.Mouse`. |
-| 0012  | `0012-macos-pointer-source-device-id.patch` | 12 | macOS | Tell tablet tools from the mouse (#827), the macOS half of 0011: `DeviceId` carries a tool, `CursorMoved` and `MouseInput` report the pen (or its eraser end) for mouse events whose `subtype` is `TabletPoint`, and `platform::macos::DeviceIdExtMacOS::pointer_source()` reads it back as a `PointerSource`. Which end is in use is only named by the proximity event before the stroke, which AppKit hands to no particular view, so `TaoApp.sendEvent:` records it. Events that carry no subtype (enter, exit, wheel) keep the tool of the last mouse event. |
-| 0013  | `0013-windows-pen-device-id.patch` | 13 | Windows | Tell a pen from a finger (#827), the Windows half of 0011/0012: WM_POINTER reports a pen as a `WindowEvent::Touch` like a finger, so its `DeviceId` carries the tool — the pen tip, or its eraser end while `POINTER_PEN_INFO.penFlags` has `PEN_FLAG_INVERTED` / `PEN_FLAG_ERASER` — read back with `platform::windows::DeviceIdExtWindows::pointer_source()`. Also reports `WM_POINTERLEAVE` for pens (only) as a `Cancelled` touch, so a hovering pen leaving the window or the digitizer's range can exit; a hover itself already arrived as a `Moved` touch with no contact. |
-| 0014  | `0014-windows-flash-is-not-deactivation.patch` | 14 | Windows | Ignore a `WM_NCACTIVATE(FALSE)` on the window that is still `GetActiveWindow()`: it is `FlashWindow` blinking the caption, which Windows does to a modal dialog when a click hits the owner it disabled (#832). Upstream treated every blink as a focus loss / gain, so the dialog's focus toggled for as long as it flashed. A real deactivation still arrives through `WM_KILLFOCUS`. |
-| 0015  | `0015-linux-unmapped-geometry-cache.patch` | 15 | Linux | Record the geometry of a window that is not mapped yet as it is requested: `set_inner_size` / `set_outer_position` write the inner and outer size / position caches when the GtkWindow is unmapped. Those caches are only fed by `configure-event`, which GTK never sends before the map, so a window sized and placed while hidden (wrap-content, #532 / #546) read its creation values — the outer size not even a size (upstream seeds it from `root_origin`) — and was centred against a 0 px tall frame. The frame is unknown before the map, so the outer size is the inner one until the first configure replaces both. |
-| 0016  | `0016-windows-end-session-hooks.patch` | 16 | Windows | Hand logoff / restart / shutdown and Restart Manager closes to the embedder (#751): `platform::windows::set_end_session_hooks` installs the hooks every tao window calls on `WM_QUERYENDSESSION` (`(hwnd, lParam, nested) -> may end`) and `WM_ENDSESSION` (`(hwnd, ending, nested)`), app windows as well as the thread target — one app window answering TRUE on its own was enough for the Restart Manager to start ending the process. `hwnd` is always the thread target (it carries the shutdown block reason), `nested` is `should_buffer()`. With the hooks installed, the thread target's `WM_ENDSESSION` no longer runs `loop_destroyed()` (it froze the loop of an app that keeps running after it). Upstream answered the query with `DefWindowProc` (TRUE), so no window could veto. |
-| 0017  | `0017-linux-nonresizable-content-size-request.patch` | 17 | Linux | Pin the size of a non-resizable window through its *content* child (the default vbox) instead of the GtkWindow, at creation and on `WindowRequest::Size`. On the window the size request covers the client-side decorations too, so a decorated GTK3 CSD toplevel on Wayland lost its theme shadow margins off the requested size (a 300x200 `DecoratedDialog` came up 248x148; a wrap-content one clipped its content, #532). The content is shown as it is sized — GTK measures a hidden child as nothing, and it stays hidden until the window's `show_all` — and the window is `gtk_window_resize`d to match, since GTK applies the last resize when a non-resizable window maps. Popup overlays (`popup_anchor`) keep their own window-level request. Guarded by `NonResizableDialogSizeHeadfulCases`. |
-| 0018  | `0018-linux-system-decorations.patch` | 18 | Linux | `WindowBuilderExtUnix::with_system_decorations`: on Wayland, skip tao's `WlHeader` (a custom `gtk_window_set_titlebar` header bar). Setting a title bar latches GTK 3's client-side decorations for good, so KWin could never serve its own; without it GTK asks for server-side decorations through `org_kde_kwin_server_decoration` and draws its default title bar where the compositor refuses (GNOME). Such windows also report sizes and pointer positions in content space (`reports_content_space`), like the hidden-titlebar CSD: GTK's own title bar and shadow sit around the content on GNOME, and the mapping is the identity under server-side or X11 window-manager decorations. The resize-ring forwarding stays hidden-titlebar only, so GTK keeps resizing from its own frame. A non-resizable system-decorated window needs nothing of its own for its size: 0017 already puts every non-resizable window's size request on the content box, outside GTK's title bar and shadow. Pointer events on GTK's title bar, shadow and resize strips (`is_on_system_decorations`) return `Proceed` from the press / release / motion handlers, so GtkWindow's class handlers still move, maximize on double-click and edge-resize the window; the press is not forwarded to the embedder, whose release the compositor's grab would swallow. Used by Nucleus's system-decorated `Window` (#841). |
-| 0019  | `0019-linux-popup-size-before-map.patch` | 19 | Linux | `popup_anchor` sizes the hidden popup's GdkWindow itself, after declaring the shadow width. The size request and `gtk_window_resize` only land in GTK's resize pass, an idle below the priority of tao's window requests; since the loop drains GTK's queue in batches (#814), the `Visible` request that follows the anchor ran before that pass, so the popup mapped at its creation size (1x1) and GDK re-created it, on a new `wl_surface`, once the real size landed. The EGL subsurface Nucleus had attached to the first surface was orphaned: every menu on native Wayland drew into nothing. The resize comes after `gdk_window_set_shadow_width`, which keeps the window geometry by growing the window by the margins. Only for a window not mapped yet; X11 and subsurface popups never reach `popup_anchor`. |
-
-## Bump procedure (e.g. 0.35 → 0.36)
+- **tao**: `0.37.3` (crates.io), taken by the bumps from 0.35.0 to 0.37.2 and
+  then to 0.37.3.
+- Pristine source: the `.crate` from crates.io, checked against the checksum in
+  the crates.io index. Cargo never downloads it here, since `[patch.crates-io]`
+  points tao at `../tao/`:
 
 ```bash
-# 1. Pull the new upstream version into the vendor dir
-rm -rf vendor/tao
-cp -r ~/.cargo/registry/src/index.crates.io-*/tao-0.36.0 vendor/tao
-
-# 2. Re-apply patches in order
-cd vendor/tao
-for p in ../tao-patches/*.patch; do
-  git apply --3way "$p" || echo "CONFLICT: $p — resolve, then regenerate"
-done
-
-# 3. For each conflict: resolve by hand, then regenerate the patch
-git diff > ../tao-patches/000X-foo.patch
-
-# 4. Rebuild the native lib and run Tao scene + headful tests on the affected OS.
+# fetch_tao <version> <dir>: unpacks pristine tao into <dir>/tao-<version>
+fetch_tao() {
+  mkdir -p "$2" && curl -sSfL "https://static.crates.io/crates/tao/tao-$1.crate" -o "$2/tao-$1.crate" &&
+  want=$(curl -sSf https://index.crates.io/3/t/tao | grep "\"vers\":\"$1\"" | sed 's/.*"cksum":"\([0-9a-f]*\)".*/\1/') &&
+  echo "$want  $2/tao-$1.crate" | sha256sum -c --quiet && tar -xzf "$2/tao-$1.crate" -C "$2" &&
+  rm -f "$2/tao-$1/.cargo_vcs_info.json"  # packaging metadata, not vendored
+}
 ```
 
-## Regenerating a single patch
+## Where the changes live
 
-The vendored tree is not a git repo. To regenerate `000X-foo.patch` after
-editing files under `vendor/tao/`, diff against the pristine upstream:
+Nucleus's changes are made directly in `../tao/`, marked `PATCH(nucleus)` or
+`Nucleus patch` in the code. No patch file is kept: the changes are whatever
+differs between `../tao/` and pristine tao at the pinned version. To see them,
+from `decorated-window-tao/src/main/native`:
 
 ```bash
-PRISTINE=~/.cargo/registry/src/index.crates.io-*/tao-0.35.0
-diff -ruN "$PRISTINE" vendor/tao \
-  --exclude=Cargo.lock --exclude=target \
-  > vendor/tao-patches/000X-foo.patch
+W=$(mktemp -d) && fetch_tao 0.37.3 "$W/crates"
+diff -ruN --exclude=target "$W/crates/tao-0.37.3" vendor/tao
 ```
+
+The 0.35.0 tree kept a numbered patch series (`0001`–`0019`). It covered
+about a fifth of the Nucleus commits that touched tao, two of its patches
+described code `08bc6b80a` had already removed, and its patches overlapped, so
+it could not drive a bump. The catalog below takes over its job of explaining
+each change; the old descriptions are in git history
+(`git log -- decorated-window-tao/src/main/native/vendor/tao-patches`).
+
+## Catalog
+
+**Outcome on 0.37.2 and 0.37.3**: *kept* (re-applied unchanged in meaning), *ported*
+(re-expressed on upstream's new structure), *dropped* (upstream now does it, or
+it no longer applies). Where 0.37.3 changed a row's outcome, the row says so.
+Everything else in 0.37.3 was taken as is: on Linux, `set_theme(None)` follows
+the portal (#1378) and `ThemeChanged` goes to each window's own id (#1413); on
+macOS, main-thread window methods (#1420), redraws queued while the handler
+runs (#1386) and the maximizable fix (#1411); on Windows, logical positions
+matched to the closest monitor (#1397), `drag_window` from other threads
+(#1400) and size constraints for undecorated windows with shadows (#1436).
+
+**Upstream**: *send* (a bug in stock tao that a small, self-contained PR would
+fix), *maybe* (useful, but needs new public API or a design discussion first),
+*no* (exists for Nucleus's embedding model, not a tao bug). "Upstream status"
+is what was found in tao's issues, PRs and `dev` branch on 2026-11-17.
+
+### Linux
+
+| Change | Commits | Outcome | Upstream | Upstream status / notes |
+|---|---|---|---|---|
+| Realize the GtkWindow in `Window::new`, so the XID / `wl_surface` is valid on return | 84655453a | kept | maybe | Nothing upstream. Changes when GTK maps, so it needs care. |
+| Resize interception moved to the embedder: tao's hit test, resize cursor, `begin_resize_drag` and touch-resize handler removed. Supersedes the old `0001`/`0002` (resize zones, cursor outside zones) | 08bc6b80a (replaces ed2493b16, 6b20825f4) | kept | no | Upstream's touch-resize fix #1380 has nothing to apply to. |
+| Synchronous maximize before the first map | 41fec0ce6 | kept, over upstream's configure-event maximize (#1218) | no | Upstream fixed Wayland error 71 (#977) its own way. |
+| Modifier-only keys (Alt, Ctrl, Shift, Super) also emit `KeyboardInput` | c1a12217f | kept | send | Nothing upstream; stock tao drops these key events. |
+| Minimize/restore event on X11, through a hook | 576bd599e | kept | no | A `Minimized` event was declined upstream (#892, tauri#15458). |
+| Wayland minimize synthesis | 672367bc1 | kept | no | |
+| Tiled (Aero Snap) state | 484a20c7a | kept | maybe | New API. |
+| Wayland overlay popups (`GTK_WINDOW_POPUP` subsurfaces), hide crash, drag tracking outside the window | 393ef7c18 | kept | split | Drag tracking with event coordinates: send (`CursorMoved` stops at the window edge during a drag). Popups: no. |
+| Full modifier state in `ModifiersChanged` | 64072f520 | kept | send | Related: #470. |
+| Modifier state derived from every key event, so a lost release heals | 241ff1767 | kept | send | |
+| Drain the draw queue; never park with redraws pending (old `0004`) | 66b34a26a | kept | send | Open upstream work: #1335 / #1336. Comment there instead of a duplicate PR. |
+| Real X server timestamp for focus and restore (old `0005`) | 1b582e9e9 | kept | send | Related: tauri#6310, tauri#5974. Mutter ignores the requests without it. |
+| Native GTK CSD shadow on undecorated Wayland windows (hidden title bar) | de5e20ff9 | kept | maybe | Tauri users ask for a native shadow; needs API design. |
+| Discrete wheel scroll gives a unit delta | f81fca49e | kept | send | The bug is in stock 0.37.3 (no `SMOOTH_SCROLL_MASK` handling). |
+| Empty, reversible click-through input region (old `0006`) | d1aa1d3a9 | kept | send | Open upstream work: #1409, #1204, #1425. Offer the empty-region part. |
+| Force one window onto X11 in a Wayland session | 446c3237b | kept | no | |
+| Input method: `IMMulticontext`, preedit/commit events, filter-first key path, press/release pairing, `set_ime_position` | 3d58c5279, 7bc9ea602, 105b6c9e3 | kept | split | The `IMMulticontext` switch and `set_ime_position`: send (CJK input does not work in stock tao). Preedit/commit events: maybe, needs a cross-platform `Ime` event. WebKit runs its own input context, so offer it opt-in. |
+| GDK's placeholder frame extents never published (old `0007`) | 20d2c5fb4, 17ac39df8 | kept | send | Nothing upstream. |
+| Context menu as an `xdg_popup`, and its placement | 817f5e8ea | kept | no | |
+| Embedded native view keyboard and focus ownership | 342b080d4 | kept | no | |
+| Touchpad `Pan` events (needs the `ScrollPhase` field, see shared) | fe7b213f9 | kept | maybe | |
+| Key auto-repeat flag (old `0010`) | f582745db | kept | send | Stock tao always reports `repeat: false`. |
+| Drain pending GTK events between loop steps (#814) | 794feaa98, 43936bdac | kept | maybe | Performance; the batch limit is a heuristic. |
+| Touchscreen crossing events kept out of mouse input | 81ad361ef | kept | maybe | |
+| Input context focused only while a text field owns input (#842) | 57044dfec | kept | send, with the input method work | Without it the on-screen keyboard opens on every activation. |
+| Tablet pen device ids (old `0011`) | 04c0262fb | kept | maybe | New API on all three platforms. |
+| Size echo for a window sized while hidden (old `0015`) | 608347413 | kept | send | |
+| System decorations: GTK's own title bar moves, maximizes and resizes the window (old `0018`) | 6606212b7, 37b9812df, dd7982fd9 | ported | no | Upstream #1218 deleted `WlHeader`, so the half that skipped it is gone; the marker and event pass-through remain. |
+| Non-resizable window sized through its content (old `0017`) | 0fea4589c | kept | send | Would fix upstream #561; see also #929, #1370. |
+| Popup sized before map (old `0019`) | 70ed890b8 | kept | no | |
+
+Upstream Linux changes **not** taken:
+
+- #1218's timestamp de-duplication of motion and button events, and its switch
+  from `Propagation::Stop` to `Proceed`. Nucleus keeps `Stop`, except over GTK's
+  own decorations, which is its narrower fix for the same problem.
+- #1218's maximize in the first `configure-event`. Nucleus keeps its
+  synchronous maximize.
+- #1218's empty `EventBox` title bar on undecorated Wayland windows (KWin
+  drawing a frame around them, GTK #5479). Nucleus negotiates
+  `org_kde_kwin_server_decoration` itself (`src/platform/linux/server_decoration.rs`,
+  #816), and the title bar would give borderless windows the `csd` style class
+  that negotiation keys on.
+- #1380 (touch resize starts on `TouchBegin`): tao's touch-resize handler no
+  longer exists here.
+
+Taken: #1173 (`RwLock` fields), #1351 (null display checks), #1228 (JIS keys),
+#1391 (scancodes), #1218's removal of `WlHeader`.
+
+### macOS
+
+| Change | Commits | Outcome | Upstream | Upstream status / notes |
+|---|---|---|---|---|
+| `setFrameTopLeftPoint` / `setContentSize` applied synchronously on the main thread | 6d7f082f6, 558c8162f | dropped on 0.37.3 | — | Upstream #1420 (closes #1406) runs every window method on the main thread, synchronously. |
+| `PanicInfo` Weak gone after the loop exits: return instead of panicking in `wakeup` / `cleared` | dc02669df, 93fad99f2 | kept | send | Two-line fix; still `.expect` on `dev`. Closest report: winit#2282. |
+| Force-set the cursor when it changes inside the current cursor rect | f213b9533 | ported | maybe | |
+| No hidden `NSTextView` first responder (no forced I-beam) | ff3871d76 | kept | no | |
+| Maximize at creation without the zoom animation; `is_zoomed` against `visibleFrame` | feb07a2f4, a3a799d33 | ported; on 0.37.3 re-ported onto `WindowDelegate`'s ivars (#1420 removed `UnownedWindow` and `SharedState`) | maybe | |
+| Resize steps delivered during AppKit's zoom animation, one present per resize, and AppKit's own frame animations stepped (#576) | 3642e16b5, b92531fc7, 9c8fff627 | ported (`setFrame:display:animate:` is now a `define_class!` method); on 0.37.3 the zoom state moved to `WindowDelegate`'s ivars, and the animation holds the delegate weakly | maybe | Open upstream PR #1207 takes a different route (`windowShouldZoom:toFrame:`). Comment there. |
+| Input method (#595): preedit and commit events, `markedRange` length, `selectedRange`, `attributedSubstringForProposedRange`, `characterIndexForPoint`, input-method-consumed key events | 95e3b4bbb, 3b9fdcbc3 | ported to the `define_class!` view | split | `markedRange` and the stub answers: send (winit already returns `{0, len}`). Events and consumed keys: maybe, needs an `Ime` event. |
+| Press-and-hold accent picker: repeats go to `interpretKeyEvents`, commits through `replacementRange` (#611, #612) | 94b50c656, e37a77777, cf83ec2e0 | ported | send | winit has no repeat gate. Needs a test that repeats don't type twice. |
+| Overlay-safe detach; `set_focusable` retain leak (#494) | 5c63ce0f2 | detach kept, leak fix dropped | no | Upstream's `AtomicBool` ivar no longer leaks. |
+| Cancelable quit: `terminate:` override, Electron's semantics | ff38b93b1, a4801d8e3 | ported; on 0.37.3 a `define_class!` method of `TaoApp`, as upstream's `sendEvent:` became | maybe | Upstream's `ExitRequested` work (#1003) is open and conflicting. |
+| Trackpad scrolling as AWT does it: `ScrollPhase`, horizontal sign not negated, `PixelDelta` in logical points (#652–#656) | fe7b213f9 | ported | split | Sign: send, following winit #2105, but it changes behavior for existing users. Phase: maybe, model it on winit's `ScrollSource`. Logical points: no. |
+| Hover kept through AppKit's phantom `mouseExited`; position on `mouseEntered` | 2c7ea4165 | ported | maybe | |
+| Back and forward mouse buttons from `buttonNumber` | c784a8863 | dropped on 0.37.3 | — | Upstream #1434, the same mapping. |
+| Cursor hook for the embedder (#746) | 24e00fd3b | ported to `Retained<NSCursor>` | no | |
+| WebKit cursor loading that can fail (#746) | 2029e9c82 | dropped | no | Unreachable with the hook: Nucleus sets only icons its own table resolves (`Move` falls back to the open hand there), so tao never loads `move` or `cell` from HIServices. The bundle is present on macOS 27, and every private `NSCursor` selector tao calls works there. |
+| Tablet pen device ids (old `0012`) | f1a4f58eb | ported | maybe | |
+| Minimize/deminimize hook in the window delegate | (with the above) | ported (0.37.3: on `WindowDelegate` itself) | no | |
+
+### Windows
+
+| Change | Commits | Outcome | Upstream | Upstream status / notes |
+|---|---|---|---|---|
+| Nucleus's IMM32 state machine: preedit and commit events | 327ce6a6f, 096172a23, b15a1e0a6 | kept; replaces upstream's `ime.rs`, and upstream's `WM_IME_ENDCOMPOSITION` text event is dropped (it typed every commit twice) | maybe | `dev` has `// TODO: Catch up with winit on the IME events`. Needs an `Ime` event. |
+| `VK_PROCESSKEY` keys not delivered (#558) | 327ce6a6f | kept on upstream's keyboard refactor (#1238) | send | |
+| `set_ime_position` places the candidate window too | 327ce6a6f | dropped on 0.37.3 | — | Upstream #1437, the same code. |
+| Key-event locks not held across `PeekMessageW` (#640) | 5ccfec799 | dropped | — | Upstream #1215 / #1238. |
+| Input locks released before pumping calls (#644) | 34847dde2 | kept, except the `TaskbarCreated` part | — | `TaskbarCreated` is upstream #1264. |
+| No `RegisterTouchWindow` (caption drags by touch) | 507b904c9 | kept (the call moved to `InitData::create_window`) | send | Open upstream issue #525; add the root cause there. |
+| `SIZE_MINIMIZED` not reported as `Resized(0, 0)`; minimized flag from `WM_SIZE` | 367eebee7 | kept | no | winit behaves like stock tao; #1419 (open) syncs the flag but keeps the event. |
+| Minimized hook | ff979efba | kept | no | |
+| Pointer activation and focus for overlay and popup windows | a7bb17c10 | kept | no | |
+| Initial size of a maximized window; trust `IsZoomed` over the `WM_SIZE` wparam | f644aff5f | kept | send | Related, different: #1306, #1352 (in 0.37.2), #1426. |
+| Show a window that opens maximized only after maximizing it (no flash) | 6999484e0 | ported: upstream's creation order changed, so the show was moved after `set_maximized` in `init` | maybe | |
+| Un-minimizing a maximized window keeps it maximized | ea40ff867 | kept | send | Older #622 was a different path; see #1318 / #1419. |
+| `set_min_inner_size` does not un-maximize | f644aff5f | kept | send | Keep the size-bounds re-check if sent: Nucleus drops it, so a too-small window is corrected only on the next resize. |
+| `SKIP_TASKBAR` as a tool window, kept across `apply_diff` | c5604ca14 | kept; upstream's conditional `set_skip_taskbar` at creation taken | no | A maintainer declined `WS_EX_TOOLWINDOW` (tauri#10422). At most an opt-in. |
+| Wheel notches unscaled (Chromium-style scroll) | 7c6974e65 | kept | no | |
+| Trackpad pinch through a magnify hook | 55837dcd8 | kept | no | |
+| Smooth resize: synchronous repaint during a size move | 905a66f0b | kept | maybe | |
+| `FlashWindow`'s `WM_NCACTIVATE(FALSE)` is not a focus loss; modal dialogs (#832, old `0014`) | fc0148bad | kept | send (the guard) | |
+| Session end through cancelable close requests (#751, old `0016`) | 8f086e49b, 87cff7274 | kept; with the hooks installed, the thread target returns before upstream's `process::exit` (#1157) | maybe | Open upstream issue #1115, blocked on `ExitRequested`. Comment there with the design. |
+| A mouse drag ends at the OS release point (#837) | ffbb628db, b69e1307c | kept | split | `WM_LBUTTONUP` posted with lparam 0 on `WM_EXITSIZEMOVE`: send (`GetCursorPos`). The release slot: no. |
+| Pen device ids and `WM_POINTERLEAVE` (old `0013`) | 8a41e4cf3 | kept | maybe | |
+
+Upstream Windows changes not taken: #1157's `process::exit` on
+`WM_ENDSESSION` when Nucleus's session-end hooks are installed. Taken: the
+keyboard refactor (#1238), no window subclassing (#1231), lock reentrancy
+(#1215), delayed maximize while hidden (#1306, #1352), `windows` 0.62.
+
+### Shared
+
+| Change | Commits | Outcome | Upstream |
+|---|---|---|---|
+| `WindowEvent::MouseWheel` gains `scroll_phase: ScrollPhase` (old `0008`) | fe7b213f9 | kept | maybe |
+| `ImePreedit` / `ImeCommit` events | the input method commits above | kept | maybe |
+| `PointerSource` device-id extensions on each platform | 04c0262fb, f1a4f58eb, 8a41e4cf3 | kept | maybe |
+| `WindowBuilderExtUnix::with_system_decorations`, `with_csd_hidden_titlebar`, popup builders | 6606212b7, de5e20ff9, 393ef7c18 | kept | no |
+
+## Sending upstream
+
+Upstream (tauri-apps/tao) wants a conventional-commit title, signed commits, a
+`.changes/*.md` covector changefile, `cargo fmt`, MSRV 1.85 and gtk-rs 0.18.
+In rough order of value for effort:
+
+1. Small Linux fixes, one PR each: the key repeat flag, modifier-only key
+   events and full modifier state, the discrete wheel delta, placeholder frame
+   extents, the size echo for hidden windows, the non-resizable content size
+   (#561).
+2. Small macOS fixes: the `PanicInfo` return, `markedRange` and the
+   `NSTextInputClient` stubs.
+3. Small Windows fixes: the
+   `VK_PROCESSKEY` drop, `GetCursorPos` for the synthetic `WM_LBUTTONUP`, the
+   `FlashWindow` guard, un-minimize to maximized, `set_min_inner_size`.
+4. Comments on existing threads instead of new PRs: #1335/#1336 (draw queue),
+   #1409 (empty input region), #1207 (zoom animation), #525
+   (`RegisterTouchWindow`), #1115 (session end).
+5. Proposals that need API design first: a cross-platform `Ime` event
+   (preedit and commit; Linux `IMMulticontext` as an opt-in), a scroll phase
+   modelled on winit's `ScrollSource`, pointer source device ids.
+
+## Bump procedure
+
+Diff the vendored tree against pristine tao at the pinned version, then
+re-apply that diff on the new version. Below, the diff is the commit `nucleus`
+(pristine `OLD` → `../tao/`), and `git cherry-pick` re-applies it on pristine
+`NEW` three-way: a hunk whose context upstream changed is merged rather than
+rejected, what cannot be merged is left as conflict markers, and a file that
+upstream deleted or added is a conflict too. (`git apply --3way` on a patch file
+does the same for edits, but gives up on the whole diff when a file it touches
+no longer exists; on the 0.37.2 bump that was `windows/minimal_ime.rs`.) From
+`decorated-window-tao/src/main/native`:
+
+```bash
+OLD=0.37.3 NEW=0.38.0   # the pinned version, and the one to move to
+NATIVE=$PWD W=$(mktemp -d)
+fetch_tao $OLD "$W/crates" && fetch_tao $NEW "$W/crates"
+cd "$W" && git init -q -b base tree && cd tree
+rsync -a "$W/crates/tao-$OLD/" . && git add -A && git commit -qm "tao $OLD"
+git checkout -qb nucleus && rsync -a --delete --exclude=.git --exclude=target "$NATIVE/vendor/tao/" . \
+  && git add -A && git commit -qm nucleus        # the Nucleus diff: git show nucleus
+git checkout -qb new base && rsync -a --delete --exclude=.git "$W/crates/tao-$NEW/" . \
+  && git add -A && git commit -qm "tao $NEW"
+git -c merge.conflictStyle=zdiff3 cherry-pick --no-commit nucleus   # re-apply it on NEW
+git diff --name-only --diff-filter=U              # files left with conflicts
+```
+
+Resolve each conflict. Then **check every file the diff touches both ways**,
+conflicted or not: `git diff nucleus -- <file>` must show only upstream's
+changes, and `git diff new -- <file>` only Nucleus's. A hunk can apply cleanly
+and still mean something else on the new code, a hunk upstream already made
+can be merged away silently, and a `zdiff3` conflict block can leave Nucleus
+lines out. On the 0.37.2 bump this check caught a
+`Propagation::Stop` flipped back to `Proceed`, a removed `is_wayland` that
+Nucleus still uses, a re-added `RegisterTouchWindow`, and upstream's IME text
+event typing every commit twice.
+
+A patch release can restructure as much as a minor one: 0.37.3 (#1420) moved
+the macOS window methods and their state from `UnownedWindow` and `SharedState`
+into `WindowDelegate` and its ivars, and turned `TaoApp` into a `define_class!`.
+Where upstream rewrote a file like that, it is simpler to start from upstream's
+version (`git show new:<file> > <file>`) and re-express each hunk of
+`git diff base nucleus -- <file>` on it than to resolve the conflict blocks.
+
+Then copy the result into the vendor directory:
+
+```bash
+rsync -a --delete --exclude=.git --exclude=target ./ "$NATIVE/vendor/tao/"
+```
+
+Set `tao = "<NEW>"` in `../../Cargo.toml`, run `cargo update -p tao`,
+`cargo check` for each target (`x86_64-unknown-linux-gnu`,
+`aarch64-apple-darwin`, `x86_64-pc-windows-msvc`),
+`:decorated-window-tao:check`, and the headful suite on each OS. Update the
+pinned version and the catalog in this file.

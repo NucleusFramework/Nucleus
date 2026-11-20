@@ -434,7 +434,7 @@ mod tests {
     wparam: usize,
     lparam: isize,
   ) -> Vec<ImeEvent> {
-    let mut result = ProcResult::DefSubclassProc;
+    let mut result = ProcResult::DefWindowProc;
     handler.process_message_with(source, msg, WPARAM(wparam), LPARAM(lparam), &mut result)
   }
 
