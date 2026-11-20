@@ -37,6 +37,10 @@ abstract class GenerateProjectResourceMetadataTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    /**
+     * Writes `reachability-metadata.json` to [outputDir] with one resource glob per top-level
+     * entry of [resourceDirs], skipping hidden entries and `META-INF`.
+     */
     @TaskAction
     fun generate() {
         val globs = sortedSetOf<String>()

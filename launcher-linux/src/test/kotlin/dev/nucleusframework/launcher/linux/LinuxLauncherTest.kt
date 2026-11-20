@@ -94,7 +94,7 @@ class LinuxLauncherTest {
 
     @Test
     fun `launcher entry methods drive the native bridge when it is loaded`() {
-        if (!LinuxLauncherEntry.isAvailable) return
+        if (!LinuxLauncherEntry.isAvailable || !SessionBus.isReachable) return
         val uri = LinuxLauncherEntry.appUri("nucleus-kover-coverage.desktop")
         LinuxLauncherEntry.update(uri, LauncherProperties(count = 1L, countVisible = true))
         LinuxLauncherEntry.update(uri, LauncherProperties(progress = 0.2, progressVisible = false))

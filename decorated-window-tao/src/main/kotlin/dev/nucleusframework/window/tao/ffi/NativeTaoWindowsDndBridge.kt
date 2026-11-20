@@ -23,18 +23,32 @@ internal object NativeTaoWindowsDndBridge {
      * unchanged for convenience; [x]/[y] are client-area coordinates in
      * physical pixels (top-left origin, after WM_NCCALCSIZE strip-off).
      *
+     * `hasData` is true when the drag offers files (`CF_HDROP`), text
+     * (`CF_UNICODETEXT` / `CF_TEXT`) or a URL (`UniformResourceLocator[W]`).
+     *
      * Return values for `onDragEnter`/`onDragOver`/`onDrop`:
      *   - [DROP_EFFECT_NONE] — reject the drag/drop
      *   - [DROP_EFFECT_COPY] — accept as a copy
      */
     interface Callback {
+        /**
+         * Updates the hover preview for this drag (read off the event-loop
+         * thread before the first `onDragEnter`); all `null` clears it.
+         */
+        fun onDragData(
+            hwnd: Long,
+            files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
+        )
+
         @Suppress("FunctionParameterNaming")
         fun onDragEnter(
             hwnd: Long,
             x: Int,
             y: Int,
             keyState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int
 
         @Suppress("FunctionParameterNaming")
@@ -43,7 +57,7 @@ internal object NativeTaoWindowsDndBridge {
             x: Int,
             y: Int,
             keyState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int
 
         fun onDragLeave(hwnd: Long)
@@ -55,6 +69,8 @@ internal object NativeTaoWindowsDndBridge {
             y: Int,
             keyState: Int,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ): Int
     }
 

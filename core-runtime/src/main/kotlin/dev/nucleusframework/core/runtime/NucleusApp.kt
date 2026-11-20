@@ -21,6 +21,9 @@ public object NucleusApp {
     private const val PROP_APP_NAME = "nucleus.app.name"
     private const val PROP_APP_AUMID = "nucleus.app.aumid"
     private const val PROP_STARTUP_TASK_ID = "nucleus.app.startup.task.id"
+    private const val PROP_LINUX_DESKTOP_ENTRY_ID = "nucleus.app.linux.desktop.entry.id"
+    private const val PROP_LINUX_STARTUP_WM_CLASS = "nucleus.app.linux.startup.wm.class"
+    private const val PROP_WINDOWS_WIDGETS_CLSID = "nucleus.app.windows.widgets.clsid"
 
     private const val RES_APP_ID = "app.id"
     private const val RES_APP_VERSION = "app.version"
@@ -29,6 +32,9 @@ public object NucleusApp {
     private const val RES_APP_NAME = "app.name"
     private const val RES_APP_AUMID = "app.aumid"
     private const val RES_STARTUP_TASK_ID = "startup.task.id"
+    private const val RES_LINUX_DESKTOP_ENTRY_ID = "linux.desktop.entry.id"
+    private const val RES_LINUX_STARTUP_WM_CLASS = "startup.wm.class"
+    private const val RES_WINDOWS_WIDGETS_CLSID = "windows.widgets.clsid"
 
     private val resourceProps: Properties? by lazy { loadResource() }
 
@@ -85,6 +91,38 @@ public object NucleusApp {
     @JvmStatic
     public val startupTaskId: String? by lazy {
         resolve(PROP_STARTUP_TASK_ID, RES_STARTUP_TASK_ID)
+    }
+
+    /**
+     * The basename (without `.desktop`) of the freedesktop desktop entry the Linux packages
+     * install, e.g. `NucleusLab` for `NucleusLab.desktop`: the Linux `packageName`, else the
+     * root `packageName`. Wayland compositors pair a window with its launcher entry (and icon)
+     * by matching the window's `app_id` against this name. `null` if not configured.
+     */
+    @JvmStatic
+    public val linuxDesktopEntryId: String? by lazy {
+        resolve(PROP_LINUX_DESKTOP_ENTRY_ID, RES_LINUX_DESKTOP_ENTRY_ID)
+    }
+
+    /**
+     * The `StartupWMClass` the Linux packages write into their desktop entry: `linux.startupWMClass`,
+     * else the main class with dots replaced by dashes (the name AWT's XToolkit gives its windows).
+     * X11 desktops pair a window with its launcher entry (and icon) by matching the window's
+     * `WM_CLASS` against this value. `null` if not configured.
+     */
+    @JvmStatic
+    public val linuxStartupWmClass: String? by lazy {
+        resolve(PROP_LINUX_STARTUP_WM_CLASS, RES_LINUX_STARTUP_WM_CLASS)
+    }
+
+    /**
+     * CLSID of the COM class the Windows widgets board activates to reach the app's widget
+     * provider, injected by the Nucleus Gradle plugin when `windows { widgets { } }` declares
+     * at least one widget (it also writes it into the AppX manifest). `null` otherwise.
+     */
+    @JvmStatic
+    public val windowsWidgetsClsid: String? by lazy {
+        resolve(PROP_WINDOWS_WIDGETS_CLSID, RES_WINDOWS_WIDGETS_CLSID)
     }
 
     /** `true` if the Nucleus plugin injected metadata (via system property or classpath resource). */

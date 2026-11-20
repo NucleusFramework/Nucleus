@@ -65,6 +65,8 @@ typedef struct {
     char *(*XResourceManagerString)(Display *);
     int (*XLookupString)(XKeyEvent *, char *, int, KeySym *, XComposeStatus *);
     KeySym (*XkbKeycodeToKeysym)(Display *, KeyCode, unsigned, unsigned);
+    /* Optional: without it, a held key arrives as release + press pairs. */
+    Bool (*XkbSetDetectableAutoRepeat)(Display *, Bool, Bool *);
     Bool (*XQueryExtension)(Display *, const char *, int *, int *, int *);
     Bool (*XGetEventData)(Display *, XGenericEventCookie *);
     void (*XFreeEventData)(Display *, XGenericEventCookie *);
@@ -134,11 +136,15 @@ typedef struct {
     Atom a_XdndTypeList;
     Atom a_XdndActionCopy;
     Atom a_text_uri_list;
+    Atom a_text_plain_utf8;
+    Atom a_UTF8_STRING;
+    Atom a_text_plain;
 
     Window xdnd_source;
     int    xdnd_version;
     int    xdnd_entered;
-    int    xdnd_has_files;
+    /* Target the drop will be converted to (None: nothing readable). */
+    Atom   xdnd_target;
     int    xdnd_x;
     int    xdnd_y;
     int    xdnd_awaiting_sel;

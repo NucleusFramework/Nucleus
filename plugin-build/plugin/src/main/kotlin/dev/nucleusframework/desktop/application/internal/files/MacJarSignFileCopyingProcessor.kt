@@ -12,6 +12,9 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
+// First JDK whose jpackage signs non-jar dylibs itself (see the `when` in `copy`).
+private const val JDK_SIGNING_DYLIBS = 17
+
 internal class MacJarSignFileCopyingProcessor(
     private val signer: MacSigner,
     private val tempDir: File,
@@ -35,7 +38,7 @@ internal class MacJarSignFileCopyingProcessor(
             SimpleFileCopyingProcessor.copy(source, target)
             if (source.name.isDylibPath) {
                 when {
-                    jvmRuntimeVersion < 17 -> signer.sign(target)
+                    jvmRuntimeVersion < JDK_SIGNING_DYLIBS -> signer.sign(target)
                     /**
                      * JDK 17 started to sign non-jar dylibs,
                      * but it fails, when libs are already signed,
@@ -46,7 +49,7 @@ internal class MacJarSignFileCopyingProcessor(
                      * Note that the JDK only signs dylib files and not jnilib files,
                      * so jnilib files still need to be signed here.
                      */
-                    jvmRuntimeVersion == 17 -> {
+                    jvmRuntimeVersion == JDK_SIGNING_DYLIBS -> {
                         if (source.name.endsWith(".jnilib")) {
                             signer.sign(target)
                         } else {

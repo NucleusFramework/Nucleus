@@ -1,6 +1,11 @@
 {
     "reflection": [
         {
+            "type": "dev.nucleusframework.graalvm.signal.TerminationSignals",
+            "jniAccessible": true,
+            "methods": [ { "name": "onTerminationSignal", "parameterTypes": ["int"] } ]
+        },
+        {
             "type": "com.sun.media.sound.DirectAudioDeviceProvider",
             "methods": [ { "name": "<init>", "parameterTypes": [] } ]
         },

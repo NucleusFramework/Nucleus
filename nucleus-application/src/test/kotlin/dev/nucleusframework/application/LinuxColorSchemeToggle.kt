@@ -12,6 +12,15 @@ internal object LinuxColorSchemeToggle {
     private const val SCHEMA = "org.gnome.desktop.interface"
     private const val KEY = "color-scheme"
 
+    /**
+     * Whether the scheme can be toggled here *and* the change observed the way the
+     * detector observes it: through the XDG desktop portal on the session bus.
+     *
+     * `gsettings` alone is not enough. Without a session bus it still exits 0 — reads
+     * come from the on-disk dconf database or the schema default, and writes are
+     * dropped with only a warning — so the toggle would silently do nothing and the
+     * test would time out waiting for a change no portal can report.
+     */
     val isAvailable: Boolean by lazy {
         System
             .getProperty("os.name")
@@ -23,6 +32,8 @@ internal object LinuxColorSchemeToggle {
                 "gdbus",
                 "call",
                 "--session",
+                "--timeout",
+                "3",
                 "--dest",
                 "org.freedesktop.portal.Desktop",
                 "--object-path",
@@ -40,7 +51,12 @@ internal object LinuxColorSchemeToggle {
                 ProcessBuilder(*command)
                     .redirectErrorStream(true)
                     .start()
-            p.waitFor(3, TimeUnit.SECONDS) && p.exitValue() == 0
+            if (!p.waitFor(5, TimeUnit.SECONDS)) {
+                p.destroyForcibly()
+                false
+            } else {
+                p.exitValue() == 0
+            }
         }.getOrDefault(false)
 
     fun read(): String {

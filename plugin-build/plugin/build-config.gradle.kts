@@ -37,7 +37,8 @@ open class GenerateBuildConfig : DefaultTask() {
 
                 appendLine()
                 appendLine("/* GENERATED, DO NOT EDIT MANUALLY! */")
-                appendLine("object $className {")
+                appendLine("/** Build-time constants of the Nucleus Gradle plugin. */")
+                appendLine("internal object $className {")
                 for ((key, value) in fieldsToGenerate.get().entries.sortedBy { it.key }) {
                     appendLine("const val $key = ${if (value is String) "\"$value\"" else value.toString()}")
                 }

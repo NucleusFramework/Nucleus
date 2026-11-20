@@ -45,6 +45,9 @@ internal class TaoTrackpadPanRouter(
 ) {
     private var active = false
 
+    /** Whether a pan is open: from its PanStart until its PanEnd has been sent. */
+    val isOpen: Boolean get() = active
+
     // The end of the open pan is a deadline, not a timer per step: steps arrive
     // at frame rate and re-arming a coroutine for each would cost a launch, a
     // main-loop wake and a cancel every few milliseconds. One timer is in

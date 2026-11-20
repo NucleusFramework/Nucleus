@@ -16,15 +16,13 @@ class GraalvmMetadataResolvabilityTest {
     val tmp = TemporaryFolder()
 
     @Test
-    fun `classNameFromClassPath handles nested and multi-release paths`() {
+    fun `classNameFromClassPath handles nested paths and skips META-INF`() {
         assertEquals(
             "com.example.Foo\$Companion",
             classNameFromClassPath("com/example/Foo\$Companion.class"),
         )
-        assertEquals(
-            "com.example.Bar",
-            classNameFromClassPath("META-INF/versions/11/com/example/Bar.class"),
-        )
+        // Versioned copies reach it already unversioned (versionedClassEntries); a raw one is no class.
+        assertNull(classNameFromClassPath("META-INF/versions/11/com/example/Bar.class"))
         assertNull(classNameFromClassPath("module-info.class"))
         assertNull(classNameFromClassPath("META-INF/versions/11/module-info.class"))
         assertNull(classNameFromClassPath("readme.txt"))
@@ -94,14 +92,14 @@ class GraalvmMetadataResolvabilityTest {
             jos.closeEntry()
         }
 
-        val index = buildClasspathClassIndex(listOf(classDir, jarFile))
+        val index = buildClasspathClassIndex(listOf(classDir, jarFile), targetJavaVersion = 25)
         assertTrue(index.contains("com.example.App"))
         assertTrue(index.contains("com.example.App\$Companion"))
         assertTrue(index.contains("org.lib.Helper"))
         assertFalse(isTypeResolvable("kotlin.Int", index))
         assertTrue(isTypeResolvable("com.example.App", index))
 
-        val packages = buildClasspathPackageIndex(listOf(classDir, jarFile))
+        val packages = buildClasspathPackageIndex(listOf(classDir, jarFile), targetJavaVersion = 25)
         assertTrue(packages.contains("com.example"))
         assertTrue(packages.contains("org.lib"))
     }

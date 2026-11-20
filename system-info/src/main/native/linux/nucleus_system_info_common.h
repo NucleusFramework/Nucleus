@@ -18,6 +18,48 @@ static inline jstring to_jstring(JNIEnv *env, const char *str) {
     return (*env)->NewStringUTF(env, str);
 }
 
+// Helper: create a Java String from a byte buffer that may contain NULs (a
+// NUL-separated argv). NewStringUTF stops at the first NUL and requires
+// modified UTF-8, so decode to UTF-16 here instead; NULs are kept as U+0000 and
+// invalid UTF-8 sequences become U+FFFD.
+static inline jstring to_jstring_bytes(JNIEnv *env, const char *buf, size_t len) {
+    if (!buf) return NULL;
+    // UTF-16 never needs more code units than UTF-8 needs bytes.
+    jchar *out = (jchar *)malloc((len > 0 ? len : 1) * sizeof(jchar));
+    if (!out) return NULL;
+    const unsigned char *s = (const unsigned char *)buf;
+    size_t n = 0, i = 0;
+    while (i < len) {
+        unsigned int c = s[i];
+        if (c < 0x80) { out[n++] = (jchar)c; i++; continue; }
+        int extra;
+        unsigned int cp, min;
+        if ((c & 0xE0) == 0xC0)      { extra = 1; cp = c & 0x1F; min = 0x80; }
+        else if ((c & 0xF0) == 0xE0) { extra = 2; cp = c & 0x0F; min = 0x800; }
+        else if ((c & 0xF8) == 0xF0) { extra = 3; cp = c & 0x07; min = 0x10000; }
+        else { out[n++] = 0xFFFD; i++; continue; }
+        int valid = i + (size_t)extra < len;
+        for (int k = 1; valid && k <= extra; k++) {
+            if ((s[i + k] & 0xC0) != 0x80) valid = 0;
+            else cp = (cp << 6) | (s[i + k] & 0x3F);
+        }
+        if (!valid || cp < min || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+            out[n++] = 0xFFFD; i++; continue;
+        }
+        if (cp >= 0x10000) {
+            cp -= 0x10000;
+            out[n++] = (jchar)(0xD800 | (cp >> 10));
+            out[n++] = (jchar)(0xDC00 | (cp & 0x3FF));
+        } else {
+            out[n++] = (jchar)cp;
+        }
+        i += (size_t)extra + 1;
+    }
+    jstring result = (*env)->NewString(env, out, (jsize)n);
+    free(out);
+    return result;
+}
+
 // Helper: create a Java String[] from a C string array
 static inline jobjectArray to_string_array(JNIEnv *env, const char **strings, int count) {
     jclass string_class = (*env)->FindClass(env, "java/lang/String");

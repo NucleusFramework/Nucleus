@@ -1,0 +1,38 @@
+--- a/src/platform_impl/linux/window.rs
++++ b/src/platform_impl/linux/window.rs
+@@ -727,6 +727,15 @@
+       .to_logical::<i32>(self.scale_factor())
+       .into();
+ 
++    // PATCH(nucleus): same as `set_inner_size`: no configure-event reports a
++    // move of a window that is not mapped, so record where it will map.
++    if !self.window.is_mapped() {
++      self.inner_position.0.store(x, Ordering::Release);
++      self.inner_position.1.store(y, Ordering::Release);
++      self.outer_position.0.store(x, Ordering::Release);
++      self.outer_position.1.store(y, Ordering::Release);
++    }
++
+     if let Err(e) = self
+       .window_requests_tx
+       .send((self.window_id, WindowRequest::Position((x, y))))
+@@ -757,6 +766,19 @@
+   pub fn set_inner_size<S: Into<Size>>(&self, size: S) {
+     let (width, height) = size.into().to_logical::<i32>(self.scale_factor()).into();
+ 
++    // PATCH(nucleus): GTK sends no configure-event to a window that is not
++    // mapped, so the size caches would keep their creation values (the outer
++    // one is not even a size) until the first map. A window sized while
++    // hidden then reads stale geometry, and maps at a size nothing reported.
++    // The frame is unknown before the map: the outer size is the inner one
++    // until the first configure replaces both.
++    if !self.window.is_mapped() {
++      self.inner_size.0.store(width, Ordering::Release);
++      self.inner_size.1.store(height, Ordering::Release);
++      self.outer_size.0.store(width, Ordering::Release);
++      self.outer_size.1.store(height, Ordering::Release);
++    }
++
+     if let Err(e) = self
+       .window_requests_tx
+       .send((self.window_id, WindowRequest::Size((width, height))))

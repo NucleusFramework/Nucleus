@@ -83,7 +83,9 @@ private fun writeExecutableTypeMarker(
             if (appVersion != null) appendLine(appVersion)
         }
     marker.writeText(content)
-    logger.info("Wrote executable type '${targetFormat.executableTypeValue}' (version=$appVersion) to ${marker.absolutePath}")
+    logger.info(
+        "Wrote executable type '${targetFormat.executableTypeValue}' (version=$appVersion) to ${marker.absolutePath}",
+    )
 }
 
 /**
@@ -99,12 +101,15 @@ private fun writeExecutableTypeMarker(
  * The runtime ([dev.nucleusframework.core.runtime.ExecutableRuntime] `readMarkerFile`) looks for
  * the marker both next to the executable and in `../Resources/`, so both layouts are understood.
  */
+// AppName.app/Contents/MacOS sits three levels below the app image directory.
+private const val MAC_OS_DIR_SEARCH_DEPTH = 3
+
 private fun findMarkerDir(appImageDir: File): File? {
     // macOS: AppName.app/Contents/MacOS/ → write the marker to the sibling Contents/Resources/
     val macOsDir =
         appImageDir
             .walkTopDown()
-            .maxDepth(3)
+            .maxDepth(MAC_OS_DIR_SEARCH_DEPTH)
             .firstOrNull { it.isDirectory && it.name == "MacOS" && it.parentFile?.name == "Contents" }
     if (macOsDir != null) {
         val resourcesDir = macOsDir.parentFile.resolve("Resources")

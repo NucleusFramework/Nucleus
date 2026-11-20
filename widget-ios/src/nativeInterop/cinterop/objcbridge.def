@@ -1,0 +1,15 @@
+language = Objective-C
+package = dev.nucleusframework.widget.ios.objcbridge
+---
+#import <Foundation/Foundation.h>
+#import <objc/message.h>
+
+// Sends `+[<className> <selector>:argument]`, returning its string, or nil when the class (the
+// Swift NucleusWidgetCenter the app adds to its targets) or the method is missing. Looked up at
+// run time, so a framework without it still links and loads.
+static inline NSString *nucleus_widgets_call_class(NSString *className, NSString *selector, NSString *argument) {
+    Class target = NSClassFromString(className);
+    SEL sel = NSSelectorFromString(selector);
+    if (target == nil || ![target respondsToSelector:sel]) return nil;
+    return ((NSString *(*)(Class, SEL, NSString *))objc_msgSend)(target, sel, argument);
+}

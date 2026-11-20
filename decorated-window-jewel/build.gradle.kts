@@ -15,16 +15,28 @@ val publishVersion =
         ?: "1.0.0"
 
 dependencies {
-    // Compile against all backends — consumer picks one at runtime:
-    //  :decorated-window-jbr (JBR), :decorated-window-jni (any JVM), or
-    //  :decorated-window-tao (no-AWT native).
-    compileOnly(project(":decorated-window-jbr"))
+    // Window/dialog wrappers only add styling on top of nucleus-application's
+    // Tao-backed window; the app brings both at runtime.
     compileOnly(project(":decorated-window-tao"))
     compileOnly(project(":nucleus-application"))
     api(project(":core-runtime"))
     api(libs.compose.desktop.common)
     implementation(libs.jewel.foundation)
     implementation(libs.jewel.ui)
+
+    // The Jewel spellcheck/context-menu integration is exercised through a real IntUiTheme.
+    testImplementation(project(":decorated-window-tao"))
+    testImplementation(project(":nucleus-application"))
+    testImplementation(libs.junit)
+    testImplementation(compose.desktop.currentOs)
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
+    testImplementation(libs.jewel.int.ui.standalone) {
+        exclude(group = "org.jetbrains.skiko", module = "skiko-awt-runtime-all")
+    }
+    testImplementation(libs.intellij.icons)
+    testImplementation(libs.intellij.icons.api)
+    testImplementation(libs.intellij.icons.impl)
+    testImplementation(libs.jna.jpms)
 }
 
 java {
@@ -36,6 +48,11 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_25)
     }
+}
+
+// Compiled to class file 69: the tests run on a 25 JVM whatever JDK runs Gradle.
+tasks.withType<Test>().configureEach {
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(25)) })
 }
 
 mavenPublishing {

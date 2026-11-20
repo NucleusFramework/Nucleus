@@ -37,6 +37,17 @@ class ExecutableRuntimeTest {
     }
 
     @Test
+    fun `a flatpak sandbox overrides the marker of the repackaged artifact`() {
+        assertEquals(ExecutableType.FLATPAK, ExecutableRuntime.resolveType(null, insideFlatpak = true, marker = "tar"))
+        assertEquals(ExecutableType.TAR, ExecutableRuntime.resolveType(null, insideFlatpak = false, marker = "tar"))
+    }
+
+    @Test
+    fun `the type property wins over the flatpak sandbox`() {
+        assertEquals(ExecutableType.DEV, ExecutableRuntime.resolveType("dev", insideFlatpak = true, marker = "tar"))
+    }
+
+    @Test
     fun `parses appimage as APPIMAGE not DEV`() {
         assertEquals(ExecutableType.APPIMAGE, ExecutableRuntime.parseType("appimage"))
         assertEquals(ExecutableType.APPIMAGE, ExecutableRuntime.parseType(".appimage"))

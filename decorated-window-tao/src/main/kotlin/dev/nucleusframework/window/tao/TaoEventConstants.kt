@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import androidx.compose.ui.input.pointer.PointerType
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 
 /** Cursor icon codes mirrored 1:1 with the Rust `cursor_from_code` table. */
@@ -18,6 +19,12 @@ public object TaoCursorIcon {
     public const val NS_RESIZE: Int = 10
     public const val NESW_RESIZE: Int = 11
     public const val NWSE_RESIZE: Int = 12
+
+    /** Open hand: this can be picked up and dragged. */
+    public const val GRAB: Int = 13
+
+    /** Closed hand: it is being dragged. */
+    public const val GRABBING: Int = 14
 }
 
 /** Mirrors the event constants in `nucleus_tao` (`lib.rs`). */
@@ -79,7 +86,43 @@ public object TaoEventCode {
      * VSync while active so border-drag frames don't block on VBlank.
      */
     public const val SIZE_MOVE: Int = 25
+
+    /** macOS requested application termination; route it through each window's close callback. */
+    internal const val QUIT_REQUESTED: Int = 26
+
+    /**
+     * Linux/Wayland only. `a` = 1 when the compositor asked the window not to
+     * draw decorations (KWin's server-decoration `none` or `server` mode), 0
+     * when it allows them again.
+     */
+    internal const val DECORATIONS_SUPPRESSED: Int = 27
+
+    /**
+     * `a` = the [TaoPointerKind] of the cursor / button events that follow,
+     * sent only when it changes. Linux and macOS (#827); a Windows pen comes
+     * as a touch, whose kind rides with each touch event instead.
+     */
+    internal const val POINTER_KIND: Int = 28
 }
+
+/** Tool codes of [TaoEventCode.POINTER_KIND], mirroring `events.rs` `POINTER_KIND_*`. */
+internal object TaoPointerKind {
+    const val MOUSE: Int = 0
+    const val STYLUS: Int = 1
+    const val ERASER: Int = 2
+
+    /** A finger; Windows touch events only. */
+    const val TOUCH: Int = 3
+}
+
+/** The Compose pointer type of a [TaoPointerKind] code; unknown codes are the mouse. */
+internal fun taoPointerType(kind: Int): PointerType =
+    when (kind) {
+        TaoPointerKind.STYLUS -> PointerType.Stylus
+        TaoPointerKind.ERASER -> PointerType.Eraser
+        TaoPointerKind.TOUCH -> PointerType.Touch
+        else -> PointerType.Mouse
+    }
 
 /** Trackpad gesture kind reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */
 @Suppress("MagicNumber")
@@ -160,5 +203,7 @@ public object TaoMouseButton {
     public const val LEFT: Int = 0
     public const val RIGHT: Int = 1
     public const val MIDDLE: Int = 2
-    public const val OTHER: Int = 3
+    public const val BACK: Int = 3
+    public const val FORWARD: Int = 4
+    public const val OTHER: Int = 5
 }

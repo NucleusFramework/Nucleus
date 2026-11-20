@@ -44,6 +44,14 @@ pub(crate) struct ImeState {
   /// so a release with no press behind it activates whatever holds focus —
   /// the Return that merely confirmed a conversion would press a button.
   pressed: HashSet<u16>,
+  /// Hardware keycodes physically held, filtered or not — what tells a held
+  /// key's auto-repeat from a new press. GDK reports neither flag nor count:
+  /// a held key arrives as a run of presses and one release, on X11 (GDK turns
+  /// detectable auto-repeat on, or drops the paired releases itself) and on
+  /// Wayland (GDK's own repeat timer only emits presses). Cleared when the
+  /// window loses the focus, since a key released elsewhere never reports
+  /// its release here.
+  held: HashSet<u16>,
   /// Last modifier state published to Compose.
   modifiers: ModifiersState,
 }
@@ -82,6 +90,22 @@ impl ImeState {
     }
     self.pressed.insert(keycode);
     true
+  }
+
+  /// Records a key press and answers whether it is an auto-repeat, i.e. the
+  /// key was already held. Called for every press, before the input method.
+  pub(crate) fn press_is_repeat(&mut self, keycode: u16) -> bool {
+    !self.held.insert(keycode)
+  }
+
+  /// Records a key release; see [`Self::press_is_repeat`].
+  pub(crate) fn release_held(&mut self, keycode: u16) {
+    self.held.remove(&keycode);
+  }
+
+  /// Forgets every held key: their releases go to whichever window has the focus.
+  pub(crate) fn focus_lost(&mut self) {
+    self.held.clear();
   }
 
   /// Whether a key release should reach Compose. Releases whose press was
@@ -164,6 +188,35 @@ mod tests {
     assert!(s.key_released(KEY_A, false));
     // The repeat collapsed into one entry, so a second release is unpaired.
     assert!(!s.key_released(KEY_A, false));
+  }
+
+  #[test]
+  fn held_key_presses_are_repeats() {
+    let mut s = ImeState::new();
+    assert!(!s.press_is_repeat(KEY_A));
+    assert!(s.press_is_repeat(KEY_A));
+    assert!(s.press_is_repeat(KEY_A));
+    s.release_held(KEY_A);
+    assert!(!s.press_is_repeat(KEY_A));
+  }
+
+  #[test]
+  fn rollover_is_not_a_repeat() {
+    let mut s = ImeState::new();
+    assert!(!s.press_is_repeat(KEY_CTRL));
+    assert!(!s.press_is_repeat(KEY_A));
+    assert!(s.press_is_repeat(KEY_A));
+    s.release_held(KEY_A);
+    assert!(!s.press_is_repeat(KEY_A));
+  }
+
+  #[test]
+  fn focus_loss_forgets_held_keys() {
+    let mut s = ImeState::new();
+    assert!(!s.press_is_repeat(KEY_A));
+    // Released while another window had the focus: no release here.
+    s.focus_lost();
+    assert!(!s.press_is_repeat(KEY_A));
   }
 
   #[test]

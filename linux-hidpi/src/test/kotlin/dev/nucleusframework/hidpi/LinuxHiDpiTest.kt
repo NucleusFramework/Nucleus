@@ -35,11 +35,11 @@ class LinuxHiDpiTest {
     @Test
     fun `native bridge reports loaded on linux and can query the scale`() {
         if (!System.getProperty("os.name").contains("Linux", ignoreCase = true)) return
-        if (!HiDpiLinuxBridge.isLoaded) return
-        val scale = HiDpiLinuxBridge.nativeGetScaleFactor()
+        if (!LinuxStartupBridge.isLoaded) return
+        val scale = LinuxStartupBridge.nativeGetScaleFactor()
         assertTrue(scale >= 0.0)
         if (scale > 0.0) {
-            HiDpiLinuxBridge.nativeApplyScaleToEnv(scale.toInt().coerceAtLeast(1))
+            LinuxStartupBridge.nativeApplyScaleToEnv(scale.toInt().coerceAtLeast(1))
         }
     }
 

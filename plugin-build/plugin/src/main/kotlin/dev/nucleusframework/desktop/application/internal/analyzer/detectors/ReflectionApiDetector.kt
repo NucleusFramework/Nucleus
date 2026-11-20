@@ -42,6 +42,35 @@ internal object ReflectionApiDetector {
         return results
     }
 
+    /** The registration a `Class` member lookup named [lookup] on [targetClass] needs, if any. */
+    private fun memberLookupEntry(
+        lookup: String,
+        targetClass: String,
+        memberName: String?,
+    ): ReflectionEntry? =
+        when {
+            lookup in METHOD_LOOKUPS && memberName != null ->
+                ReflectionEntry(
+                    type = targetClass,
+                    methods = setOf(MethodSignature(memberName)),
+                )
+            lookup in FIELD_LOOKUPS && memberName != null ->
+                ReflectionEntry(
+                    type = targetClass,
+                    fields = setOf(memberName),
+                )
+            lookup in CONSTRUCTOR_LOOKUPS ->
+                ReflectionEntry(
+                    type = targetClass,
+                    methods = setOf(MethodSignature("<init>")),
+                )
+            lookup == "getMethods" || lookup == "getDeclaredMethods" ->
+                ReflectionEntry(type = targetClass, allDeclaredMethods = true)
+            lookup == "getFields" || lookup == "getDeclaredFields" ->
+                ReflectionEntry(type = targetClass, allDeclaredFields = true)
+            else -> null
+        }
+
     private class MethodReflectionVisitor(
         private val results: MutableSet<ReflectionEntry>,
     ) : MethodVisitor(Opcodes.ASM9) {
@@ -140,40 +169,8 @@ internal object ReflectionApiDetector {
             // Check for reflection API calls on Class
             if (opcode == Opcodes.INVOKEVIRTUAL && owner == "java/lang/Class" && name in ALL_MEMBER_LOOKUPS) {
                 val targetClass = stackClass
-                val memberName = stackString
-
                 if (targetClass != null) {
-                    when {
-                        name in METHOD_LOOKUPS && memberName != null ->
-                            results.add(
-                                ReflectionEntry(
-                                    type = targetClass,
-                                    methods = setOf(MethodSignature(memberName)),
-                                ),
-                            )
-                        name in FIELD_LOOKUPS && memberName != null ->
-                            results.add(
-                                ReflectionEntry(
-                                    type = targetClass,
-                                    fields = setOf(memberName),
-                                ),
-                            )
-                        name in CONSTRUCTOR_LOOKUPS ->
-                            results.add(
-                                ReflectionEntry(
-                                    type = targetClass,
-                                    methods = setOf(MethodSignature("<init>")),
-                                ),
-                            )
-                        name == "getMethods" || name == "getDeclaredMethods" ->
-                            results.add(
-                                ReflectionEntry(type = targetClass, allDeclaredMethods = true),
-                            )
-                        name == "getFields" || name == "getDeclaredFields" ->
-                            results.add(
-                                ReflectionEntry(type = targetClass, allDeclaredFields = true),
-                            )
-                    }
+                    memberLookupEntry(name, targetClass, stackString)?.let(results::add)
                 }
             }
 

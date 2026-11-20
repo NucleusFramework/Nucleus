@@ -2,13 +2,13 @@ package dev.nucleusframework.media.control
 
 import dev.nucleusframework.core.runtime.ExecutableRuntime
 import dev.nucleusframework.core.runtime.NucleusApp
+import dev.nucleusframework.core.runtime.NucleusUiThread
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.media.control.linux.NativeLinuxBridge
 import dev.nucleusframework.media.control.macos.NativeMacOsBridge
 import dev.nucleusframework.media.control.windows.NativeWindowsBridge
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import javax.swing.SwingUtilities
 
 /**
  * Entry point for OS-level media controls.
@@ -18,7 +18,9 @@ import javax.swing.SwingUtilities
  *  - macOS: MPNowPlayingInfoCenter + MPRemoteCommandCenter (Control Center / Now Playing)
  *  - Windows: System Media Transport Controls (SMTC / WinRT)
  *
- * Events dispatched to the callback are delivered on the Swing EDT.
+ * Events dispatched to the callback are delivered on the host's UI thread
+ * (the Tao main thread under Nucleus, the AWT EDT in a plain Swing /
+ * Compose Desktop host).
  */
 public object MediaControlService {
     private val json = Json { ignoreUnknownKeys = true }
@@ -62,6 +64,9 @@ public object MediaControlService {
     /**
      * Update the metadata shown in the system media center.
      * Call whenever the track changes.
+     * On Linux, title, artist and album identify the track. Updating only duration
+     * or cover art preserves its MPRIS track ID. Tracks with identical title,
+     * artist and album cannot be distinguished by this API.
      */
     public fun setMetadata(metadata: MediaMetadata) {
         backend.setMetadata(
@@ -75,7 +80,12 @@ public object MediaControlService {
 
     /**
      * Update the playback state shown in the system media center.
-     * Call on play/pause/stop and periodically during playback to update position.
+     * Call on play/pause/stop, seeks and periodically to correct the position.
+     *
+     * On Linux, Position advances at the backend's fixed rate of 1.0 while playing,
+     * even without further calls. A position correction emits Seeked only when it
+     * differs from the predicted position by more than 100 ms. After an MPRIS seek
+     * request, the next supplied position emits Seeked even for a smaller change.
      */
     public fun setPlaybackState(state: MediaPlaybackState) {
         backend.setPlaybackState(
@@ -98,7 +108,7 @@ public object MediaControlService {
     /**
      * Listen for control events from the OS (play, pause, seek, next, previous...).
      *
-     * The callback is dispatched on the Swing EDT — safe to mutate Compose/Swing state directly.
+     * The callback is dispatched on the host's UI thread — safe to mutate Compose state directly.
      * Only one listener is active at a time; calling attach replaces any previous listener.
      *
      * Events emitted per platform:
@@ -109,7 +119,7 @@ public object MediaControlService {
     public fun attach(callback: (MediaControlEvent) -> Unit) {
         backend.attach { raw ->
             val event = parseEvent(raw) ?: return@attach
-            SwingUtilities.invokeLater { callback(event) }
+            NucleusUiThread.post { callback(event) }
         }
     }
 

@@ -169,4 +169,22 @@ class VersionTest {
     fun `two empty metas compare equal`() {
         assertEquals(0, Version.fromString("2.0.0").compareTo(Version.fromString("2.0.0")))
     }
+
+    @Test
+    fun `build metadata is parsed and ignored`() {
+        assertEquals(Version(1, 2, 3, ""), Version.fromString("1.2.3+42"))
+        assertEquals(Version(1, 0, 0, "beta.1"), Version.fromString("1.0.0-beta.1+exp.sha.5114f85"))
+    }
+
+    @Test
+    fun `build metadata does not affect precedence`() {
+        assertEquals(0, Version.fromString("1.2.3+1").compareTo(Version.fromString("1.2.3+2")))
+        assertEquals(0, Version.fromString("1.2.3+42").compareTo(Version.fromString("1.2.3")))
+        assertTrue(Version.fromString("1.2.4") > Version.fromString("1.2.3+42"))
+    }
+
+    @Test
+    fun `release with build metadata is not a pre-release`() {
+        assertEquals("", Version.fromString("2.0.0+build.7").meta)
+    }
 }

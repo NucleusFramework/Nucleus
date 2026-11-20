@@ -15,13 +15,15 @@ class UpdateEventTest {
 
     @Before
     fun setup() {
-        updater =
-            NucleusUpdater {
-                currentVersion = "2.0.0"
-                provider = FakeUpdateProvider()
-            }
+        updater = updaterAt("2.0.0")
         UpdateMarker.delete()
     }
+
+    private fun updaterAt(version: String): NucleusUpdater =
+        NucleusUpdater {
+            currentVersion = version
+            provider = FakeUpdateProvider()
+        }
 
     @After
     fun cleanup() {
@@ -74,7 +76,7 @@ class UpdateEventTest {
     fun `consumeUpdateEvent detects minor update level`() {
         UpdateMarker.write("1.0.0", "1.1.0")
 
-        val event = updater.consumeUpdateEvent()
+        val event = updaterAt("1.1.0").consumeUpdateEvent()
         assertNotNull(event)
         assertEquals(UpdateLevel.MINOR, event!!.updateLevel)
     }
@@ -83,7 +85,7 @@ class UpdateEventTest {
     fun `consumeUpdateEvent detects patch update level`() {
         UpdateMarker.write("1.0.0", "1.0.1")
 
-        val event = updater.consumeUpdateEvent()
+        val event = updaterAt("1.0.1").consumeUpdateEvent()
         assertNotNull(event)
         assertEquals(UpdateLevel.PATCH, event!!.updateLevel)
     }
@@ -92,8 +94,19 @@ class UpdateEventTest {
     fun `consumeUpdateEvent detects pre-release update level`() {
         UpdateMarker.write("1.0.0-beta.1", "1.0.0-beta.2")
 
-        val event = updater.consumeUpdateEvent()
+        val event = updaterAt("1.0.0-beta.2").consumeUpdateEvent()
         assertNotNull(event)
         assertEquals(UpdateLevel.PRE_RELEASE, event!!.updateLevel)
+    }
+
+    @Test
+    fun `a marker left by an install that did not complete is dropped, not reported`() {
+        // installAndRestart wrote it for 2.1.0, but the installer failed: still running 2.0.0.
+        UpdateMarker.write("2.0.0", "2.1.0")
+
+        assertFalse(updater.wasJustUpdated())
+        assertNull(updater.consumeUpdateEvent())
+        // Consumed: the stale marker does not resurface once 2.1.0 is finally installed.
+        assertNull(updaterAt("2.1.0").consumeUpdateEvent())
     }
 }

@@ -34,7 +34,7 @@ static inline KeySym awtToKeySym(int vk) {
         case 0x0A: return XK_Return;      case 0x1B: return XK_Escape;
         case 0x08: return XK_BackSpace;    case 0x09: return XK_Tab;
         case 0x20: return XK_space;        case 0x7F: return XK_Delete;
-        case 0x14: return XK_Caps_Lock;
+        case 0x14: return XK_Caps_Lock;    case 0x13: return XK_Pause;
         case 0x26: return XK_Up;           case 0x28: return XK_Down;
         case 0x25: return XK_Left;         case 0x27: return XK_Right;
         case 0x24: return XK_Home;         case 0x23: return XK_End;

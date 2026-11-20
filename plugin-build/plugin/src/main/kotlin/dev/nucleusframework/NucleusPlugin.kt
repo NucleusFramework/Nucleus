@@ -24,6 +24,11 @@ import org.jetbrains.kotlin.gradle.plugin.KotlinDependencyHandler
 internal val composeVersion get() = NucleusBuildConfig.composeVersion
 internal val composeMaterial3Version get() = NucleusBuildConfig.composeMaterial3Version
 
+/**
+ * The `dev.nucleusframework` Gradle plugin: registers the `nucleus` extension (and the `nucleus` dependency
+ * shortcuts) and, after evaluation, wires the desktop packaging tasks and the experimental
+ * Kotlin target checks.
+ */
 @Suppress("AbstractClassCanBeConcreteClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class NucleusPlugin : Plugin<Project> {
     override fun apply(project: Project) {
@@ -50,6 +55,7 @@ abstract class NucleusPlugin : Plugin<Project> {
         }
     }
 
+    /** Compose dependency notation shortcuts exposed as `nucleus.dependencies` and `dependencies.nucleus`. */
     @Suppress("DEPRECATION")
     class Dependencies(
         project: Project,
@@ -184,6 +190,7 @@ abstract class NucleusPlugin : Plugin<Project> {
         val components get() = CommonComponentsDependencies
     }
 
+    /** Compose for Desktop dependency notations, including per-platform artifacts and [currentOs]. */
     @Deprecated("Specify dependency directly")
     object DesktopDependencies {
         @Deprecated("Specify dependency directly")
@@ -266,6 +273,7 @@ abstract class NucleusPlugin : Plugin<Project> {
         }
     }
 
+    /** Dependency notations for the multiplatform Compose components libraries. */
     @Deprecated("Specify dependency directly")
     object CommonComponentsDependencies {
         @Deprecated(
@@ -287,6 +295,7 @@ abstract class NucleusPlugin : Plugin<Project> {
         val uiToolingPreview = composeDependency("org.jetbrains.compose.components:components-ui-tooling-preview")
     }
 
+    /** Dependency notations for the desktop-only Compose components libraries. */
     object DesktopComponentsDependencies {
         @Deprecated(
             "Specify dependency directly",
@@ -311,11 +320,14 @@ abstract class NucleusPlugin : Plugin<Project> {
     }
 }
 
+/** Adds the JetBrains Compose Multiplatform development Maven repository. */
 fun RepositoryHandler.jetbrainsCompose(): MavenArtifactRepository =
     maven { repo -> repo.setUrl("https://packages.jetbrains.team/maven/p/cmp/dev") }
 
+/** Returns the notation of the Compose artifact [groupWithArtifact] at the Compose version Nucleus targets. */
 fun KotlinDependencyHandler.compose(groupWithArtifact: String) = composeDependency(groupWithArtifact)
 
+/** Returns the notation of the Compose artifact [groupWithArtifact] at the Compose version Nucleus targets. */
 fun DependencyHandler.compose(groupWithArtifact: String) = composeDependency(groupWithArtifact)
 
 private fun composeDependency(groupWithArtifact: String) = "$groupWithArtifact:$composeVersion"

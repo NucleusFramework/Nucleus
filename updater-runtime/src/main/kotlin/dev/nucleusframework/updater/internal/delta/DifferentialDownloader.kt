@@ -1,5 +1,6 @@
 package dev.nucleusframework.updater.internal.delta
 
+import dev.nucleusframework.updater.internal.ChecksumVerifier
 import kotlinx.coroutines.delay
 import java.io.File
 import java.io.IOException
@@ -11,7 +12,6 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.security.DigestOutputStream
 import java.security.MessageDigest
-import java.util.Base64
 
 /** Everything needed to assemble one artifact from an older copy of it plus ranged requests. */
 internal class DeltaDownload(
@@ -52,7 +52,7 @@ internal class DifferentialDownloader(
         onProgress: suspend (Long, Long) -> Unit,
     ): Long {
         verifyPlanCoversArtifact(request)
-        val digest = MessageDigest.getInstance(SHA_512)
+        val digest = ChecksumVerifier.newSha512Digest()
         val transferred =
             try {
                 assemble(request, digest, onProgress)
@@ -94,7 +94,7 @@ internal class DifferentialDownloader(
         request: DeltaDownload,
         digest: MessageDigest,
     ) {
-        val actual = Base64.getEncoder().encodeToString(digest.digest())
+        val actual = ChecksumVerifier.encode(digest)
         if (actual != request.expectedSha512 || request.target.length() != request.expectedSize) {
             request.target.delete()
             throw DeltaUnavailableException("Assembled artifact does not match the manifest")
@@ -121,15 +121,17 @@ internal class DifferentialDownloader(
         val total = DeltaPlan.downloadSize(request.operations)
         var transferred = 0L
         var rangeRequests = 0
+        var target = RangeTarget(URI.create(request.url), authHeaders)
         for (operation in request.operations) {
             when (operation.kind) {
                 OperationKind.COPY -> copyFromOldFile(old, operation, out)
                 OperationKind.DOWNLOAD -> {
                     throttle(rangeRequests++)
-                    downloadRange(request.url, operation, out) { chunk ->
-                        transferred += chunk
-                        onProgress(transferred, total)
-                    }
+                    target =
+                        downloadRange(target, operation, out) { chunk ->
+                            transferred += chunk
+                            onProgress(transferred, total)
+                        }
                 }
             }
         }
@@ -165,13 +167,19 @@ internal class DifferentialDownloader(
         }
     }
 
+    /**
+     * Writes [operation]'s range of [target] to [out] and returns where the next range goes: where
+     * this one was redirected to, like electron-updater's `DifferentialDownloader`. A release host
+     * that redirects to storage (GitHub, and its API for a private repository, whose every request
+     * costs quota) is then asked only once.
+     */
     private suspend fun downloadRange(
-        url: String,
+        target: RangeTarget,
         operation: Operation,
         out: OutputStream,
         onChunk: suspend (Int) -> Unit,
-    ) {
-        val request = rangeRequest(url, operation.start, operation.end - 1)
+    ): RangeTarget {
+        val request = rangeRequest(target.uri, target.headers, operation.start, operation.end - 1)
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
         if (response.statusCode() != HTTP_PARTIAL_CONTENT) {
             response.body().close()
@@ -192,28 +200,70 @@ internal class DifferentialDownloader(
                 onChunk(read)
             }
         }
+        return target.redirectedTo(response.uri())
     }
 
     private fun rangeRequest(
         url: String,
         start: Long,
         endInclusive: Long,
+    ): HttpRequest = rangeRequest(URI.create(url), authHeaders, start, endInclusive)
+
+    private fun rangeRequest(
+        uri: URI,
+        headers: Map<String, String>,
+        start: Long,
+        endInclusive: Long,
     ): HttpRequest {
         val builder =
             HttpRequest
                 .newBuilder()
-                .uri(URI.create(url))
+                .uri(uri)
                 .header("Range", "bytes=$start-$endInclusive")
                 .GET()
-        authHeaders.forEach { (key, value) -> builder.header(key, value) }
+        headers.forEach { (key, value) -> builder.header(key, value) }
         return builder.build()
     }
 
+    /** Where range requests go, and with which headers. */
+    private class RangeTarget(
+        val uri: URI,
+        val headers: Map<String, String>,
+    ) {
+        /**
+         * The target for requests to [actual], where a request to [uri] ended up. Crossing to another
+         * origin drops `Authorization`, as the JDK `HttpClient` does when it follows the redirect.
+         */
+        fun redirectedTo(actual: URI): RangeTarget =
+            when {
+                actual == uri -> this
+                sameOrigin(uri, actual) -> RangeTarget(actual, headers)
+                else -> RangeTarget(actual, headers.filterKeys { !it.equals(AUTHORIZATION, ignoreCase = true) })
+            }
+
+        private fun sameOrigin(
+            a: URI,
+            b: URI,
+        ): Boolean =
+            a.scheme.equals(b.scheme, ignoreCase = true) &&
+                a.host.equals(b.host, ignoreCase = true) &&
+                effectivePort(a) == effectivePort(b)
+
+        private fun effectivePort(uri: URI): Int =
+            when {
+                uri.port >= 0 -> uri.port
+                uri.scheme.equals("https", ignoreCase = true) -> HTTPS_PORT
+                else -> HTTP_PORT
+            }
+    }
+
     private companion object {
-        const val SHA_512 = "SHA-512"
         const val HTTP_PARTIAL_CONTENT = 206
         const val BUFFER_SIZE = 64 * 1024
         const val RANGE_REQUEST_PAUSE_EVERY = 100
         const val RANGE_REQUEST_PAUSE_MS = 1000L
+        const val AUTHORIZATION = "Authorization"
+        const val HTTP_PORT = 80
+        const val HTTPS_PORT = 443
     }
 }

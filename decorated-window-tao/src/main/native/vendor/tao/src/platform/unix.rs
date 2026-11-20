@@ -98,6 +98,16 @@ pub trait WindowExtUnix {
   /// point leaves the candidate window free to sit on top of the composition.
   /// Callers that know the caret's size should use this.
   fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S);
+
+  /// Nucleus patch: whether a text field owns the input, so the input context
+  /// is focused (and an on-screen keyboard may show) only while one does
+  /// (nucleusframework#842). Off until the first `true`.
+  fn set_ime_allowed(&self, allowed: bool);
+
+  /// Nucleus patch: anchor a popup overlay (`with_popup_transient_for`) at a
+  /// logical point of its parent so GDK maps it as a compositor-positioned
+  /// `xdg_popup`. See the platform `Window::popup_anchor`.
+  fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32));
 }
 
 impl WindowExtUnix for Window {
@@ -127,6 +137,14 @@ impl WindowExtUnix for Window {
 
   fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
     self.window.set_ime_cursor_area(position, size);
+  }
+
+  fn set_ime_allowed(&self, allowed: bool) {
+    self.window.set_ime_allowed(allowed);
+  }
+
+  fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32)) {
+    self.window.popup_anchor(x, y, width, height, shadow);
   }
 }
 
@@ -184,6 +202,14 @@ pub trait WindowBuilderExtUnix {
   /// (native GTK drop shadow with no visible titlebar). Wayland only; ignored
   /// on X11. See `PlatformSpecificWindowBuilderAttributes::csd_hidden_titlebar`.
   fn with_csd_hidden_titlebar(self, csd: bool) -> WindowBuilder;
+
+  /// Nucleus patch: leave the decorations to GTK and the compositor. On
+  /// Wayland the window gets no tao `WlHeader`, so GTK 3 asks for server-side
+  /// decorations where the compositor offers them (KWin's
+  /// `org_kde_kwin_server_decoration`) and otherwise draws its own default
+  /// client-side title bar (GNOME). On X11 the window manager decorates it
+  /// either way. Requires `with_decorations(true)`.
+  fn with_system_decorations(self, system: bool) -> WindowBuilder;
 }
 
 impl WindowBuilderExtUnix for WindowBuilder {
@@ -236,6 +262,11 @@ impl WindowBuilderExtUnix for WindowBuilder {
 
   fn with_csd_hidden_titlebar(mut self, csd: bool) -> WindowBuilder {
     self.platform_specific.csd_hidden_titlebar = csd;
+    self
+  }
+
+  fn with_system_decorations(mut self, system: bool) -> WindowBuilder {
+    self.platform_specific.system_decorations = system;
     self
   }
 }
@@ -332,6 +363,22 @@ unsafe extern "C" fn x_error_callback(
 
   // Fun fact: this return value is completely ignored.
   0
+}
+
+pub use crate::platform_impl::PointerSource;
+
+/// Additional methods on `DeviceId` that are specific to Unix.
+pub trait DeviceIdExtUnix {
+  /// The tool of the pointer event that carried this id: tablet pens and
+  /// erasers are told apart from the mouse (PATCH(nucleus)).
+  fn pointer_source(&self) -> PointerSource;
+}
+
+impl DeviceIdExtUnix for crate::event::DeviceId {
+  #[inline]
+  fn pointer_source(&self) -> PointerSource {
+    self.0.pointer_source()
+  }
 }
 
 /// Additional methods on `MonitorHandle` that are specific to Unix.

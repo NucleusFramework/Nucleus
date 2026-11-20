@@ -4,9 +4,9 @@ import kotlin.math.pow
 
 /**
  * Maps a Ctrl+wheel / precision-touchpad wheel delta to a multiplicative zoom step.
- * Shared by the Windows and Linux hosts, which both synthesise a magnify gesture from
- * Ctrl+wheel so it zooms (never scrolls) — the AWT backend has no pinch-zoom, so this
- * gives Windows/Linux the same behaviour.
+ * Shared by the Windows and Linux hosts, which both turn Ctrl+wheel into a
+ * Compose scale gesture so it zooms (never scrolls) — the AWT backend has no
+ * pinch-zoom, so this gives Windows/Linux the same behaviour.
  */
 internal object TaoWheelPinchZoom {
     private const val WHEEL_DELTAS_PER_DOUBLING: Float = 12f

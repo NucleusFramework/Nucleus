@@ -10,6 +10,10 @@ import org.gradle.api.Action
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
 
+/**
+ * The build types of a JVM application: the default one and [release], which runs ProGuard
+ * and registers its own `*Release*` tasks (e.g. `packageReleaseDmg`).
+ */
 abstract class JvmApplicationBuildTypes
     @Inject
     constructor(
@@ -30,11 +34,13 @@ abstract class JvmApplicationBuildTypes
                 proguard.isEnabled.set(true)
             }
 
+        /** Configures the [release] build type. */
         fun release(fn: Action<JvmApplicationBuildType>) {
             fn.execute(release)
         }
     }
 
+/** Settings of one build type of a JVM application. */
 abstract class JvmApplicationBuildType
     @Inject
     constructor(
@@ -47,6 +53,7 @@ abstract class JvmApplicationBuildType
     ) {
         val proguard: ProguardSettings = objects.new()
 
+        /** Configures ProGuard processing for this build type. */
         fun proguard(fn: Action<ProguardSettings>) {
             fn.execute(proguard)
         }

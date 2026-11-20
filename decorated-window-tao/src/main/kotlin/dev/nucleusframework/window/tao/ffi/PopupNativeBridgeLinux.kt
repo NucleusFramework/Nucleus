@@ -155,7 +155,8 @@ internal object PopupNativeBridgeLinux {
         /**
          * [type] = 1 down, 2 up. [vkCode] is an X11 keysym (Latin one when
          * the active layout has none — see `vk_keysym_for` in the C side);
-         * translated by `linuxNativeKeyToAwt`.
+         * translated by `linuxNativeKeyToAwt`. [isRepeat]: a key-down sent
+         * again because the key is held.
          */
         @Suppress("FunctionParameterNaming")
         fun onKeyEvent(
@@ -163,6 +164,7 @@ internal object PopupNativeBridgeLinux {
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
+            isRepeat: Boolean,
         )
     }
 
@@ -207,6 +209,10 @@ internal object PopupNativeBridgeLinux {
      * Invoked on the panel's X event thread — hop to the Tao main thread
      * before touching a Compose scene. [handle] is the panel pointer.
      *
+     * `hasData` tells whether the source offers a target the panel reads (a
+     * URI list or text). `onDrop` gets local [files] (paths), plain text and
+     * non-file URIs, each `null` when absent (#930).
+     *
      * Return values for `onDragEnter`/`onDragOver`/`onDrop`:
      *   - [DROP_EFFECT_NONE] — reject the drag/drop
      *   - [DROP_EFFECT_COPY] — accept as a copy
@@ -222,7 +228,7 @@ internal object PopupNativeBridgeLinux {
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int
 
         @Suppress("FunctionParameterNaming")
@@ -231,7 +237,7 @@ internal object PopupNativeBridgeLinux {
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int
 
         fun onDragLeave(handle: Long)
@@ -243,6 +249,8 @@ internal object PopupNativeBridgeLinux {
             y: Int,
             modState: Int,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ): Int
     }
 
@@ -258,16 +266,18 @@ internal object PopupNativeBridgeLinux {
     )
 
     /**
-     * Test-only XDND source: acts as a second X client and drops [files]
-     * onto [panel] (`XdndEnter` → `XdndPosition` → `XdndDrop`, serving
-     * `text/uri-list` on `SelectionRequest`). Returns [DROP_EFFECT_COPY]
-     * after `XdndFinished`, or [DROP_EFFECT_NONE] on timeout / protocol
-     * failure. Production code must not call this.
+     * Test-only XDND source: acts as a second X client and drops [data]
+     * onto [panel], offered as the single [target] (`text/uri-list`,
+     * `UTF8_STRING`, …): `XdndEnter` → `XdndPosition` → `XdndDrop`, serving
+     * the bytes on `SelectionRequest`. Returns [DROP_EFFECT_COPY] after an
+     * accepting `XdndFinished`, or [DROP_EFFECT_NONE] on refusal, timeout or
+     * protocol failure. Production code must not call this.
      */
     @JvmStatic
     external fun nativeSmokeXdndDrop(
         panel: Long,
-        files: Array<String>,
+        target: String,
+        data: ByteArray,
     ): Int
 
     /**

@@ -1,0 +1,316 @@
+public final class dev/nucleusframework/widget/windows/Deferral {
+	public static final field $stable I
+	public final fun complete ()V
+}
+
+public final class dev/nucleusframework/widget/windows/WebWidgetRequest {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;[B)V
+	public final fun getBody ()[B
+	public final fun getHeaders ()Ljava/util/Map;
+	public final fun getMethod ()Ljava/lang/String;
+	public final fun getUri ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WebWidgetResponse {
+	public static final field $stable I
+	public fun <init> ([BILjava/lang/String;Ljava/util/Map;)V
+	public synthetic fun <init> ([BILjava/lang/String;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getBody ()[B
+	public final fun getHeaders ()Ljava/util/Map;
+	public final fun getReasonPhrase ()Ljava/lang/String;
+	public final fun getStatusCode ()I
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetActionInvokedArgs {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/widget/windows/WidgetActionInvokedArgs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/windows/WidgetActionInvokedArgs;Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/windows/WidgetActionInvokedArgs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCustomState ()Ljava/lang/String;
+	public final fun getData ()Ljava/lang/String;
+	public final fun getVerb ()Ljava/lang/String;
+	public final fun getWidgetContext ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetAnalyticsInfoReportedArgs {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)Ldev/nucleusframework/widget/windows/WidgetAnalyticsInfoReportedArgs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/windows/WidgetAnalyticsInfoReportedArgs;Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/windows/WidgetAnalyticsInfoReportedArgs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAnalyticsJson ()Ljava/lang/String;
+	public final fun getWidgetContext ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetContext {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/windows/WidgetSize;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/nucleusframework/widget/windows/WidgetSize;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/windows/WidgetSize;Z)Ldev/nucleusframework/widget/windows/WidgetContext;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/widget/windows/WidgetSize;ZILjava/lang/Object;)Ldev/nucleusframework/widget/windows/WidgetContext;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefinitionId ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getSize ()Ldev/nucleusframework/widget/windows/WidgetSize;
+	public fun hashCode ()I
+	public final fun isActive ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetContextChangedArgs {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public final fun copy (Ldev/nucleusframework/widget/windows/WidgetContext;)Ldev/nucleusframework/widget/windows/WidgetContextChangedArgs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/windows/WidgetContextChangedArgs;Ldev/nucleusframework/widget/windows/WidgetContext;ILjava/lang/Object;)Ldev/nucleusframework/widget/windows/WidgetContextChangedArgs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getWidgetContext ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetCustomizationRequestedArgs {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)Ldev/nucleusframework/widget/windows/WidgetCustomizationRequestedArgs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/windows/WidgetCustomizationRequestedArgs;Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/windows/WidgetCustomizationRequestedArgs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCustomState ()Ljava/lang/String;
+	public final fun getWidgetContext ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetErrorInfoReportedArgs {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)Ldev/nucleusframework/widget/windows/WidgetErrorInfoReportedArgs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/windows/WidgetErrorInfoReportedArgs;Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/windows/WidgetErrorInfoReportedArgs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getErrorJson ()Ljava/lang/String;
+	public final fun getWidgetContext ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetException : java/lang/RuntimeException {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;I)V
+	public final fun getHresult ()I
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetHeaders {
+	public static final field $stable I
+	public final fun clear ()V
+	public final fun getSize ()I
+	public final fun hasKey (Ljava/lang/String;)Z
+	public final fun insert (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun lookup (Ljava/lang/String;)Ljava/lang/String;
+	public final fun remove (Ljava/lang/String;)V
+	public final fun toMap ()Ljava/util/Map;
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetInfo {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;Ljava/lang/Boolean;Ljava/lang/Integer;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/time/Instant;
+	public final fun component6 ()Ljava/lang/Boolean;
+	public final fun component7 ()Ljava/lang/Integer;
+	public final fun copy (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;Ljava/lang/Boolean;Ljava/lang/Integer;)Ldev/nucleusframework/widget/windows/WidgetInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/windows/WidgetInfo;Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;Ljava/lang/Boolean;Ljava/lang/Integer;ILjava/lang/Object;)Ldev/nucleusframework/widget/windows/WidgetInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCustomState ()Ljava/lang/String;
+	public final fun getData ()Ljava/lang/String;
+	public final fun getLastUpdateTime ()Ljava/time/Instant;
+	public final fun getRank ()Ljava/lang/Integer;
+	public final fun getTemplate ()Ljava/lang/String;
+	public final fun getWidgetContext ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public fun hashCode ()I
+	public final fun isPlaceholderContent ()Ljava/lang/Boolean;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetManager {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/widget/windows/WidgetManager$Companion;
+	public final fun deleteWidget (Ljava/lang/String;)V
+	public final fun getWidgetIds ()Ljava/util/List;
+	public final fun getWidgetInfo (Ljava/lang/String;)Ldev/nucleusframework/widget/windows/WidgetInfo;
+	public final fun getWidgetInfos ()Ljava/util/List;
+	public final fun sendMessageToContent (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun updateWidget (Ldev/nucleusframework/widget/windows/WidgetUpdateRequestOptions;)V
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetManager$Companion {
+	public final fun getDefault ()Ldev/nucleusframework/widget/windows/WidgetManager;
+	public final fun isAvailable ()Z
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetMessageReceivedArgs {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)V
+	public final fun component1 ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;)Ldev/nucleusframework/widget/windows/WidgetMessageReceivedArgs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/widget/windows/WidgetMessageReceivedArgs;Ldev/nucleusframework/widget/windows/WidgetContext;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/widget/windows/WidgetMessageReceivedArgs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getWidgetContext ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/widget/windows/WidgetProvider {
+	public abstract fun activate (Ldev/nucleusframework/widget/windows/WidgetContext;)V
+	public abstract fun createWidget (Ldev/nucleusframework/widget/windows/WidgetContext;)V
+	public abstract fun deactivate (Ljava/lang/String;)V
+	public abstract fun deleteWidget (Ljava/lang/String;Ljava/lang/String;)V
+	public abstract fun onActionInvoked (Ldev/nucleusframework/widget/windows/WidgetActionInvokedArgs;)V
+	public abstract fun onWidgetContextChanged (Ldev/nucleusframework/widget/windows/WidgetContextChangedArgs;)V
+}
+
+public abstract interface class dev/nucleusframework/widget/windows/WidgetProvider2 {
+	public abstract fun onCustomizationRequested (Ldev/nucleusframework/widget/windows/WidgetCustomizationRequestedArgs;)V
+}
+
+public abstract interface class dev/nucleusframework/widget/windows/WidgetProviderAnalytics {
+	public abstract fun onAnalyticsInfoReported (Ldev/nucleusframework/widget/windows/WidgetAnalyticsInfoReportedArgs;)V
+}
+
+public abstract interface class dev/nucleusframework/widget/windows/WidgetProviderErrors {
+	public abstract fun onErrorInfoReported (Ldev/nucleusframework/widget/windows/WidgetErrorInfoReportedArgs;)V
+}
+
+public abstract interface class dev/nucleusframework/widget/windows/WidgetProviderMessage {
+	public abstract fun onMessageReceived (Ldev/nucleusframework/widget/windows/WidgetMessageReceivedArgs;)V
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetProviderServer {
+	public static final field $stable I
+	public static final field COM_SERVER_ARGUMENT Ljava/lang/String;
+	public static final field INSTANCE Ldev/nucleusframework/widget/windows/WidgetProviderServer;
+	public final fun isComServerLaunch ()Z
+	public final fun isComServerLaunch ([Ljava/lang/String;)Z
+	public final fun register (Ljava/util/UUID;Ldev/nucleusframework/widget/windows/WidgetProvider;)Ljava/lang/AutoCloseable;
+}
+
+public abstract interface class dev/nucleusframework/widget/windows/WidgetResourceProvider {
+	public abstract fun onResourceRequested (Ldev/nucleusframework/widget/windows/WidgetResourceRequestedArgs;)V
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetResourceRequest {
+	public static final field $stable I
+	public final fun getContent ()[B
+	public final fun getHeaders ()Ldev/nucleusframework/widget/windows/WidgetHeaders;
+	public final fun getMethod ()Ljava/lang/String;
+	public final fun getUri ()Ljava/lang/String;
+	public final fun setContent ([B)V
+	public final fun setMethod (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetResourceRequestedArgs {
+	public static final field $stable I
+	public final fun getDeferral ()Ldev/nucleusframework/widget/windows/Deferral;
+	public final fun getRequest ()Ldev/nucleusframework/widget/windows/WidgetResourceRequest;
+	public final fun getResponse ()Ldev/nucleusframework/widget/windows/WidgetResourceResponse;
+	public final fun getWidgetContext ()Ldev/nucleusframework/widget/windows/WidgetContext;
+	public final fun setResponse (Ldev/nucleusframework/widget/windows/WidgetResourceResponse;)V
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetResourceResponse {
+	public static final field $stable I
+	public fun <init> ([BLjava/lang/String;I)V
+	public final fun getContent ()[B
+	public final fun getHeaders ()Ldev/nucleusframework/widget/windows/WidgetHeaders;
+	public final fun getReasonPhrase ()Ljava/lang/String;
+	public final fun getStatusCode ()I
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetSize : java/lang/Enum {
+	public static final field Large Ldev/nucleusframework/widget/windows/WidgetSize;
+	public static final field Medium Ldev/nucleusframework/widget/windows/WidgetSize;
+	public static final field Small Ldev/nucleusframework/widget/windows/WidgetSize;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/widget/windows/WidgetSize;
+	public static fun values ()[Ldev/nucleusframework/widget/windows/WidgetSize;
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetUpdateRequestOptions {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/widget/windows/WidgetUpdateRequestOptions$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun getCustomState ()Ljava/lang/String;
+	public final fun getData ()Ljava/lang/String;
+	public final fun getRank ()Ljava/lang/Integer;
+	public final fun getTemplate ()Ljava/lang/String;
+	public final fun getWidgetId ()Ljava/lang/String;
+	public final fun isPlaceholderContent ()Ljava/lang/Boolean;
+	public final fun setCustomState (Ljava/lang/String;)V
+	public final fun setData (Ljava/lang/String;)V
+	public final fun setPlaceholderContent (Ljava/lang/Boolean;)V
+	public final fun setRank (Ljava/lang/Integer;)V
+	public final fun setTemplate (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/widget/windows/WidgetUpdateRequestOptions$Companion {
+	public final fun getUnsetValue ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WindowsInputsKt {
+	public static final fun NumberField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TextField (Ldev/nucleusframework/widget/WidgetStateKey;Ldev/nucleusframework/widget/WidgetModifier;Ljava/lang/String;Ljava/lang/String;ZLjava/lang/Integer;Landroidx/compose/runtime/Composer;II)V
+	public static final fun actionFinishCustomization ()Ldev/nucleusframework/widget/Action;
+	public static final fun finishCustomization (Ldev/nucleusframework/widget/WidgetStateHandle;)V
+	public static final fun isCustomizing (Landroidx/compose/runtime/Composer;I)Z
+}
+
+public abstract interface class dev/nucleusframework/widget/windows/WindowsWebWidget {
+	public fun onWebMessage-b_9T3YA (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun onWebRequest-b_9T3YA (Ljava/lang/String;Ldev/nucleusframework/widget/windows/WebWidgetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun webUrl-GcnOI4E (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetState;)Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/widget/windows/WindowsWebWidget$DefaultImpls {
+	public static fun onWebMessage-b_9T3YA (Ldev/nucleusframework/widget/windows/WindowsWebWidget;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onWebRequest-b_9T3YA (Ldev/nucleusframework/widget/windows/WindowsWebWidget;Ljava/lang/String;Ldev/nucleusframework/widget/windows/WebWidgetRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/widget/windows/WindowsWebWidgetKt {
+	public static final fun sendWebWidgetMessage-b_9T3YA (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/widget/windows/host/WindowsWidgetHost : dev/nucleusframework/widget/WidgetHost {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun isLaunchedByHost ()Z
+	public fun isSupported ()Z
+	public fun loadState-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun pinnedWidgets (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun refresh-GcnOI4E (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveState-b_9T3YA (Ljava/lang/String;Ldev/nucleusframework/widget/WidgetState;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun start ()V
+}
+

@@ -138,7 +138,8 @@ internal object NativeLibArchDetector {
      */
     fun detectFromPath(entryPath: String): NativeInfo {
         // Split into path segments and the compound tokens within segments
-        // e.g. "com/sun/jna/linux-x86-64/libjnidispatch.so" → segments: [com, sun, jna, linux-x86-64, libjnidispatch.so]
+        // e.g. "com/sun/jna/linux-x86-64/libjnidispatch.so"
+        //   → segments: [com, sun, jna, linux-x86-64, libjnidispatch.so]
         val segments = entryPath.split('/')
 
         var detectedOs = NativeOs.UNKNOWN
@@ -200,18 +201,18 @@ internal object NativeLibArchDetector {
     // --- Binary header detection ---
 
     fun detectFromHeader(bytes: ByteArray): NativeInfo {
-        if (bytes.size < 4) return NativeInfo(NativeOs.UNKNOWN, NativeArch.UNKNOWN)
+        if (bytes.size < MAGIC_SIZE) return NativeInfo(NativeOs.UNKNOWN, NativeArch.UNKNOWN)
 
         // PE (.dll) — starts with MZ
-        if (bytes[0] == 0x4D.toByte() && bytes[1] == 0x5A.toByte()) {
+        if (bytes[0] == PE_MAGIC_M && bytes[1] == PE_MAGIC_Z) {
             return detectPE(bytes)
         }
 
         // ELF (.so) — starts with 0x7F ELF
-        if (bytes[0] == 0x7F.toByte() &&
-            bytes[1] == 0x45.toByte() &&
-            bytes[2] == 0x4C.toByte() &&
-            bytes[3] == 0x46.toByte()
+        if (bytes[0] == ELF_MAGIC_0 &&
+            bytes[1] == ELF_MAGIC_E &&
+            bytes[2] == ELF_MAGIC_L &&
+            bytes[ELF_MAGIC_F_INDEX] == ELF_MAGIC_F
         ) {
             return detectELF(bytes)
         }
@@ -221,53 +222,53 @@ internal object NativeLibArchDetector {
         // it big-endian, while the byte-swapped 0xCFFAEDFE means little-endian — which is what
         // every macOS x86_64/arm64 dylib on disk actually starts with ("cf fa ed fe"). The rest of
         // the header, cpu_type included, must be read in that same order.
-        val magic = ByteBuffer.wrap(bytes, 0, 4).int
+        val magic = ByteBuffer.wrap(bytes, 0, MAGIC_SIZE).int
         return when (magic) {
-            0xFEEDFACF.toInt() -> detectMachO(bytes, ByteOrder.BIG_ENDIAN)
-            0xCFFAEDFE.toInt() -> detectMachO(bytes, ByteOrder.LITTLE_ENDIAN)
-            0xFEEDFACE.toInt() -> detectMachO(bytes, ByteOrder.BIG_ENDIAN)
-            0xCEFAEDFE.toInt() -> detectMachO(bytes, ByteOrder.LITTLE_ENDIAN)
+            MH_MAGIC_64 -> detectMachO(bytes, ByteOrder.BIG_ENDIAN)
+            MH_CIGAM_64 -> detectMachO(bytes, ByteOrder.LITTLE_ENDIAN)
+            MH_MAGIC -> detectMachO(bytes, ByteOrder.BIG_ENDIAN)
+            MH_CIGAM -> detectMachO(bytes, ByteOrder.LITTLE_ENDIAN)
             // Fat headers are always big-endian; 0xCAFEBABF is the 64-bit variant.
-            0xCAFEBABE.toInt(), 0xCAFEBABF.toInt() -> NativeInfo(NativeOs.MACOS, NativeArch.UNIVERSAL)
+            FAT_MAGIC, FAT_MAGIC_64 -> NativeInfo(NativeOs.MACOS, NativeArch.UNIVERSAL)
             else -> NativeInfo(NativeOs.UNKNOWN, NativeArch.UNKNOWN)
         }
     }
 
     private fun detectPE(bytes: ByteArray): NativeInfo {
-        if (bytes.size < 0x40) return NativeInfo(NativeOs.WINDOWS, NativeArch.UNKNOWN)
-        val peOffset = ByteBuffer.wrap(bytes, 0x3C, 4).order(ByteOrder.LITTLE_ENDIAN).int
-        val machineOffset = peOffset + 4
-        if (bytes.size < machineOffset + 2) return NativeInfo(NativeOs.WINDOWS, NativeArch.UNKNOWN)
+        if (bytes.size < DOS_HEADER_SIZE) return NativeInfo(NativeOs.WINDOWS, NativeArch.UNKNOWN)
+        val peOffset = ByteBuffer.wrap(bytes, DOS_E_LFANEW_OFFSET, Int.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN).int
+        val machineOffset = peOffset + PE_SIGNATURE_SIZE
+        if (bytes.size < machineOffset + Short.SIZE_BYTES) return NativeInfo(NativeOs.WINDOWS, NativeArch.UNKNOWN)
         val machine =
             ByteBuffer
-                .wrap(bytes, machineOffset, 2)
+                .wrap(bytes, machineOffset, Short.SIZE_BYTES)
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .short
-                .toInt() and 0xFFFF
+                .toInt() and UNSIGNED_SHORT_MASK
         val arch =
             when (machine) {
-                0x8664 -> NativeArch.X64
-                0x014C -> NativeArch.X86
-                0xAA64 -> NativeArch.ARM64
+                IMAGE_FILE_MACHINE_AMD64 -> NativeArch.X64
+                IMAGE_FILE_MACHINE_I386 -> NativeArch.X86
+                IMAGE_FILE_MACHINE_ARM64 -> NativeArch.ARM64
                 else -> NativeArch.UNKNOWN
             }
         return NativeInfo(NativeOs.WINDOWS, arch)
     }
 
     private fun detectELF(bytes: ByteArray): NativeInfo {
-        if (bytes.size < 20) return NativeInfo(NativeOs.LINUX, NativeArch.UNKNOWN)
-        val order = if (bytes[5] == 2.toByte()) ByteOrder.BIG_ENDIAN else ByteOrder.LITTLE_ENDIAN
+        if (bytes.size < ELF_E_MACHINE_OFFSET + Short.SIZE_BYTES) return NativeInfo(NativeOs.LINUX, NativeArch.UNKNOWN)
+        val order = if (bytes[ELF_EI_DATA_INDEX] == ELF_DATA_2MSB) ByteOrder.BIG_ENDIAN else ByteOrder.LITTLE_ENDIAN
         val eMachine =
             ByteBuffer
-                .wrap(bytes, 18, 2)
+                .wrap(bytes, ELF_E_MACHINE_OFFSET, Short.SIZE_BYTES)
                 .order(order)
                 .short
-                .toInt() and 0xFFFF
+                .toInt() and UNSIGNED_SHORT_MASK
         val arch =
             when (eMachine) {
-                0x3E -> NativeArch.X64
-                0xB7 -> NativeArch.ARM64
-                0x03 -> NativeArch.X86
+                EM_X86_64 -> NativeArch.X64
+                EM_AARCH64 -> NativeArch.ARM64
+                EM_386 -> NativeArch.X86
                 else -> NativeArch.UNKNOWN
             }
         return NativeInfo(NativeOs.LINUX, arch)
@@ -277,14 +278,52 @@ internal object NativeLibArchDetector {
         bytes: ByteArray,
         order: ByteOrder,
     ): NativeInfo {
-        if (bytes.size < 8) return NativeInfo(NativeOs.MACOS, NativeArch.UNKNOWN)
-        val cpuType = ByteBuffer.wrap(bytes, 4, 4).order(order).int
+        if (bytes.size < MACHO_CPU_TYPE_OFFSET + Int.SIZE_BYTES) return NativeInfo(NativeOs.MACOS, NativeArch.UNKNOWN)
+        val cpuType = ByteBuffer.wrap(bytes, MACHO_CPU_TYPE_OFFSET, Int.SIZE_BYTES).order(order).int
         val arch =
             when (cpuType) {
-                0x01000007 -> NativeArch.X64
-                0x0100000C -> NativeArch.ARM64
+                CPU_TYPE_X86_64 -> NativeArch.X64
+                CPU_TYPE_ARM64 -> NativeArch.ARM64
                 else -> NativeArch.UNKNOWN
             }
         return NativeInfo(NativeOs.MACOS, arch)
     }
+
+    // Every format is identified by its first 4 bytes.
+    private const val MAGIC_SIZE = 4
+    private const val UNSIGNED_SHORT_MASK = 0xFFFF
+
+    // PE: "MZ" DOS header, e_lfanew (offset of the "PE\0\0" signature) at 0x3C, COFF Machine right after it.
+    private const val PE_MAGIC_M = 0x4D.toByte()
+    private const val PE_MAGIC_Z = 0x5A.toByte()
+    private const val DOS_HEADER_SIZE = 0x40
+    private const val DOS_E_LFANEW_OFFSET = 0x3C
+    private const val PE_SIGNATURE_SIZE = 4
+    private const val IMAGE_FILE_MACHINE_AMD64 = 0x8664
+    private const val IMAGE_FILE_MACHINE_I386 = 0x014C
+    private const val IMAGE_FILE_MACHINE_ARM64 = 0xAA64
+
+    // ELF: "\x7FELF", EI_DATA (byte order) at index 5, e_machine at offset 18.
+    private const val ELF_MAGIC_0 = 0x7F.toByte()
+    private const val ELF_MAGIC_E = 0x45.toByte()
+    private const val ELF_MAGIC_L = 0x4C.toByte()
+    private const val ELF_MAGIC_F = 0x46.toByte()
+    private const val ELF_MAGIC_F_INDEX = 3
+    private const val ELF_EI_DATA_INDEX = 5
+    private const val ELF_DATA_2MSB = 2.toByte()
+    private const val ELF_E_MACHINE_OFFSET = 18
+    private const val EM_386 = 0x03
+    private const val EM_X86_64 = 0x3E
+    private const val EM_AARCH64 = 0xB7
+
+    // Mach-O: magic read big-endian (CIGAM = byte-swapped), cpu_type right after it.
+    private const val MH_MAGIC = 0xFEEDFACE.toInt()
+    private const val MH_CIGAM = 0xCEFAEDFE.toInt()
+    private const val MH_MAGIC_64 = 0xFEEDFACF.toInt()
+    private const val MH_CIGAM_64 = 0xCFFAEDFE.toInt()
+    private const val FAT_MAGIC = 0xCAFEBABE.toInt()
+    private const val FAT_MAGIC_64 = 0xCAFEBABF.toInt()
+    private const val MACHO_CPU_TYPE_OFFSET = 4
+    private const val CPU_TYPE_X86_64 = 0x01000007
+    private const val CPU_TYPE_ARM64 = 0x0100000C
 }

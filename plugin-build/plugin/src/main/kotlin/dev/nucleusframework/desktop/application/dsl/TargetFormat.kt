@@ -8,6 +8,7 @@ package dev.nucleusframework.desktop.application.dsl
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
 
+/** The tool that produces a [TargetFormat]. */
 enum class PackagingBackend {
     /** App-image creation only (jpackage). */
     JPACKAGE,
@@ -16,6 +17,7 @@ enum class PackagingBackend {
     ELECTRON_BUILDER,
 }
 
+/** A package format the application can be distributed as, the OS it is built on and the [backend] building it. */
 enum class TargetFormat(
     internal val id: String,
     internal val targetOS: OS,
@@ -48,9 +50,17 @@ enum class TargetFormat(
 
     val isCompatibleWithCurrentOS: Boolean by lazy { isCompatibleWith(currentOS) }
 
-    /** Whether this format is a store format that requires sandboxing (App Store, Windows Store, Flatpak). */
+    /**
+     * Whether this format was always built through the sandboxed pipeline. PKG no longer is: it
+     * depends on `macOS { pkg { appStore } }`, which this property cannot see.
+     */
+    @Deprecated(
+        "A PKG is a store format only when macOS { pkg { appStore = true } }, so the answer is no " +
+            "longer a property of the format alone. Branch on the DSL instead.",
+        level = DeprecationLevel.ERROR,
+    )
     val isStoreFormat: Boolean
-        get() = this in setOf(Pkg, AppX, Flatpak)
+        get() = this == Pkg || this == AppX || this == Flatpak
 
     /**
      * Whether this format supports auto-update but electron-builder does not generate latest-*.yml for it.
@@ -59,6 +69,26 @@ enum class TargetFormat(
      */
     val needsPluginUpdateYml: Boolean
         get() = this == Msi || this == Portable
+
+    /**
+     * The extension of the artifact listed in this format's update manifest, for the formats whose
+     * manifest the plugin writes itself when electron-builder did not — always for [needsPluginUpdateYml],
+     * and for the others when no `publish` provider is configured (electron-builder then writes none),
+     * so the packaging output is a complete local update feed either way. `null` for formats without a
+     * self-contained artifact to list (NSIS-Web's packages live on its publish host).
+     */
+    internal val updateArtifactExtension: String?
+        get() =
+            when (this) {
+                Nsis, Exe, Portable -> "exe"
+                Msi -> "msi"
+                Dmg -> "dmg"
+                AppImage -> "AppImage"
+                Deb -> "deb"
+                Rpm -> "rpm"
+                Zip -> if (targetOS == OS.MacOS) "zip" else null
+                else -> null
+            }
 
     /**
      * Whether this format publishes a per-channel auto-update manifest (`<channel><osSuffix>.yml`),

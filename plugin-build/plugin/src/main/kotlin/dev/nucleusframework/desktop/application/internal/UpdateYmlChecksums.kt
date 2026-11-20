@@ -100,25 +100,38 @@ internal object UpdateYmlChecksums {
         newBlockMapSize: Long?,
     ): Int {
         var i = startIndex
-        while (i < lines.size) {
-            val entryLine = lines[i].trimStart()
-            val indent = lines[i].length - lines[i].trimStart().length
-            when {
-                entryLine.startsWith("sha512:") -> lines[i] = " ".repeat(indent) + "sha512: $newHash"
-                entryLine.startsWith("size:") -> lines[i] = " ".repeat(indent) + "size: $newSize"
-                entryLine.startsWith("blockMapSize:") -> {
-                    if (newBlockMapSize != null) {
-                        lines[i] = " ".repeat(indent) + "blockMapSize: $newBlockMapSize"
-                    } else {
-                        // Blockmap no longer valid: drop the reference so the updater does a full download.
-                        lines.removeAt(i)
-                        continue
-                    }
-                }
-                isEndOfFileEntry(entryLine) -> break
-            }
-            i++
+        while (i < lines.size && !endsFileEntry(lines[i].trimStart())) {
+            if (rewriteFieldLine(lines, i, newHash, newSize, newBlockMapSize)) i++
         }
         return i
+    }
+
+    // The checksum fields are rewritten in place even though they look like top-level keys.
+    private fun endsFileEntry(entryLine: String): Boolean =
+        !entryLine.startsWith("sha512:") && !entryLine.startsWith("size:") && isEndOfFileEntry(entryLine)
+
+    /** Rewrites the field at [index] if it is a checksum field; returns false when the line was removed. */
+    private fun rewriteFieldLine(
+        lines: MutableList<String>,
+        index: Int,
+        newHash: String,
+        newSize: Long,
+        newBlockMapSize: Long?,
+    ): Boolean {
+        val entryLine = lines[index].trimStart()
+        val indent = " ".repeat(lines[index].length - entryLine.length)
+        when {
+            entryLine.startsWith("sha512:") -> lines[index] = "${indent}sha512: $newHash"
+            entryLine.startsWith("size:") -> lines[index] = "${indent}size: $newSize"
+            entryLine.startsWith("blockMapSize:") -> {
+                if (newBlockMapSize == null) {
+                    // Blockmap no longer valid: drop the reference so the updater does a full download.
+                    lines.removeAt(index)
+                    return false
+                }
+                lines[index] = "${indent}blockMapSize: $newBlockMapSize"
+            }
+        }
+        return true
     }
 }

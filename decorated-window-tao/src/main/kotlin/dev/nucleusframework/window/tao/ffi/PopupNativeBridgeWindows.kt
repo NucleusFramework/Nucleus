@@ -36,12 +36,14 @@ internal object PopupNativeBridgeWindows {
             dy: Float,
         )
 
+        /** [type] = 1 down, 2 up. [isRepeat]: a key-down sent again because the key is held. */
         @Suppress("FunctionParameterNaming")
         fun onKeyEvent(
             type: Int,
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
+            isRepeat: Boolean,
         )
     }
 

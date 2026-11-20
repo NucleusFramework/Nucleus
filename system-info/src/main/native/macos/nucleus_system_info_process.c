@@ -20,7 +20,8 @@ typedef struct {
     long long start_time;     // Unix timestamp
     long long run_time;       // Seconds
     long parent_pid;
-    char cmd[2048];           // NUL-separated command line
+    char *cmd;                // argv, each argument NUL-terminated, malloc'd
+    size_t cmd_len;
     char cwd[MAXPATHLEN];
     char root[MAXPATHLEN];
 } proc_entry_t;
@@ -37,6 +38,52 @@ static void parse_process_status(uint32_t status, char *buf, size_t bufsize) {
         case SZOMB: strncpy(buf, "Zombie", bufsize); break;
         default:    strncpy(buf, "Unknown", bufsize); break;
     }
+}
+
+// Command line via sysctl KERN_PROCARGS2. The buffer holds argc, the exec path,
+// NUL padding, the argc argv strings and then the environment: stop after argc
+// strings so envp never reaches Java.
+static void read_process_cmd(pid_t pid, proc_entry_t *pe) {
+    static int argmax = 0;
+    if (argmax <= 0) {
+        int argmax_mib[2] = { CTL_KERN, KERN_ARGMAX };
+        size_t argmax_size = sizeof(argmax);
+        if (sysctl(argmax_mib, 2, &argmax, &argmax_size, NULL, 0) != 0 || argmax <= 0) return;
+    }
+    char *buf = (char *)malloc((size_t)argmax);
+    if (!buf) return;
+
+    int mib[3] = { CTL_KERN, KERN_PROCARGS2, pid };
+    size_t size = (size_t)argmax;
+    if (sysctl(mib, 3, buf, &size, NULL, 0) != 0 || size <= sizeof(int)) { free(buf); return; }
+
+    int argc = 0;
+    memcpy(&argc, buf, sizeof(int));
+    char *p = buf + sizeof(int);
+    char *end = buf + size;
+    while (p < end && *p != '\0') p++;  // exec path
+    while (p < end && *p == '\0') p++;  // padding
+    char *args = p;
+    for (int i = 0; i < argc && p < end; i++) {
+        while (p < end && *p != '\0') p++;
+        if (p < end) p++;               // keep the argument's NUL terminator
+    }
+
+    size_t len = (size_t)(p - args);
+    if (len > 0) {
+        memmove(buf, args, len);
+        char *cmd = (char *)realloc(buf, len);
+        pe->cmd = cmd ? cmd : buf;
+        pe->cmd_len = len;
+    } else {
+        free(buf);
+    }
+}
+
+static void free_proc_entry(proc_entry_t *pe) {
+    free(pe->cmd);
+    pe->cmd = NULL;
+    pe->cmd_len = 0;
 }
 
 static int read_process_info(pid_t pid, proc_entry_t *pe) {
@@ -79,35 +126,13 @@ static int read_process_info(pid_t pid, proc_entry_t *pe) {
         strncpy(pe->root, vnodeinfo.pvi_rdir.vip_path, sizeof(pe->root) - 1);
     }
 
-    // Command line via sysctl KERN_PROCARGS2
-    int mib[3] = { CTL_KERN, KERN_PROCARGS2, pid };
-    size_t argmax = sizeof(pe->cmd);
-    char argbuf[4096];
-    size_t argbuf_size = sizeof(argbuf);
-    if (sysctl(mib, 3, argbuf, &argbuf_size, NULL, 0) == 0 && argbuf_size > sizeof(int)) {
-        // First 4 bytes = argc
-        int argc = 0;
-        memcpy(&argc, argbuf, sizeof(int));
-        // After argc: exec_path\0, then NUL-separated argv entries
-        char *p = argbuf + sizeof(int);
-        char *end = argbuf + argbuf_size;
-        // Skip exec path
-        while (p < end && *p != '\0') p++;
-        // Skip trailing NULs after exec path
-        while (p < end && *p == '\0') p++;
-        // Copy the NUL-separated argv
-        size_t remaining = end - p;
-        if (remaining > sizeof(pe->cmd) - 1) remaining = sizeof(pe->cmd) - 1;
-        if (remaining > 0) {
-            memcpy(pe->cmd, p, remaining);
-            pe->cmd[remaining] = '\0';
-        }
-    }
+    read_process_cmd(pid, pe);
 
     return 0;
 }
 
 static void refresh_processes(void) {
+    for (int i = 0; i < g_proc_count; i++) free_proc_entry(&g_procs[i]);
     g_proc_count = 0;
     int count = proc_listallpids(NULL, 0);
     if (count <= 0) return;
@@ -167,7 +192,22 @@ PROC_STRING_ARRAY(nativeProcessStatuses, status)
 PROC_LONG_ARRAY(nativeProcessStartTimes, start_time)
 PROC_LONG_ARRAY(nativeProcessRunTimes, run_time)
 PROC_LONG_ARRAY(nativeProcessParentPids, parent_pid)
-PROC_STRING_ARRAY(nativeProcessCmds, cmd)
+
+JNIEXPORT jobjectArray JNICALL
+Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessCmds(
+    JNIEnv *env, jclass clazz) {
+    if (g_proc_count <= 0) return NULL;
+    jclass string_class = (*env)->FindClass(env, "java/lang/String");
+    jobjectArray arr = (*env)->NewObjectArray(env, g_proc_count, string_class, NULL);
+    (*env)->DeleteLocalRef(env, string_class);
+    for (int i = 0; i < g_proc_count; i++) {
+        jstring js = to_jstring_bytes(env, g_procs[i].cmd ? g_procs[i].cmd : "", g_procs[i].cmd_len);
+        (*env)->SetObjectArrayElement(env, arr, i, js);
+        if (js) (*env)->DeleteLocalRef(env, js);
+    }
+    return arr;
+}
+
 PROC_STRING_ARRAY(nativeProcessCwds, cwd)
 PROC_STRING_ARRAY(nativeProcessRoots, root)
 
@@ -189,98 +229,47 @@ static int read_single_process(pid_t pid, proc_entry_t *pe) {
     return read_process_info(pid, pe);
 }
 
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidName(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.name);
+// Slots of nativeProcessByPid's arrays, mirrored in NativeMacOsSystemInfoBridge.
+enum { PROCESS_LONG_PARENT_PID, PROCESS_LONG_MEMORY, PROCESS_LONG_VIRTUAL_MEMORY,
+       PROCESS_LONG_START_TIME, PROCESS_LONG_RUN_TIME, PROCESS_LONG_COUNT };
+enum { PROCESS_FLOAT_CPU_USAGE, PROCESS_FLOAT_COUNT };
+enum { PROCESS_STRING_NAME, PROCESS_STRING_EXE, PROCESS_STRING_STATUS, PROCESS_STRING_CMD,
+       PROCESS_STRING_CWD, PROCESS_STRING_ROOT, PROCESS_STRING_COUNT };
+
+static void set_jstring_slot(JNIEnv *env, jobjectArray strings, int slot, jstring js) {
+    (*env)->SetObjectArrayElement(env, strings, slot, js);
+    if (js) (*env)->DeleteLocalRef(env, js);
 }
 
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidExe(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.exe);
+static void set_string_slot(JNIEnv *env, jobjectArray strings, int slot, const char *value) {
+    set_jstring_slot(env, strings, slot, to_jstring(env, value));
 }
 
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidMemory(
-    JNIEnv *env, jclass clazz, jlong pid) {
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPid(
+    JNIEnv *env, jclass clazz, jlong pid, jlongArray longs, jfloatArray floats, jobjectArray strings) {
     proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0;
-    return (jlong)pe.memory;
-}
+    if (read_single_process((pid_t)pid, &pe) != 0) return JNI_FALSE;
 
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidVirtualMemory(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0;
-    return (jlong)pe.virtual_memory;
-}
+    jlong long_values[PROCESS_LONG_COUNT];
+    long_values[PROCESS_LONG_PARENT_PID] = (jlong)pe.parent_pid;
+    long_values[PROCESS_LONG_MEMORY] = (jlong)pe.memory;
+    long_values[PROCESS_LONG_VIRTUAL_MEMORY] = (jlong)pe.virtual_memory;
+    long_values[PROCESS_LONG_START_TIME] = (jlong)pe.start_time;
+    long_values[PROCESS_LONG_RUN_TIME] = (jlong)pe.run_time;
+    (*env)->SetLongArrayRegion(env, longs, 0, PROCESS_LONG_COUNT, long_values);
 
-JNIEXPORT jfloat JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCpuUsage(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0.0f;
-    return pe.cpu_usage;
-}
+    jfloat float_values[PROCESS_FLOAT_COUNT];
+    float_values[PROCESS_FLOAT_CPU_USAGE] = pe.cpu_usage;
+    (*env)->SetFloatArrayRegion(env, floats, 0, PROCESS_FLOAT_COUNT, float_values);
 
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidStatus(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.status);
-}
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidStartTime(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0;
-    return (jlong)pe.start_time;
-}
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidRunTime(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return 0;
-    return (jlong)pe.run_time;
-}
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidParentPid(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return -1;
-    return (jlong)pe.parent_pid;
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCmd(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.cmd);
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCwd(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.cwd);
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidRoot(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    proc_entry_t pe;
-    if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
-    return to_jstring(env, pe.root);
+    set_string_slot(env, strings, PROCESS_STRING_NAME, pe.name);
+    set_string_slot(env, strings, PROCESS_STRING_EXE, pe.exe);
+    set_string_slot(env, strings, PROCESS_STRING_STATUS, pe.status);
+    set_jstring_slot(env, strings, PROCESS_STRING_CMD,
+                     to_jstring_bytes(env, pe.cmd ? pe.cmd : "", pe.cmd_len));
+    set_string_slot(env, strings, PROCESS_STRING_CWD, pe.cwd);
+    set_string_slot(env, strings, PROCESS_STRING_ROOT, pe.root);
+    free_proc_entry(&pe);
+    return JNI_TRUE;
 }

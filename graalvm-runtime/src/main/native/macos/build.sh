@@ -8,7 +8,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC="$SCRIPT_DIR/NucleusLocaleBridge.c"
+SRCS=("$SCRIPT_DIR/NucleusLocaleBridge.c" "$SCRIPT_DIR/NucleusTerminationSignals.c")
 RESOURCE_DIR="$SCRIPT_DIR/../../resources/nucleus/native"
 OUT_DIR_ARM64="$RESOURCE_DIR/darwin-aarch64"
 OUT_DIR_X64="$RESOURCE_DIR/darwin-x64"
@@ -46,12 +46,12 @@ COMMON_FLAGS=(
 
 # Compile for arm64
 clang -arch arm64 "${COMMON_FLAGS[@]}" \
-    -o "$OUT_DIR_ARM64/libnucleus_locale.dylib" "$SRC"
+    -o "$OUT_DIR_ARM64/libnucleus_locale.dylib" "${SRCS[@]}"
 strip -x "$OUT_DIR_ARM64/libnucleus_locale.dylib"
 
 # Compile for x86_64
 clang -arch x86_64 "${COMMON_FLAGS[@]}" \
-    -o "$OUT_DIR_X64/libnucleus_locale.dylib" "$SRC"
+    -o "$OUT_DIR_X64/libnucleus_locale.dylib" "${SRCS[@]}"
 strip -x "$OUT_DIR_X64/libnucleus_locale.dylib"
 
 # Clear the NativeLibraryLoader cache so a freshly built dylib is not shadowed

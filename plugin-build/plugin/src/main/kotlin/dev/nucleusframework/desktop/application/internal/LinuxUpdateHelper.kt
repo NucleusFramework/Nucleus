@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.desktop.application.dsl.PolkitActionDefinition
 import java.io.File
 
 /**
@@ -16,7 +17,7 @@ import java.io.File
  *   `dpkg -S` / `rpm -qf` can attribute the helper to this app.
  * - **afterInstall** only hardens permissions and installs a polkit policy scoped to that
  *   helper path (`allow_active=yes`). It must not rewrite the helper.
- * - **afterRemove** deletes that polkit policy on uninstall.
+ * - **afterRemove** deletes that polkit policy on uninstall (not on an upgrade).
  *
  * Runtime: the app downloads `<pkg>.asc` next to the package and runs
  * `pkexec /opt/<app>/nucleus-update-helper <pkg>` (see updater `PlatformInstaller`).
@@ -164,23 +165,24 @@ internal object LinuxUpdateHelper {
     /**
      * afterRemove fragment: drop the polkit policy installed by [polkitAfterInstallFragment].
      * The helper binary is removed with the package payload; only the policy lives outside `/opt`.
+     * Kept on an upgrade, see [LinuxPolkitActions.removeUnlessUpgrade].
      */
     fun polkitAfterRemoveFragment(): String =
-        $$"""
-
-        # --- Nucleus passwordless self-update cleanup ---
-        rm -f '/usr/share/polkit-1/actions/dev.nucleusframework.${executable}.update.policy' 2>/dev/null || true
-        """.trimIndent() + "\n"
+        "\n# --- Nucleus passwordless self-update cleanup ---\n" +
+            LinuxPolkitActions.removeUnlessUpgrade(
+                listOf(LinuxPolkitActions.policyPath($$"dev.nucleusframework.${executable}.update")),
+            )
 
     /**
      * Concatenates Nucleus's after-install template, the optional polkit helper fragment,
-     * and a user-supplied script. User content always runs last so it can rely on the
-     * `/usr/bin` symlink and `/opt` payload already being in place.
+     * the `linux.polkitActions` policies and a user-supplied script. User content always runs
+     * last so it can rely on the `/usr/bin` symlink and `/opt` payload already being in place.
      */
     fun composeAfterInstallScript(
         baseScript: String,
         silentUpdate: Boolean,
         userScript: String?,
+        polkitActions: List<PolkitActionDefinition> = emptyList(),
     ): String =
         buildString {
             append(baseScript.trimEnd())
@@ -188,25 +190,28 @@ internal object LinuxUpdateHelper {
             if (silentUpdate) {
                 append(polkitAfterInstallFragment())
             }
+            append(LinuxPolkitActions.afterInstallFragment(polkitActions))
             appendUserScript(userScript)
         }
 
     /**
      * Builds the after-remove template. Returns `null` when there is nothing to emit
-     * (silent update off and no user script), so electron-builder keeps its default
-     * unlink behaviour.
+     * (silent update off, no polkit action and no user script), so electron-builder keeps
+     * its default unlink behaviour.
      */
     fun composeAfterRemoveScript(
         silentUpdate: Boolean,
         userScript: String?,
+        polkitActions: List<PolkitActionDefinition> = emptyList(),
     ): String? {
         val extra = userScript?.trim().orEmpty()
-        if (!silentUpdate && extra.isEmpty()) return null
+        if (!silentUpdate && polkitActions.isEmpty() && extra.isEmpty()) return null
         return buildString {
             append("#!/bin/bash\n")
             if (silentUpdate) {
                 append(polkitAfterRemoveFragment())
             }
+            append(LinuxPolkitActions.afterRemoveFragment(polkitActions))
             appendUserScript(userScript)
         }
     }

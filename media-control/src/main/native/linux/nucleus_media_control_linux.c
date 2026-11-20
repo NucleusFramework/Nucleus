@@ -12,6 +12,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <gio/gio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -33,6 +34,7 @@
 #define STATUS_PLAYING 2
 
 #define NAME_ACQUISITION_TIMEOUT_SECONDS 10
+#define SEEK_THRESHOLD_US 100000
 
 /* ---- Introspection XML ------------------------------------------------ */
 
@@ -109,6 +111,8 @@ static char   *g_album      = NULL;
 static char   *g_cover_url  = NULL;
 static gint64  g_duration_us = -1;
 static gint64  g_position_us =  0;
+static gint64  g_position_updated_us = 0;
+static gboolean g_seek_pending = FALSE;
 static gint    g_status      = STATUS_STOPPED;
 static gdouble g_volume      = 1.0;
 static guint64 g_track_counter = 0;
@@ -156,13 +160,13 @@ static int ensure_callback_ids(JNIEnv *env) {
     if (g_bridge_class != NULL) return 1;
     jclass cls = (*env)->FindClass(env,
         "dev/nucleusframework/media/control/linux/NativeLinuxBridge");
-    if (!cls) { if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); return 0; }
+    if (!cls) { nucleus_jni_clear_exception(env); return 0; }
     g_bridge_class = (jclass)(*env)->NewGlobalRef(env, cls);
     (*env)->DeleteLocalRef(env, cls);
     g_on_event_method = (*env)->GetStaticMethodID(env, g_bridge_class,
         "onMediaControlEvent", "(Ljava/lang/String;)V");
     if (!g_on_event_method) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, g_bridge_class);
         g_bridge_class = NULL;
         return 0;
@@ -206,7 +210,7 @@ static void dispatch_event_simple(const char *type) {
 
     jstring js = (*env)->NewStringUTF(env, s->str);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
 
     g_string_free(s, TRUE);
@@ -224,7 +228,7 @@ static void dispatch_event_offset(const char *type, gint64 value_us) {
 
     jstring js = (*env)->NewStringUTF(env, s->str);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
 
     g_string_free(s, TRUE);
@@ -241,7 +245,7 @@ static void dispatch_event_position(gint64 position_us) {
 
     jstring js = (*env)->NewStringUTF(env, s->str);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
 
     g_string_free(s, TRUE);
@@ -253,12 +257,14 @@ static void dispatch_event_volume(gdouble volume) {
     JNIEnv *env = get_env(&attached);
     if (!env || !ensure_callback_ids(env)) { release_env(attached); return; }
 
-    char buf[64];
-    snprintf(buf, sizeof(buf), "{\"type\":\"set_volume\",\"volume\":%.6f}", volume);
+    char number[G_ASCII_DTOSTR_BUF_SIZE];
+    g_ascii_dtostr(number, sizeof(number), volume);
+    char buf[128];
+    snprintf(buf, sizeof(buf), "{\"type\":\"set_volume\",\"volume\":%s}", number);
 
     jstring js = (*env)->NewStringUTF(env, buf);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
     release_env(attached);
 }
@@ -274,7 +280,7 @@ static void dispatch_event_uri(const char *uri) {
 
     jstring js = (*env)->NewStringUTF(env, s->str);
     (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_event_method, js);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     (*env)->DeleteLocalRef(env, js);
 
     g_string_free(s, TRUE);
@@ -282,6 +288,18 @@ static void dispatch_event_uri(const char *uri) {
 }
 
 /* ---- MPRIS helpers ---------------------------------------------------- */
+
+/* Caller must hold g_state_mutex. Rate is fixed at 1.0 by this backend.
+   Extrapolation stops at the track length; a published position is never reduced. */
+static gint64 current_position_locked(gint64 now_us) {
+    if (g_status != STATUS_PLAYING) return g_position_us;
+    gint64 elapsed_us = MAX(now_us - g_position_updated_us, 0);
+    gint64 position_us = g_position_us + MIN(elapsed_us, G_MAXINT64 - g_position_us);
+    if (g_duration_us > 0 && position_us > g_duration_us) {
+        position_us = MAX(g_position_us, g_duration_us);
+    }
+    return position_us;
+}
 
 static const char *status_to_string(gint status) {
     switch (status) {
@@ -471,6 +489,9 @@ static void player_handle_method(
     } else if (g_strcmp0(method, "Seek") == 0) {
         gint64 offset = 0;
         g_variant_get(params, "(x)", &offset);
+        pthread_mutex_lock(&g_state_mutex);
+        g_seek_pending = TRUE;
+        pthread_mutex_unlock(&g_state_mutex);
         dispatch_event_offset("seek", offset);
         g_dbus_method_invocation_return_value(invocation, NULL);
     } else if (g_strcmp0(method, "SetPosition") == 0) {
@@ -485,6 +506,9 @@ static void player_handle_method(
             g_dbus_method_invocation_return_value(invocation, NULL);
             return;
         }
+        pthread_mutex_lock(&g_state_mutex);
+        g_seek_pending = TRUE;
+        pthread_mutex_unlock(&g_state_mutex);
         dispatch_event_position(position);
         g_dbus_method_invocation_return_value(invocation, NULL);
     } else if (g_strcmp0(method, "OpenUri") == 0) {
@@ -524,7 +548,7 @@ static GVariant *player_get_property(
     }
     if (g_strcmp0(prop, "Position") == 0) {
         pthread_mutex_lock(&g_state_mutex);
-        GVariant *v = g_variant_new_int64(g_position_us);
+        GVariant *v = g_variant_new_int64(current_position_locked(g_get_monotonic_time()));
         pthread_mutex_unlock(&g_state_mutex);
         return v;
     }
@@ -706,12 +730,18 @@ Java_dev_nucleusframework_media_control_linux_NativeLinuxBridge_nativeSetMetadat
     const char *cover  = j_cover  ? (*env)->GetStringUTFChars(env, j_cover,  NULL) : NULL;
 
     pthread_mutex_lock(&g_state_mutex);
+    /* Duration and artwork can arrive after the track's initial metadata. */
+    if (g_track_counter == 0 ||
+        g_strcmp0(g_title ? g_title : "", title ? title : "") != 0 ||
+        g_strcmp0(g_artist ? g_artist : "", artist ? artist : "") != 0 ||
+        g_strcmp0(g_album ? g_album : "", album ? album : "") != 0) {
+        g_track_counter++;
+    }
     g_free(g_title);     g_title     = title  ? g_strdup(title)  : NULL;
     g_free(g_artist);    g_artist    = artist ? g_strdup(artist) : NULL;
     g_free(g_album);     g_album     = album  ? g_strdup(album)  : NULL;
     g_free(g_cover_url); g_cover_url = cover  ? g_strdup(cover)  : NULL;
     g_duration_us = (duration_ms > 0) ? (gint64)duration_ms * 1000 : -1;
-    g_track_counter++;
     GVariant *metadata = build_metadata_locked();
     pthread_mutex_unlock(&g_state_mutex);
 
@@ -733,14 +763,18 @@ Java_dev_nucleusframework_media_control_linux_NativeLinuxBridge_nativeSetPlaybac
     gint64 new_position_us = 0;
 
     pthread_mutex_lock(&g_state_mutex);
-    if (status != g_status) { g_status = status; status_changed = 1; }
+    gint64 now_us = g_get_monotonic_time();
+    gint64 expected_position_us = current_position_locked(now_us);
+    g_position_us = expected_position_us;
+    g_position_updated_us = now_us;
     if (position_ms >= 0) {
-        new_position_us = (gint64)position_ms * 1000;
-        if (new_position_us != g_position_us) {
-            g_position_us = new_position_us;
-            position_changed = 1;
-        }
+        new_position_us = (gint64)MIN(position_ms, G_MAXINT64 / 1000) * 1000;
+        position_changed = g_seek_pending ||
+            llabs(new_position_us - expected_position_us) > SEEK_THRESHOLD_US;
+        g_position_us = new_position_us;
+        g_seek_pending = FALSE;
     }
+    if (status != g_status) { g_status = status; status_changed = 1; }
     pthread_mutex_unlock(&g_state_mutex);
 
     if (status_changed) {
@@ -828,5 +862,6 @@ Java_dev_nucleusframework_media_control_linux_NativeLinuxBridge_nativeStopListen
     pthread_mutex_lock(&g_state_mutex);
     if (g_root_node)   { g_dbus_node_info_unref(g_root_node);   g_root_node   = NULL; }
     if (g_player_node) { g_dbus_node_info_unref(g_player_node); g_player_node = NULL; }
+    g_seek_pending = FALSE;
     pthread_mutex_unlock(&g_state_mutex);
 }

@@ -12,7 +12,9 @@ private const val LIBRARY_NAME = "nucleus_tao_macos_native_view"
  *  - **Generic NSView interop** (`nativeAddSubview` /
  *    `nativeRemoveSubview` / `nativeSetSubviewFrame`) — used by the
  *    `NativeView` composable to mount user-supplied NSViews **below**
- *    the host content view so Compose can blend over them.
+ *    the host content view so Compose can blend over them, or **above**
+ *    it in a clip view (`nativeAddSubviewAbove` /
+ *    `nativeSetSubviewFrameClipped`) for `placedAsOverlay`.
  *  - **Pointer redispatch** (`nativeDispatchPointer` /
  *    `nativeDispatchScroll`) — Compose sits on top and forwards events
  *    it does not consume to the embedded view.
@@ -36,6 +38,40 @@ internal object NativeTaoMacOsNativeViewBridge {
 
     @JvmStatic
     external fun nativeRemoveSubview(childNsView: Long)
+
+    /**
+     * Mounts [childNsView] **above** the host content view, inside a clip
+     * view of its own (`NativeView(placedAsOverlay = true)`): AppKit
+     * hit-tests it and delivers its events itself. Hidden until the first
+     * [nativeSetSubviewFrameClipped]; [nativeRemoveSubview] removes both.
+     */
+    @JvmStatic
+    external fun nativeAddSubviewAbove(
+        parentNsView: Long,
+        childNsView: Long,
+    )
+
+    /**
+     * Frames an overlay child and its clip view. Both rects are
+     * content-view-local physical pixels with a top-left origin: the
+     * child's own, and the part of it that its clipping ancestors in
+     * Compose leave visible. The clip view masks only while the two differ;
+     * an empty visible rect hides the child.
+     */
+    @JvmStatic
+    @Suppress("LongParameterList")
+    external fun nativeSetSubviewFrameClipped(
+        parentNsView: Long,
+        childNsView: Long,
+        xPx: Int,
+        yPx: Int,
+        widthPx: Int,
+        heightPx: Int,
+        visibleXPx: Int,
+        visibleYPx: Int,
+        visibleWidthPx: Int,
+        visibleHeightPx: Int,
+    )
 
     @JvmStatic
     external fun nativeSetSubviewFrame(
@@ -98,6 +134,24 @@ internal object NativeTaoMacOsNativeViewBridge {
     /** Restores the Tao content view as first responder after Compose consumes a click. */
     @JvmStatic
     external fun nativeMakeContentViewFirstResponder(contentNsView: Long)
+
+    /**
+     * Delivers a Tao key event to the window's first responder when that
+     * responder is an embedded native view (or its field editor), not the
+     * Tao content view. Synthetic keys never enter AppKit's responder chain,
+     * so an `NSTextField` that holds first responder would otherwise never
+     * see a letter typed through the in-process driver.
+     *
+     * [type] is a `TaoEventCode` (`KEY_DOWN` / `KEY_UP` / `KEY_TYPED`).
+     * Returns `true` when the embed took the event.
+     */
+    @JvmStatic
+    external fun nativeDispatchKeyToFirstResponder(
+        contentNsView: Long,
+        type: Int,
+        vkCode: Int,
+        codePoint: Int,
+    ): Boolean
 
     // ── Sibling overlay NSView ────────────────────────────────────────
 
@@ -199,4 +253,57 @@ internal object NativeTaoMacOsNativeViewBridge {
      */
     @JvmStatic
     external fun nativeIsFirstResponder(overlayNsView: Long): Boolean
+
+    // ── Diagnostics for the headful suite ─────────────────────────────
+
+    /**
+     * A retained, unparented `NSTextField` for a headful case to embed
+     * through `NativeView`. 0 on failure. Release with [nativeDiagReleaseView].
+     */
+    @JvmStatic
+    external fun nativeDiagCreateTextField(): Long
+
+    /** Removes a view from [nativeDiagCreateTextField] from its superview and releases it. */
+    @JvmStatic
+    external fun nativeDiagReleaseView(nsView: Long)
+
+    /**
+     * Whether [nsView] is editing: its window's first responder is the view
+     * or the field editor working on its behalf — the AppKit shape of
+     * "keystrokes go to the embed".
+     */
+    @JvmStatic
+    external fun nativeDiagViewIsEditing(nsView: Long): Boolean
+
+    /** Whether [contentNsView] itself is its window's first responder — keystrokes go to Compose. */
+    @JvmStatic
+    external fun nativeDiagViewIsFirstResponder(contentNsView: Long): Boolean
+
+    /** The string value of a field from [nativeDiagCreateTextField], or null. */
+    @JvmStatic
+    external fun nativeDiagTextFieldString(nsView: Long): String?
+
+    /** A subview's frame in physical px with a top-left origin, as `[x, y, w, h]`, or null. */
+    @JvmStatic
+    external fun nativeDiagViewFrame(nsView: Long): IntArray?
+
+    /**
+     * The clip view around an overlay child, as `[x, y, w, h, hidden, masks]`:
+     * its frame in content-view-local physical px with a top-left origin, 1
+     * when it is hidden and 1 when it masks its child. Null when [nsView] is
+     * not mounted as an overlay.
+     */
+    @JvmStatic
+    external fun nativeDiagOverlayClip(
+        contentNsView: Long,
+        nsView: Long,
+    ): IntArray?
+
+    /** Headful diagnostics: an NSButton counting its action, released with [nativeDiagReleaseView]. */
+    @JvmStatic
+    external fun nativeDiagCreateButton(): Long
+
+    /** Headful diagnostics: how many times the button's action ran, -1 if not a diag button. */
+    @JvmStatic
+    external fun nativeDiagButtonClicks(nsView: Long): Int
 }

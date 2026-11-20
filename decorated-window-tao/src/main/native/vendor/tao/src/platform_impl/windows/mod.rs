@@ -73,7 +73,8 @@ impl DeviceId {
 
 impl DeviceId {
   pub fn persistent_identifier(&self) -> Option<String> {
-    if self.0 != 0 {
+    // PATCH(nucleus): the pen ids are not raw input handles.
+    if self.0 > 0 {
       raw_input::get_raw_input_device_name(HANDLE(self.0 as _))
     } else {
       None
@@ -122,6 +123,33 @@ const DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(0));
 
 fn wrap_device_id(id: isize) -> RootDeviceId {
   RootDeviceId(DeviceId(id))
+}
+
+// PATCH(nucleus): a `WindowEvent::Touch` from a pen carries one of these
+// instead of DEVICE_ID, so the embedder can tell a pen from a finger (#827).
+// Negative, so they never collide with a raw input handle.
+const PEN_DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(-1));
+const ERASER_DEVICE_ID: RootDeviceId = RootDeviceId(DeviceId(-2));
+
+/// Tool behind a pointer event; see `DeviceIdExtWindows::pointer_source`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum PointerSource {
+  /// A mouse, a finger, or any device that is not a pen.
+  Mouse,
+  /// The tip of a pen.
+  Pen,
+  /// The eraser end of a pen (or its tip with the eraser button held).
+  Eraser,
+}
+
+impl DeviceId {
+  pub(crate) fn pointer_source(&self) -> PointerSource {
+    match self.0 {
+      -1 => PointerSource::Pen,
+      -2 => PointerSource::Eraser,
+      _ => PointerSource::Mouse,
+    }
+  }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]

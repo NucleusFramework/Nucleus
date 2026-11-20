@@ -1,6 +1,7 @@
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <pthread.h>
 
 // ---- Global state ----
@@ -201,9 +202,7 @@ static void fireHotKeyToJVM(jlong id, jint keyCode) {
     (*env)->CallStaticVoidMethod(env, g_bridgeClass, g_onHotKeyMethod,
                                  id, keyCode, (jint)0);
 
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 
     if (didAttach) {
         (*g_jvm)->DetachCurrentThread(g_jvm);

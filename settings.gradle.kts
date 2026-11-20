@@ -1,3 +1,5 @@
+import org.gradle.api.specs.Specs
+
 pluginManagement {
     repositories {
         google()
@@ -23,9 +25,13 @@ plugins {
 develocity {
     buildScan.termsOfUseUrl = "https://gradle.com/terms-of-service"
     buildScan.termsOfUseAgree = "yes"
-    buildScan.publishing.onlyIf {
-        System.getenv("GITHUB_ACTIONS") == "true" &&
-            it.buildResult.failures.isNotEmpty()
+    // CI publishes a scan for failed builds. Locally nothing is published, through a Gradle spec
+    // rather than a lambda: a settings-script lambda breaks the configuration cache of a
+    // continuous build (`-t`, which Compose Hot Reload's `--auto` runs) once it reconfigures.
+    if (System.getenv("GITHUB_ACTIONS") == "true") {
+        buildScan.publishing.onlyIf { it.buildResult.failures.isNotEmpty() }
+    } else {
+        buildScan.publishing.onlyIf(Specs.satisfyNone())
     }
 }
 
@@ -39,13 +45,14 @@ include(":native-ssl")
 include(":native-http")
 include(":native-http-okhttp")
 include(":native-http-ktor")
+include(":native-proxy")
 include(":linux-hidpi")
 include(":spellcheck")
 include(":system-color")
+include(":screen-capture")
+include(":tray")
+include(":tray-app")
 include(":decorated-window-core")
-include(":decorated-window-awt")
-include(":decorated-window-jbr")
-include(":decorated-window-jni")
 include(":decorated-window-tao")
 include(":nucleus-application")
 include(":decorated-window-jewel")
@@ -59,6 +66,10 @@ include(":notification-macos")
 include(":service-management-macos")
 include(":notification-linux")
 include(":notification-windows")
+include(":widget-runtime")
+include(":widget-windows")
+include(":widget-macos")
+include(":widget-ios")
 include(":notification-common")
 include(":launcher-windows")
 include(":launcher-linux")
@@ -72,31 +83,51 @@ include(":system-info")
 include(":autolaunch")
 include(":scheduler")
 include(":scheduler-testing")
+include(":updater-testing")
 include(":fs-watcher")
+include(":share")
+include(":authentication")
+include(":speech-recognition")
+include(":flatpak")
+include(":location")
+include(":microsoft-store")
+include(":mac-app-store")
 
-// Demo / sample applications (consolidated under examples/)
-include(":examples:nucleus-demo")
-include(":examples:compose-demo")
-include(":examples:tao-demo")
-include(":examples:swing-tao-demo")
-include(":examples:zstd-demo")
-include(":examples:jni-demo")
-include(":examples:shared")
-include(":examples:jewel-demo")
+// Nucleus Lab: the single test bench app (examples/lab). One module per probe domain;
+// each contributes its probes to the Metro graph assembled by :examples:lab:app.
+include(":examples:widget-ios-demo")
+include(":examples:lab:core")
+include(":examples:lab:designsystem")
+include(":examples:lab:probes:window")
+include(":examples:lab:probes:workspace")
+include(":examples:lab:probes:input")
+include(":examples:lab:probes:rendering")
+include(":examples:lab:probes:shell")
+include(":examples:lab:probes:notifications")
+include(":examples:lab:probes:lifecycle")
+include(":examples:lab:probes:updater")
+include(":examples:lab:probes:system")
+include(":examples:lab:probes:fixtures")
+include(":examples:lab:app")
+
+// Apps beside the Lab: fixtures driven by CI or scripts, and samples with a build shape of their
+// own (KMP/Android, JS, appex signing, the benchmark matrix, headless native-image smokes).
 include(":examples:cmp-demo")
-include(":examples:scheduler-demo")
-include(":examples:service-management-demo")
-include(":examples:system-info-demo")
 include(":examples:fs-watcher-smoke")
+include(":examples:location-demo")
+include(":examples:location-android-demo")
+include(":examples:widget-android-demo")
+include(":examples:location-web-demo")
 include(":examples:orphan-reflect-smoke")
-include(":examples:extra-launcher-demo")
 include(":examples:benchmark-demo")
-include(":examples:gstreamer-demo")
-include(":examples:mediafoundation-demo")
-include(":examples:avfoundation-demo")
 include(":examples:tao-native-test")
-include(":examples:window-scaffold-demo")
-include(":examples:rect-stress-demo")
-include(":examples:watermark-demo")
-include(":examples:widget-demo")
+include(":examples:macos-appex-demo")
+include(":examples:hot-update-demo")
+include(":examples:share-web-demo")
+include(":examples:authentication-ios-demo")
+include(":examples:hotkey-activation-demo")
+include(":examples:app-links-demo")
+include(":examples:dialog-owner-demo")
+include(":examples:screen-capture-demo")
+include(":examples:tray-demo")
 includeBuild("plugin-build")

@@ -61,6 +61,7 @@ class GlobalHotKeyManagerTest {
 
     @Test
     fun `initialize register unregister and shutdown on this platform`() {
+        if (!portalRegistrationAllowed) return
         if (!GlobalHotKeyManager.isAvailable) {
             assertFalse(GlobalHotKeyManager.initialize())
             return
@@ -112,6 +113,7 @@ class GlobalHotKeyManagerTest {
 
     @Test
     fun `initialized manager can register alternate modifiers and reject a bogus unregister`() {
+        if (!portalRegistrationAllowed) return
         if (!GlobalHotKeyManager.isAvailable) return
         if (!GlobalHotKeyManager.initialize()) {
             assertTrue(GlobalHotKeyManager.lastError != null)
@@ -143,5 +145,24 @@ class GlobalHotKeyManagerTest {
                 GlobalHotKeyManager.lastError != null,
         )
         GlobalHotKeyManager.shutdown()
+    }
+
+    @Test
+    fun `both listener shapes resolve to their overload`() {
+        GlobalHotKeyManager.shutdown()
+        // Compile-time check: a two-parameter lambda is a HotKeyListener, a one-parameter
+        // lambda a HotKeyEventListener — neither call is ambiguous.
+        val legacy =
+            GlobalHotKeyManager.register(
+                KeyEvent.VK_F24,
+                HotKeyModifier.CONTROL + HotKeyModifier.ALT,
+            ) { _, _ -> }
+        val events =
+            GlobalHotKeyManager.register(
+                KeyEvent.VK_F24,
+                HotKeyModifier.CONTROL + HotKeyModifier.ALT,
+            ) { event -> event.state }
+        val media = GlobalHotKeyManager.register(MediaKey.PLAY_PAUSE) { event: HotKeyEvent -> event.activationToken }
+        assertEquals(listOf(-1L, -1L, -1L), listOf(legacy, events, media))
     }
 }

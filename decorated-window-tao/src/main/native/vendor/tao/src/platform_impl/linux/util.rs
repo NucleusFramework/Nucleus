@@ -10,6 +10,7 @@ use gtk::{
     Display,
   },
   glib::{self},
+  prelude::BinExt,
   traits::{GtkWindowExt, WidgetExt},
 };
 use std::{cell::RefCell, rc::Rc};
@@ -72,6 +73,29 @@ pub fn set_size_constraints<W: GtkWindowExt + WidgetExt>(
     )),
     geom_mask,
   )
+}
+
+// PATCH(nucleus): pin the size of a non-resizable window. GTK sizes such a
+// window to what its widgets request, so a size request is the channel that
+// counts — but on the window itself it covers the client-side decorations
+// too: a CSD toplevel on Wayland lost its theme shadow margins (52 px per
+// axis on Adwaita/Yaru) off the requested content size. Requesting it on the
+// content child leaves GTK to add the decorations, whatever they are (none on
+// X11 or on an undecorated window).
+pub fn set_content_size_request(window: &gtk::Window, width: i32, height: i32) {
+  match window.child() {
+    Some(content) => {
+      content.set_size_request(width, height);
+      // GTK measures a hidden child as nothing, and the content stays hidden
+      // until the window's own `show_all`: a window sized before it is shown
+      // (wrap content, #532) would otherwise map at a stale size.
+      content.show();
+      // GTK still applies the last `gtk_window_resize` when a non-resizable
+      // window maps: keep it in step, or the creation size wins.
+      window.resize(width, height);
+    }
+    None => window.set_size_request(width, height),
+  }
 }
 
 // PATCH(nucleus): fetch a real X server timestamp for activation requests.

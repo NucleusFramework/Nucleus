@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="nucleus_widget_radius">16dp</dimen>
+    <dimen name="nucleus_widget_inner_radius">8dp</dimen>
+    <dimen name="nucleus_widget_padding">12dp</dimen>
+</resources>

@@ -9,6 +9,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
 import javax.inject.Inject
 
+/** Windows NSIS installer options, passed to electron-builder's `nsis` target. */
 abstract class NsisSettings {
     @get:Inject
     internal abstract val objects: ObjectFactory

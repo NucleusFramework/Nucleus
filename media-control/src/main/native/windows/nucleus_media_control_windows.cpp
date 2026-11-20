@@ -40,6 +40,7 @@
 #include <systemmediatransportcontrolsinterop.h>
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 #include <string>
 #include <mutex>
@@ -152,7 +153,7 @@ static void fireEvent(const std::string &json) {
         }
         env->DeleteLocalRef(cls);
     }
-    if (env->ExceptionCheck()) env->ExceptionClear();
+    nucleus_jni_clear_exception(env);
     releaseEnv(didAttach);
 }
 
