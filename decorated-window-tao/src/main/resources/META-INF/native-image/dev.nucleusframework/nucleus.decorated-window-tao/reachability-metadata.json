@@ -270,6 +270,14 @@
                     ]
                 },
                 {
+                    "name": "onWindowResized",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int"
+                    ]
+                },
+                {
                     "name": "onOcclusionChanged",
                     "parameterTypes": [
                         "long",
