@@ -317,11 +317,15 @@ static LRESULT CALLBACK surfaceWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
          * (deco WM_ERASEBKGND); without WS_CLIPCHILDREN it covers this
          * child's area too until the first eglSwapBuffers. */
         return 1;
-    case WM_PAINT:
-        /* Painting happens via EGL outside the paint cycle; validate so
-         * the update region doesn't refire WM_PAINT forever. */
-        ValidateRect(hwnd, NULL);
+    case WM_PAINT: {
+        /* EGL draws outside WM_PAINT. Still complete the paint cycle:
+         * ValidateRect can leave an empty-but-pending update on a visible
+         * child of a hidden layered window, causing an endless WM_PAINT loop. */
+        PAINTSTRUCT paint;
+        BeginPaint(hwnd, &paint);
+        EndPaint(hwnd, &paint);
         return 0;
+    }
     case WM_TIMER:
         if (wParam == NUCLEUS_TAO_MIRROR_TIMER_ID) {
             GlAttachment *att = (GlAttachment *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
