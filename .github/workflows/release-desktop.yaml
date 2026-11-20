@@ -309,7 +309,12 @@ jobs:
               --wait
             # Only the DMG is stapled: re-zipping would invalidate the ZIP's blockmap and break
             # differential auto-updates. Gatekeeper checks a ZIP's notarization online anyway.
-            if [[ "$ARTIFACT" == *.dmg ]]; then xcrun stapler staple "$ARTIFACT"; fi
+            # Stapling rewrites the DMG, so its block map no longer describes it: drop the map, and
+            # generate-update-yml then publishes no blockMapSize for the DMG either.
+            if [[ "$ARTIFACT" == *.dmg ]]; then
+              xcrun stapler staple "$ARTIFACT"
+              rm -f "$ARTIFACT.blockmap"
+            fi
           done
 
       - name: Cleanup keychain

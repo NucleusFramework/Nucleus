@@ -301,6 +301,38 @@ ZIP_OUT="$OUTPUT_DIR/${UNIVERSAL_PREFIX}.zip"
 echo "==> Creating ZIP: $ZIP_OUT"
 ditto -c -k --keepParent "$UNIVERSAL_APP" "$ZIP_OUT"
 
+# ── Generate blockmap for differential updates ────────────────────────────
+# The universal ZIP is built with ditto, so electron-builder never sees it and emits no
+# .blockmap sidecar; without one, universal installs can only update with full downloads.
+# Generate it with electron-builder's own block map builder (the one it uses for its
+# sidecars), from the toolchain provision-electron-builder.sh installed: the same Node.js and
+# the same lock file. The sidecar leaves the ZIP untouched, so the sha512 and size later
+# written to latest-mac.yml stay correct; the ZIP is never stapled, so the map stays valid.
+#
+# The block map is an optimization — updaters fall back to full downloads without it — so a
+# failure here warns instead of failing the signed release.
+generate_blockmap() {
+  local zip
+  # Absolute, since OUTPUT_DIR may be relative to the workspace.
+  zip="$(cd "$(dirname "$ZIP_OUT")" && pwd)/$(basename "$ZIP_OUT")" || return 1
+  # app-builder-lib is resolved from electron-builder's own location in the provisioned tree.
+  "$NODE_BIN" -e '
+    const [cli, zip] = process.argv.slice(1)
+    const blockmap = require.resolve("app-builder-lib/out/targets/blockmap/blockmap", { paths: [cli] })
+    require(blockmap)
+      .buildBlockMap(zip, "gzip", zip + ".blockmap")
+      .catch((e) => { console.error(e); process.exit(1) })
+  ' "$ELECTRON_BUILDER_CLI" "$zip"
+}
+
+echo "==> Generating blockmap: $ZIP_OUT.blockmap"
+if generate_blockmap; then
+  echo "==> Blockmap written: $ZIP_OUT.blockmap"
+else
+  echo "::warning::Blockmap generation failed for $ZIP_OUT; universal updates will use full downloads"
+  rm -f "$ZIP_OUT.blockmap"
+fi
+
 # ── Read packaging metadata from build artifacts ─────────────────────────
 METADATA_FILE="$(find "$ARM64_PATH" -name 'packaging-metadata.json' -type f | head -1)"
 if [[ -z "$METADATA_FILE" ]]; then
@@ -594,3 +626,10 @@ ls -lh "$OUTPUT_DIR"
 echo "zip=$ZIP_OUT" >> "$GITHUB_OUTPUT"
 echo "dmg=$DMG_OUT" >> "$GITHUB_OUTPUT"
 echo "pkg=$PKG_OUT" >> "$GITHUB_OUTPUT"
+# Empty when generation failed: the release then ships without a block map, and updaters download
+# the full ZIP.
+if [[ -f "$ZIP_OUT.blockmap" ]]; then
+  echo "blockmap=$ZIP_OUT.blockmap" >> "$GITHUB_OUTPUT"
+else
+  echo "blockmap=" >> "$GITHUB_OUTPUT"
+fi

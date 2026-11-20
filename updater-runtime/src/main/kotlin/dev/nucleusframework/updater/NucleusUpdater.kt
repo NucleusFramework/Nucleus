@@ -21,9 +21,11 @@ import dev.nucleusframework.updater.internal.UpdateMarker
 import dev.nucleusframework.updater.internal.UpdaterSettings
 import dev.nucleusframework.updater.internal.WindowsHotUpdate
 import dev.nucleusframework.updater.internal.YamlParser
+import dev.nucleusframework.updater.internal.delta.BlockMapCodec
 import dev.nucleusframework.updater.internal.delta.DeltaPlan
 import dev.nucleusframework.updater.internal.delta.DeltaResolver
 import dev.nucleusframework.updater.internal.delta.DifferentialDownloader
+import dev.nucleusframework.updater.internal.delta.SeededInstaller
 import dev.nucleusframework.updater.internal.delta.UpdateCache
 import dev.nucleusframework.updater.provider.UpdateProvider
 import kotlinx.coroutines.Dispatchers
@@ -173,9 +175,12 @@ public class NucleusUpdater(
             val finalFile = File(stagingDir, targetFile.fileName)
 
             try {
+                // The new block map, once the differential attempt has fetched it: a full download
+                // after all still caches it, without fetching it a second time.
+                var resolvedBlockMap: ByteArray? = null
                 val outcome =
-                    downloadDifferentially(targetFile, tempFile)
-                        ?: downloadFully(targetFile, tempFile)
+                    downloadDifferentially(targetFile, info.version, tempFile) { resolvedBlockMap = it }
+                        ?: downloadFully(targetFile, tempFile, resolvedBlockMap)
 
                 // Rename to final file (the staging directory is fresh, so the name is free)
                 check(tempFile.renameTo(finalFile)) { "Could not stage $finalFile" }
@@ -228,20 +233,38 @@ public class NucleusUpdater(
      */
     private suspend fun FlowCollector<DownloadProgress>.downloadDifferentially(
         targetFile: UpdateFile,
+        newVersion: String,
         tempFile: File,
+        onBlockMap: (ByteArray) -> Unit,
     ): DownloadOutcome? {
         // Range requests are what make a download differential; a local feed has nothing to save.
         if (!config.differentialDownload || FeedFetcher.isLocal(targetFile.url)) return null
         return try {
-            val resolver = DeltaResolver(httpClient, provider.authHeaders(), cache)
+            val resolver =
+                DeltaResolver(
+                    httpClient = httpClient,
+                    authHeaders = provider.authHeaders(),
+                    cache = cache,
+                    previousBlockMapUrl = { target -> previousBlockMapUrl(target, newVersion) },
+                )
             val resolved =
                 resolver.resolve(
                     target = targetFile,
                     blockMapUrl = provider.getBlockMapUrl(targetFile.url),
                     destination = tempFile,
                 ) ?: return null
+            resolved.blockMapGzip?.let(onBlockMap)
 
             val plannedBytes = DeltaPlan.downloadSize(resolved.download.operations)
+            if (plannedBytes * PERCENT_MAX >= targetFile.size * MAX_DIFFERENTIAL_PERCENT) {
+                // Nearly everything changed: many ranged requests would save next to nothing over
+                // one streamed full download.
+                logger.info(
+                    "Differential update of ${targetFile.fileName} would fetch $plannedBytes of " +
+                        "${targetFile.size} bytes; downloading the full artifact instead",
+                )
+                return null
+            }
             logger.info(
                 "Differential update of ${targetFile.fileName}: fetching $plannedBytes " +
                     "of ${targetFile.size} bytes",
@@ -266,9 +289,20 @@ public class NucleusUpdater(
         }
     }
 
+    /** Where the installed release published the artifact [target] replaces, for its block map. */
+    private fun previousBlockMapUrl(
+        target: UpdateFile,
+        newVersion: String,
+    ): String? {
+        val previousUrl =
+            SeededInstaller.previousReleaseUrl(target.url, newVersion, config.currentVersion) ?: return null
+        return provider.getBlockMapUrl(previousUrl)
+    }
+
     private suspend fun FlowCollector<DownloadProgress>.downloadFully(
         targetFile: UpdateFile,
         tempFile: File,
+        knownBlockMap: ByteArray?,
     ): DownloadOutcome {
         val totalBytes = targetFile.size
         var bytesDownloaded = 0L
@@ -298,7 +332,7 @@ public class NucleusUpdater(
         // differential downloads are off.
         val blockMapGzip =
             if (config.differentialDownload && !DeltaResolver.embedsBlockMap(targetFile)) {
-                fetchBlockMap(provider.getBlockMapUrl(targetFile.url))
+                knownBlockMap ?: fetchBlockMap(provider.getBlockMapUrl(targetFile.url))
             } else {
                 null
             }
@@ -317,7 +351,7 @@ public class NucleusUpdater(
 
     /** Downloads a block map, or returns `null` when the release does not publish one. */
     private fun fetchBlockMap(url: String): ByteArray? =
-        fetcher.readBytesOrNull(url).also {
+        fetcher.readBytesOrNull(url, BlockMapCodec.MAX_PAYLOAD_SIZE.toLong()).also {
             if (it == null) logger.log(Level.FINE, "No block map at $url; the next update will be a full download")
         }
 
@@ -656,6 +690,9 @@ public class NucleusUpdater(
 
     public companion object {
         private const val PERCENT_MAX = 100.0
+
+        /** A differential download fetching at least this share of the artifact is not worth it. */
+        private const val MAX_DIFFERENTIAL_PERCENT = 90.0
 
         private val logger: Logger = Logger.getLogger(NucleusUpdater::class.java.name)
 
