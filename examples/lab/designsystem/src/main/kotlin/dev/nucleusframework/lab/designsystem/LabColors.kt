@@ -6,9 +6,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import org.jetbrains.jewel.foundation.theme.JewelTheme
-import org.jetbrains.jewel.ui.component.copyWithSize
 import org.jetbrains.jewel.ui.theme.colorPalette
 
 /**
@@ -127,11 +127,21 @@ internal fun jewelLabTypography(): LabTypography {
     val base = JewelTheme.defaultTextStyle
     val size = base.fontSize.value
     return LabTypography(
-        title = base.copyWithSize((size + 5).sp, fontWeight = FontWeight.SemiBold),
+        title = base.withSize((size + 5).sp, fontWeight = FontWeight.SemiBold),
         heading = base.copy(fontWeight = FontWeight.SemiBold),
         label = base,
         body = base,
-        small = base.copyWithSize((size - 1).sp),
-        mono = JewelTheme.editorTextStyle.copyWithSize(12.sp),
+        small = base.withSize((size - 1).sp),
+        mono = JewelTheme.editorTextStyle.withSize(12.sp),
     )
+}
+
+// Jewel 0.42 dropped `copyWithSize`: same contract, the line height keeps its ratio to the font size.
+private fun TextStyle.withSize(
+    size: TextUnit,
+    fontWeight: FontWeight? = this.fontWeight,
+): TextStyle {
+    val scaled = lineHeight.isSp && fontSize.isSp
+    val lineHeight = if (scaled) (lineHeight.value * size.value / fontSize.value).sp else lineHeight
+    return copy(fontSize = size, lineHeight = lineHeight, fontWeight = fontWeight)
 }

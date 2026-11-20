@@ -349,6 +349,7 @@ internal fun canvasLayersSceneBundle(
     platformContext: PlatformContext,
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
+    ensureSkikoComposeBackend()
     RecompositionCounter.installIfEnabled()
     val closed = AtomicBoolean(false)
     // Every coroutine the scene owns carries the router: a recomposition
@@ -408,6 +409,7 @@ internal fun platformLayersSceneBundle(
     composeSceneContext: ComposeSceneContext,
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
+    ensureSkikoComposeBackend()
     RecompositionCounter.installIfEnabled()
     // See canvasLayersSceneBundle.
     val closed = AtomicBoolean(false)

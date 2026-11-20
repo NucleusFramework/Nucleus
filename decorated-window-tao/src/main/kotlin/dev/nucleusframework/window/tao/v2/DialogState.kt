@@ -11,6 +11,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -90,7 +91,7 @@ public fun DialogStateWithBounds(
                 sizeProvider = initialSize?.let { WindowSizeProvider.Fixed(it) } ?: WindowSizeProvider.Default,
                 positionProvider =
                     initialPosition?.let { WindowPositionProvider.Absolute(it) }
-                        ?: WindowPositionProvider.CenteredOnScreen,
+                        ?: WindowPositionProvider.AlignedToScreenAvailableBounds(Alignment.Center),
             ),
     )
 

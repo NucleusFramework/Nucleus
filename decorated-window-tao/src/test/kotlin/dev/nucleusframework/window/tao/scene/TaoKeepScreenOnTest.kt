@@ -3,11 +3,14 @@ package dev.nucleusframework.window.tao.scene
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.keepScreenOn
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
+import dev.nucleusframework.window.tao.TaoLinuxUriHandler
 import org.junit.After
 import org.junit.Assume.assumeTrue
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -67,6 +70,12 @@ class TaoKeepScreenOnTest {
             assertTrue(EnergyManager.isAwakeActive())
         }
         assertFalse(EnergyManager.isAwakeActive())
+    }
+
+    @Test
+    fun `xdg-open uri handler is only used on Linux`() {
+        val isTaoLinux = TestContext().uriHandler === TaoLinuxUriHandler
+        assertEquals(Platform.Current == Platform.Linux, isTaoLinux)
     }
 
     private fun assumeAvailable() {

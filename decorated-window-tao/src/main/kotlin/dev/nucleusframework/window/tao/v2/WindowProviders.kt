@@ -121,8 +121,8 @@ public fun interface WindowPositionProvider {
         /** Keeps the current position of the window. */
         public val Current: WindowPositionProvider = WindowPositionProvider { windowMetrics.bounds.topLeft }
 
-        /** Centers the window within its screen. */
-        public val CenteredOnScreen: WindowPositionProvider = AlignedToScreen(alignment = Alignment.Center)
+        /** Centers the window within its screen's full bounds. */
+        public val CenteredInScreenBounds: WindowPositionProvider = CenteredInScreenBounds()
 
         /** Centers the window within its parent window. */
         public val CenteredInParentWindow: WindowPositionProvider =
@@ -141,26 +141,43 @@ public fun interface WindowPositionProvider {
         ): WindowPositionProvider = Absolute(DpOffset(x, y))
 
         /**
+         * Centers the window within its screen's full bounds (taskbars and
+         * docks included), then applies [offset].
+         */
+        public fun CenteredInScreenBounds(offset: DpOffset = DpOffset.Zero): WindowPositionProvider =
+            WindowPositionProvider { size ->
+                alignedIn(windowMetrics.screen.bounds, Alignment.Center, size, offset)
+            }
+
+        /**
          * Aligns the window within its screen's available bounds according to
          * [alignment], then applies [offset].
          */
-        public fun AlignedToScreen(
+        public fun AlignedToScreenAvailableBounds(
             alignment: Alignment,
             offset: DpOffset = DpOffset.Zero,
         ): WindowPositionProvider =
             WindowPositionProvider { size ->
-                val availableBounds = windowMetrics.screen.availableBounds
-                val position =
-                    alignment.align(
-                        size = size.roundToIntSize(),
-                        space = availableBounds.size.roundToIntSize(),
-                        layoutDirection = LayoutDirection.Ltr,
-                    )
-                DpOffset(
-                    x = availableBounds.left + position.x.dp + offset.x,
-                    y = availableBounds.top + position.y.dp + offset.y,
-                )
+                alignedIn(windowMetrics.screen.availableBounds, alignment, size, offset)
             }
+
+        private fun alignedIn(
+            area: DpRect,
+            alignment: Alignment,
+            size: DpSize,
+            offset: DpOffset,
+        ): DpOffset {
+            val position =
+                alignment.align(
+                    size = size.roundToIntSize(),
+                    space = area.size.roundToIntSize(),
+                    layoutDirection = LayoutDirection.Ltr,
+                )
+            return DpOffset(
+                x = area.left + position.x.dp + offset.x,
+                y = area.top + position.y.dp + offset.y,
+            )
+        }
 
         /**
          * Aligns the window relative to its parent window.
