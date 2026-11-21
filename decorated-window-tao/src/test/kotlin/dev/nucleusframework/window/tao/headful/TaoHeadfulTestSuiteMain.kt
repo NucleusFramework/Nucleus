@@ -430,6 +430,7 @@ public object TaoHeadfulTestSuiteMain {
             MonitorAndScaleHeadfulCases.all() +
             WorkspaceRaceHeadfulCases.all() +
             ImeHeadfulCases.all() +
+            KeyTypedOrderHeadfulCases.all() +
             WindowApiV2HeadfulCases.all() +
             EventLoopWatchdogHeadfulCases.all() +
             EventLoopWatchdogMonkeyHeadfulCases.all() +
