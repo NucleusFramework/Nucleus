@@ -229,6 +229,16 @@ internal class TaoComposeSceneHost(
 
     private var widthPx: Int = 0
     private var heightPx: Int = 0
+
+    /**
+     * Bumped on the main thread with every scene resize; read on the render
+     * thread. A render-loop frame recorded before a resize is not presented
+     * (#953): the layer already vends drawables of the new size, and the old
+     * layout drawn into one can reach the screen after the resize's own
+     * frame — content of the previous size in a window of the new one.
+     */
+    @Volatile
+    private var resizeGeneration: Int = 0
     private var scale: Float = 1f
 
     // Wheel → Scroll, trackpad gesture → Pan (#654). Declared with the rest of
@@ -476,6 +486,9 @@ internal class TaoComposeSceneHost(
         NativeMetalBridge.setFullscreenPrepare(nsViewHandle) { targetW, targetH ->
             prepareFullscreenFrame(targetW, targetH)
         }
+        // Present each resize step inside the transaction that moves the
+        // window, from `windowDidResize:` itself (#953); see [onResized].
+        NativeMetalBridge.setWindowResizeListener(nsViewHandle, ::onWindowResizeStep)
         // Back in sight: re-kick the render loop, which skipped every frame
         // (and so parked the frame clock) while the window was occluded.
         NativeMetalBridge.setOcclusionListener(nsViewHandle) { visible ->
@@ -790,13 +803,28 @@ internal class TaoComposeSceneHost(
         scene?.compositionLocalContext = context
     }
 
+    /**
+     * Resizes the scene and presents a frame at the new size before returning.
+     *
+     * [inWindowTransaction]: called from `windowDidResize:`, inside the
+     * `setFrame:` of a live-resize step or a zoom-animation step (#953), and
+     * not from tao's queued `Resized`. The frame is then presented with
+     * `presentsWithTransaction` on this thread, into the Core Animation
+     * transaction that also carries the new window frame, so both reach the
+     * screen in the same commit. Tao still queues a `Resized` for that step,
+     * which arrives later, once the window may have moved on: see
+     * [pendingTransactionSteps].
+     */
     fun onResized(
         widthPxNew: Int,
         heightPxNew: Int,
+        inWindowTransaction: Boolean = false,
     ) {
+        if (!inWindowTransaction && consumeTransactionStep(widthPxNew, heightPxNew)) return
         if (widthPxNew == widthPx && heightPxNew == heightPx) return
         widthPx = widthPxNew
         heightPx = heightPxNew
+        resizeGeneration++
         NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         scene?.size = IntSize(widthPx, heightPx)
         updateWindowInfoSize()
@@ -814,8 +842,46 @@ internal class TaoComposeSceneHost(
         // turn, after which AppKit delivered every `windowDidResize:` late,
         // one stale size per turn, and the scene replayed the whole
         // animation once it had ended.
-        if (renderFrameBlocking(pumpDispatcher = false)) presentedInDispatch = true else window.requestRedraw()
+        val presented = renderFrameBlocking(pumpDispatcher = false, inWindowTransaction = inWindowTransaction)
+        if (presented) presentedInDispatch = true else window.requestRedraw()
         purgeResizeScratchIfDue()
+    }
+
+    /**
+     * The `windowDidResize:` steps whose queued `Resized` has not arrived yet,
+     * oldest first, with whether the step was presented there. Every resize
+     * step produces both, in order, but the `Resized` is handled steps later:
+     * by then the window has the size of a later step, and rendering the
+     * event's size would put an older frame back on screen (and double the
+     * work of every step).
+     */
+    private val pendingTransactionSteps = ArrayDeque<Pair<IntSize, Boolean>>()
+
+    /** `windowDidResize:` (see [NativeMetalBridge.onWindowResized]): presents the step, or only records it. */
+    private fun onWindowResizeStep(
+        widthPxNew: Int,
+        heightPxNew: Int,
+        present: Boolean,
+    ) {
+        if (pendingTransactionSteps.size == MAX_PENDING_TRANSACTION_STEPS) pendingTransactionSteps.removeFirst()
+        pendingTransactionSteps.addLast(IntSize(widthPxNew, heightPxNew) to present)
+        if (present) onResized(widthPxNew, heightPxNew, inWindowTransaction = true)
+    }
+
+    /**
+     * Matches a queued `Resized` with its `windowDidResize:` step, dropping
+     * older steps whose event never came. True when that step was presented
+     * already, and the event must not render.
+     */
+    private fun consumeTransactionStep(
+        widthPxNew: Int,
+        heightPxNew: Int,
+    ): Boolean {
+        val size = IntSize(widthPxNew, heightPxNew)
+        val index = pendingTransactionSteps.indexOfFirst { it.first == size }
+        if (index < 0) return false
+        repeat(index) { pendingTransactionSteps.removeFirst() }
+        return pendingTransactionSteps.removeFirst().second
     }
 
     private var lastResizePurgeNs: Long = 0
@@ -919,6 +985,7 @@ internal class TaoComposeSceneHost(
         if (targetWidthPx == widthPx && targetHeightPx == heightPx) return
         widthPx = targetWidthPx
         heightPx = targetHeightPx
+        resizeGeneration++
         NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         scene?.size = IntSize(widthPx, heightPx)
         updateWindowInfoSize()
@@ -1947,6 +2014,9 @@ internal class TaoComposeSceneHost(
         // once per frame.
         private const val PUMP_PARK_NANOS = 50_000L // 50 µs
 
+        /** Bounds [pendingTransactionSteps] should tao skip some steps' `Resized`. */
+        private const val MAX_PENDING_TRANSACTION_STEPS = 64
+
         // How long the CVDisplayLink keeps firing after the last frame. A
         // running link wakes its CoreVideo thread on every refresh even with
         // nothing to draw, so an idle window must stop it; the next frame
@@ -2101,6 +2171,7 @@ internal class TaoComposeSceneHost(
         // at replay time on the recorded surface.
         val frameW = widthPx
         val frameH = heightPx
+        val frameGeneration = resizeGeneration
         val (mainPicture, frameDamage, mainClear) = recordMainScene(bundle, frameW, frameH)
         val popupSurfaces = recordPopupSurfaces()
 
@@ -2140,6 +2211,7 @@ internal class TaoComposeSceneHost(
                         frameH,
                         frameDamage,
                         skipMain,
+                        frameGeneration,
                         tx,
                         needsTransaction,
                     )
@@ -2225,7 +2297,9 @@ internal class TaoComposeSceneHost(
      * Render thread: replays the window's frame through [drawableDamage] and
      * presents it, with [tx]'s AppKit mutations when [needsTransaction]. A
      * [skipped] frame (its same-turn present is already on screen, see
-     * [presentedInDispatch]) is not replayed. Returns whether it presented.
+     * [presentedInDispatch]) is not replayed, nor is one a resize outdated
+     * since [frameGeneration] (see [resizeGeneration]). Returns whether it
+     * presented.
      */
     @Suppress("LongParameterList")
     private fun replayMainFrame(
@@ -2237,11 +2311,13 @@ internal class TaoComposeSceneHost(
         frameH: Int,
         frameDamage: IntRect?,
         skipped: Boolean,
+        frameGeneration: Int,
         tx: TaoInteropTransaction,
         needsTransaction: Boolean,
     ): Boolean {
-        if (skipped) {
-            // The frame on screen is the same-turn one, not this recording.
+        if (skipped || frameGeneration != resizeGeneration) {
+            // The frame on screen is the same-turn one, not this recording,
+            // or a resize has outdated it since its record.
             drawableDamage.invalidate()
             return false
         }
@@ -2268,6 +2344,11 @@ internal class TaoComposeSceneHost(
                         if (!tx.isInteropActive) rendererIsInteropActive = false
                     },
                 )
+            } else if (frameGeneration != resizeGeneration) {
+                // Resized during the replay: its own frame is being presented
+                // into the window's transaction, and this one, paced to the
+                // next vsync, could land after it.
+                NativeMetalBridge.nativeDiscardDrawable(d)
             } else {
                 NativeMetalBridge.nativePresent(h, d)
             }
@@ -2372,6 +2453,11 @@ internal class TaoComposeSceneHost(
     fun renderFrameBlocking(
         /** Drain [TaoMainDispatcher] before the replay; `false` from inside an event dispatch (see [onResized]). */
         pumpDispatcher: Boolean = true,
+        /**
+         * Present into the main thread's open Core Animation transaction
+         * instead of on the next vsync: `windowDidResize:` (see [onResized]).
+         */
+        inWindowTransaction: Boolean = false,
     ): Boolean {
         val bundle = sceneBundle ?: return false
         val ctx = directContext ?: return false
@@ -2383,29 +2469,48 @@ internal class TaoComposeSceneHost(
         val popupSurfaces = recordPopupSurfaces()
         if (pumpDispatcher) TaoMainDispatcher.pump()
         val handle = attachmentHandle
+        // Only this frame: an ordinary frame presented with the flag on would
+        // block the main thread on the GPU every vsync (what e18ad305 removed
+        // from the JNI backend). Left alone when interop holds it on already.
+        val toggleTransaction = inWindowTransaction && !layerPresentsWithTransaction
+        if (toggleTransaction) NativeMetalBridge.nativeSetPresentsWithTransaction(handle, true)
+        val present: (Long, Long) -> Unit =
+            if (inWindowTransaction) {
+                // Called on the render thread; the native side runs the present
+                // on the main thread, which pumps it from [runOnRenderThread]
+                // below — still inside `windowDidResize:`, so the explicit
+                // transaction it opens nests in the one AppKit commits.
+                { h, d -> NativeMetalBridge.nativePresentWithInterop(h, d, null) }
+            } else {
+                NativeMetalBridge::nativePresent
+            }
         val presented =
-            runOnRenderThread {
-                val ok =
-                    try {
-                        // Not asked for its damage: a full frame, and so is the
-                        // next one drawn into the same drawable.
-                        drawableDamage.replay(
-                            handle,
-                            ctx,
-                            mainPicture,
-                            mainClear,
-                            frameW,
-                            frameH,
-                            damage = null,
-                            mustPresent = true,
-                            tracked = false,
-                            present = NativeMetalBridge::nativePresent,
-                        )
-                    } finally {
-                        mainPicture.close()
-                    }
-                replayPopups(popupSurfaces)
-                ok
+            try {
+                runOnRenderThread {
+                    val ok =
+                        try {
+                            // Not asked for its damage: a full frame, and so is the
+                            // next one drawn into the same drawable.
+                            drawableDamage.replay(
+                                handle,
+                                ctx,
+                                mainPicture,
+                                mainClear,
+                                frameW,
+                                frameH,
+                                damage = null,
+                                mustPresent = true,
+                                tracked = false,
+                                present = present,
+                            )
+                        } finally {
+                            mainPicture.close()
+                        }
+                    replayPopups(popupSurfaces)
+                    ok
+                }
+            } finally {
+                if (toggleTransaction) NativeMetalBridge.nativeSetPresentsWithTransaction(handle, false)
             }
         if (presented) TaoPresentDiagnostics.record(window.handle, IntSize(frameW, frameH))
         return presented
@@ -2435,6 +2540,7 @@ internal class TaoComposeSceneHost(
         // Drop the transition hook before the scene goes: a late
         // willEnterFS would otherwise re-enter a torn-down host.
         NativeMetalBridge.setFullscreenPrepare(nsViewHandle, null)
+        NativeMetalBridge.setWindowResizeListener(nsViewHandle, null)
         NativeMetalBridge.setOcclusionListener(nsViewHandle, null)
         // Stop driving frames first: after this no new replay is submitted.
         frameDispatcher?.cancel()
