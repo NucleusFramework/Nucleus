@@ -17,7 +17,8 @@ import org.gradle.api.tasks.JavaExec
 // Published Maven artifact id (`dev.nucleusframework:nucleus.decorated-window-tao`)
 // and monorepo project name (`:decorated-window-tao`). Dependency.getName() returns
 // the module/project name only — never the group id.
-private val DECORATED_WINDOW_TAO_DEPENDENCY_NAMES =
+// The published artifact, and the project module inside the Nucleus build.
+internal val DECORATED_WINDOW_TAO_DEPENDENCY_NAMES =
     setOf(
         "nucleus.decorated-window-tao",
         "decorated-window-tao",

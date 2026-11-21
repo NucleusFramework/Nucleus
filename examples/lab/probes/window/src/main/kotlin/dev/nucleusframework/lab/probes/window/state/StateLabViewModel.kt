@@ -76,7 +76,9 @@ class StateLabViewModel(
                 verifyLater(PendingRequest.Minimized(intent.minimized))
             }
             is StateLabIntent.RequestPosition -> {
-                windowState.requestPosition(WindowPositionProvider.AlignedToScreen(intent.target.alignment))
+                windowState.requestPosition(
+                    WindowPositionProvider.AlignedToScreenAvailableBounds(intent.target.alignment),
+                )
                 verifyLater(PendingRequest.Position(intent.target))
             }
             is StateLabIntent.RequestSize -> {

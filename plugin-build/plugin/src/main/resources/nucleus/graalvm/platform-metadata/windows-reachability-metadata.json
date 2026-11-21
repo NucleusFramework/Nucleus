@@ -1901,18 +1901,6 @@
             ]
         },
         {
-            "type": "org.jetbrains.skiko.redrawer.Direct3DRedrawer",
-            "jniAccessible": true,
-            "methods": [
-                {
-                    "name": "isAdapterSupported",
-                    "parameterTypes": [
-                        "java.lang.String"
-                    ]
-                }
-            ]
-        },
-        {
             "type": "sun.awt.AWTAccessor",
             "jniAccessible": true,
             "methods": [

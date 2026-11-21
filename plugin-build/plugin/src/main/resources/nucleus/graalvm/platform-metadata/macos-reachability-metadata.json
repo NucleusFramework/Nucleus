@@ -646,18 +646,6 @@
       "type": "org.jetbrains.skiko.SkiaLayer"
     },
     {
-      "type": "org.jetbrains.skiko.redrawer.MetalRedrawer",
-      "jniAccessible": true,
-      "methods": [
-        {
-          "name": "onOcclusionStateChanged",
-          "parameterTypes": [
-            "boolean"
-          ]
-        }
-      ]
-    },
-    {
       "type": "sun.awt.AWTAutoShutdown",
       "jniAccessible": true,
       "methods": [
@@ -2497,29 +2485,7 @@
     },
     {
       "type": "org.jetbrains.skia.FontMetrics",
-      "jniAccessible": true,
-      "methods": [
-        {
-          "name": "<init>",
-          "parameterTypes": [
-            "float",
-            "float",
-            "float",
-            "float",
-            "float",
-            "float",
-            "float",
-            "float",
-            "float",
-            "float",
-            "float",
-            "java.lang.Float",
-            "java.lang.Float",
-            "java.lang.Float",
-            "java.lang.Float"
-          ]
-        }
-      ]
+      "jniAccessible": true
     },
     {
       "type": "org.jetbrains.skia.FontVariation",
@@ -3076,32 +3042,6 @@
     {
       "type": "org.jetbrains.skia.shaper.TextBlobBuilderRunHandler",
       "jniAccessible": true
-    },
-    {
-      "type": "org.jetbrains.skia.skottie.LogLevel",
-      "jniAccessible": true,
-      "fields": [
-        {
-          "name": "ERROR"
-        },
-        {
-          "name": "WARNING"
-        }
-      ]
-    },
-    {
-      "type": "org.jetbrains.skia.skottie.Logger",
-      "jniAccessible": true,
-      "methods": [
-        {
-          "name": "log",
-          "parameterTypes": [
-            "org.jetbrains.skia.skottie.LogLevel",
-            "java.lang.String",
-            "java.lang.String"
-          ]
-        }
-      ]
     },
     {
       "type": "org.jetbrains.skia.svg.SVGLength",

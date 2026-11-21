@@ -17,6 +17,7 @@ import androidx.compose.material3.ButtonGroup
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ContainedLoadingIndicator
+import androidx.compose.material3.FilledTonalToggleButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
@@ -25,7 +26,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedToggleButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
-import androidx.compose.material3.TonalToggleButton
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -108,7 +108,7 @@ val ExpressiveSamples: List<SampleEntry> =
                         Icon(if (filled) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, null)
                         Text(" Filled")
                     }
-                    TonalToggleButton(tonal, { tonal = it }) { Text("Tonal") }
+                    FilledTonalToggleButton(tonal, { tonal = it }) { Text("Tonal") }
                     OutlinedToggleButton(outlined, { outlined = it }) { Text("Outlined") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
