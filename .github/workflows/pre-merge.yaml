@@ -220,7 +220,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           export DISPLAY=:99
-          Xvfb :99 -screen 0 1600x1200x24 &
+          # No GLX: its extra visuals make GDK pick an ARGB visual EGL does not
+          # list, unlike a real Xorg. With a single 32-bit visual the windows
+          # take the same EGL config as on a desktop, which #952's case needs.
+          Xvfb :99 -screen 0 1600x1200x24 -extension GLX &
           for i in $(seq 1 50); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.2; done
           openbox &
           sleep 1

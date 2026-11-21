@@ -748,9 +748,8 @@ typedef struct {
     EGLContext context;
     EGLSurface surface;
     /* X11 plumbing. `parent_xid` is always the GTK-owned XID; `child_xid` is
-     * non-zero only when GDK's visual didn't match any EGLConfig and we had
-     * to create a child window with a Mesa-canonical visual on top. Both
-     * stay 0 on the Wayland path. */
+     * the child window EGL renders into, on top of it (see nativeAttachX11).
+     * Both stay 0 on the Wayland path. */
     Display   *xdisplay;
     Window     parent_xid;
     Window     child_xid;
@@ -1009,15 +1008,14 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
     if (!chosen) chosen = cfgs[0];
     DBG("chosen EGLConfig=%p\n", (void*)chosen);
 
-    /* Re-read the chosen config's native visual ID — used below to decide
-     * whether we can render straight into the GTK window or need a
-     * child-window with a matching visual. */
+    /* Re-read the chosen config's native visual ID: the child window below
+     * is created with it. */
     EGLint chosen_vid = 0;
     p_eglGetConfigAttrib(edpy, chosen, EGL_NATIVE_VISUAL_ID, &chosen_vid);
-    int needs_child = ((VisualID) chosen_vid != want);
+    int visual_mismatch = ((VisualID) chosen_vid != want);
     /* Once per process: every window on the display gets the same answer. */
     static int warned_opaque_corners = 0;
-    if (needs_child && wa.depth == 32 && !warned_opaque_corners) {
+    if (visual_mismatch && wa.depth == 32 && !warned_opaque_corners) {
         int nvis = 0;
         XVisualInfo *argb = truecolor_visuals(xdpy, 32, &nvis);
         if (!visual_in(argb, nvis, (VisualID) chosen_vid)) {
@@ -1030,7 +1028,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
         }
         if (argb && p_XFree) p_XFree(argb);
     }
-    DBG("chosen visualid=0x%lx, needs_child=%d\n", (unsigned long)(unsigned)chosen_vid, needs_child);
+    DBG("chosen visualid=0x%lx, visual_mismatch=%d\n", (unsigned long)(unsigned)chosen_vid, visual_mismatch);
 
     /* 4) GL 3.3 context — compat then core (see create_gl_context). Drivers
      *    that can't reach 3.3 at all fail here, and we redo the attach on
@@ -1044,17 +1042,22 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
         return 0;
     }
 
-    /* When the GTK window's X visual doesn't match any of Mesa's EGLConfigs
-     * (typical on XWayland: GDK's `screen.rgba_visual()` returns a different
-     * 32-bit ARGB visual than the one Mesa registered with EGL), Mesa rejects
-     * `eglCreateWindowSurface` with EGL_BAD_CONFIG. Mirror the GLX helper's
-     * fallback: create a child X window with Mesa's expected visual on top
-     * of the GTK parent, make it input-transparent via XShape so events
-     * still flow to GTK, and bind EGL to that child instead.  */
+    /* EGL always renders into a child X window of the GTK toplevel, never
+     * into the toplevel itself - the X11 counterpart of the Wayland
+     * subsurface. GTK paints the toplevel on every `draw` (a focus change
+     * restyles it to `:backdrop`, #952), and GDK's double buffer starts each
+     * paint by clearing the region to the window background: rendered into
+     * the same XID, the last frame was wiped to transparent black until the
+     * next swap, and a compositor showed what lay behind the window. X clips
+     * the parent's drawing by its children, so GTK's paints never reach the
+     * child. The child also takes the chosen config's visual, which is what
+     * makes EGL work at all when GDK's ARGB visual is not one Mesa registered
+     * (typical on XWayland). It is input-transparent via XShape so events
+     * still flow to GTK. */
     Window  egl_xid       = xwin;
     Window  child_xid     = (Window) None;
     Colormap child_cmap   = (Colormap) None;
-    if (needs_child) {
+    {
         if (!p_XGetVisualInfo || !p_XCreateColormap || !p_XCreateWindow ||
             !p_XMapWindow      || !p_XSync) {
             DBG("Xlib symbols missing for child-window fallback\n");
@@ -1723,8 +1726,6 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeResize(
          * with the next eglSwapBuffers commit. */
         wl_set_buffer_scale(att, bscale);
     }
-    /* If we render straight into the GTK X window, the EGL surface follows
-     * automatically (GTK already issues XResizeWindow on the parent). */
 }
 
 /**
@@ -2095,13 +2096,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeHeight(
  * Wayland: marshals `wl_compositor.create_region` + `wl_region.add` for
  * each rect + `wl_surface.set_input_region` + `wl_surface.commit`.
  *
- * X11 child-window fallback: applies `XShapeCombineRectangles(ShapeInput,
- * rects, ShapeSet)` on `child_xid`. Only effective when a child window
- * was created (visual-mismatch fallback path) — the default-visual X11
- * path renders directly into GTK's xwin and has nothing we can shape
- * without breaking GTK input. We log a warning in that case; full
- * X11-default support would require always materialising a child window
- * for Compose, which is left as a follow-up. */
+ * X11: applies `XShapeCombineRectangles(ShapeInput, rects, ShapeSet)` on
+ * the EGL child window (`child_xid`). */
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetInputRegion(
     JNIEnv *env, jclass clazz, jlong handle, jfloatArray rectsPx, jint count)
@@ -2213,10 +2209,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetInputRegion
         return;
     }
 
-    /* X11 default visual: no separate Compose window, can't shape
-     * without breaking GTK. Falls back to current full-passthrough
-     * behaviour — overlay clicks won't be intercepted. */
-    DBG("nativeSetInputRegion: no shape-able backend (X11 default visual);"
+    DBG("nativeSetInputRegion: no shape-able backend (no XShape);"
         " overlay clicks pass through to GTK.\n");
 }
 
