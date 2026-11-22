@@ -51,7 +51,7 @@ the portal (#1378) and `ThemeChanged` goes to each window's own id (#1413); on
 macOS, main-thread window methods (#1420), redraws queued while the handler
 runs (#1386) and the maximizable fix (#1411); on Windows, logical positions
 matched to the closest monitor (#1397), `drag_window` from other threads
-(#1400) and size constraints for undecorated windows with shadows (#1436).
+(#1400, minus its early return: see the Windows table) and size constraints for undecorated windows with shadows (#1436).
 
 **Upstream**: *send* (a bug in stock tao that a small, self-contained PR would
 fix), *maybe* (useful, but needs new public API or a design discussion first),
@@ -156,6 +156,7 @@ Taken: #1173 (`RwLock` fields), #1351 (null display checks), #1228 (JIS keys),
 | `FlashWindow`'s `WM_NCACTIVATE(FALSE)` is not a focus loss; modal dialogs (#832, old `0014`) | fc0148bad | kept | send (the guard) | |
 | Session end through cancelable close requests (#751, old `0016`) | 8f086e49b, 87cff7274 | kept; with the hooks installed, the thread target returns before upstream's `process::exit` (#1157) | maybe | Open upstream issue #1115, blocked on `ExitRequested`. Comment there with the design. |
 | A mouse drag ends at the OS release point (#837) | ffbb628db, b69e1307c | kept | split | `WM_LBUTTONUP` posted with lparam 0 on `WM_EXITSIZEMOVE`: send (`GetCursorPos`). The release slot: no. |
+| `drag_window` / `drag_resize_window` always post, without #1400's early return while `dragging` is set | this PR | new on 0.37.3 | send | #1400 relies on `WM_EXITSIZEMOVE` to clear the flag; a drag whose move loop never starts (button already up, `SC_MOVE` refused) leaves it set and every later drag does nothing. |
 | Pen device ids and `WM_POINTERLEAVE` (old `0013`) | 8a41e4cf3 | kept | maybe | |
 
 Upstream Windows changes not taken: #1157's `process::exit` on

@@ -495,14 +495,11 @@ impl Window {
     let window_state = self.window_state.clone();
 
     self.thread_executor.execute_in_thread(move || {
-      {
-        let mut guard = window_state.lock();
-        if !guard.dragging {
-          guard.dragging = true;
-        } else {
-          return;
-        }
-      }
+      // PATCH(nucleus): always post, as tao 0.35 did. Upstream (#1400) returns
+      // early while `dragging` is set, but only WM_EXITSIZEMOVE clears it: a
+      // drag whose move loop never starts (button already up, SC_MOVE refused
+      // in fullscreen) left the flag set and every later drag a no-op.
+      window_state.lock().dragging = true;
 
       let points = {
         let mut pos = unsafe { mem::zeroed() };
