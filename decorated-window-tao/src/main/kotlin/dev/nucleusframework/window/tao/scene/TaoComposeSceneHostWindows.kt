@@ -915,11 +915,16 @@ internal class TaoComposeSceneHostWindows(
             dev.nucleusframework.window.tao.dnd.TaoSceneDnD
                 .InboundState()
 
-        override fun onDragFiles(
+        override fun onDragData(
             hwnd: Long,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ) {
-            dnd.onDragFiles(files = files)
+            dnd.onDragData(
+                dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                    .inboundPayload(files = files, text = text, uris = uris),
+            )
         }
 
         override fun onDragEnter(
@@ -927,12 +932,12 @@ internal class TaoComposeSceneHostWindows(
             x: Int,
             y: Int,
             keyState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int {
             dev.nucleusframework.window.tao.TaoDnDDiagnostics.log(
-                "onDragEnter x=$x y=$y hasFiles=$hasFiles",
+                "onDragEnter x=$x y=$y hasData=$hasData",
             )
-            if (!hasFiles) {
+            if (!hasData) {
                 return dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
             }
             return if (dnd
@@ -949,7 +954,7 @@ internal class TaoComposeSceneHostWindows(
             x: Int,
             y: Int,
             keyState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int =
             if (dnd
                     .onDragOver(node = node(), x = x, y = y)
@@ -972,12 +977,20 @@ internal class TaoComposeSceneHostWindows(
             y: Int,
             keyState: Int,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ): Int {
             dev.nucleusframework.window.tao.TaoDnDDiagnostics.log(
-                "onDrop x=$x y=$y files=${files?.size ?: 0}",
+                "onDrop x=$x y=$y files=${files?.size ?: 0} text=${text != null} uris=${uris?.size ?: 0}",
             )
             return if (dnd
-                    .onDrop(node(), x, y, files)
+                    .onDrop(
+                        node(),
+                        x,
+                        y,
+                        dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                            .inboundPayload(files = files, text = text, uris = uris),
+                    )
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
             } else {

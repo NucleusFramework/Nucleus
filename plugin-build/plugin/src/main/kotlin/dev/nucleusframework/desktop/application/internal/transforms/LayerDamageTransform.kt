@@ -8,6 +8,7 @@ import org.gradle.api.artifacts.transform.TransformOutputs
 import org.gradle.api.artifacts.transform.TransformParameters
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.file.FileSystemLocation
+import org.gradle.api.logging.Logging
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.Classpath
 import org.objectweb.asm.ClassReader
@@ -56,15 +57,28 @@ internal abstract class LayerDamageTransform : TransformAction<TransformParamete
     override fun transform(outputs: TransformOutputs) {
         val input = inputArtifact.get().asFile
         val isJar = input.extension == "jar"
-        when {
-            isJar && input.name.startsWith(UI_ARTIFACT_PREFIX) && LayerDamageClassPatcher.hasLayerClass(input) ->
-                // A layer class whose methods moved comes out as an identical copy.
-                LayerDamageClassPatcher.patchJar(input, patchedOutput(outputs, input))
-            isJar && input.name.startsWith(UI_GRAPHICS_ARTIFACT_PREFIX) &&
-                GraphicsLayerHooksPatcher.hasGraphicsLayerClass(input) ->
-                GraphicsLayerHooksPatcher.patchJar(input, patchedOutput(outputs, input))
-            // Identity: hand the original artifact through without copying.
-            else -> outputs.file(inputArtifact)
+        val patched =
+            when {
+                isJar && input.name.startsWith(UI_ARTIFACT_PREFIX) && LayerDamageClassPatcher.hasLayerClass(input) ->
+                    // A layer class whose methods moved comes out as an identical copy.
+                    LayerDamageClassPatcher.patchJar(input, patchedOutput(outputs, input))
+                isJar && input.name.startsWith(UI_GRAPHICS_ARTIFACT_PREFIX) &&
+                    GraphicsLayerHooksPatcher.hasGraphicsLayerClass(input) ->
+                    GraphicsLayerHooksPatcher.patchJar(input, patchedOutput(outputs, input))
+                // Identity: hand the original artifact through without copying.
+                else -> {
+                    outputs.file(inputArtifact)
+                    true
+                }
+            }
+        // A Compose release that renames or reshapes a hooked method must not
+        // silently turn partial redraw off (the 1.13 module-name mangling did).
+        if (!patched) {
+            Logging.getLogger(LayerDamageTransform::class.java).warn(
+                "Nucleus partialRedraw: {} does not have the Compose layer methods this Nucleus " +
+                    "version patches; partial redraw is disabled and every frame repaints in full.",
+                input.name,
+            )
         }
     }
 
@@ -273,7 +287,8 @@ internal object GraphicsLayerHooksPatcher {
     private const val HOOKS_ENTRY = "$HOOKS.class"
     private const val RECORD_PREFIX = "record"
     private const val RECORD_DESC_SUFFIX = "Lkotlin/jvm/functions/Function1;)V"
-    private const val DRAW = "draw\$ui_graphics"
+    // Internal, so the name carries the (group-qualified since Compose 1.13) Kotlin module.
+    private const val DRAW = "draw\$org_jetbrains_compose_ui_ui_graphics"
     private const val DRAW_DESC = "(Landroidx/compose/ui/graphics/Canvas;L$GRAPHICS_LAYER;)V"
     private const val CONSUMER = "java/util/function/Consumer"
     private const val BI_CONSUMER = "java/util/function/BiConsumer"
@@ -316,7 +331,7 @@ internal object GraphicsLayerHooksPatcher {
     /**
      * `record…(Density, LayoutDirection, IntSize, block)` calls
      * `onRecordStart(this)` first and `onRecordEnd(this)` before returning;
-     * `draw$ui_graphics(canvas, parentLayer)` calls `onDraw(this, parentLayer)`
+     * `draw$org_jetbrains_compose_ui_ui_graphics(canvas, parentLayer)` calls `onDraw(this, parentLayer)`
      * first. Returns null when either method is missing.
      */
     fun patchGraphicsLayer(classBytes: ByteArray): ByteArray? {

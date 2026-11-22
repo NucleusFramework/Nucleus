@@ -970,7 +970,12 @@ public class TaoWindow internal constructor(
      */
     public fun setIgnoreCursorEvents(ignore: Boolean) {
         ignoreCursorEvents = ignore
-        NativeTaoBridge.nativeSetIgnoreCursorEvents(handle, ignore)
+        // A hidden window only records the request: [show] applies it. On
+        // Windows, layering a hidden parent leaves its GL child with an
+        // empty-but-pending update that refires WM_PAINT (#926) — and every
+        // DecoratedWindow is hidden until its first paint. Clearing the flag
+        // always goes through, so the styles never outlive the request.
+        if (shownRequested || !ignore) NativeTaoBridge.nativeSetIgnoreCursorEvents(handle, ignore)
     }
 
     /**
@@ -978,11 +983,15 @@ public class TaoWindow internal constructor(
      * Linux the GDK input region is bound to the `GdkWindow` alive when it is
      * installed, and a window created hidden (every [DecoratedWindow], which
      * shows only after the first paint) swaps it on the way to its first map.
-     * Windows and macOS keep the flag across the show, but replaying is a
-     * plain style/flag write there too, so it stays unconditional.
+     * On every platform it is also the only place a request made while the
+     * window was hidden reaches the native side (see [setIgnoreCursorEvents]).
      */
     @Volatile
     private var ignoreCursorEvents: Boolean = false
+
+    /** Whether [show] was called since creation or the last [hide]. */
+    @Volatile
+    private var shownRequested: Boolean = false
 
     /**
      * Shows the window on every desktop instead of only the one it was created
@@ -1333,6 +1342,7 @@ public class TaoWindow internal constructor(
         setStartupBackgroundEraseEnabled(true)
         showHook?.invoke()
         showObservers.forEach { it(this) }
+        shownRequested = true
         NativeTaoBridge.nativeSetVisible(handle, true)
         // Queued behind the show above (both ride the same event loop), so the
         // click-through state lands on the mapped window — see
@@ -1350,6 +1360,7 @@ public class TaoWindow internal constructor(
     }
 
     public fun hide() {
+        shownRequested = false
         NativeTaoBridge.nativeSetVisible(handle, false)
     }
 

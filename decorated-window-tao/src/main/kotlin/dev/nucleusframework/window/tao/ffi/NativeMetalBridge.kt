@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao.ffi
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.render.MetalFrame
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -101,6 +102,65 @@ internal object NativeMetalBridge {
         if (widthPx <= 0 || heightPx <= 0) return
         fullscreenPrepares[nsViewPtr]?.invoke(widthPx, heightPx)
     }
+
+    // ── Resize present (macOS, #953) ─────────────────────────────────────
+    //
+    // Tao queues `Resized` and hands it over once the run loop has committed
+    // the transaction that moved the window, so a frame presented from there
+    // reaches the screen one commit apart from the window frame: the content
+    // trails a corner drag and is off by a step during the zoom animation.
+    // The native `windowDidResize:` observer therefore calls [onWindowResized]
+    // inside `setFrame:`, while that transaction is still open, and the host
+    // presents the new size into it.
+
+    private val windowResizeListeners = ConcurrentHashMap<Long, (Int, Int, Boolean) -> Unit>()
+
+    fun setWindowResizeListener(
+        nsViewPtr: Long,
+        block: ((widthPx: Int, heightPx: Int, present: Boolean) -> Unit)?,
+    ) {
+        if (nsViewPtr == 0L) return
+        if (block == null) windowResizeListeners.remove(nsViewPtr) else windowResizeListeners[nsViewPtr] = block
+    }
+
+    /**
+     * Called from native on the macOS main thread, inside `windowDidResize:`.
+     * `present` is false when the resize was asked for by JVM code still on
+     * this thread's stack (`setInnerSize` from an event handler or a
+     * coroutine): rendering there would run the scene re-entrantly, inside its
+     * own dispatch, so that step keeps the `Resized` event path.
+     */
+    @JvmStatic
+    fun onWindowResized(
+        nsViewPtr: Long,
+        widthPx: Int,
+        heightPx: Int,
+    ) {
+        if (widthPx <= 0 || heightPx <= 0) return
+        val listener = windowResizeListeners[nsViewPtr] ?: return
+        listener(widthPx, heightPx, !isJvmBelowUpcall())
+    }
+
+    /**
+     * Whether JVM code other than the event loop itself sits below the
+     * [onWindowResized] upcall. On HotSpot the AppKit main thread has no Java
+     * frame under the run loop; where the loop runs on the thread that called
+     * [NativeTaoBridge.nativeRunBlocking] (native image), that call is the
+     * only one allowed.
+     */
+    private fun isJvmBelowUpcall(): Boolean =
+        StackWalker.getInstance().walk { frames ->
+            frames
+                .dropWhile { it.methodName != "onWindowResized" || it.className != NativeMetalBridge::class.java.name }
+                .skip(1)
+                .findFirst()
+                .map { !isEventLoopEntry(it) }
+                .orElse(false)
+        }
+
+    private fun isEventLoopEntry(frame: StackWalker.StackFrame): Boolean =
+        (frame.className == NativeTaoBridge::class.java.name && frame.methodName == "nativeRunBlocking") ||
+            (frame.className == TaoApplication::class.java.name && frame.methodName == "run")
 
     // ── Occlusion: a window nobody can see (hidden app, covered, other Space,
     // locked screen) stops rendering, so its animations park like when minimized.
@@ -398,6 +458,13 @@ internal object NativeMetalBridge {
     )
 
     /**
+     * Releases a drawable from [nativeBeginFrame] without presenting it: it
+     * goes back to the layer's pool, and the screen keeps what it shows.
+     */
+    @JvmStatic
+    external fun nativeDiscardDrawable(drawablePtr: Long)
+
+    /**
      * Present-with-transaction path used when interop AppKit subviews need
      * to commit atomically with the Compose frame. Performs, in order:
      *
@@ -405,10 +472,12 @@ internal object NativeMetalBridge {
      *  2. submit a present-only `MTLCommandBuffer` and `[commit]`
      *  3. `[commandBuffer waitUntilScheduled]` (GPU has the frame queued)
      *  4. `[drawable present]` (joins the open `CATransaction`)
-     *  5. invoke `interopActions.run()` — Kotlin runs queued AppKit mutations,
-     *     each of which lands in the same `CATransaction`
+     *  5. invoke `interopActions.run()`, when given — Kotlin runs queued
+     *     AppKit mutations, each of which lands in the same `CATransaction`
      *  6. `[CATransaction commit]` — flushes Metal present + AppKit mutations
-     *     atomically to the screen
+     *     atomically to the screen. Nested in a transaction the main thread
+     *     already has open (`windowDidResize:`, #953), it flushes with that
+     *     one instead.
      *
      * Requires [nativeSetPresentsWithTransaction] to have been called with
      * `true` for [handle] beforehand. Mirrors `MetalRedrawer.ios.kt:367-383`.
@@ -417,7 +486,7 @@ internal object NativeMetalBridge {
     external fun nativePresentWithInterop(
         handle: Long,
         drawablePtr: Long,
-        interopActions: Runnable,
+        interopActions: Runnable?,
     )
 
     /** True while AppKit is animating a fullscreen transition on the window. */

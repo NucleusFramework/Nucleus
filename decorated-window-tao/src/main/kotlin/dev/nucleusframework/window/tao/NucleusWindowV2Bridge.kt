@@ -363,7 +363,7 @@ private fun resolveDialogBounds(
  * Initial bounds, before any native window exists.
  *
  * The scope reports [screen] — the one the initial `WindowScreenProvider`
- * picked, so `CenteredOnScreen` and friends resolve against it — and, as the
+ * picked, so `CenteredInScreenBounds` and friends resolve against it — and, as the
  * window's own metrics, a default-sized rectangle centred there. That stands in
  * for a window that does not exist yet: `WindowSizeProvider.Current` reads
  * 800×600 (Compose's own default) and `WindowPositionProvider.Current` reads

@@ -27,7 +27,7 @@ import kotlin.test.assertSame
 class TaoTransferableAccessGuardTest {
     @Test
     fun `toAwt unwraps a Compose AWT-bound transferable back to its source`() {
-        val awt = TaoFilesTransferable(listOf(File("guard.txt")))
+        val awt = TaoDropTransferable(TaoSceneDnD.inboundPayload(files = arrayOf(File("guard.txt").absolutePath)))
         val compose = DragAndDropTransferable(awt)
         val unwrapped = TaoTransferableAccess.toAwt(compose)
         assertNotNull(

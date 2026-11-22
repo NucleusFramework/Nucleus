@@ -1260,6 +1260,9 @@ public object TaoSceneTestBattery {
         run("TabHoverPreviewTest: a picture the app assigns stands until the workspace takes one") {
             TabHoverPreviewTest().`a picture the app assigns stands until the workspace takes one`()
         }
+        run("ApplicationScopeVectorPainterTest: rememberVectorPainter works at application scope") {
+            ApplicationScopeVectorPainterTest().`rememberVectorPainter works at application scope`()
+        }
 
         run("TabWorkspaceTest: a drag selects the tab it lifted, so a click that drifts is never lost") {
             TabWorkspaceTest().`a drag selects the tab it lifted, so a click that drifts is never lost`()

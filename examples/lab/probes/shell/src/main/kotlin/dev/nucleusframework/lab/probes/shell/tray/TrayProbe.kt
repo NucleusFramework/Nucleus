@@ -40,7 +40,7 @@ class TrayProbe : Probe {
             summary =
                 "Does an AWT-free tray icon appear, keep its menu in sync with app state, and " +
                     "call back on the UI thread?",
-            modules = listOf("composenativetray"),
+            modules = listOf("tray"),
             checks =
                 listOf(
                     Check(
@@ -57,7 +57,7 @@ class TrayProbe : Probe {
                     Check("thread", "No tray delivery is flagged off the UI thread"),
                     Check("remove", "Remove tray icon (menu or button) makes the icon disappear, no ghost left"),
                 ),
-            keywords = listOf("ComposeNativeTray", "status item", "notification area", "AppIndicator", "SNI"),
+            keywords = listOf("tray", "status item", "notification area", "AppIndicator", "SNI"),
         )
 
     @Composable

@@ -31,7 +31,7 @@ public final class TaoLayerTreeAccess {
      */
     @SuppressWarnings("unchecked")
     public static List<LayoutInfo> children(LayoutInfo node) {
-        return (List<LayoutInfo>) (List<?>) ((LayoutNode) node).getChildren$ui();
+        return (List<LayoutInfo>) (List<?>) ((LayoutNode) node).getChildren$org_jetbrains_compose_ui_ui();
     }
 
     /**
@@ -39,7 +39,7 @@ public final class TaoLayerTreeAccess {
      * @return its outermost coordinator — the first one {@link #wrapped} starts from
      */
     public static LayoutCoordinates outerCoordinator(LayoutInfo node) {
-        return ((LayoutNode) node).getOuterCoordinator$ui();
+        return ((LayoutNode) node).getOuterCoordinator$org_jetbrains_compose_ui_ui();
     }
 
     /**
@@ -47,7 +47,7 @@ public final class TaoLayerTreeAccess {
      * @return its innermost coordinator — the last one {@link #wrapped} reaches
      */
     public static LayoutCoordinates innerCoordinator(LayoutInfo node) {
-        return ((LayoutNode) node).getInnerCoordinator$ui();
+        return ((LayoutNode) node).getInnerCoordinator$org_jetbrains_compose_ui_ui();
     }
 
     /**
@@ -55,7 +55,7 @@ public final class TaoLayerTreeAccess {
      * @return the next coordinator inward, or {@code null} past the inner one
      */
     public static LayoutCoordinates wrapped(LayoutCoordinates coordinator) {
-        return ((NodeCoordinator) coordinator).getWrapped$ui();
+        return ((NodeCoordinator) coordinator).getWrapped$org_jetbrains_compose_ui_ui();
     }
 
     /**
@@ -73,7 +73,7 @@ public final class TaoLayerTreeAccess {
      */
     public static GraphicsLayer graphicsLayer(Object ownedLayer) {
         if (ownedLayer instanceof GraphicsLayerOwnerLayer) {
-            return ((GraphicsLayerOwnerLayer) ownedLayer).getGraphicsLayer$ui();
+            return ((GraphicsLayerOwnerLayer) ownedLayer).getGraphicsLayer$org_jetbrains_compose_ui_ui();
         }
         return null;
     }
@@ -92,7 +92,7 @@ public final class TaoLayerTreeAccess {
      * @return the graphics context every layer of that owner is created from
      */
     public static GraphicsContext graphicsContext(LayoutInfo root) {
-        Owner owner = ((LayoutNode) root).getOwner$ui();
+        Owner owner = ((LayoutNode) root).getOwner$org_jetbrains_compose_ui_ui();
         return owner == null ? null : owner.getGraphicsContext();
     }
 }

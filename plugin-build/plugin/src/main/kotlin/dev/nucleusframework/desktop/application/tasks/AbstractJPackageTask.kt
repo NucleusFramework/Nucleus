@@ -53,6 +53,7 @@ import dev.nucleusframework.desktop.application.internal.plistDocumentTypes
 import dev.nucleusframework.desktop.application.internal.javaOption
 import dev.nucleusframework.desktop.application.internal.renameMacAppBundle
 import dev.nucleusframework.desktop.application.internal.validation.validate
+import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.clearDirs
 import dev.nucleusframework.internal.utils.currentArch
@@ -1260,9 +1261,42 @@ private class FilesMapping : Serializable {
     }
 }
 
+// Compose 1.13 ships every platform's Skiko native in one `skiko-awt-runtime-all` jar.
 private fun isSkikoForCurrentOS(lib: File): Boolean =
-    lib.name.contains("skiko-awt-runtime-${currentOS.id}-${currentArch.id}") &&
-        lib.name.endsWith(".jar")
+    lib.name.endsWith(".jar") &&
+        (
+            lib.name.contains("skiko-awt-runtime-${currentOS.id}-${currentArch.id}") ||
+                lib.name.contains(SKIKO_RUNTIME_ALL)
+        )
+
+private const val SKIKO_RUNTIME_ALL = "skiko-awt-runtime-all"
+
+// Any Skiko native library, with or without its `.sha256`, for any OS / arch.
+private val SKIKO_NATIVE_ENTRY = Regex("""^(lib)?skiko-(linux|macos|windows)-[a-z0-9]+\.(so|dylib|dll)$""")
+
+private const val SKIKO_ICU_DATA = "icudtl.dat"
+
+/**
+ * Whether [fileName] (a jar entry's last path segment) is a Skiko native, its
+ * `.sha256`, or the Windows-only ICU data, that [os] / [arch] never loads.
+ * The uber jar drops them: `skiko-awt-runtime-all` carries every platform's.
+ */
+internal fun isForeignSkikoNative(
+    fileName: String,
+    os: OS = currentOS,
+    arch: Arch = currentArch,
+): Boolean {
+    val name = fileName.removeSuffix(".sha256")
+    if (name == SKIKO_ICU_DATA) return os != OS.Windows
+    if (!SKIKO_NATIVE_ENTRY.matches(name)) return false
+    val own =
+        when (os) {
+            OS.MacOS -> "libskiko-macos-${arch.id}.dylib"
+            OS.Windows -> "skiko-windows-${arch.id}.dll"
+            OS.Linux -> "libskiko-linux-${arch.id}.so"
+        }
+    return name != own
+}
 
 private fun unpackSkikoForCurrentOS(
     sourceJar: File,
@@ -1289,7 +1323,9 @@ private fun unpackSkikoForCurrentOS(
             val unpackedFile = skikoDir.resolve(entry.name.substringAfterLast("/"))
             zin.copyTo(unpackedFile)
             outputFiles.add(unpackedFile)
-        } else {
+        } else if (!SKIKO_NATIVE_ENTRY.matches(entryFileName)) {
+            // Other platforms' natives (the `-all` jar, or an uber jar built from it) are dropped:
+            // dead weight, and binaries the notarization / signing pass would have to handle.
             copyZipEntry(entry, zin, zout)
         }
     }

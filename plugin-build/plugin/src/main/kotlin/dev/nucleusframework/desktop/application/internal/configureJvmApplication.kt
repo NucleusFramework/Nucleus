@@ -25,6 +25,7 @@ import dev.nucleusframework.desktop.application.tasks.AbstractGenerateAppPropert
 import dev.nucleusframework.desktop.application.tasks.AbstractGenerateFlathubRepositoryTask
 import dev.nucleusframework.desktop.application.tasks.AbstractJLinkTask
 import dev.nucleusframework.desktop.application.tasks.AbstractJPackageTask
+import dev.nucleusframework.desktop.application.tasks.isForeignSkikoNative
 import dev.nucleusframework.desktop.application.tasks.AbstractMergeUpdateYmlTask
 import dev.nucleusframework.desktop.application.tasks.AbstractNotarizationTask
 import dev.nucleusframework.desktop.application.tasks.AbstractPatchCaCertificatesTask
@@ -96,6 +97,10 @@ internal fun JvmApplicationContext.configureJvmApplication() {
     if (app.nativeDistributions.cleanupNativeLibs) {
         registerCleanNativeLibsTransform(project)
     }
+
+    // The Nucleus Tao runtime only runs on Compose 1.13+: fail early instead
+    // of a NoSuchMethodError at run time.
+    configureComposeVersionCheck(project)
 
     // LCD / ClearType text on Windows (#875): patch Compose's hardcoded
     // grayscale PlatformDefault at build time — see LcdTextDefaultTransform.
@@ -1522,6 +1527,8 @@ private fun JvmApplicationContext.configurePackageUberJarForCurrentOS(
 ) {
     jar.dependsOn(flattenJars)
     jar.from(project.zipTree(flattenJars.flatMap { it.flattenedJar }))
+    // The other platforms' Skiko natives, which `skiko-awt-runtime-all` brings in.
+    jar.exclude { isForeignSkikoNative(it.name) }
 
     app.mainClass?.let { jar.manifest.attributes["Main-Class"] = it }
     jar.manifest.attributes["Multi-Release"] = "true"

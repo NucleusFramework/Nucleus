@@ -149,11 +149,15 @@ pub(crate) unsafe fn animate_frame(window_delegate: &WindowDelegate, target: NSR
     target,
     Instant::now(),
     duration.max(ZOOM_MIN_DURATION_SECS),
+    Duration::from_millis(ZOOM_STEP_MS),
   );
 }
 
-// One step of `animate_frame`; re-schedules itself until the target is
-// reached or a newer request has bumped `zoom_generation`.
+// One step of `animate_frame`, run `delay` from now; re-schedules itself until
+// the target is reached or a newer request has bumped `zoom_generation`. The
+// next step is due ZOOM_STEP_MS after this one *started*: the embedder
+// presents the content of each step inside its `setFrame:` (Nucleus #953), and
+// counting that time on top of the interval would slow the cadence by it.
 const ZOOM_STEP_MS: u64 = 16;
 const ZOOM_MIN_DURATION_SECS: f64 = 0.05;
 
@@ -164,9 +168,9 @@ unsafe fn zoom_step(
   to: NSRect,
   started: Instant,
   duration: f64,
+  delay: Duration,
 ) {
-  let when =
-    DispatchTime::try_from(Duration::from_millis(ZOOM_STEP_MS)).unwrap_or(DispatchTime::NOW);
+  let when = DispatchTime::try_from(delay).unwrap_or(DispatchTime::NOW);
   let _ = DispatchQueue::main().after(when, move || {
     let Some(delegate) = window_delegate.load() else {
       return;
@@ -175,6 +179,7 @@ unsafe fn zoom_step(
     if ivars.zoom_generation.get() != generation {
       return;
     }
+    let step_started = Instant::now();
     let t = (started.elapsed().as_secs_f64() / duration).min(1.0);
     // Ease in-out, like AppKit's own window frame animation.
     let e = 0.5 - 0.5 * (std::f64::consts::PI * t).cos();
@@ -190,7 +195,8 @@ unsafe fn zoom_step(
     );
     delegate.window().setFrame_display(frame, true);
     if t < 1.0 {
-      zoom_step(window_delegate, generation, from, to, started, duration);
+      let delay = Duration::from_millis(ZOOM_STEP_MS).saturating_sub(step_started.elapsed());
+      zoom_step(window_delegate, generation, from, to, started, duration, delay);
     } else {
       ivars.zoom_animating.set(false);
     }

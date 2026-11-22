@@ -79,6 +79,11 @@ pub(super) struct ViewState {
   /// must not be forwarded either (Nucleus patch, nucleusframework#595).
   ime_consumed_keydown: Cell<bool>,
 
+  /// Text `insertText:` produced for the event `keyDown` is interpreting,
+  /// or `None` outside `keyDown`. Held here so that the key-down is queued
+  /// ahead of the text it typed (Nucleus patch).
+  key_down_text: RefCell<Option<String>>,
+
   /// Selection within marked text, as last given by `setMarkedText:`.
   /// UTF-16 units relative to the start of the marked range. `EMPTY_RANGE`
   /// when there is no marked text.
@@ -109,6 +114,7 @@ pub(super) fn new_view(ns_window: &NSWindow) -> (Retained<TaoView>, Weak<Mutex<C
     in_ime_preedit: Cell::new(false),
     key_triggered_ime: Cell::new(false),
     ime_consumed_keydown: Cell::new(false),
+    key_down_text: RefCell::new(None),
     ime_selected_range: Cell::new(util::EMPTY_RANGE),
     is_key_down: Cell::new(false),
     modifiers: Cell::new(Default::default()),
@@ -320,7 +326,17 @@ define_class!(
         state.key_triggered_ime.set(false);
         let was_preediting: bool = state.in_ime_preedit.get();
 
+        // Nucleus patch: `insertText:` runs inside `interpretKeyEvents`, before
+        // the key-down below is queued. Collect what it types and queue it after
+        // the key-down instead: that is the order AWT delivers KEY_PRESSED and
+        // KEY_TYPED in, and a handler that moves focus to a text field on
+        // key-down relies on it — the character would otherwise reach whatever
+        // had focus before. The outer value is restored for a nested `keyDown`.
+        let outer_text = state.key_down_text.replace(Some(String::new()));
+
         self.interpretKeyEvents(&NSArray::from_slice(&[event]));
+
+        let typed = state.key_down_text.replace(outer_text).unwrap_or_default();
 
         // The `interpretKeyEvents` above may invoke `set_marked_text` or `insert_text`.
         let in_ime = state.key_triggered_ime.get();
@@ -362,6 +378,9 @@ define_class!(
             },
           };
           AppState::queue_event(EventWrapper::StaticEvent(window_event));
+        }
+        if !typed.is_empty() {
+          queue_window_event(state, WindowEvent::ReceivedImeText(typed));
         }
       }
       trace!("Completed `keyDown`");
@@ -899,6 +918,19 @@ define_class!(
         let state = self.ivars();
         state.key_triggered_ime.set(true);
 
+        // Nucleus patch: text the key `keyDown` is interpreting typed before
+        // opening this composition goes out now, ahead of the preedit, rather
+        // than after it, where it would land inside the composition.
+        let typed = state
+          .key_down_text
+          .borrow_mut()
+          .as_mut()
+          .map(std::mem::take)
+          .unwrap_or_default();
+        if !typed.is_empty() {
+          queue_window_event(state, WindowEvent::ReceivedImeText(typed));
+        }
+
         // Nucleus patch (nucleusframework#595): forward the preedit to the app.
         // The IME's inner selection is not representable through Compose's
         // TextEditingScope and is not forwarded. Corporate characters stay in
@@ -1084,7 +1116,18 @@ define_class!(
             },
           );
         } else if !string.is_empty() {
-          queue_window_event(state, WindowEvent::ReceivedImeText(string));
+          // Nucleus patch: text typed by the key `keyDown` is interpreting is
+          // queued by `keyDown`, after the key-down itself.
+          let untaken = match state.key_down_text.borrow_mut().as_mut() {
+            Some(typed) => {
+              typed.push_str(&string);
+              None
+            }
+            None => Some(string),
+          };
+          if let Some(string) = untaken {
+            queue_window_event(state, WindowEvent::ReceivedImeText(string));
+          }
         }
       }
       trace!("Completed `insertText`");

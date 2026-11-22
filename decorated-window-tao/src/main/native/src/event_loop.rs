@@ -1270,8 +1270,7 @@ pub(crate) fn run_event_loop_blocking() {
                                 keymap::LOC_STANDARD,
                                 mods,
                                 ch as jint,
-                                // The text reaches us before its key-down on
-                                // macOS and Linux, so it cannot be matched.
+                                // Only the key-down that typed it is tagged.
                                 false,
                             );
                         }

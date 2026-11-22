@@ -99,7 +99,7 @@ class NucleusWindowV2BridgeTest {
                 initialBoundsProvider =
                     WindowBoundsProvider(
                         sizeProvider = WindowSizeProvider.Fixed(size),
-                        positionProvider = WindowPositionProvider.CenteredOnScreen,
+                        positionProvider = WindowPositionProvider.AlignedToScreenAvailableBounds(Alignment.Center),
                     ),
             )
         val position = assertIs<WindowPosition.Absolute>(nucleusWindowStateToV1(state).position)
@@ -118,7 +118,7 @@ class NucleusWindowV2BridgeTest {
                 initialBoundsProvider =
                     WindowBoundsProvider(
                         sizeProvider = WindowSizeProvider.Fixed(size),
-                        positionProvider = WindowPositionProvider.AlignedToScreen(Alignment.BottomEnd),
+                        positionProvider = WindowPositionProvider.AlignedToScreenAvailableBounds(Alignment.BottomEnd),
                     ),
             )
         val position = assertIs<WindowPosition.Absolute>(nucleusWindowStateToV1(state).position)

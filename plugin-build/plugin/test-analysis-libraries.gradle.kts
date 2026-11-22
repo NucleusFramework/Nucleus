@@ -128,9 +128,18 @@ val lcdConsumerComposeVersion =
         ?.firstNotNullOfOrNull { Regex("""^compose\s*=\s*"([^"]+)"""").find(it)?.groupValues?.get(1) }
         ?: lcdPluginComposeVersion
 
+// Types the 1.13+ text backend interface (`PlatformText`) refers to, so the
+// test can register a stub backend; never patched.
+val testLcdSupportLibraries: Configuration = configurations.create("testLcdSupportLibraries") {
+    isCanBeResolved = true
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
 dependencies {
     testLcdPatchLibraries("org.jetbrains.compose.ui:ui-text-desktop:$lcdPluginComposeVersion")
     testLcdPatchLibrariesConsumer("org.jetbrains.compose.ui:ui-text-desktop:$lcdConsumerComposeVersion")
+    testLcdSupportLibraries("org.jetbrains.compose.ui:ui-unit-desktop:$lcdConsumerComposeVersion")
 }
 
 // Real ui-desktop jars (with their dependencies, so the patched classes can be
@@ -171,6 +180,7 @@ tasks.withType<Test> {
             .distinct()
             .joinToString(java.io.File.pathSeparator),
     )
+    systemProperty("test.lcd.support.jars", testLcdSupportLibraries.asPath)
     systemProperty("test.layerdamage.classpath.plugin", testLayerDamageLibraries.asPath)
     systemProperty("test.layerdamage.classpath.consumer", testLayerDamageLibrariesConsumer.asPath)
     systemProperty("test.oracle.repo.zip", testOracleRepo.singleFile.absolutePath)

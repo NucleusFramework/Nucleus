@@ -88,6 +88,8 @@ private class FakeEnvironment(
         synchronized(reloads) { reloads += kind }
     }
 
+    fun reloaded(kind: String): Boolean = synchronized(reloads) { kind in reloads }
+
     override fun observe(
         name: String,
         onNotification: () -> Unit,
@@ -125,8 +127,19 @@ class MacWidgetHostTest {
 
     private fun started() {
         host.start()
-        // The startup pass renders every pinned widget.
-        runBlocking { withTimeout(5_000) { while (!store.render("Counter", "systemSmall").isFile) delay(10) } }
+        // The startup pass renders every pinned widget, then reloads its timelines: the render file
+        // is written before the reload, so wait for both (and the gallery previews).
+        runBlocking {
+            withTimeout(5_000) {
+                while (
+                    !store.render("Counter", "systemSmall").isFile ||
+                    !store.preview("Counter", "systemMedium").isFile ||
+                    !environment.reloaded("Counter")
+                ) {
+                    delay(10)
+                }
+            }
+        }
     }
 
     private fun state(): WidgetState = runBlocking { host.loadState(WidgetId("Counter/systemSmall")) }
@@ -149,7 +162,7 @@ class MacWidgetHostTest {
         assertTrue(Regex("\"src\":\"images/data/[0-9a-f]{32}\\.png\"").containsMatchIn(tree), tree)
         assertFalse("Draft" in tree, tree)
         assertTrue(store.preview("Counter", "systemMedium").isFile)
-        assertTrue("Counter" in environment.reloads)
+        assertTrue(environment.reloaded("Counter"))
     }
 
     @Test

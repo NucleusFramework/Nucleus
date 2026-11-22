@@ -55,6 +55,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilledTonalToggleButton
 import androidx.compose.material3.FloatingActionButtonMenu
 import androidx.compose.material3.FloatingActionButtonMenuItem
 import androidx.compose.material3.FloatingToolbarDefaults
@@ -73,7 +74,6 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.ToggleFloatingActionButton
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
-import androidx.compose.material3.TonalToggleButton
 import androidx.compose.material3.VerticalFloatingToolbar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -164,7 +164,7 @@ private fun ToggleButtonsDemo() {
                 Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
                 Text("Filled")
             }
-            TonalToggleButton(checked = tonal, onCheckedChange = { tonal = it }) {
+            FilledTonalToggleButton(checked = tonal, onCheckedChange = { tonal = it }) {
                 Icon(
                     if (tonal) Icons.Filled.Star else Icons.Outlined.StarBorder,
                     contentDescription = null,

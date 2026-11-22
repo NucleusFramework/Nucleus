@@ -1192,15 +1192,20 @@ internal class TaoComposeSceneHostLinux(
             dev.nucleusframework.window.tao.dnd.TaoSceneDnD
                 .InboundState()
 
-        override fun onDragFiles(
+        override fun onDragData(
             handle: Long,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ) {
-            dnd.onDragFiles(files = files)
+            dnd.onDragData(
+                dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                    .inboundPayload(files = files, text = text, uris = uris),
+            )
         }
 
         // Linux keeps neither the macOS/Windows diagnostic logging nor their
-        // `if (!hasFiles) return NONE` guard, so its overrides delegate straight
+        // `if (!hasData) return NONE` guard, so its overrides delegate straight
         // to the shared helper. Folding those in via TaoSceneDnD would change
         // Linux behaviour (rejecting non-file drags at enter).
         override fun onDragEnter(
@@ -1208,7 +1213,7 @@ internal class TaoComposeSceneHostLinux(
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int =
             if (dnd
                     .onDragEnter(node = node(), x = x, y = y)
@@ -1223,7 +1228,7 @@ internal class TaoComposeSceneHostLinux(
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int =
             if (dnd
                     .onDragOver(node = node(), x = x, y = y)
@@ -1244,9 +1249,17 @@ internal class TaoComposeSceneHostLinux(
             y: Int,
             modState: Int,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ): Int =
             if (dnd
-                    .onDrop(node(), x, y, files)
+                    .onDrop(
+                        node(),
+                        x,
+                        y,
+                        dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+                            .inboundPayload(files = files, text = text, uris = uris),
+                    )
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY
             } else {

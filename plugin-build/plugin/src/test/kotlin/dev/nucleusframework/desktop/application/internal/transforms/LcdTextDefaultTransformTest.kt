@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.lang.reflect.Proxy
 import java.net.URLClassLoader
 import java.nio.file.Files
 
@@ -57,7 +58,8 @@ class LcdTextDefaultTransformTest {
     /** Runs [block] with a fresh classloader over every patched jar. */
     private fun forEachPatchedJar(block: (URLClassLoader) -> Unit) {
         for (jar in patchedJars) {
-            URLClassLoader(arrayOf(jar.toURI().toURL()), javaClass.classLoader).use { loader ->
+            val urls = (listOf(jar) + supportJars).map { it.toURI().toURL() }.toTypedArray()
+            URLClassLoader(urls, javaClass.classLoader).use { loader ->
                 block(loader)
             }
         }
@@ -65,10 +67,42 @@ class LcdTextDefaultTransformTest {
 
     private fun URLClassLoader.platformDefaultSmoothing(): String {
         val frsClass = loadClass("androidx.compose.ui.text.FontRasterizationSettings")
+        registerGrayscaleTextBackend(frsClass)
         val companion = frsClass.getField("Companion").get(null)
         val settings = companion.javaClass.getMethod("getPlatformDefault").invoke(companion)
         return settings.javaClass.getMethod("getSmoothing").invoke(settings).toString()
     }
+
+    /**
+     * From Compose 1.13 the original default comes from the registered text
+     * backend (`PlatformTextRegistry`), which a real app registers at startup.
+     * Registers a stub reporting Skiko's grayscale default; a no-op on older
+     * Compose versions, which compute the default themselves.
+     */
+    private fun URLClassLoader.registerGrayscaleTextBackend(frsClass: Class<*>) {
+        val registryClass =
+            runCatching { loadClass("androidx.compose.ui.text.platform.PlatformTextRegistry") }.getOrNull() ?: return
+        val platformText = loadClass("androidx.compose.ui.text.platform.PlatformText")
+        val smoothing = loadClass("androidx.compose.ui.text.FontSmoothing")
+        val hinting = loadClass("androidx.compose.ui.text.FontHinting")
+        val grayscale =
+            frsClass
+                .getConstructor(smoothing, hinting, Boolean::class.java, Boolean::class.java)
+                .newInstance(enumValue(smoothing, "AntiAlias"), enumValue(hinting, "Normal"), true, false)
+        val stub =
+            Proxy.newProxyInstance(this, arrayOf(platformText)) { _, method, _ ->
+                check(method.name == "getDefaultFontRasterizationSettings") { "unexpected call: ${method.name}" }
+                grayscale
+            }
+        val registry = registryClass.getField("INSTANCE").get(null)
+        registryClass.getMethod("clear").invoke(registry)
+        registryClass.getMethod("register", platformText).invoke(registry, stub)
+    }
+
+    private fun enumValue(
+        type: Class<*>,
+        name: String,
+    ): Any = type.enumConstants.single { (it as Enum<*>).name == name }
 
     private fun <T> withSystemProperties(
         osName: String,
@@ -92,6 +126,15 @@ class LcdTextDefaultTransformTest {
     }
 
     private companion object {
+        val supportJars: List<File> by lazy {
+            System
+                .getProperty("test.lcd.support.jars")
+                .orEmpty()
+                .split(File.pathSeparator)
+                .filter { it.isNotBlank() }
+                .map(::File)
+        }
+
         val patchedJars: List<File> by lazy {
             val sourceJars =
                 checkNotNull(System.getProperty("test.lcd.uitext.jars")) {
