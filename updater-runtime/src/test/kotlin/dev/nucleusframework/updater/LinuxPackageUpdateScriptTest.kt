@@ -15,7 +15,8 @@ import java.util.concurrent.TimeUnit
 /**
  * The deb/rpm update script interpolates the downloaded package path, whose file name comes from
  * the update manifest, plus the launcher and helper paths. Each must reach bash as one literal:
- * a `$(…)`, backtick, quote or apostrophe in it must never be interpreted.
+ * a `$(…)`, backtick, quote or apostrophe in it must never be interpreted. The relaunched app must
+ * also start in a working directory that exists.
  */
 class LinuxPackageUpdateScriptTest {
     @get:Rule
@@ -132,8 +133,41 @@ class LinuxPackageUpdateScriptTest {
         assertTrue("the app must be relaunched", run.relaunched)
     }
 
+    @Test
+    fun `relaunch starts in an existing directory when the original was deleted`() {
+        // The regression: the app was started from a directory that has since been removed (a
+        // terminal's directory, a build output). The script inherited it and handed it to the
+        // relaunched app, and a JVM without a working directory aborts during startup, so the
+        // update was installed but the app never came back.
+        val home = tmp.newFolder("home")
+        val gone = tmp.newFolder("gone")
+        val run = runPackageUpdate(pkexec = "exit 0", workingDir = gone, home = home, deleteCwd = true)
+
+        assertTrue("the app must be relaunched", run.relaunched)
+        assertEquals(home.canonicalPath, run.relaunchDir)
+    }
+
+    @Test
+    fun `relaunch keeps the original working directory while it exists`() {
+        val home = tmp.newFolder("home")
+        val original = tmp.newFolder("original")
+        val run = runPackageUpdate(pkexec = "exit 0", workingDir = original, home = home)
+
+        assertEquals(original.canonicalPath, run.relaunchDir)
+    }
+
+    @Test
+    fun `the working-directory guard runs after the app exits and before the relaunch`() {
+        val script = script()
+        val cd = script.indexOf("cd -- '/home/user'")
+        assertTrue("the working-directory guard must be present:\n$script", cd >= 0)
+        assertTrue("the guard must follow the wait for exit", cd > script.indexOf("done"))
+        assertTrue("the guard must precede the relaunch", cd < script.indexOf("nohup"))
+    }
+
     private class PackageRun(
         val relaunched: Boolean,
+        val relaunchDir: String,
         val invoked: Boolean,
         val packageFile: File,
         val logFile: File,
@@ -149,6 +183,9 @@ class LinuxPackageUpdateScriptTest {
         useHelper: Boolean = false,
         staleFailure: Boolean = false,
         logFile: File = File(tmp.root, "state/nucleus-install.log"),
+        workingDir: File = tmp.root,
+        home: File = tmp.root,
+        deleteCwd: Boolean = false,
     ): PackageRun {
         val bin = tmp.newFolder("bin")
         val invokedMarker = File(tmp.root, "invoked")
@@ -159,7 +196,9 @@ class LinuxPackageUpdateScriptTest {
         val relaunchMarker = File(tmp.root, "relaunched")
         val launcher =
             File(tmp.root, "App").apply {
-                writeText("#!/bin/sh\ntouch '${relaunchMarker.path}'\n")
+                // `pwd -P` fails like the JVM does when the directory is gone, leaving the marker empty.
+                val marker = relaunchMarker.path
+                writeText("#!/bin/sh\npwd -P > '$marker.tmp'; mv '$marker.tmp' '$marker'\n")
                 setExecutable(true)
             }
         val packageFile = File(tmp.newFolder("staging"), "App-2.0.0.deb").apply { writeText("deb") }
@@ -179,14 +218,20 @@ class LinuxPackageUpdateScriptTest {
                         appPid = deadPid,
                         logFile = logFile.path,
                         failureFile = failureFile.path,
+                        workingDir = workingDir.path,
                     ),
                 )
             }
 
+        // Start the script inside workingDir, removed first when deleteCwd is set, as when the
+        // app's own directory has vanished by the time it updates.
+        val enter = if (deleteCwd) "cd \"\$1\" && rmdir \"\$1\"" else "cd \"\$1\""
         val process =
-            ProcessBuilder(bash.path, script.path)
-                .apply { environment()["PATH"] = "${bin.path}:${environment()["PATH"]}" }
-                .redirectErrorStream(true)
+            ProcessBuilder(bash.path, "-c", "$enter && exec \"\$0\" \"\$2\"", bash.path, workingDir.path, script.path)
+                .apply {
+                    environment()["PATH"] = "${bin.path}:${environment()["PATH"]}"
+                    environment()["HOME"] = home.path
+                }.redirectErrorStream(true)
                 .start()
         val output = process.inputStream.bufferedReader().readText()
         assertTrue("the script did not finish", process.waitFor(30, TimeUnit.SECONDS))
@@ -194,7 +239,9 @@ class LinuxPackageUpdateScriptTest {
 
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
         while (!relaunchMarker.exists() && System.nanoTime() < deadline) Thread.sleep(50)
-        return PackageRun(relaunchMarker.exists(), invokedMarker.exists(), packageFile, logFile, failureFile)
+        val relaunched = relaunchMarker.exists()
+        val relaunchDir = if (relaunched) relaunchMarker.readText().trim() else ""
+        return PackageRun(relaunched, relaunchDir, invokedMarker.exists(), packageFile, logFile, failureFile)
     }
 
     @Suppress("LongParameterList")
@@ -208,6 +255,7 @@ class LinuxPackageUpdateScriptTest {
         version: String = "2.0.0",
         logFile: String = "/home/user/.local/share/app/nucleus-install.log",
         failureFile: String = "/home/user/.local/share/app/nucleus-install-failure",
+        workingDir: String = "/home/user",
     ) = buildLinuxPackageUpdateScript(
         packageFile = packageFile,
         extension = extension,
@@ -219,6 +267,7 @@ class LinuxPackageUpdateScriptTest {
         runningVersion = "1.9.0",
         logFile = logFile,
         failureFile = failureFile,
+        workingDir = workingDir,
     )
 
     /** Runs `bash -n`, which parses the script without executing any of it. */

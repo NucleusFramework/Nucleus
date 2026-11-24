@@ -208,6 +208,7 @@ internal object PlatformInstaller {
                 runningVersion = runningVersion?.trim().orEmpty(),
                 logFile = InstallFailureRecord.logFile().absolutePath,
                 failureFile = InstallFailureRecord.recordFile().absolutePath,
+                workingDir = System.getProperty("user.dir") ?: "/",
             ),
         )
         script.setExecutable(true)
