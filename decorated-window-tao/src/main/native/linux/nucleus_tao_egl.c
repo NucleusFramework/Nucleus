@@ -50,22 +50,23 @@
  *   - `zxdg_decoration_manager_v1.set_mode(client_side)` so KWin /
  *     Wayland-Plasma 5 doesn't draw a server-side titlebar around our
  *     custom-chrome windows.
- *   - Frame-callback occlusion timeout: `eglSwapBuffers` blocks
- *     indefinitely when the surface is fully occluded by another window
- *     on wlroots compositors. Detect via `xdg_toplevel.configure` losing
- *     the `activated` state and fall back to a polling redraw.
  *   - NVIDIA `egl-wayland2` runtime detection — driver < 560 with the
  *     legacy egl-wayland can't resize an EGLSurface (drag-resize is
  *     broken upstream); document the package as a runtime requirement.
  */
 
 #include <jni.h>
+#include <errno.h>
+#include <poll.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 #include <dlfcn.h>
+#include <sys/eventfd.h>
 
 #include "nucleus_tao_egl_internal.h"
 
@@ -294,6 +295,14 @@ typedef int             (*PFN_wl_display_dispatch_queue)(wl_display *, wl_event_
 typedef int             (*PFN_wl_display_dispatch_queue_pending)(wl_display *, wl_event_queue *);
 typedef void            (*PFN_wl_event_queue_destroy)(wl_event_queue *);
 typedef int             (*PFN_wl_display_flush)(wl_display *);
+/* Frame-callback pacing (#958): the multi-reader read protocol, so the
+ * swap thread can wait on its own queue with a timeout. */
+typedef void           *(*PFN_wl_proxy_create_wrapper)(void *);
+typedef void            (*PFN_wl_proxy_wrapper_destroy)(void *);
+typedef int             (*PFN_wl_display_prepare_read_queue)(wl_display *, wl_event_queue *);
+typedef void            (*PFN_wl_display_cancel_read)(wl_display *);
+typedef int             (*PFN_wl_display_read_events)(wl_display *);
+typedef int             (*PFN_wl_display_get_fd)(wl_display *);
 
 /* Wayland protocol opcodes (from wayland.xml; stable since the protocol
  * was frozen in 2014, won't change). Re-declared instead of imported so
@@ -403,6 +412,12 @@ static PFN_wl_display_dispatch_queue        p_wl_display_dispatch_queue        =
 static PFN_wl_display_dispatch_queue_pending p_wl_display_dispatch_queue_pending = NULL;
 static PFN_wl_event_queue_destroy           p_wl_event_queue_destroy           = NULL;
 static PFN_wl_display_flush                 p_wl_display_flush                 = NULL;
+static PFN_wl_proxy_create_wrapper          p_wl_proxy_create_wrapper          = NULL;
+static PFN_wl_proxy_wrapper_destroy         p_wl_proxy_wrapper_destroy         = NULL;
+static PFN_wl_display_prepare_read_queue    p_wl_display_prepare_read_queue    = NULL;
+static PFN_wl_display_cancel_read           p_wl_display_cancel_read           = NULL;
+static PFN_wl_display_read_events           p_wl_display_read_events           = NULL;
+static PFN_wl_display_get_fd                p_wl_display_get_fd                = NULL;
 
 static const struct wl_interface *g_wl_registry_interface     = NULL;
 static const struct wl_interface *g_wl_compositor_interface   = NULL;
@@ -530,6 +545,18 @@ static int load_libs(void) {
             (PFN_wl_event_queue_destroy)           dlsym(g_libwlclient, "wl_event_queue_destroy");
         p_wl_display_flush =
             (PFN_wl_display_flush)                 dlsym(g_libwlclient, "wl_display_flush");
+        p_wl_proxy_create_wrapper =
+            (PFN_wl_proxy_create_wrapper)          dlsym(g_libwlclient, "wl_proxy_create_wrapper");
+        p_wl_proxy_wrapper_destroy =
+            (PFN_wl_proxy_wrapper_destroy)         dlsym(g_libwlclient, "wl_proxy_wrapper_destroy");
+        p_wl_display_prepare_read_queue =
+            (PFN_wl_display_prepare_read_queue)    dlsym(g_libwlclient, "wl_display_prepare_read_queue");
+        p_wl_display_cancel_read =
+            (PFN_wl_display_cancel_read)           dlsym(g_libwlclient, "wl_display_cancel_read");
+        p_wl_display_read_events =
+            (PFN_wl_display_read_events)           dlsym(g_libwlclient, "wl_display_read_events");
+        p_wl_display_get_fd =
+            (PFN_wl_display_get_fd)                dlsym(g_libwlclient, "wl_display_get_fd");
         g_wl_registry_interface =
             (const struct wl_interface *) dlsym(g_libwlclient, "wl_registry_interface");
         g_wl_compositor_interface =
@@ -771,6 +798,19 @@ typedef struct {
     wl_proxy       *wl_child_surface;
     wl_proxy       *wl_subsurface;
     wl_egl_window  *wl_window;
+    /* Frame-callback pacing (#958), see wl_pace_present. EGL runs at swap
+     * interval 0 and the swap thread waits for the previous frame's
+     * wl_surface.frame itself, at most WL_FRAME_CALLBACK_TIMEOUT_MS.
+     * `own_pacing` = the plumbing below exists (Wayland, libwayland has the
+     * read API); `paced` = the vsync wait is wanted, what eglSwapInterval(1)
+     * used to give (off for popups and the in-frame resize burst). The
+     * queue, the wrapper and the callback belong to the swap thread. */
+    int             own_pacing;
+    int             paced;
+    wl_event_queue *frame_queue;
+    wl_proxy       *frame_surface;     /* wrapper of wl_child_surface on frame_queue */
+    wl_proxy       *frame_cb;          /* outstanding wl_surface.frame, NULL = none */
+    int             wake_fd;           /* eventfd, signalled by nativeWakePresent; -1 = none */
     /* Content-area origin inside the parent surface, logical px. (0,0) for a
      * plain undecorated toplevel; the GTK theme's shadow margins when the
      * hidden-titlebar CSD is active (GTK then draws its native drop shadow in
@@ -1263,6 +1303,165 @@ static int wl_align_to_buffer_scale(int px, int scale) {
     return remainder == 0 ? px : px + (scale - remainder);
 }
 
+/* ── Frame-callback pacing (#958) ───────────────────────────────────────────
+ *
+ * `eglSwapInterval(1)` on Wayland makes `eglSwapBuffers` wait for the
+ * previous frame's `wl_surface.frame` callback, with no timeout. A compositor
+ * withholds those from a surface it doesn't show — scrolled off-screen on
+ * niri, fully covered on Mutter, minimized — while Nucleus still sees a
+ * visible window and keeps rendering it, so the swap thread parked inside
+ * the driver until the window came back. #958 is a second window's attach /
+ * detach on the event-loop thread then hanging behind it.
+ *
+ * So EGL always runs at interval 0 here, and nativePresent does the vsync
+ * wait itself, on a queue of our own: wait for the previous frame's callback,
+ * ask for the next one, swap — Mesa's interval-1 throttle, except that the
+ * wait gives up after WL_FRAME_CALLBACK_TIMEOUT_MS (a hidden window then
+ * presents a few times a second instead of never) and nativeWakePresent ends
+ * it at once, so the host's teardown never waits on the compositor. No thread
+ * ever sits inside EGL or libwayland waiting on a compositor that may not
+ * answer, so nothing another window needs can be held for longer than that. */
+
+#define WL_FRAME_CALLBACK_TIMEOUT_MS 200
+
+enum { WL_WAIT_DONE, WL_WAIT_TIMEOUT, WL_WAIT_WOKEN, WL_WAIT_ERROR };
+
+static void wl_frame_done(void *data, wl_proxy *callback, uint32_t time_ms) {
+    (void) time_ms;
+    EglAttachment *att = (EglAttachment *) data;
+    if (att->frame_cb == callback) att->frame_cb = NULL;
+    p_wl_proxy_destroy(callback);
+}
+
+/* wl_callback's one event, `done`. */
+static void (*const wl_frame_listener[])(void) = {
+    (void (*)(void)) wl_frame_done,
+};
+
+static long elapsed_ms_since(const struct timespec *start) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (now.tv_sec - start->tv_sec) * 1000L + (now.tv_nsec - start->tv_nsec) / 1000000L;
+}
+
+/* Sets up the pacing plumbing on a fresh Wayland attachment. Returns 0 when
+ * libwayland lacks the API, the caller then keeps EGL's own interval. */
+static int wl_pacing_init(EglAttachment *att) {
+    att->wake_fd = -1;
+    if (!p_wl_proxy_create_wrapper || !p_wl_proxy_wrapper_destroy ||
+        !p_wl_display_prepare_read_queue || !p_wl_display_cancel_read ||
+        !p_wl_display_read_events || !p_wl_display_get_fd ||
+        !p_wl_proxy_add_listener || !g_wl_callback_interface) {
+        return 0;
+    }
+    att->frame_queue = p_wl_display_create_queue(att->wl_display_conn);
+    if (!att->frame_queue) return 0;
+    /* A wrapper, so the callback proxy is created on frame_queue atomically —
+     * a wl_proxy_set_queue after the request could lose a fast `done` to the
+     * child surface's queue. */
+    att->frame_surface = (wl_proxy *) p_wl_proxy_create_wrapper(att->wl_child_surface);
+    att->wake_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (!att->frame_surface || att->wake_fd < 0) {
+        if (att->frame_surface) p_wl_proxy_wrapper_destroy(att->frame_surface);
+        if (att->wake_fd >= 0) close(att->wake_fd);
+        p_wl_event_queue_destroy(att->frame_queue);
+        att->frame_surface = NULL;
+        att->frame_queue = NULL;
+        att->wake_fd = -1;
+        return 0;
+    }
+    p_wl_proxy_set_queue(att->frame_surface, att->frame_queue);
+    att->own_pacing = 1;
+    return 1;
+}
+
+static void wl_pacing_destroy(EglAttachment *att) {
+    if (!att->own_pacing) return;
+    /* Proxies before the queue they are on. A callback destroyed before its
+     * `done` arrives is fine: libwayland drops events for a dead proxy. */
+    if (att->frame_cb) p_wl_proxy_destroy(att->frame_cb);
+    p_wl_proxy_wrapper_destroy(att->frame_surface);
+    p_wl_event_queue_destroy(att->frame_queue);
+    close(att->wake_fd);
+    att->frame_cb = NULL;
+    att->frame_surface = NULL;
+    att->frame_queue = NULL;
+    att->wake_fd = -1;
+    att->own_pacing = 0;
+}
+
+/* Waits until the outstanding frame callback fires, [timeout_ms] passes or
+ * wake_fd is signalled. libwayland's multi-reader protocol — prepare_read,
+ * poll, then read_events or cancel_read — so GDK's main loop and Mesa's own
+ * queues keep reading the same socket meanwhile. */
+static int wl_wait_frame_callback(EglAttachment *att, int timeout_ms) {
+    wl_display *dpy = att->wl_display_conn;
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    while (att->frame_cb) {
+        if (p_wl_display_prepare_read_queue(dpy, att->frame_queue) != 0) {
+            /* Events already queued: dispatch them, which may be our `done`. */
+            if (p_wl_display_dispatch_queue_pending(dpy, att->frame_queue) < 0) return WL_WAIT_ERROR;
+            continue;
+        }
+        p_wl_display_flush(dpy);   /* EAGAIN is fine: the poll below still reads */
+        long left = timeout_ms - elapsed_ms_since(&start);
+        if (left < 0) left = 0;
+        struct pollfd fds[2] = {
+            { .fd = p_wl_display_get_fd(dpy), .events = POLLIN },
+            { .fd = att->wake_fd,             .events = POLLIN },
+        };
+        int n = poll(fds, 2, (int) left);
+        if (n < 0 && errno == EINTR) {
+            p_wl_display_cancel_read(dpy);
+            continue;
+        }
+        if (n <= 0) {
+            p_wl_display_cancel_read(dpy);
+            return n == 0 ? WL_WAIT_TIMEOUT : WL_WAIT_ERROR;
+        }
+        if (fds[1].revents & POLLIN) {
+            p_wl_display_cancel_read(dpy);
+            return WL_WAIT_WOKEN;
+        }
+        if (!(fds[0].revents & POLLIN)) {   /* POLLHUP / POLLERR: connection gone */
+            p_wl_display_cancel_read(dpy);
+            return WL_WAIT_ERROR;
+        }
+        if (p_wl_display_read_events(dpy) < 0) return WL_WAIT_ERROR;
+        if (p_wl_display_dispatch_queue_pending(dpy, att->frame_queue) < 0) return WL_WAIT_ERROR;
+    }
+    return WL_WAIT_DONE;
+}
+
+/* Runs on the swap thread right before eglSwapBuffers. Returns 0 when the
+ * present must be skipped (the host is tearing the attachment down). */
+static int wl_pace_present(EglAttachment *att) {
+    if (!att->own_pacing) return 1;
+    if (!att->paced) return 1;
+    if (att->frame_cb) {
+        int r = wl_wait_frame_callback(att, WL_FRAME_CALLBACK_TIMEOUT_MS);
+        if (r == WL_WAIT_WOKEN) return 0;
+        if (r != WL_WAIT_DONE && att->frame_cb) {
+            /* Hidden (or the connection is going): stop waiting on this one.
+             * Presenting anyway keeps the window's content current for when
+             * it comes back, at the timeout's pace. */
+            DBG("frame callback timed out (%d); presenting unpaced\n", r);
+            p_wl_proxy_destroy(att->frame_cb);
+            att->frame_cb = NULL;
+        }
+    }
+    /* `wl_surface.frame` is double-buffered state: the commit inside the
+     * eglSwapBuffers that follows carries it. */
+    att->frame_cb = p_wl_proxy_marshal_flags(
+        att->frame_surface, WL_SURFACE_FRAME, g_wl_callback_interface,
+        p_wl_proxy_get_version(att->frame_surface), 0, NULL);
+    if (att->frame_cb) {
+        p_wl_proxy_add_listener(att->frame_cb, (void (**)(void)) wl_frame_listener, att);
+    }
+    return 1;
+}
+
 
 /**
  * Wayland-native attach.
@@ -1547,26 +1746,6 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
         p_eglDestroyContext(edpy, ctx);
         goto fail_after_subsurface;
     }
-    /* eglSwapInterval(1) — relies on the JVM-side architecture binding the
-     * EGL context to a *dedicated* swap thread, not the GTK main thread. On
-     * Wayland the swap blocks waiting for the compositor's frame callback,
-     * which only fires when the GTK main loop pumps `wl_display_dispatch`.
-     * If the swap and the dispatch share a thread we deadlock. The Kotlin
-     * side (`TaoComposeSceneHostLinux.SwapThread`) makes the context
-     * current on a separate thread and calls `nativePresent` there, so the
-     * GTK main thread keeps draining wl events while the swap thread waits
-     * on the compositor — and we get true hardware vsync without melting
-     * the CPU.
-     *
-     * swapInterval == 0 is used for popup overlays (drag ghosts): their EGL
-     * child is a subsurface of GDK's own synchronized wl_subsurface, so FIFO
-     * commits stay cached compositor-side and Mesa's pending
-     * wp_commit_timer_v1 timestamp is never consumed — the next
-     * set_timestamp raises a fatal "Commit already has timestamp" protocol
-     * error. Interval 0 keeps Mesa off the fifo/commit-timing path entirely;
-     * pacing for those surfaces is event-driven (pointer motion) anyway. */
-    if (p_eglSwapInterval) p_eglSwapInterval(edpy, swapInterval ? 1 : 0);
-
     EglAttachment *att = (EglAttachment *) calloc(1, sizeof(EglAttachment));
     if (!att) {
         p_eglMakeCurrent(edpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -1595,6 +1774,32 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     /* Match GTK's integer surface scale so the `logical × scale` px buffer is
      * read as `logical` surface units (no oversize, input stays calibrated). */
     wl_set_buffer_scale(att, bscale);
+
+    /* Vsync: the swap waits for the compositor's frame callback. That relies
+     * on the JVM side presenting from a *dedicated* swap thread, not the GTK
+     * main thread: the callback only arrives while GTK's main loop reads the
+     * socket, so a swap on that thread would wait on itself. The Kotlin side
+     * (`TaoComposeSceneHostLinux.SwapThread`) makes the context current on a
+     * separate thread and calls `nativePresent` there.
+     *
+     * EGL itself always runs at interval 0 on Wayland and the wait is ours
+     * (wl_pace_present, #958): Mesa's interval-1 wait has no timeout, so a
+     * window the compositor hides without telling us parked its swap thread
+     * inside the driver for as long as it stayed hidden. Interval 0 also keeps
+     * Mesa off the FIFO / commit-timing path, which popup overlays (drag
+     * ghosts) need: their EGL child hangs off GDK's own synchronized
+     * wl_subsurface, where FIFO commits stay cached compositor-side, Mesa's
+     * pending wp_commit_timer_v1 timestamp is never consumed, and the next
+     * set_timestamp is a fatal "Commit already has timestamp" protocol error.
+     * [swapInterval] 0 (those popups) turns the vsync wait off; pacing for
+     * them is event-driven (pointer motion) anyway. Without libwayland's read
+     * API (pre-1.11) EGL keeps the interval itself, as before. */
+    if (wl_pacing_init(att)) {
+        att->paced = swapInterval ? 1 : 0;
+        if (p_eglSwapInterval) p_eglSwapInterval(edpy, 0);
+    } else if (p_eglSwapInterval) {
+        p_eglSwapInterval(edpy, swapInterval ? 1 : 0);
+    }
     DBG("attached (Wayland subsurface): edpy=%p ctx=%p surf=%p child_surf=%p subsurf=%p scale=%d\n",
         edpy, (void*)ctx, (void*)surf, (void*)child_surface, (void*)subsurface,
         bufferScale);
@@ -1641,7 +1846,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeDetach(
      * keep the compositor's bookkeeping happy.
      *   wl_egl_window → wl_subsurface → wl_child_surface → globals →
      *   registry → queue
-     * Inverting any pair triggers a `Bad object` protocol error from Mutter. */
+     * Inverting any pair triggers a `Bad object` protocol error from Mutter.
+     * The frame-callback pacing's proxies go first: the wrapper wraps the
+     * child surface. */
+    wl_pacing_destroy(att);
     if (att->wl_window && p_wl_egl_window_destroy) {
         p_wl_egl_window_destroy(att->wl_window);
     }
@@ -1885,7 +2093,26 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativePresent(
     (void) env; (void) clazz;
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
     if (!att) return;
+    if (!wl_pace_present(att)) return;
     p_eglSwapBuffers(att->display, att->surface);
+}
+
+/**
+ * Ends a vsync wait in [nativePresent] / [nativePresentWithDamage] at once,
+ * and every later one on this attachment (#958): a present whose wait is cut
+ * short returns without swapping. For the host's teardown, right before it joins the swap
+ * thread and detaches. Any thread; a no-op off Wayland.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeWakePresent(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->own_pacing) return;
+    uint64_t one = 1;
+    ssize_t written = write(att->wake_fd, &one, sizeof(one));
+    (void) written;   /* EAGAIN = already signalled */
 }
 
 /**
@@ -1942,6 +2169,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativePresentWithDam
     (void) clazz;
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
     if (!att) return;
+    if (!wl_pace_present(att)) return;
     if (!att->swap_with_damage || count <= 0 || !rects) {
         p_eglSwapBuffers(att->display, att->surface);
         return;
@@ -1968,7 +2196,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetSwapInterva
 {
     (void) env; (void) clazz;
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
-    if (!att || !p_eglSwapInterval) return;
+    if (!att) return;
+    /* Wayland with our own pacing (#958): EGL stays at interval 0, the
+     * interval only says whether the next presents wait for the frame
+     * callback. Call from the thread that presents (or with none running). */
+    if (att->own_pacing) {
+        att->paced = interval > 0 ? 1 : 0;
+        return;
+    }
+    if (!p_eglSwapInterval) return;
     /* eglSwapInterval requires the surface to be current. The swap thread
      * always releases before signalling idle, so the caller must ensure it
      * holds the context (nativeMakeCurrent) before calling this. */

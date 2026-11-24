@@ -143,9 +143,24 @@ internal object NativeTaoEglBridge {
         cornerRadius: Int,
     )
 
-    /** Pumps the back-buffer to screen via `eglSwapBuffers`. */
+    /**
+     * Pumps the back-buffer to screen via `eglSwapBuffers`. On Wayland it first
+     * waits for the previous frame's `wl_surface.frame` callback (vsync), at
+     * most 200 ms: EGL runs at swap interval 0 there and the wait is ours, so a
+     * window the compositor hides without saying so never parks the calling
+     * thread for good (#958). [nativeWakePresent] cuts the wait short.
+     */
     @JvmStatic
     external fun nativePresent(handle: Long)
+
+    /**
+     * Ends a [nativePresent] / [nativePresentWithDamage] vsync wait at once, and
+     * every later one on [handle]: a present whose wait is cut short returns
+     * without swapping. For teardown, before joining the presenting thread.
+     * Any thread; a no-op off Wayland.
+     */
+    @JvmStatic
+    external fun nativeWakePresent(handle: Long)
 
     /**
      * Age of the back buffer this frame renders into (#755): `0` when its
@@ -180,8 +195,10 @@ internal object NativeTaoEglBridge {
     )
 
     /**
-     * Calls `eglSwapInterval` on the EGL display. Must be called while the
-     * EGL context is current (after [nativeMakeCurrent]).
+     * Sets the swap interval. On X11, `eglSwapInterval` on the EGL display, so
+     * the EGL context must be current (after [nativeMakeCurrent]). On Wayland
+     * EGL stays at 0 and the interval turns [nativePresent]'s frame-callback
+     * wait on (1) or off (0); call it from the presenting thread.
      * Use `interval = 0` to disable vsync during resize (avoids blocking
      * for Wayland frame callbacks during buffer-size negotiation).
      * Restore `interval = 1` on the first stable-size frame.
