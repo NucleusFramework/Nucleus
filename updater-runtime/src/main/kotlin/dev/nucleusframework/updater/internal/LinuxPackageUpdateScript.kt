@@ -72,8 +72,9 @@ internal fun buildLinuxPackageUpdateScript(
         |
         |# Run from a directory that exists: the relaunched app inherits this one, and a JVM whose
         |# working directory was deleted aborts during startup. The app's own directory while it is
-        |# still there, else ${'$'}HOME, else /.
-        |cd -- ${workingDir.quoteForShell()} 2>/dev/null || cd -- "${'$'}HOME" 2>/dev/null || cd /
+        |# still there, else ${'$'}HOME, else /. An unset or empty HOME becomes /: bash before 5.2 takes
+        |# `cd ""` as a success that stays put, which would keep the deleted directory.
+        |cd -- ${workingDir.quoteForShell()} 2>/dev/null || cd -- "${'$'}{HOME:-/}" 2>/dev/null || cd /
         |
         |# Keep the installer's output: this script's own output is discarded, so the log is the
         |# only record of why an install failed. A log that cannot be written must not stop the

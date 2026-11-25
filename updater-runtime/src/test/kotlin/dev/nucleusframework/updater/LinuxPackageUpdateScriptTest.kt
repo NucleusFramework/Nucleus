@@ -148,6 +148,21 @@ class LinuxPackageUpdateScriptTest {
     }
 
     @Test
+    fun `relaunch falls back to the root when the original was deleted and HOME is unset`() {
+        val gone = tmp.newFolder("gone")
+        val run = runPackageUpdate(pkexec = "exit 0", workingDir = gone, home = null, deleteCwd = true)
+
+        assertTrue("the app must be relaunched", run.relaunched)
+        assertEquals("/", run.relaunchDir)
+    }
+
+    @Test
+    fun `the HOME fallback never expands to an empty directory`() {
+        // bash before 5.2 takes `cd ""` as a success that stays in the current directory.
+        assertTrue(script().contains("cd -- \"\${HOME:-/}\""))
+    }
+
+    @Test
     fun `relaunch keeps the original working directory while it exists`() {
         val home = tmp.newFolder("home")
         val original = tmp.newFolder("original")
@@ -184,7 +199,7 @@ class LinuxPackageUpdateScriptTest {
         staleFailure: Boolean = false,
         logFile: File = File(tmp.root, "state/nucleus-install.log"),
         workingDir: File = tmp.root,
-        home: File = tmp.root,
+        home: File? = tmp.root,
         deleteCwd: Boolean = false,
     ): PackageRun {
         val bin = tmp.newFolder("bin")
@@ -230,7 +245,7 @@ class LinuxPackageUpdateScriptTest {
             ProcessBuilder(bash.path, "-c", "$enter && exec \"\$0\" \"\$2\"", bash.path, workingDir.path, script.path)
                 .apply {
                     environment()["PATH"] = "${bin.path}:${environment()["PATH"]}"
-                    environment()["HOME"] = home.path
+                    if (home != null) environment()["HOME"] = home.path else environment().remove("HOME")
                 }.redirectErrorStream(true)
                 .start()
         val output = process.inputStream.bufferedReader().readText()
