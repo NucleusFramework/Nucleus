@@ -131,7 +131,8 @@ Taken: #1173 (`RwLock` fields), #1351 (null display checks), #1228 (JIS keys),
 | Trackpad scrolling as AWT does it: `ScrollPhase`, horizontal sign not negated, `PixelDelta` in logical points (#652–#656) | fe7b213f9 | ported | split | Sign: send, following winit #2105, but it changes behavior for existing users. Phase: maybe, model it on winit's `ScrollSource`. Logical points: no. |
 | Hover kept through AppKit's phantom `mouseExited`; position on `mouseEntered` | 2c7ea4165 | ported | maybe | |
 | Back and forward mouse buttons from `buttonNumber` | c784a8863 | dropped on 0.37.3 | — | Upstream #1434, the same mapping. |
-| Cursor hook for the embedder; WebKit cursor loading that can fail (#746) | 2029e9c82, 24e00fd3b | ported to `Retained<NSCursor>`; upstream's lenient hotspot parsing taken | split | Fallible loading: send (`dev` still unwraps). Hook: no. A missing hotspot now gives (0, 0) where it gave the arrow. |
+| Cursor hook for the embedder (#746) | 24e00fd3b | ported to `Retained<NSCursor>` | no | |
+| WebKit cursor loading that can fail (#746) | 2029e9c82 | dropped | no | Unreachable with the hook: Nucleus sets only icons its own table resolves (`Move` falls back to the open hand there), so tao never loads `move` or `cell` from HIServices. The bundle is present on macOS 27, and every private `NSCursor` selector tao calls works there. |
 | Tablet pen device ids (old `0012`) | f1a4f58eb | ported | maybe | |
 | Minimize/deminimize hook in the window delegate | (with the above) | ported (0.37.3: on `WindowDelegate` itself) | no | |
 
@@ -186,8 +187,8 @@ In rough order of value for effort:
    events and full modifier state, the discrete wheel delta, placeholder frame
    extents, the size echo for hidden windows, the non-resizable content size
    (#561).
-2. Small macOS fixes: the `PanicInfo` return, fallible WebKit cursor loading,
-   `markedRange` and the `NSTextInputClient` stubs.
+2. Small macOS fixes: the `PanicInfo` return, `markedRange` and the
+   `NSTextInputClient` stubs.
 3. Small Windows fixes: the
    `VK_PROCESSKEY` drop, `GetCursorPos` for the synthetic `WM_LBUTTONUP`, the
    `FlashWindow` guard, un-minimize to maximized, `set_min_inner_size`.
