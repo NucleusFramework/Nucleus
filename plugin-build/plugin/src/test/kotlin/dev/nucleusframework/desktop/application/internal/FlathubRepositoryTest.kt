@@ -67,11 +67,27 @@ class FlathubRepositoryTest {
     @Test
     fun `manifest repackages each archive and installs the metadata the archive carries`() {
         val manifest = FlathubRepository.manifest(spec, sources)
-        assertTrue(manifest.contains("runtime-version: '51'"))
-        assertTrue(manifest.contains("command: example-app"))
+        // Flathub's logical ordering of keys (docs.flathub.org/.../requirements#logical-ordering-of-keys):
+        // separate-locales before command at top level, and type -> url/path -> sha256 -> dest -> only-arches
+        // inside each source.
+        val topLevel =
+            """
+            id: com.example.App
+            runtime: org.gnome.Platform
+            runtime-version: '51'
+            sdk: org.gnome.Sdk
+            separate-locales: false
+            command: example-app
+            """.trimIndent()
+        assertTrue(manifest.startsWith(topLevel))
         assertTrue(manifest.contains("  - --share=ipc"))
         assertTrue(manifest.contains("      - ln -s /app/lib/example-app/example-app /app/bin/example-app"))
-        val arm64 = "only-arches: [aarch64]\n        url: $BASE/app-1.2.3-linux-arm64.tar.gz\n        sha256: bb"
+        val arm64 =
+            "      - type: archive\n" +
+                "        url: $BASE/app-1.2.3-linux-arm64.tar.gz\n" +
+                "        sha256: bb\n" +
+                "        dest: app\n" +
+                "        only-arches: [aarch64]"
         assertTrue(manifest.contains(arm64))
         // Flathub's review wants nothing but the manifest in its repository: the metadata comes from the archive.
         assertTrue(manifest.contains("      - cp -a /app/lib/example-app/share/. /app/share/\n      - rm -r /app/lib/example-app/share"))

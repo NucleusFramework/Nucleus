@@ -59,6 +59,9 @@ screenshots.
   the redundant grant.
 - An app that may not be redistributed swaps the `archive` source for `extra-data` (downloaded
   from the vendor at install time, unpacked by `apply_extra`); nothing else changes.
+- Keys follow Flathub's logical ordering (`separate-locales` before `command` at the top level,
+  `type` → `url`/`path` → `sha256` → `dest` → `only-arches` in each source), which review enforces
+  by hand (`#logical-ordering-of-keys`, flathub/flathub#10975).
 
 ## What a Flathub repackaging changes at run time
 
