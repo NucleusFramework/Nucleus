@@ -136,8 +136,8 @@ internal object FlathubRepository {
             appendLine("runtime: ${yaml(spec.runtime)}")
             appendLine("runtime-version: '${spec.runtimeVersion}'")
             appendLine("sdk: ${yaml(spec.sdk)}")
-            appendLine("command: ${yaml(spec.command)}")
             appendLine("separate-locales: false")
+            appendLine("command: ${yaml(spec.command)}")
             appendLine()
             appendLine("finish-args:")
             spec.finishArgs.forEach { appendLine("  - ${yaml(it)}") }
@@ -155,10 +155,10 @@ internal object FlathubRepository {
             appendLine("    sources:")
             for (source in sources) {
                 appendLine("      - type: archive")
-                appendLine("        only-arches: [${source.arch.flatpakArch}]")
                 appendLine("        ${if (source.isUrl) "url" else "path"}: ${yaml(source.location)}")
                 appendLine("        sha256: ${source.sha256}")
                 appendLine("        dest: app")
+                appendLine("        only-arches: [${source.arch.flatpakArch}]")
             }
         }
 
