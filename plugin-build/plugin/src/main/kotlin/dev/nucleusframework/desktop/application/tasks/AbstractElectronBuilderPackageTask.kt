@@ -2437,6 +2437,8 @@ abstract class AbstractElectronBuilderPackageTask
             logger.info("Generated package metadata for electron-builder: ${packageJson.absolutePath}")
         }
 
+        // The updater runtime repeats this rule in SeededInstaller.updaterCacheDirName, to find the
+        // installer NSIS seeds under %LOCALAPPDATA%: change both together.
         private fun String.toNpmPackageName(): String =
             lowercase(Locale.ROOT)
                 .replace(Regex("[^a-z0-9._-]"), "-")
