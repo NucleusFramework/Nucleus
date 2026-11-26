@@ -6,7 +6,10 @@ use std::{
   cell::RefCell,
   collections::VecDeque,
   rc::Rc,
-  sync::atomic::{AtomicBool, AtomicI32, Ordering},
+  sync::{
+    atomic::{AtomicBool, AtomicI32, Ordering},
+    RwLock,
+  },
 };
 
 use gtk::{
@@ -21,7 +24,6 @@ use crate::{
   error::{ExternalError, NotSupportedError, OsError as RootOsError},
   icon::Icon,
   monitor::MonitorHandle as RootMonitorHandle,
-  platform_impl::wayland::header::WlHeader,
   window::{
     CursorIcon, Fullscreen, ProgressBarState, ResizeDirection, Theme, UserAttentionType,
     WindowAttributes, WindowSizeConstraints, RGBA,
@@ -64,11 +66,17 @@ pub struct Window {
   // the GTK window-state-event so it can be read off-thread via JNI like
   // `maximized`. Used to drop the Compose-drawn rounded corners when snapped.
   tiled: Rc<AtomicBool>,
-  fullscreen: RefCell<Option<Fullscreen>>,
-  inner_size_constraints: RefCell<WindowSizeConstraints>,
+  // `Window` is `Send` and `Sync`, need a `RwLock` not a `RefCell`
+  // otherwise unsynchronized &RefCell from multiple threads
+  fullscreen: RwLock<Option<Fullscreen>>,
+  // `Window` is `Send` and `Sync`, need a `RwLock` not a `RefCell`
+  // otherwise unsynchronized &RefCell from multiple threads
+  inner_size_constraints: RwLock<WindowSizeConstraints>,
   /// Draw event Sender
   draw_tx: crossbeam_channel::Sender<WindowId>,
-  preferred_theme: RefCell<Option<Theme>>,
+  // `Window` is `Send` and `Sync`, need a `RwLock` not a `RefCell`
+  // otherwise unsynchronized &RefCell from multiple threads
+  preferred_theme: RwLock<Option<Theme>>,
   css_provider: CssProvider,
 }
 
@@ -302,8 +310,6 @@ impl Window {
           // header's ring does.
           window.set_data("nucleus_system_decorations", true);
         }
-      } else if is_wayland {
-        WlHeader::setup(&window, &attributes.title);
       }
 
       let window_id = WindowId(window.id());
@@ -427,6 +433,12 @@ impl Window {
     // embedder's own chrome replaces the (hidden) titlebar, exactly like a
     // yaru.dart app drawing YaruWindowTitleBar in-view.
     window.set_decorated(attributes.decorations || is_csd_hidden_titlebar(&window));
+    // PATCH(nucleus): upstream tao (#1218) gives every undecorated Wayland window
+    // an empty `EventBox` title bar here, so that KWin does not draw a server-side
+    // frame around it (https://gitlab.gnome.org/GNOME/gtk/-/work_items/5479).
+    // Nucleus leaves it out: the embedder negotiates KWin's server decoration
+    // itself (`server_decoration.rs`), and the empty title bar would give
+    // borderless windows the `csd` style class that negotiation keys on.
 
     if attributes.always_on_bottom {
       window.set_keep_below(attributes.always_on_bottom);
@@ -440,13 +452,14 @@ impl Window {
       window.stick();
     }
 
-    // Set initial `preferred_theme` value to current portal color-scheme
+    // A window built without a theme follows the system's: `theme()` asks the portal for it
+    let preferred_theme = attributes.preferred_theme;
     #[cfg(feature = "dbus")]
-    let preferred_theme = super::portal::theme().ok();
+    let initial_theme = preferred_theme.or_else(|| super::portal::theme().ok());
     #[cfg(not(feature = "dbus"))]
-    let preferred_theme = None;
+    let initial_theme = preferred_theme;
 
-    if let Some(theme) = preferred_theme {
+    if let Some(theme) = initial_theme {
       if let Some(settings) = Settings::default() {
         settings.set_gtk_application_prefer_dark_theme(theme == Theme::Dark);
       }
@@ -521,9 +534,9 @@ impl Window {
       minimized,
       is_always_on_top,
       tiled,
-      fullscreen: RefCell::new(attributes.fullscreen),
-      inner_size_constraints: RefCell::new(attributes.inner_size_constraints),
-      preferred_theme: RefCell::new(preferred_theme),
+      fullscreen: RwLock::new(attributes.fullscreen),
+      inner_size_constraints: RwLock::new(attributes.inner_size_constraints),
+      preferred_theme: RwLock::new(preferred_theme),
       css_provider: CssProvider::new(),
     };
 
@@ -737,9 +750,9 @@ impl Window {
       minimized,
       is_always_on_top,
       tiled,
-      fullscreen: RefCell::new(None),
-      inner_size_constraints: RefCell::new(WindowSizeConstraints::default()),
-      preferred_theme: RefCell::new(None),
+      fullscreen: RwLock::new(None),
+      inner_size_constraints: RwLock::new(WindowSizeConstraints::default()),
+      preferred_theme: RwLock::new(None),
       css_provider: CssProvider::new(),
     };
 
@@ -863,7 +876,7 @@ impl Window {
 
   pub fn set_min_inner_size(&self, size: Option<Size>) {
     let (width, height) = size.map(crate::extract_width_height).unzip();
-    let mut size_constraints = self.inner_size_constraints.borrow_mut();
+    let mut size_constraints = self.inner_size_constraints.write().unwrap();
     size_constraints.min_width = width;
     size_constraints.min_height = height;
     self.set_size_constraints(*size_constraints)
@@ -871,14 +884,14 @@ impl Window {
 
   pub fn set_max_inner_size(&self, size: Option<Size>) {
     let (width, height) = size.map(crate::extract_width_height).unzip();
-    let mut size_constraints = self.inner_size_constraints.borrow_mut();
+    let mut size_constraints = self.inner_size_constraints.write().unwrap();
     size_constraints.max_width = width;
     size_constraints.max_height = height;
     self.set_size_constraints(*size_constraints)
   }
 
   pub fn set_inner_size_constraints(&self, constraints: WindowSizeConstraints) {
-    *self.inner_size_constraints.borrow_mut() = constraints;
+    *self.inner_size_constraints.write().unwrap() = constraints;
     self.set_size_constraints(constraints)
   }
 
@@ -1032,7 +1045,7 @@ impl Window {
   }
 
   pub fn set_fullscreen(&self, fullscreen: Option<Fullscreen>) {
-    self.fullscreen.replace(fullscreen.clone());
+    *self.fullscreen.write().unwrap() = fullscreen.clone();
     if let Err(e) = self
       .window_requests_tx
       .send((self.window_id, WindowRequest::Fullscreen(fullscreen)))
@@ -1042,7 +1055,7 @@ impl Window {
   }
 
   pub fn fullscreen(&self) -> Option<Fullscreen> {
-    self.fullscreen.borrow().clone()
+    self.fullscreen.read().unwrap().clone()
   }
 
   pub fn set_decorations(&self, decorations: bool) {
@@ -1338,8 +1351,10 @@ impl Window {
       unsafe {
         if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
           let display = (xlib.XOpenDisplay)(std::ptr::null());
-          display_handle.display = display as _;
-          display_handle.screen = (xlib.XDefaultScreen)(display) as _;
+          if !display.is_null() {
+            display_handle.display = display as _;
+            display_handle.screen = (xlib.XDefaultScreen)(display) as _;
+          }
         }
       }
 
@@ -1379,20 +1394,20 @@ impl Window {
       let display = unsafe {
         gdk_wayland_sys::gdk_wayland_display_get_wl_display(self.window.display().as_ptr() as *mut _)
       };
-      let display = unsafe { std::ptr::NonNull::new_unchecked(display) };
+      let display = std::ptr::NonNull::new(display).ok_or(rwh_06::HandleError::Unavailable)?;
       let display_handle = rwh_06::WaylandDisplayHandle::new(display);
       Ok(rwh_06::RawDisplayHandle::Wayland(display_handle))
     } else {
       #[cfg(feature = "x11")]
-      if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-        unsafe {
-          let display = (xlib.XOpenDisplay)(std::ptr::null());
-          let screen = (xlib.XDefaultScreen)(display) as _;
-          let display = std::ptr::NonNull::new_unchecked(display as _);
-          let display_handle = rwh_06::XlibDisplayHandle::new(Some(display), screen);
-          Ok(rwh_06::RawDisplayHandle::Xlib(display_handle))
+      unsafe {
+        if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
+          let display_ptr = (xlib.XOpenDisplay)(std::ptr::null());
+          if let Some(display) = std::ptr::NonNull::new(display_ptr as *mut std::ffi::c_void) {
+            let screen = (xlib.XDefaultScreen)(display.as_ptr() as *mut _) as _;
+            let display_handle = rwh_06::XlibDisplayHandle::new(Some(display), screen);
+            return Ok(rwh_06::RawDisplayHandle::Xlib(display_handle));
+          }
         }
-      } else {
         Err(rwh_06::HandleError::Unavailable)
       }
       #[cfg(not(feature = "x11"))]
@@ -1430,7 +1445,7 @@ impl Window {
   }
 
   pub fn theme(&self) -> Theme {
-    if let Some(theme) = *self.preferred_theme.borrow() {
+    if let Some(theme) = *self.preferred_theme.read().unwrap() {
       return theme;
     }
 
@@ -1443,7 +1458,7 @@ impl Window {
   }
 
   pub fn set_theme(&self, theme: Option<Theme>) {
-    *self.preferred_theme.borrow_mut() = theme;
+    *self.preferred_theme.write().unwrap() = theme;
     if let Err(e) = self
       .window_requests_tx
       .send((WindowId::dummy(), WindowRequest::SetTheme(theme)))
