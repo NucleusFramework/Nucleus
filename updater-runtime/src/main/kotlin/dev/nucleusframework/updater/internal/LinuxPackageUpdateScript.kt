@@ -14,6 +14,10 @@ package dev.nucleusframework.updater.internal
  * app to report: the app is relaunched either way, so without the record a failed install would
  * look like an update that did nothing.
  *
+ * The relaunch runs from [workingDir] (the app's own) when it still exists, else `$HOME`, else `/`:
+ * a directory deleted since the app started would otherwise be inherited by the relaunched JVM,
+ * which aborts during startup ("Could not determine current working directory").
+ *
  * Extracted from [PlatformInstaller] so the exact script can be exercised by tests.
  */
 @Suppress("LongParameterList")
@@ -28,6 +32,7 @@ internal fun buildLinuxPackageUpdateScript(
     runningVersion: String,
     logFile: String,
     failureFile: String,
+    workingDir: String,
 ): String {
     val installCmd =
         when {
@@ -64,6 +69,12 @@ internal fun buildLinuxPackageUpdateScript(
         |done
         |
         |sleep 1
+        |
+        |# Run from a directory that exists: the relaunched app inherits this one, and a JVM whose
+        |# working directory was deleted aborts during startup. The app's own directory while it is
+        |# still there, else ${'$'}HOME, else /. An unset or empty HOME becomes /: bash before 5.2 takes
+        |# `cd ""` as a success that stays put, which would keep the deleted directory.
+        |cd -- ${workingDir.quoteForShell()} 2>/dev/null || cd -- "${'$'}{HOME:-/}" 2>/dev/null || cd /
         |
         |# Keep the installer's output: this script's own output is discarded, so the log is the
         |# only record of why an install failed. A log that cannot be written must not stop the
