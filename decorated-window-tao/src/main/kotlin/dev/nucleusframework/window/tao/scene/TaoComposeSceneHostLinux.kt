@@ -294,14 +294,14 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * Vsync swap thread. Owns the EGL context only during the
-     * `eglSwapBuffers` call, which on Wayland blocks waiting for the
-     * compositor's frame callback (and on X11 for the next refresh).
-     * Running it on a *separate* thread is what makes `eglSwapInterval(1)`
-     * usable — the GTK main thread keeps draining `wl_display` events
-     * while the swap thread is parked on the swap, so the frame callback
-     * that unblocks the swap can actually arrive. Swapping on the GTK
-     * thread (the original implementation) deadlocks Mesa on Wayland.
+     * Vsync swap thread. Owns the EGL context only during the present,
+     * which on Wayland waits for the compositor's frame callback (at most
+     * 200 ms, so a window the compositor hides never parks it for good,
+     * #958) and on X11 for the next refresh. Running it on a *separate*
+     * thread is what makes the vsync wait usable — the GTK main thread
+     * keeps draining `wl_display` events while the swap thread waits, so the
+     * frame callback that ends the wait can actually arrive. Swapping on the
+     * GTK thread (the original implementation) deadlocks Mesa on Wayland.
      *
      * Pacing is intrinsic but *non-blocking*: the main thread renders only when
      * the swap is idle ([SwapThread.tryBeginRenderOrMarkOwed]); if a swap is in
@@ -3777,10 +3777,10 @@ internal class TaoComposeSceneHostLinux(
             NativeTaoLinuxTouchBridge.nativeRevoke(window.handle)
         }
         restReclaimer.close()
-        // Stop the swap thread first. It may be parked inside
-        // `eglSwapBuffers` waiting on a frame callback — joining without a
-        // wakeup would hang. `shutdownAndJoin` requests shutdown before
-        // signalling, and the swap thread bails out once the current swap
+        // Stop the swap thread first. It may be waiting on a frame callback
+        // in `nativePresent` — joining without a wakeup would hang.
+        // `shutdownAndJoin` requests shutdown, signals, and cuts that wait
+        // short (#958); the swap thread bails out once the current present
         // (if any) returns. After it joins, no other thread holds the EGL
         // context, so we can safely re-bind here for Skia teardown.
         swapThread?.shutdownAndJoin()
@@ -3934,7 +3934,7 @@ internal class TaoComposeSceneHostLinux(
      * main thread) hands the context off via
      * [NativeTaoEglBridge.nativeReleaseCurrent] before signalling
      * [requestSwap]; the swap thread then re-binds via `nativeMakeCurrent`,
-     * presents (blocking on the compositor's vsync), and releases the
+     * presents (waiting for the compositor's vsync), and releases the
      * context again. The render thread gates on [tryBeginRenderOrMarkOwed]
      * (non-blocking) before its next render; the swap thread re-arms a skipped
      * frame on completion — that's what gives us hardware-vsync pacing without
@@ -4048,12 +4048,13 @@ internal class TaoComposeSceneHostLinux(
                 shutdown = true
                 workCond.signalAll()
             }
-            // Best-effort join. If the swap thread is parked inside
-            // `eglSwapBuffers` (waiting on a frame callback that GTK is
-            // about to deliver), the join can take up to one vsync
-            // interval. Two frames worth of headroom is plenty in
-            // practice — past that, leak the thread rather than risk
-            // hanging the host shutdown.
+            // A present waiting for the frame callback — forever, on a
+            // window the compositor is not showing — returns now without
+            // swapping (#958).
+            NativeTaoEglBridge.nativeWakePresent(handle)
+            // Best-effort join: the thread is at most finishing a swap that
+            // no longer waits on the compositor. Past the headroom, leak the
+            // thread rather than risk hanging the host shutdown.
             join(50)
         }
 
