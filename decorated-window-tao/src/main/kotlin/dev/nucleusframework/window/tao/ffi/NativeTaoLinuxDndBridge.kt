@@ -33,13 +33,25 @@ internal object NativeTaoLinuxDndBridge {
     val isLoaded: Boolean get() = loaded
 
     interface Callback {
+        /**
+         * Updates the preview for this drag: local [files] (paths), plain
+         * [text] and non-file [uris] read from the negotiated target, each
+         * `null` when absent (#930). All three `null` clears the preview.
+         */
+        fun onDragData(
+            handle: Long,
+            files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
+        )
+
         @Suppress("FunctionParameterNaming")
         fun onDragEnter(
             handle: Long,
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int
 
         @Suppress("FunctionParameterNaming")
@@ -48,7 +60,7 @@ internal object NativeTaoLinuxDndBridge {
             x: Int,
             y: Int,
             modState: Int,
-            hasFiles: Boolean,
+            hasData: Boolean,
         ): Int
 
         fun onDragLeave(handle: Long)
@@ -60,6 +72,8 @@ internal object NativeTaoLinuxDndBridge {
             y: Int,
             modState: Int,
             files: Array<String>?,
+            text: String?,
+            uris: Array<String>?,
         ): Int
     }
 
@@ -100,15 +114,33 @@ internal object NativeTaoLinuxDndBridge {
      * loop — this call is made from inside one of its callbacks — so without
      * [pump] the host paints nothing for the whole session.
      *
+     * @param privateData an in-process payload offered under
+     *   [dev.nucleusframework.window.tao.dnd.TaoPrivateTransfer.MIME] to this
+     *   application's own windows only (`SAME_APP`), or `null`. A session may
+     *   carry it alone: the cross-window gestures ride the DnD session on
+     *   native Wayland with nothing a foreign target could take.
+     * @param iconArgb the drag icon under the pointer as premultiplied ARGB
+     *   (`0xAARRGGBB`) device pixels, row-major, `iconWidth × iconHeight`;
+     *   `null` for GTK's default icon. [iconScale] is the device pixels per
+     *   logical pixel it was rendered at, [iconHotX] / [iconHotY] the pointer's
+     *   position inside it in device pixels.
      * @param pump invoked repeatedly during the drag so the suppressed Tao tick
      *   can still drain and render; see [DragPump]. `null` disables it.
      */
+    @Suppress("LongParameterList")
     @JvmStatic
     external fun nativeStartDrag(
         handle: Long,
         files: Array<String>?,
         text: String?,
+        privateData: String?,
         allowedEffects: Int,
+        iconArgb: IntArray?,
+        iconWidth: Int,
+        iconHeight: Int,
+        iconScale: Float,
+        iconHotX: Int,
+        iconHotY: Int,
         pump: DragPump?,
     ): Int
 

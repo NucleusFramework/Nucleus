@@ -1,0 +1,18 @@
+{
+  "reflection": [
+    {
+      "type": "dev.nucleusframework.share.NativeShareBridge",
+      "jniAccessible": true
+    },
+    {
+      "type": "java.lang.Runnable",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "run",
+          "parameterTypes": []
+        }
+      ]
+    }
+  ]
+}

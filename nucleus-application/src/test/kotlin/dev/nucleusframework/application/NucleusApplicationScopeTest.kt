@@ -1,9 +1,9 @@
 package dev.nucleusframework.application
 
-import androidx.compose.ui.window.ApplicationScope
 import dev.nucleusframework.aot.runtime.AotRuntime
 import dev.nucleusframework.aot.runtime.AotRuntimeMode
 import dev.nucleusframework.core.runtime.DeepLinkHandler
+import dev.nucleusframework.window.tao.TaoApplication
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -13,22 +13,22 @@ import java.net.URI
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.milliseconds
+import dev.nucleusframework.window.tao.ApplicationScope as TaoApplicationScope
 
 class NucleusApplicationScopeTest {
     @Test
-    fun `awt scope reports Awt and delegates exit`() {
-        val compose = RecordingApplicationScope()
-        val scope = AwtNucleusApplicationScope(compose, arrayOf("--flag"))
-        assertEquals(NucleusBackend.Awt, scope.backend)
-        assertSame(compose, scope.composeScope)
-        assertFalse(compose.exited)
+    fun `scope wraps the tao scope and delegates exit`() {
+        val tao = RecordingApplicationScope()
+        val scope = TaoNucleusApplicationScope(tao, arrayOf("--flag"))
+        assertSame(tao, scope.taoScope)
+        assertFalse(tao.exited)
         scope.exitApplication()
-        assertTrue(compose.exited)
+        assertTrue(tao.exited)
     }
 
     @Test
     fun `aot flags follow the nucleus aot mode property`() {
-        val scope = AwtNucleusApplicationScope(RecordingApplicationScope(), emptyArray())
+        val scope = TaoNucleusApplicationScope(RecordingApplicationScope(), emptyArray())
         val key = "nucleus.aot.mode"
         val previous = System.getProperty(key)
         try {
@@ -53,7 +53,7 @@ class NucleusApplicationScopeTest {
 
     @Test
     fun `onDeepLink registers a handler that receives delivered URIs`() {
-        val scope = AwtNucleusApplicationScope(RecordingApplicationScope(), emptyArray())
+        val scope = TaoNucleusApplicationScope(RecordingApplicationScope(), emptyArray())
         val received = mutableListOf<URI>()
         scope.onDeepLink { received.add(it) }
         val uri = URI("nucleus-test://scope/${System.nanoTime()}")
@@ -77,7 +77,7 @@ class NucleusApplicationScopeTest {
         val key = "nucleus.aot.mode"
         val previous = System.getProperty(key)
         val compose = RecordingApplicationScope()
-        val scope = AwtNucleusApplicationScope(compose, emptyArray())
+        val scope = TaoNucleusApplicationScope(compose, emptyArray())
         try {
             System.setProperty(key, "off")
             var timedOut = false
@@ -94,7 +94,7 @@ class NucleusApplicationScopeTest {
     fun `aotTraining arms once and invokes onTimeout in training mode`() {
         val key = "nucleus.aot.mode"
         val previous = System.getProperty(key)
-        val scope = AwtNucleusApplicationScope(RecordingApplicationScope(), emptyArray())
+        val scope = TaoNucleusApplicationScope(RecordingApplicationScope(), emptyArray())
         val first = CountDownLatch(1)
         val second = CountDownLatch(1)
         try {
@@ -120,11 +120,16 @@ class NucleusApplicationScopeTest {
         }
     }
 
-    private class RecordingApplicationScope : ApplicationScope {
+    private class RecordingApplicationScope : TaoApplicationScope {
         var exited: Boolean = false
 
         override fun exitApplication() {
             exited = true
         }
+
+        // Never read by the scope itself — only by app code reaching for the
+        // native application handle.
+        override val taoApplication: TaoApplication
+            get() = error("TaoApplication is not available in unit tests")
     }
 }

@@ -25,6 +25,10 @@ internal inline fun renderGlFrame(
     directContext: DirectContext,
     bundle: TaoSceneBundle,
     clearColorArgb: Int,
+    // No default on purpose: `false` attaches LCD SurfaceProps on Windows, and
+    // silently inheriting it on a per-pixel-alpha surface ships color-fringed
+    // text. Every call site must state its surface's alpha mode.
+    windowTransparent: Boolean,
     crossinline present: () -> Unit,
 ) {
     renderGlFrame(
@@ -32,17 +36,34 @@ internal inline fun renderGlFrame(
         heightPx = heightPx,
         directContext = directContext,
         clearColorArgb = clearColorArgb,
+        windowTransparent = windowTransparent,
         present = present,
     ) { canvas, nanoTime ->
         bundle.render(canvas, nanoTime)
     }
 }
 
+internal fun makeTaoGlSurface(
+    context: DirectContext,
+    rt: BackendRenderTarget,
+    windowTransparent: Boolean,
+): Surface? =
+    Surface.makeFromBackendRenderTarget(
+        context = context,
+        rt = rt,
+        origin = SurfaceOrigin.BOTTOM_LEFT,
+        colorFormat = SurfaceColorFormat.RGBA_8888,
+        colorSpace = ColorSpace.sRGB,
+        surfaceProps = lcdSurfaceProps(windowTransparent),
+    )
+
 internal inline fun renderGlFrame(
     widthPx: Int,
     heightPx: Int,
     directContext: DirectContext,
     clearColorArgb: Int,
+    // No default on purpose — see the overload above.
+    windowTransparent: Boolean,
     crossinline present: () -> Unit,
     crossinline render: (org.jetbrains.skia.Canvas, Long) -> Unit,
 ) {
@@ -57,13 +78,7 @@ internal inline fun renderGlFrame(
             fbFormat = FramebufferFormat.GR_GL_RGBA8,
         )
     val surface =
-        Surface.makeFromBackendRenderTarget(
-            context = directContext,
-            rt = rt,
-            origin = SurfaceOrigin.BOTTOM_LEFT,
-            colorFormat = SurfaceColorFormat.RGBA_8888,
-            colorSpace = ColorSpace.sRGB,
-        ) ?: run {
+        makeTaoGlSurface(directContext, rt, windowTransparent) ?: run {
             rt.close()
             return
         }

@@ -12,6 +12,10 @@
 //    `compose.interop.blending=true`. Pointer events that Compose does
 //    not consume are synthesised back onto the native view via
 //    `nativeDispatchPointer` / `nativeDispatchScroll`.
+//    With `placedAsOverlay` the view goes **above** the content view
+//    instead, in a `NucleusTaoNativeClipView` (`nativeAddSubviewAbove` /
+//    `nativeSetSubviewFrameClipped`): nothing is punched or replayed,
+//    AppKit hit-tests the view and delivers its events itself.
 //
 // 2. **Sibling overlay** NSView (`NucleusTaoNativeOverlayView`) — a
 //    leftover second Compose surface used before blending. Kept for
@@ -32,6 +36,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <math.h>
 #include <stdatomic.h>
 
@@ -167,7 +172,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
     jfloat x, y;
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnPointerMethod, type, x, y, button, [self modifierMaskFor:event]);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* On click, become first responder of the host NSWindow so subsequent
@@ -190,7 +195,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
             JNIEnv *env = attachThread();
             if (env != NULL) {
                 (*env)->CallVoidMethod(env, cb, sOnResignMethod);
-                if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+                nucleus_jni_clear_exception(env);
             }
         }
     }
@@ -211,7 +216,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnScrollMethod,
         x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* Deliberately NOT overriding `keyDown:` / `keyUp:`. AppKit's
@@ -238,6 +243,55 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
 }
 
 @end
+
+// ── NucleusTaoNativeClipView ────────────────────────────────────────────
+//
+// Holds one `NativeView(placedAsOverlay = true)` child above the Compose
+// surface. Its frame is the part of the child that the child's clipping
+// ancestors in Compose leave visible, so the child is cut where Compose
+// content at its place would be (a scrolling list, a screen sliding out
+// of its container). A click lands on the child or goes through to the
+// Compose view, never on the clip view itself.
+
+@interface NucleusTaoNativeClipView : NSView
+@end
+
+@implementation NucleusTaoNativeClipView
+
+- (BOOL)isFlipped { return YES; }
+
+- (NSView *)hitTest:(NSPoint)point {
+    NSView *hit = [super hitTest:point];
+    return hit == self ? nil : hit;
+}
+
+@end
+
+/* Takes the child out of its superview, and an overlay's clip view with it. */
+static void remove_native_child(NSView *child) {
+    NSView *holder = child.superview;
+    [child removeFromSuperview];
+    if ([holder isKindOfClass:[NucleusTaoNativeClipView class]]) [holder removeFromSuperview];
+}
+
+/* Compose feeds content-view-local pixels (top-left). Converts a rect of
+ * them into [target]'s coordinates — whatever view hosts the child: the
+ * theme frame when it is mounted beside the content view, the content view
+ * itself as a fallback — so a y-flip and any content-view origin inside the
+ * theme frame stay correct. */
+static NSRect rect_from_compose_px(NSView *content, NSView *target,
+                                   jint xPx, jint yPx, jint widthPx, jint heightPx) {
+    CGFloat scale = content.window.backingScaleFactor;
+    if (scale <= 0) scale = 1.0;
+    CGFloat xPt = (CGFloat)xPx     / scale;
+    CGFloat yPt = (CGFloat)yPx     / scale;
+    CGFloat wPt = (CGFloat)widthPx / scale;
+    CGFloat hPt = (CGFloat)heightPx / scale;
+    NSRect contentRect = content.isFlipped
+        ? NSMakeRect(xPt, yPt, wPt, hPt)
+        : NSMakeRect(xPt, content.bounds.size.height - yPt - hPt, wPt, hPt);
+    return [content convertRect:contentRect toView:target];
+}
 
 /* ================================================================== */
 /*  JNI exports — generic NSView interop                               */
@@ -272,7 +326,40 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeRe
     (void)env; (void)clazz;
     NSView *child = view_from_long(childPtr);
     if (child == nil) return;
-    [child removeFromSuperview];
+    remove_native_child(child);
+}
+
+/* Mounts the child ABOVE the Tao content view (`placedAsOverlay`), in a
+ * clip view of its own: AppKit hit-tests it and delivers hover, press, drag
+ * and click itself, and nothing Compose draws covers it. The clip view
+ * stays hidden until the first nativeSetSubviewFrameClipped. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeAddSubviewAbove(
+    JNIEnv *env, jclass clazz, jlong parentPtr, jlong childPtr)
+{
+    (void)env; (void)clazz;
+    NSView *parent = view_from_long(parentPtr);
+    NSView *child  = view_from_long(childPtr);
+    if (parent == nil || child == nil) return;
+    remove_native_child(child);
+    NucleusTaoNativeClipView *clip = [[NucleusTaoNativeClipView alloc] initWithFrame:NSZeroRect];
+    clip.wantsLayer = YES;
+    clip.hidden = YES;
+    // The clip view places the child; AppKit must not move it on a resize.
+    child.autoresizingMask = NSViewNotSizable;
+    [clip addSubview:child];
+    NSView *frameView = parent.window.contentView.superview;
+    if (frameView != nil && parent.superview == frameView) {
+        // Above the overlays mounted before it, as a later sibling draws
+        // over an earlier one.
+        NSView *below = parent;
+        for (NSView *sibling in frameView.subviews) {
+            if ([sibling isKindOfClass:[NucleusTaoNativeClipView class]]) below = sibling;
+        }
+        [frameView addSubview:clip positioned:NSWindowAbove relativeTo:below];
+    } else {
+        [parent addSubview:clip positioned:NSWindowAbove relativeTo:nil];
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -286,22 +373,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeSe
     NSView *child  = view_from_long(childPtr);
     if (parent == nil || child == nil) return;
 
-    CGFloat scale = parent.window.backingScaleFactor;
-    if (scale <= 0) scale = 1.0;
-    CGFloat xPt = (CGFloat)xPx     / scale;
-    CGFloat yPt = (CGFloat)yPx     / scale;
-    CGFloat wPt = (CGFloat)widthPx / scale;
-    CGFloat hPt = (CGFloat)heightPx / scale;
-
-    // Compose feeds content-view-local pixels (top-left). Convert into
-    // whatever superview currently hosts the child (the theme frame when
-    // blending, the content view itself as a fallback) so a y-flip and
-    // any content-view origin inside the theme frame stay correct.
-    NSRect contentRect = parent.isFlipped
-        ? NSMakeRect(xPt, yPt, wPt, hPt)
-        : NSMakeRect(xPt, parent.bounds.size.height - yPt - hPt, wPt, hPt);
     NSView *superview = child.superview != nil ? child.superview : parent;
-    NSRect newFrame = [parent convertRect:contentRect toView:superview];
+    NSRect newFrame = rect_from_compose_px(parent, superview, xPx, yPx, widthPx, heightPx);
 
     // Margin-only autoresizing: fixed size, fixed TOP-LEFT anchor. The
     // bottom-left frame above is computed against parentH AT CALL TIME —
@@ -327,6 +400,55 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeSe
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     [child setFrame:newFrame];
+    [CATransaction commit];
+}
+
+/* Frames an overlay child and the clip view around it. Both rects are
+ * content-view-local pixels (top-left): the child's own, and the part of
+ * it that its clipping ancestors in Compose leave visible. The clip view
+ * takes the visible rect and masks only while that is less than the whole
+ * child, so a control nothing clips still draws past its bounds (focus
+ * ring, shadow). An empty visible rect hides the child. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeSetSubviewFrameClipped(
+    JNIEnv *env, jclass clazz,
+    jlong parentPtr, jlong childPtr,
+    jint xPx, jint yPx, jint widthPx, jint heightPx,
+    jint visibleXPx, jint visibleYPx, jint visibleWidthPx, jint visibleHeightPx)
+{
+    (void)env; (void)clazz;
+    NSView *parent = view_from_long(parentPtr);
+    NSView *child  = view_from_long(childPtr);
+    if (parent == nil || child == nil) return;
+    NSView *clip = child.superview;
+    if (![clip isKindOfClass:[NucleusTaoNativeClipView class]] || clip.superview == nil) return;
+
+    // No implicit animation, as in nativeSetSubviewFrame.
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    if (visibleWidthPx <= 0 || visibleHeightPx <= 0) {
+        clip.hidden = YES;
+    } else {
+        BOOL clipped = visibleXPx != xPx || visibleYPx != yPx
+            || visibleWidthPx != widthPx || visibleHeightPx != heightPx;
+        clip.layer.masksToBounds = clipped;
+        if (@available(macOS 14.0, *)) clip.clipsToBounds = clipped;
+        // Margin-only anchoring, for the reason given in nativeSetSubviewFrame.
+        clip.autoresizingMask = clip.superview.isFlipped
+            ? (NSViewMaxXMargin | NSViewMaxYMargin)
+            : (NSViewMaxXMargin | NSViewMinYMargin);
+        [clip setFrame:rect_from_compose_px(parent, clip.superview,
+                                            visibleXPx, visibleYPx, visibleWidthPx, visibleHeightPx)];
+        CGFloat scale = parent.window.backingScaleFactor;
+        if (scale <= 0) scale = 1.0;
+        // The clip view is flipped: the child sits at its offset from the
+        // visible rect's top-left corner.
+        [child setFrame:NSMakeRect((CGFloat)(xPx - visibleXPx) / scale,
+                                   (CGFloat)(yPx - visibleYPx) / scale,
+                                   (CGFloat)widthPx / scale,
+                                   (CGFloat)heightPx / scale)];
+        clip.hidden = NO;
+    }
     [CATransaction commit];
 }
 
@@ -412,6 +534,18 @@ static NSEvent *mouse_event_at(NSView *view, NSEventType type, NSPoint windowPoi
                               pressure:1.0];
 }
 
+/* NSControl.mouseDown: and NSTextView.mouseDown: run
+ * trackMouse:untilMouseUp: (or a selection loop) and do not return
+ * until an AppKit mouse-up is dequeued. Compose pointer dispatch is
+ * on the Tao main thread; the matching up is the *next* event we have
+ * not delivered yet. Calling those selectors from here stalls the loop
+ * forever on a synthetic press, and on a live one steals the up
+ * Compose still needs to see. A right-click handler may also pop an
+ * NSMenu, which is the same kind of nested modal loop. */
+static BOOL view_runs_mouse_tracking(NSView *hit) {
+    return [hit isKindOfClass:[NSControl class]] || [hit isKindOfClass:[NSTextView class]];
+}
+
 /* [type] 1 = down, 2 = up, 3 = move. [button] 0 none, 1 primary, 2 secondary.
  * [pressed] is the Compose pointer-down state (move + pressed → dragged). */
 JNIEXPORT void JNICALL
@@ -426,7 +560,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     if (content == nil || child == nil) return;
     NSPoint windowPoint = window_point_from_compose_px(content, xPx, yPx);
     NSView *hit = hit_native_child(child, windowPoint);
-    if (hit == nil) return;
+    if (hit == nil) {
+        // Press on the slot before the child has a hit-testable frame:
+        // first-responder is still enough for typing.
+        if (type == 1) [child.window makeFirstResponder:child];
+        return;
+    }
 
     NSEventType nsType;
     if (type == 1) {
@@ -438,20 +577,24 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     } else {
         nsType = NSEventTypeMouseMoved;
     }
+    if (type == 1) {
+        [hit.window makeFirstResponder:hit];
+        if (view_runs_mouse_tracking(hit) || nsType == NSEventTypeRightMouseDown) return;
+    } else if (view_runs_mouse_tracking(hit) ||
+               nsType == NSEventTypeRightMouseUp ||
+               nsType == NSEventTypeRightMouseDragged) {
+        return;
+    }
     NSEvent *current = NSApp.currentEvent;
     NSEvent *event = (current != nil && current.type == nsType)
         ? current
         : mouse_event_at(hit, nsType, windowPoint, type == 1 ? 1 : 0);
     if (type == 1) {
-        [hit.window makeFirstResponder:hit];
-        if (nsType == NSEventTypeRightMouseDown) [hit rightMouseDown:event];
-        else [hit mouseDown:event];
+        [hit mouseDown:event];
     } else if (type == 2) {
-        if (nsType == NSEventTypeRightMouseUp) [hit rightMouseUp:event];
-        else [hit mouseUp:event];
+        [hit mouseUp:event];
     } else if (pressed == JNI_TRUE) {
-        if (nsType == NSEventTypeRightMouseDragged) [hit rightMouseDragged:event];
-        else [hit mouseDragged:event];
+        [hit mouseDragged:event];
     } else {
         [hit mouseMoved:event];
     }
@@ -611,6 +754,103 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeMa
     NSView *content = view_from_long(contentPtr);
     if (content == nil) return;
     [content.window makeFirstResponder:content];
+}
+
+/* Whether [first] is some view other than the Tao content view — an
+ * embed, or the field editor working on one. Keys then belong to AppKit,
+ * not Compose. */
+static BOOL first_responder_is_embed(NSView *content) {
+    if (content == nil || content.window == nil) return NO;
+    NSResponder *first = content.window.firstResponder;
+    if (first == nil || first == content) return NO;
+    if ([first isKindOfClass:[NSTextView class]]) {
+        NSTextView *editor = (NSTextView *)first;
+        if (editor.isFieldEditor) return YES;
+    }
+    return [first isKindOfClass:[NSView class]] && ((NSView *)first).window == content.window;
+}
+
+/* Carbon HIToolbox virtual key codes (Events.h). Used only to synthesise
+ * a caret-key NSEvent onto the first responder; we do not link Carbon. */
+#define NUCLEUS_VK_LEFT_ARROW  0x7B
+#define NUCLEUS_VK_RIGHT_ARROW 0x7C
+#define NUCLEUS_VK_DOWN_ARROW  0x7D
+#define NUCLEUS_VK_UP_ARROW    0x7E
+#define NUCLEUS_VK_DELETE      0x33
+#define NUCLEUS_VK_RETURN      0x24
+#define NUCLEUS_VK_FORWARD_DEL 0x75
+#define NUCLEUS_VK_TAB         0x30
+#define NUCLEUS_VK_ESCAPE      0x35
+
+/* AWT VK_* → Carbon kVK_* for the caret / editing keys the host forwards
+ * when Compose did not consume them and an embed holds first responder. */
+static unsigned short carbon_key_code_for_awt(jint vkCode) {
+    switch (vkCode) {
+        case 37:  return NUCLEUS_VK_LEFT_ARROW;   /* VK_LEFT */
+        case 39:  return NUCLEUS_VK_RIGHT_ARROW;  /* VK_RIGHT */
+        case 40:  return NUCLEUS_VK_DOWN_ARROW;   /* VK_DOWN */
+        case 38:  return NUCLEUS_VK_UP_ARROW;     /* VK_UP */
+        case 8:   return NUCLEUS_VK_DELETE;       /* VK_BACK_SPACE */
+        case 10:  return NUCLEUS_VK_RETURN;       /* VK_ENTER */
+        case 127: return NUCLEUS_VK_FORWARD_DEL;  /* VK_DELETE */
+        case 9:   return NUCLEUS_VK_TAB;          /* VK_TAB */
+        case 27:  return NUCLEUS_VK_ESCAPE;       /* VK_ESCAPE */
+        default:  return 0xFFFF;
+    }
+}
+
+/* Tao KEY_DOWN / KEY_UP / KEY_TYPED onto the current first responder when
+ * that responder is an embed. Synthetic Compose keys never enter AppKit's
+ * responder chain (they are posted into the Tao window), so without this
+ * an NSTextField that holds first responder never sees a letter typed
+ * through the in-process driver. Returns JNI_TRUE when the embed took it. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDispatchKeyToFirstResponder(
+    JNIEnv *env, jclass clazz,
+    jlong contentPtr, jint type, jint vkCode, jint codePoint)
+{
+    (void)env; (void)clazz;
+    NSView *content = view_from_long(contentPtr);
+    if (!first_responder_is_embed(content)) return JNI_FALSE;
+    NSResponder *first = content.window.firstResponder;
+    const jint kTaoKeyDown = 14;
+    const jint kTaoKeyUp = 15;
+    const jint kTaoKeyTyped = 19;
+    if (type == kTaoKeyTyped) {
+        if (codePoint <= 0) return JNI_FALSE;
+        unichar ch = (unichar)codePoint;
+        NSString *text = [NSString stringWithCharacters:&ch length:1];
+        if ([first conformsToProtocol:@protocol(NSTextInputClient)]) {
+            [(id<NSTextInputClient>)first insertText:text
+                                    replacementRange:NSMakeRange(NSNotFound, 0)];
+            return JNI_TRUE;
+        }
+        if ([first isKindOfClass:[NSTextField class]]) {
+            NSTextField *field = (NSTextField *)first;
+            NSString *current = field.stringValue ?: @"";
+            field.stringValue = [current stringByAppendingString:text];
+            return JNI_TRUE;
+        }
+        return JNI_FALSE;
+    }
+    if (type != kTaoKeyDown && type != kTaoKeyUp) return JNI_FALSE;
+    unsigned short keyCode = carbon_key_code_for_awt(vkCode);
+    if (keyCode == 0xFFFF) return JNI_FALSE;
+    NSEventType nsType = (type == kTaoKeyDown) ? NSEventTypeKeyDown : NSEventTypeKeyUp;
+    NSEvent *event = [NSEvent keyEventWithType:nsType
+                                      location:NSZeroPoint
+                                 modifierFlags:0
+                                     timestamp:[NSProcessInfo processInfo].systemUptime
+                                  windowNumber:content.window.windowNumber
+                                       context:nil
+                                    characters:@""
+                   charactersIgnoringModifiers:@""
+                                     isARepeat:NO
+                                       keyCode:keyCode];
+    if (event == nil) return JNI_FALSE;
+    if (type == kTaoKeyDown) [first keyDown:event];
+    else [first keyUp:event];
+    return JNI_TRUE;
 }
 
 /* ================================================================== */
@@ -775,4 +1015,171 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeRe
         objc_setAssociatedObject(overlay, &kOverlayCallbackKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     [overlay removeFromSuperview];
+}
+
+// ── Diagnostics for the headful suite ──────────────────────────────────
+//
+// A NativeView case needs a real, focusable AppKit view — one that takes
+// first responder on click and shows an I-beam — to race against Compose.
+// The test module cannot allocate one itself, so these hand out a plain
+// NSTextField and read the responder chain and the text back. Nothing here
+// is used by NativeView proper.
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagCreateTextField(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    NSTextField *field = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 64, 24)];
+    field.editable = YES;
+    field.selectable = YES;
+    field.bezeled = YES;
+    field.wantsLayer = YES;
+    return (jlong)(uintptr_t)(__bridge_retained void *)field;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagReleaseView(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    if (viewPtr == 0) return;
+    NSView *view = (__bridge_transfer NSView *)(void *)(uintptr_t)viewPtr;
+    [view removeFromSuperview];
+}
+
+/* An NSTextField never is the first responder itself while edited: the
+ * window's shared field editor (an NSTextView whose delegate is the
+ * field) is. Both shapes mean "keystrokes go to the embed". */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagViewIsEditing(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (view == nil || view.window == nil) return JNI_FALSE;
+    NSResponder *first = view.window.firstResponder;
+    if (first == view) return JNI_TRUE;
+    if ([first isKindOfClass:[NSTextView class]]) {
+        NSTextView *editor = (NSTextView *)first;
+        if (editor.isFieldEditor && editor.delegate == (id<NSTextViewDelegate>)view) return JNI_TRUE;
+    }
+    return JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagViewIsFirstResponder(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (view == nil || view.window == nil) return JNI_FALSE;
+    return view.window.firstResponder == view ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagTextFieldString(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (![view isKindOfClass:[NSTextField class]]) return NULL;
+    NSString *value = ((NSTextField *)view).stringValue ?: @"";
+    return (*env)->NewStringUTF(env, value.UTF8String);
+}
+
+/* The view's frame in its superview, converted to Compose's convention:
+ * physical pixels, top-left origin, as `[x, y, w, h]`. Null without a
+ * superview or a window. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagViewFrame(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (view == nil || view.superview == nil || view.window == nil) return NULL;
+    CGFloat scale = view.window.backingScaleFactor;
+    if (scale <= 0) scale = 1.0;
+    NSRect frame = view.frame;
+    CGFloat parentHeight = view.superview.bounds.size.height;
+    CGFloat topLeftY = view.superview.isFlipped ? frame.origin.y : parentHeight - frame.origin.y - frame.size.height;
+    jint out[4] = {
+        (jint)lround(frame.origin.x * scale),
+        (jint)lround(topLeftY * scale),
+        (jint)lround(frame.size.width * scale),
+        (jint)lround(frame.size.height * scale),
+    };
+    jintArray result = (*env)->NewIntArray(env, 4);
+    if (result == NULL) return NULL;
+    (*env)->SetIntArrayRegion(env, result, 0, 4, out);
+    return result;
+}
+
+/* The clip view around an overlay child: its frame in content-view-local
+ * pixels (top-left) as `[x, y, w, h]`, then 1 when it is hidden and 1 when
+ * it masks its child. Null when the view is not mounted as an overlay. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagOverlayClip(
+    JNIEnv *env, jclass clazz, jlong contentPtr, jlong viewPtr)
+{
+    (void)clazz;
+    NSView *content = view_from_long(contentPtr);
+    NSView *clip = view_from_long(viewPtr).superview;
+    if (content == nil || ![clip isKindOfClass:[NucleusTaoNativeClipView class]]) return NULL;
+    if (clip.superview == nil || clip.window == nil) return NULL;
+    CGFloat scale = clip.window.backingScaleFactor;
+    if (scale <= 0) scale = 1.0;
+    NSRect frame = [clip.superview convertRect:clip.frame toView:content];
+    CGFloat topLeftY = content.isFlipped
+        ? frame.origin.y
+        : content.bounds.size.height - frame.origin.y - frame.size.height;
+    jint out[6] = {
+        (jint)lround(frame.origin.x * scale),
+        (jint)lround(topLeftY * scale),
+        (jint)lround(frame.size.width * scale),
+        (jint)lround(frame.size.height * scale),
+        clip.hidden ? 1 : 0,
+        clip.layer.masksToBounds ? 1 : 0,
+    };
+    jintArray result = (*env)->NewIntArray(env, 6);
+    if (result == NULL) return NULL;
+    (*env)->SetIntArrayRegion(env, result, 0, 6, out);
+    return result;
+}
+
+// An NSButton counting its action, for the overlay input cases: it runs
+// AppKit's own mouse tracking, which only a view AppKit hit-tests gets.
+
+@interface NucleusDiagButtonTarget : NSObject
+@property (atomic) int clicks;
+- (void)hit:(id)sender;
+@end
+
+@implementation NucleusDiagButtonTarget
+- (void)hit:(id)sender { (void)sender; self.clicks += 1; }
+@end
+
+static char kNucleusDiagButtonTargetKey;
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagCreateButton(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    NucleusDiagButtonTarget *target = [NucleusDiagButtonTarget new];
+    NSButton *button = [NSButton buttonWithTitle:@"Native" target:target action:@selector(hit:)];
+    objc_setAssociatedObject(button, &kNucleusDiagButtonTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    button.bezelStyle = NSBezelStylePush;
+    button.wantsLayer = YES;
+    return (jlong)(uintptr_t)(__bridge_retained void *)button;
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagButtonClicks(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    NucleusDiagButtonTarget *target = objc_getAssociatedObject(view, &kNucleusDiagButtonTargetKey);
+    return target == nil ? -1 : target.clicks;
 }

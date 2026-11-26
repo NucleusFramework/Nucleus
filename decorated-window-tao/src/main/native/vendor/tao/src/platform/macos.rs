@@ -6,8 +6,6 @@
 
 use std::os::raw::c_void;
 
-use objc2_foundation::NSObject;
-
 use crate::{
   dpi::{LogicalSize, Position},
   event_loop::{EventLoop, EventLoopWindowTarget},
@@ -15,6 +13,22 @@ use crate::{
   platform_impl::{get_aux_state_mut, set_badge_label, set_dock_visibility, Parent},
   window::{Window, WindowBuilder},
 };
+
+pub use crate::platform_impl::PointerSource;
+
+/// Additional methods on `DeviceId` that are specific to MacOS.
+pub trait DeviceIdExtMacOS {
+  /// The tool of the pointer event that carried this id: tablet pens and
+  /// erasers are told apart from the mouse (PATCH(nucleus)).
+  fn pointer_source(&self) -> PointerSource;
+}
+
+impl DeviceIdExtMacOS for crate::event::DeviceId {
+  #[inline]
+  fn pointer_source(&self) -> PointerSource {
+    self.0.pointer_source()
+  }
+}
 
 /// Additional methods on `Window` that are specific to MacOS.
 pub trait WindowExtMacOS {
@@ -340,21 +354,21 @@ impl<T> EventLoopExtMacOS for EventLoop<T> {
   #[inline]
   fn set_activation_policy(&mut self, activation_policy: ActivationPolicy) {
     unsafe {
-      get_aux_state_mut(&**self.event_loop.delegate).activation_policy = activation_policy;
+      get_aux_state_mut(&*self.event_loop.delegate).activation_policy = activation_policy;
     }
   }
 
   #[inline]
   fn set_dock_visibility(&mut self, visible: bool) {
     unsafe {
-      get_aux_state_mut(&**self.event_loop.delegate).dock_visibility = visible;
+      get_aux_state_mut(&*self.event_loop.delegate).dock_visibility = visible;
     }
   }
 
   #[inline]
   fn set_activate_ignoring_other_apps(&mut self, ignore: bool) {
     unsafe {
-      get_aux_state_mut(&**self.event_loop.delegate).activate_ignoring_other_apps = ignore;
+      get_aux_state_mut(&*self.event_loop.delegate).activate_ignoring_other_apps = ignore;
     }
   }
 }
@@ -445,7 +459,7 @@ impl<T> EventLoopWindowTargetExtMacOS for EventLoopWindowTarget<T> {
       let mtm = objc2_foundation::MainThreadMarker::new_unchecked();
       objc2_app_kit::NSApplication::sharedApplication(mtm)
         .delegate()
-        .map(|delegate| delegate.downcast::<NSObject>())
+        .map(|delegate| delegate.downcast())
     }) else {
       return;
     };
@@ -478,4 +492,23 @@ pub(crate) static MINIMIZED_HOOK: std::sync::OnceLock<fn(crate::window::WindowId
 /// it should only post a user event back to the event loop.
 pub fn set_minimized_hook(hook: fn(crate::window::WindowId, bool)) {
   let _ = MINIMIZED_HOOK.set(hook);
+}
+
+// PATCH(nucleus): embedder-provided cursor table.
+//
+// Tao resolves a `CursorIcon` itself, partly through private `NSCursor`
+// factories that can throw on a newer macOS (`_moveCursor` raises
+// "unrecognized selector" on macOS 27 although the method still exists, #746)
+// — inside `resetCursorRects`, where nothing can catch it. With a hook
+// installed every icon is resolved by the embedder instead, so the cursor rect
+// and the embedder's own immediate `[NSCursor set]` agree on one instance.
+pub(crate) static CURSOR_HOOK: std::sync::OnceLock<fn(crate::window::CursorIcon) -> *mut c_void> =
+  std::sync::OnceLock::new();
+
+/// Install the function that resolves a [`CursorIcon`](crate::window::CursorIcon)
+/// to an `NSCursor *` (+0, kept alive by the embedder; null = Tao's own cursor).
+/// Idempotent: the first installed hook wins. Called on the main thread from
+/// `resetCursorRects`; it must not throw an Objective-C exception.
+pub fn set_cursor_hook(hook: fn(crate::window::CursorIcon) -> *mut c_void) {
+  let _ = CURSOR_HOOK.set(hook);
 }

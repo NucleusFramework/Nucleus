@@ -1,9 +1,11 @@
 // Process information: enumeration, memory, CPU, status, paths.
-// Sources: CreateToolhelp32Snapshot, OpenProcess, GetProcessMemoryInfo, GetProcessTimes
+// Sources: CreateToolhelp32Snapshot, OpenProcess, GetProcessMemoryInfo, GetProcessTimes,
+// NtQueryInformationProcess
 
 #include "nucleus_system_info_common.h"
 #include <tlhelp32.h>
 #include <psapi.h>
+#include <winternl.h>
 
 #define MAX_PROCS 8192
 
@@ -34,7 +36,7 @@ static ULONGLONG filetime_to_unix(const FILETIME *ft) {
     return (uli.QuadPart - 116444736000000000ULL) / 10000000ULL;
 }
 
-static void get_process_details(process_entry_t *p) {
+static void reset_process_details(process_entry_t *p) {
     p->exe[0] = '\0';
     p->cmd[0] = '\0';
     p->cwd[0] = '\0';
@@ -44,17 +46,9 @@ static void get_process_details(process_entry_t *p) {
     strcpy(p->status, "Run");
     p->start_time = 0;
     p->run_time = 0;
+}
 
-    // Try full access first, then limited
-    HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, p->pid);
-    if (!hProc) {
-        hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, p->pid);
-    }
-    if (!hProc) {
-        strcpy(p->status, "Unknown");
-        return;
-    }
-
+static void read_process_details(process_entry_t *p, HANDLE hProc) {
     // Executable path
     wchar_t wexe[MAX_PATH];
     DWORD exe_size = MAX_PATH;
@@ -94,7 +88,21 @@ static void get_process_details(process_entry_t *p) {
             strcpy(p->status, "Unknown");
         }
     }
+}
 
+static void get_process_details(process_entry_t *p) {
+    reset_process_details(p);
+
+    // Try full access first, then limited
+    HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, p->pid);
+    if (!hProc) {
+        hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, p->pid);
+    }
+    if (!hProc) {
+        strcpy(p->status, "Unknown");
+        return;
+    }
+    read_process_details(p, hProc);
     CloseHandle(hProc);
 }
 
@@ -132,12 +140,9 @@ static void refresh_processes(void) {
     CloseHandle(snap);
 }
 
-// Helper: fill a single process entry by PID
-static int fill_single_process(DWORD pid, process_entry_t *p) {
-    memset(p, 0, sizeof(*p));
-    p->pid = pid;
-
-    // Get name from snapshot
+// Name and parent PID from a snapshot: the fallback for a process that can't be opened
+// (access denied, pid 0) or named through its handle (System, Registry).
+static int snapshot_name_and_ppid(DWORD pid, process_entry_t *p) {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return 0;
 
@@ -159,10 +164,54 @@ static int fill_single_process(DWORD pid, process_entry_t *p) {
         } while (Process32NextW(snap, &pe));
     }
     CloseHandle(snap);
+    return found;
+}
 
-    if (!found) return 0;
-    get_process_details(p);
-    return 1;
+typedef NTSTATUS (NTAPI *nt_query_information_process_fn)(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
+
+static BOOL query_parent_pid(HANDLE hProc, DWORD *ppid) {
+    static nt_query_information_process_fn query = NULL;
+    if (!query) {
+        query = (nt_query_information_process_fn)GetProcAddress(
+            GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
+        if (!query) return FALSE;
+    }
+    PROCESS_BASIC_INFORMATION pbi;
+    if (query(hProc, ProcessBasicInformation, &pbi, sizeof(pbi), NULL) < 0) return FALSE;
+    *ppid = (DWORD)(ULONG_PTR)pbi.Reserved3; // InheritedFromUniqueProcessId
+    return TRUE;
+}
+
+// Fill a single process entry by PID through one handle, without a snapshot.
+static int fill_single_process(DWORD pid, process_entry_t *p) {
+    memset(p, 0, sizeof(*p));
+    p->pid = pid;
+
+    HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProc) {
+        if (!snapshot_name_and_ppid(pid, p)) return 0;
+        get_process_details(p);
+        return 1;
+    }
+    // OpenProcess ignores the low two bits of the pid, so pid + 1 would open pid.
+    if (GetProcessId(hProc) != pid) {
+        CloseHandle(hProc);
+        return 0;
+    }
+    reset_process_details(p);
+    read_process_details(p, hProc);
+    BOOL has_ppid = query_parent_pid(hProc, &p->ppid);
+
+    int found = 1;
+    const char *base = strrchr(p->exe, '\\');
+    if (base && has_ppid) {
+        strncpy(p->name, base + 1, sizeof(p->name) - 1);
+    } else {
+        // Still holding the handle, so the pid can't be reused by the time the snapshot names it.
+        found = snapshot_name_and_ppid(pid, p);
+    }
+    CloseHandle(hProc);
+    return found;
 }
 
 // --- JNI bulk process functions ---
@@ -320,102 +369,43 @@ Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativ
 
 // --- Single process by PID ---
 
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidName(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.name);
+// Slots of nativeProcessByPid's arrays, mirrored in NativeWindowsSystemInfoBridge.
+enum { PROCESS_LONG_PARENT_PID, PROCESS_LONG_MEMORY, PROCESS_LONG_VIRTUAL_MEMORY,
+       PROCESS_LONG_START_TIME, PROCESS_LONG_RUN_TIME, PROCESS_LONG_COUNT };
+enum { PROCESS_STRING_NAME, PROCESS_STRING_EXE, PROCESS_STRING_STATUS, PROCESS_STRING_CMD,
+       PROCESS_STRING_CWD, PROCESS_STRING_ROOT, PROCESS_STRING_COUNT };
+
+static void set_string_slot(JNIEnv *env, jobjectArray strings, int slot, const char *value) {
+    jstring js = to_jstring(env, value);
+    (*env)->SetObjectArrayElement(env, strings, slot, js);
+    if (js) (*env)->DeleteLocalRef(env, js);
 }
 
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidExe(
-    JNIEnv *env, jclass clazz, jlong pid) {
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPid(
+    JNIEnv *env, jclass clazz, jlong pid, jlongArray longs, jobjectArray strings) {
     process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.exe);
-}
+    if (!fill_single_process((DWORD)pid, &p)) return JNI_FALSE;
 
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidMemory(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0;
-    return (jlong)p.memory;
-}
+    jlong values[PROCESS_LONG_COUNT];
+    values[PROCESS_LONG_PARENT_PID] = (jlong)p.ppid;
+    values[PROCESS_LONG_MEMORY] = (jlong)p.memory;
+    values[PROCESS_LONG_VIRTUAL_MEMORY] = (jlong)p.virtual_mem;
+    values[PROCESS_LONG_START_TIME] = (jlong)p.start_time;
+    values[PROCESS_LONG_RUN_TIME] = (jlong)p.run_time;
+    (*env)->SetLongArrayRegion(env, longs, 0, PROCESS_LONG_COUNT, values);
 
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidVirtualMemory(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0;
-    return (jlong)p.virtual_mem;
-}
-
-JNIEXPORT jfloat JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCpuUsage(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0.0f;
-    return p.cpu_usage;
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidStatus(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.status);
-}
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidStartTime(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0;
-    return (jlong)p.start_time;
-}
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidRunTime(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return 0;
-    return (jlong)p.run_time;
-}
-
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidParentPid(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return -1;
-    return (jlong)p.ppid;
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCmd(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.cmd);
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCwd(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
-    return to_jstring(env, p.cwd);
-}
-
-JNIEXPORT jstring JNICALL
-Java_dev_nucleusframework_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidRoot(
-    JNIEnv *env, jclass clazz, jlong pid) {
-    process_entry_t p;
-    if (!fill_single_process((DWORD)pid, &p)) return NULL;
+    char root[4] = { 0 };
     if (p.exe[0] && p.exe[1] == ':') {
-        char root[4] = { p.exe[0], ':', '\\', '\0' };
-        return to_jstring(env, root);
+        root[0] = p.exe[0];
+        root[1] = ':';
+        root[2] = '\\';
     }
-    return NULL;
+    set_string_slot(env, strings, PROCESS_STRING_NAME, p.name);
+    set_string_slot(env, strings, PROCESS_STRING_EXE, p.exe);
+    set_string_slot(env, strings, PROCESS_STRING_STATUS, p.status);
+    set_string_slot(env, strings, PROCESS_STRING_CMD, p.cmd);
+    set_string_slot(env, strings, PROCESS_STRING_CWD, p.cwd);
+    set_string_slot(env, strings, PROCESS_STRING_ROOT, root[0] ? root : NULL);
+    return JNI_TRUE;
 }

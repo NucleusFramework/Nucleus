@@ -28,12 +28,33 @@ static id sMouseDownMonitor = nil;
 static NSEvent *sLastMouseDownEvent = nil;
 static NSLock *sLock = nil;
 
+// A child window (a dialog attached with `addChildWindow:`) detached from its
+// parent for the length of a drag. AppKit moves a child window itself, at
+// ~14 Hz, where WindowServer moves a top-level one with every mouse event: the
+// dialog lagged far behind the pointer, with the native title-bar drag too.
+// Main thread only.
+static __weak NSWindow *sDetachedChild = nil;
+static __weak NSWindow *sDetachedParent = nil;
+
+static void reattach_dragged_child(void) {
+    NSWindow *child = sDetachedChild;
+    NSWindow *parent = sDetachedParent;
+    sDetachedChild = nil;
+    sDetachedParent = nil;
+    // Closed meanwhile, or given another owner: leave it as it is.
+    if (child == nil || parent == nil || child.parentWindow != nil) return;
+    if (!child.isVisible || !parent.isVisible) return;
+    [parent addChildWindow:child ordered:NSWindowAbove];
+}
+
 static void ensure_lock(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{ sLock = [[NSLock alloc] init]; });
 }
 
-// Installs a global NSEvent local monitor that latches every NSLeftMouseDown.
+// Installs a global NSEvent local monitor that latches every NSLeftMouseDown
+// and ends a child window's detached drag on the NSLeftMouseUp (AppKit still
+// delivers it after the WindowServer-driven move).
 // Idempotent — safe to call from any thread.
 void nucleus_tao_install_drag_monitor(void) {
     ensure_lock();
@@ -45,11 +66,15 @@ void nucleus_tao_install_drag_monitor(void) {
         return;
     }
     sMouseDownMonitor = [NSEvent
-        addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown
+        addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskLeftMouseUp
         handler:^NSEvent * _Nullable(NSEvent * _Nonnull event) {
-            [sLock lock];
-            sLastMouseDownEvent = event;
-            [sLock unlock];
+            // A press also ends it, should the release have been lost.
+            reattach_dragged_child();
+            if (event.type == NSEventTypeLeftMouseDown) {
+                [sLock lock];
+                sLastMouseDownEvent = event;
+                [sLock unlock];
+            }
             return event;
         }];
 }
@@ -57,8 +82,12 @@ void nucleus_tao_install_drag_monitor(void) {
 // Posts `performWindowDragWithEvent:` to the next main-runloop tick using the
 // most recently captured NSLeftMouseDown event. Falls back to the current
 // event if no mouseDown has been captured yet.
+int nucleus_tao_begin_touch_window_drag(long ns_window_ptr); // direct_touch.m
+
 void nucleus_tao_start_window_drag(long ns_window_ptr) {
     if (ns_window_ptr == 0) return;
+    // A finger on the title bar (#892): the touch forwarder moves the window.
+    if ([NSThread isMainThread] && nucleus_tao_begin_touch_window_drag(ns_window_ptr)) return;
     ensure_lock();
 
     [sLock lock];
@@ -86,7 +115,19 @@ void nucleus_tao_start_window_drag(long ns_window_ptr) {
             // JNI's `JniMacTitleBar.m::nativeStartWindowDrag` path.
             BOOL needsRestore = ![w isMovable];
             if (needsRestore) [w setMovable:YES];
+            // Drag a child window as a top-level one; the mouse-up monitor
+            // puts it back under its parent (see `sDetachedChild`).
+            NSWindow *parent = w.parentWindow;
+            if (parent != nil && sMouseDownMonitor != nil) {
+                reattach_dragged_child();
+                [parent removeChildWindow:w];
+                sDetachedChild = w;
+                sDetachedParent = parent;
+            }
             [w performWindowDragWithEvent:savedEvent];
+            // Already released (a quick flick, or a drag AppKit ran to its end
+            // in here, swallowing the mouse-up the monitor waits for).
+            if (([NSEvent pressedMouseButtons] & 1) == 0) reattach_dragged_child();
             if (needsRestore) [w setMovable:NO];
         }
     });

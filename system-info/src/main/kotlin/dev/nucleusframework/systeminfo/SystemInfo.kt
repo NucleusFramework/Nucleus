@@ -15,8 +15,11 @@ import dev.nucleusframework.systeminfo.model.NetworkInterfaceInfo
 import dev.nucleusframework.systeminfo.model.OsInfo
 import dev.nucleusframework.systeminfo.model.ProcessInfo
 import dev.nucleusframework.systeminfo.model.ProductInfo
+import dev.nucleusframework.systeminfo.model.RenderTier
 import dev.nucleusframework.systeminfo.model.UserInfo
 import dev.nucleusframework.systeminfo.windows.WindowsSystemInfo
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @Suppress("TooManyFunctions")
 public object SystemInfo {
@@ -54,9 +57,37 @@ public object SystemInfo {
 
     public fun gpus(): List<GpuInfo> = delegate?.gpus() ?: emptyList()
 
+    /**
+     * How well the default GPU handles 3D content: [RenderTier.SOFTWARE] or [RenderTier.LEGACY] mean a 3D
+     * engine should be turned off. Probed once (Windows: the default DXGI adapter's Direct3D feature level;
+     * Linux: a throwaway GL ES context; macOS: the default Metal device), then cached. The probe loads the GPU
+     * driver, which can take tens of milliseconds the first time: call it off the UI thread.
+     */
+    public fun renderTier(): RenderTier = delegate?.renderTier() ?: RenderTier.UNKNOWN
+
     public fun batteryInfo(): BatteryInfo? = delegate?.batteryInfo()
 
     public fun idleTime(): Long = delegate?.idleTime() ?: -1L
 
     public fun connectivityInfo(): ConnectivityInfo? = delegate?.connectivityInfo()
+
+    /**
+     * Observes network connectivity: emits the current [ConnectivityInfo] when collected,
+     * then every change, until the collection is cancelled.
+     *
+     * All collectors share a single native monitor, started with the first one and
+     * stopped with the last. Consecutive identical states are never emitted.
+     *
+     * Linux watches the xdg-desktop-portal NetworkMonitor, falling back to NetworkManager;
+     * when neither is reachable the flow emits a single state with
+     * [dev.nucleusframework.systeminfo.model.ConnectivityLevel.UNKNOWN]. macOS watches
+     * `NWPathMonitor`, which does not probe the internet: a usable path reports
+     * [dev.nucleusframework.systeminfo.model.ConnectivityLevel.FULL], and Low Data Mode counts
+     * as metered. Windows watches the Network List Manager, whose NCSI probe tells a
+     * routed network without internet
+     * ([dev.nucleusframework.systeminfo.model.ConnectivityLevel.LIMITED]) from a captive
+     * portal; metered comes from `INetworkCostManager`. The flow is empty on unsupported
+     * platforms.
+     */
+    public fun connectivityFlow(): Flow<ConnectivityInfo> = delegate?.connectivityChanges() ?: emptyFlow()
 }

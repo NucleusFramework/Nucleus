@@ -5,12 +5,11 @@ import dev.nucleusframework.taskbarprogress.TaskbarProgress
 import java.util.concurrent.Executors
 
 /**
- * Backend-agnostic taskbar/dock façade taking a [NucleusWindow]. Dispatches
- * to the AWT-typed [TaskbarProgress] when the window is AWT-backed (JBR / JNI
- * decorated windows) or to [TaoTaskbarProgress] when it is Tao-backed.
+ * Taskbar/dock façade taking a [NucleusWindow] and dispatching to
+ * [TaoTaskbarProgress].
  *
  * App code should prefer this entry point over the backend-specific objects:
- * a project can swap backends without touching call sites.
+ * call sites stay portable if the window type ever changes.
  *
  * **Threading**: every call is offloaded to a dedicated daemon worker. The
  * underlying Windows API (`ITaskbarList3`) internally uses `SendMessage` and
@@ -33,7 +32,6 @@ public object NucleusTaskbarProgress {
     ): Boolean =
         dispatch(
             window,
-            awt = { TaskbarProgress.setProgress(it, value) },
             tao = { TaoTaskbarProgress.setProgress(it, value) },
         )
 
@@ -43,7 +41,6 @@ public object NucleusTaskbarProgress {
     ): Boolean =
         dispatch(
             window,
-            awt = { TaskbarProgress.setState(it, state) },
             tao = { TaoTaskbarProgress.setState(it, state) },
         )
 
@@ -53,7 +50,6 @@ public object NucleusTaskbarProgress {
     ): Boolean =
         dispatch(
             window,
-            awt = { TaskbarProgress.showProgress(it, value) },
             tao = { TaoTaskbarProgress.showProgress(it, value) },
         )
 
@@ -63,14 +59,12 @@ public object NucleusTaskbarProgress {
     ): Boolean =
         dispatch(
             window,
-            awt = { TaskbarProgress.showError(it, value) },
             tao = { TaoTaskbarProgress.showError(it, value) },
         )
 
     public fun showIndeterminate(window: NucleusWindow): Boolean =
         dispatch(
             window,
-            awt = { TaskbarProgress.showIndeterminate(it) },
             tao = { TaoTaskbarProgress.showIndeterminate(it) },
         )
 
@@ -80,14 +74,12 @@ public object NucleusTaskbarProgress {
     ): Boolean =
         dispatch(
             window,
-            awt = { TaskbarProgress.showPaused(it, value) },
             tao = { TaoTaskbarProgress.showPaused(it, value) },
         )
 
     public fun hideProgress(window: NucleusWindow): Boolean =
         dispatch(
             window,
-            awt = { TaskbarProgress.hideProgress(it) },
             tao = { TaoTaskbarProgress.hideProgress(it) },
         )
 
@@ -97,30 +89,21 @@ public object NucleusTaskbarProgress {
     ): Boolean =
         dispatch(
             window,
-            awt = { TaskbarProgress.requestAttention(it, type) },
             tao = { TaoTaskbarProgress.requestAttention(it, type) },
         )
 
     public fun stopAttention(window: NucleusWindow): Boolean =
         dispatch(
             window,
-            awt = { TaskbarProgress.stopAttention(it) },
             tao = { TaoTaskbarProgress.stopAttention(it) },
         )
 
     private inline fun dispatch(
         window: NucleusWindow,
-        crossinline awt: (java.awt.Window) -> Boolean,
         crossinline tao: (dev.nucleusframework.window.tao.TaoWindow) -> Boolean,
     ): Boolean {
-        val awtWindow = window.unsafe.awtWindow
-        val taoWindow = window.unsafe.taoWindow
-        if (awtWindow == null && taoWindow == null) return false
-        worker.submit {
-            runCatching {
-                if (awtWindow != null) awt(awtWindow) else tao(taoWindow!!)
-            }
-        }
+        val taoWindow = window.unsafe.taoWindow ?: return false
+        worker.submit { runCatching { tao(taoWindow) } }
         return true
     }
 }

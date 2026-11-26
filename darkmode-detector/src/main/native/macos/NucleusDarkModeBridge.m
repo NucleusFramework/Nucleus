@@ -1,5 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 // Cached JavaVM pointer, set in JNI_OnLoad
 static JavaVM *g_jvm = NULL;
@@ -67,9 +68,7 @@ Java_dev_nucleusframework_darkmodedetector_mac_NativeDarkModeBridge_nativeStartO
                             }
                         }
 
-                        if ((*cbEnv)->ExceptionCheck(cbEnv)) {
-                            (*cbEnv)->ExceptionClear(cbEnv);
-                        }
+                        nucleus_jni_clear_exception(cbEnv);
 
                         if (didAttach) {
                             (*g_jvm)->DetachCurrentThread(g_jvm);

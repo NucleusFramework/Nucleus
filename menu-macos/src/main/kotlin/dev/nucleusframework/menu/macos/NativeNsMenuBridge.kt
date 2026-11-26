@@ -22,11 +22,11 @@ internal object NativeNsMenuBridge {
 
     // Menu actions/delegates fire from the AppKit main thread (JNI) and must be
     // marshalled to the host's Compose UI thread. Dispatchers.Main resolves to
-    // the right thread per backend — the Swing EDT under the AWT backend, the
-    // Tao main thread under the Tao backend (TaoMainDispatcherFactory). Using
-    // SwingUtilities.invokeLater instead posted to the AWT EDT, which is NOT
-    // Compose's UI thread in the Tao backend, so the callbacks were silently
-    // dropped there — no menu action, no delegate event (issue #310).
+    // the right thread per host — the Tao main thread under Nucleus
+    // (TaoMainDispatcherFactory), the Swing EDT in a plain AWT/Compose Desktop
+    // app. Using SwingUtilities.invokeLater instead posted to the AWT EDT,
+    // which is NOT Compose's UI thread under Tao, so the callbacks were
+    // silently dropped there — no menu action, no delegate event (issue #310).
     private val uiScope = CoroutineScope(Dispatchers.Main)
 
     // ---- Action callbacks (handle → callback) ----

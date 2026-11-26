@@ -18,6 +18,7 @@ site
 
 # Claude Code per-user settings
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Native libraries (built on CI via build-natives.yaml)
 **/src/main/resources/nucleus/native/
@@ -48,11 +49,6 @@ decorated-window-tao/src/main/native/vendor/**/.cargo-ok
 # IDE temporary lock files
 .*~
 
-# tao-demo Windows native build artifacts (NuGet-fetched WebView2 SDK,
-# generated MSVC outputs)
-examples/tao-demo/src/main/native/windows/packages/
-examples/tao-demo/src/main/native/windows/nuget.exe
-examples/tao-demo/src/main/native/windows/build_log.txt
 
 # GraalVM native-image build output (agent metadata, static analysis, repo
 # metadata). PGO profiles under graalvm/pgo/ are committed intentionally and
@@ -62,6 +58,9 @@ examples/tao-demo/src/main/native/windows/build_log.txt
 **/graalvm/staticAnalysis/
 **/graalvm/libraryMetadata/
 **/graalvm/metadataRepoDirs.txt
+
+# Compiled Python caches (local helper scripts)
+__pycache__/
 
 # JVM crash logs
 hs_err_pid*.log

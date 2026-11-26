@@ -50,6 +50,24 @@ int nucleus_tao_query_text_input_client(
     return 1;
 }
 
+/// Headful e2e: the rect the swizzled `firstRectForCharacterRange:` hands
+/// AppKit — the anchor of the IME candidate window *and* of the input-source
+/// indicator. [out_rect] is 4×double (x, y, w, h) in Cocoa screen coordinates;
+/// an all-zero rect is the client saying "no insertion point here".
+int nucleus_tao_query_ime_rect(int64_t ns_view_ptr, double *out_rect) {
+    if (ns_view_ptr == 0 || out_rect == NULL) {
+        return 0;
+    }
+    NSView *view = (__bridge NSView *)(void *)(intptr_t)ns_view_ptr;
+    NSRect rect = [(id<NSTextInputClient>)view firstRectForCharacterRange:NSMakeRange(0, 0)
+                                                              actualRange:NULL];
+    out_rect[0] = rect.origin.x;
+    out_rect[1] = rect.origin.y;
+    out_rect[2] = rect.size.width;
+    out_rect[3] = rect.size.height;
+    return 1;
+}
+
 int nucleus_tao_inject_marked_text(
     int64_t ns_view_ptr,
     const char *utf8,

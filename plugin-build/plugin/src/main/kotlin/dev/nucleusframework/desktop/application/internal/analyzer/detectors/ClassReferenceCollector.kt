@@ -74,11 +74,11 @@ internal object ClassReferenceCollector {
                     override fun visitField(
                         access: Int,
                         name: String?,
-                        descriptor: String?,
+                        fieldDescriptor: String?,
                         signature: String?,
                         value: Any?,
                     ): FieldVisitor {
-                        addDescriptor(descriptor, refs)
+                        addDescriptor(fieldDescriptor, refs)
                         parseSignature(signature, refs)
                         if (value is Type) addType(value, refs)
                         return object : FieldVisitor(Opcodes.ASM9) {

@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import dev.nucleusframework.window.tao.scene.ensureSkikoComposeBackend
 
 /**
  * Rasterises a [Painter] into a row-major premultiplied RGBA byte array suitable
@@ -18,6 +19,8 @@ import androidx.compose.ui.unit.LayoutDirection
  * intrinsic size — Tao requires explicit dimensions.
  */
 internal fun Painter.toRgbaIcon(sizePx: Int = 64): Triple<Int, Int, ByteArray>? {
+    // May run before any scene exists (window / tray icon at startup).
+    ensureSkikoComposeBackend()
     val bitmap = ImageBitmap(sizePx, sizePx, ImageBitmapConfig.Argb8888)
     val canvas = Canvas(bitmap)
     val drawScope = CanvasDrawScope()

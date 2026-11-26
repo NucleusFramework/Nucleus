@@ -4,6 +4,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.window.tao.TaoMouseButton
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledFuture
@@ -59,6 +60,10 @@ internal abstract class AbstractTaoComposeSceneHost {
     private var a11yFuture: ScheduledFuture<*>? = null
     private var a11yFirstRequestNs = 0L
 
+    // Gate of the walk parked while no AT client listens; resumed by [TaoA11yActivation].
+    @Volatile
+    private var a11yParkedGate: (() -> Boolean)? = null
+
     /**
      * Schedules [block] (a SemanticsOwner walk + snapshot push) to run after
      * changes settle. Coalesces a burst of per-frame change notifications into
@@ -97,16 +102,21 @@ internal abstract class AbstractTaoComposeSceneHost {
                                 dispatchA11yWalk { exceptionHandler.catchExceptions(b) }
                             }
                         } else {
-                            // No AT client is listening: park the walk and poll the
-                            // activation gate at a slow cadence instead of dropping
-                            // it. An AX client that connects while the scene is idle
-                            // would otherwise wait for the NEXT semantics change —
-                            // which never comes on a static scene, leaving the AT
-                            // with the 1-node seed tree. The poll is one JNI flag
-                            // read per tick; the render loop is only woken once the
-                            // gate opens.
+                            // No AT client is listening: park the walk instead of
+                            // dropping it. An AX client that connects while the scene
+                            // is idle would otherwise wait for the NEXT semantics
+                            // change — which never comes on a static scene, leaving
+                            // the AT with the 1-node seed tree. The native side
+                            // signals the activation (NativeTaoBridge.onA11yActivated),
+                            // so an idle app stays fully asleep instead of polling.
                             a11yFirstRequestNs = 0L
-                            scheduleA11yFire(gate, A11Y_ACTIVATION_POLL_MS)
+                            a11yParkedGate = gate
+                            TaoA11yActivation.park(this)
+                            // An activation signalled before the park would be missed.
+                            if (gate()) {
+                                TaoA11yActivation.unpark(this)
+                                resumeParkedA11ySync()
+                            }
                         }
                     },
                     delayMs,
@@ -115,6 +125,13 @@ internal abstract class AbstractTaoComposeSceneHost {
             } catch (_: RejectedExecutionException) {
                 null
             }
+    }
+
+    /** Re-runs the parked walk now that an AT client is listening. */
+    internal fun resumeParkedA11ySync() {
+        val gate = a11yParkedGate ?: return
+        a11yParkedGate = null
+        if (!a11yScheduler.isShutdown) scheduleA11yFire(gate, 0L)
     }
 
     /**
@@ -129,6 +146,8 @@ internal abstract class AbstractTaoComposeSceneHost {
     protected fun shutdownA11yScheduler() {
         a11yFuture?.cancel(false)
         a11yScheduler.shutdownNow()
+        a11yParkedGate = null
+        TaoA11yActivation.unpark(this)
     }
 
     /** Maps a Tao mouse-button code to Compose's [PointerButton]. */
@@ -137,13 +156,35 @@ internal abstract class AbstractTaoComposeSceneHost {
             TaoMouseButton.LEFT -> PointerButton.Primary
             TaoMouseButton.RIGHT -> PointerButton.Secondary
             TaoMouseButton.MIDDLE -> PointerButton.Tertiary
+            TaoMouseButton.BACK -> PointerButton.Back
+            TaoMouseButton.FORWARD -> PointerButton.Forward
             else -> PointerButton.Primary
         }
 
     protected companion object {
         const val A11Y_SYNC_DEBOUNCE_MS: Long = 120L
         const val A11Y_SYNC_MAX_WAIT_MS: Long = 600L
-        const val A11Y_ACTIVATION_POLL_MS: Long = 250L
         private const val NANOS_PER_MS: Long = 1_000_000L
+    }
+}
+
+/** Hosts whose semantics walk is parked until an AT client connects. */
+internal object TaoA11yActivation {
+    private val parked = ConcurrentHashMap.newKeySet<AbstractTaoComposeSceneHost>()
+
+    fun park(host: AbstractTaoComposeSceneHost) {
+        parked.add(host)
+    }
+
+    fun unpark(host: AbstractTaoComposeSceneHost) {
+        parked.remove(host)
+    }
+
+    /** Called from native when an AT client starts listening. */
+    fun onActivated() {
+        for (host in parked.toList()) {
+            parked.remove(host)
+            host.resumeParkedA11ySync()
+        }
     }
 }

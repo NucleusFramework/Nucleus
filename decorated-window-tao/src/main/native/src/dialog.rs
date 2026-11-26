@@ -427,7 +427,7 @@ fn show_error_dialog(title: &str, message: &str, detail: &str) {
         // the Tao loop has exited and every Tao window is destroyed by the
         // time the fatal path runs. Note the dialog is NOT modal to anything
         // (this fresh thread owns no other windows), so surviving foreign
-        // windows (e.g. a Swing JFrame in the swing-tao-demo interop mode)
+        // windows (e.g. a Swing JFrame in the Lab's swing-tao fixture)
         // stay interactive behind it.
         if !detail.is_empty() {
             let template = fatal_dialog_template(&title, &message);

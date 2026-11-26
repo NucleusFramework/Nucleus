@@ -15,11 +15,13 @@ import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.ContentChangeMode
+import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
+import java.lang.ref.Cleaner
 
 /**
  * macOS implementation of [TextureView]. The producer's `IOSurface` (or
@@ -170,6 +172,9 @@ private val metalTextureImports =
         closeImport = { it.close() },
     )
 
+/** Whether any `TextureView` import is currently alive on [context] — the headful suite's leak probe. */
+internal fun hasMetalTextureImports(context: DirectContext): Boolean = metalTextureImports.hasImportsFor(context)
+
 private fun importTexture(
     host: TaoMetalTextureHost,
     source: TextureViewSource,
@@ -238,5 +243,31 @@ private fun importTexture(
             return@runOnRenderThread null
         }
         MacImportedTexture(handle, host, renderTarget, surface, widthPx, heightPx)
+    }
+}
+
+/**
+ * Keeps [IOSurfaceTextureSource.ioSurface] alive for the source's lifetime:
+ * the producer may `CFRelease` on close while a `TextureView` still holds
+ * the source (and may remount it). The matching release runs when the
+ * source is collected. No-op when the Metal bridge is not loaded.
+ */
+internal fun retainIoSurfaceForSource(source: IOSurfaceTextureSource) {
+    val ptr = source.ioSurface
+    if (ptr == 0L || !NativeTaoMacOsTextureBridge.isLoaded) return
+    if (!NativeTaoMacOsTextureBridge.nativeRetainIOSurface(ptr)) return
+    ioSurfaceCleaner.register(source, IoSurfaceRelease(ptr))
+}
+
+private val ioSurfaceCleaner: Cleaner = Cleaner.create()
+
+/** Must not capture the source, or the Cleaner would never run. */
+private class IoSurfaceRelease(
+    private val ptr: Long,
+) : Runnable {
+    override fun run() {
+        if (NativeTaoMacOsTextureBridge.isLoaded) {
+            NativeTaoMacOsTextureBridge.nativeReleaseIOSurface(ptr)
+        }
     }
 }

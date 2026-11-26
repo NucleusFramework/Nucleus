@@ -52,7 +52,7 @@ COMMON_FLAGS=(
     -O2
     -fvisibility=hidden
     -Wl,--strip-all
-    -ldl -lm
+    -ldl -lm -pthread
 )
 
 ARCH=$(uname -m)

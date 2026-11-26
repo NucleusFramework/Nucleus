@@ -13,12 +13,12 @@ import java.io.InputStream;
 /**
  * GraalVM native-image substitution for {@link Font#createFont(int, InputStream)}.
  * <p>
- * In GraalVM native image on Windows and Linux, classpath resource InputStreams may not work
+ * In GraalVM native image, classpath resource InputStreams may not work
  * correctly with the native font parsing code in {@code createFont0()}, causing
  * {@code IOException: Problem reading font data}. This substitution buffers the
  * stream data to a temp file and delegates to the File-based overload.
  */
-@TargetClass(value = java.awt.Font.class, onlyWith = IsWindowsOrLinux.class)
+@TargetClass(java.awt.Font.class)
 final class Target_java_awt_Font {
 
     @Substitute

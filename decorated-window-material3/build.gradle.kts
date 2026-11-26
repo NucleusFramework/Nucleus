@@ -15,10 +15,8 @@ val publishVersion =
         ?: "1.0.0"
 
 dependencies {
-    // Compile against all backends — consumers pick exactly one at runtime:
-    //  :decorated-window-jbr (JBR), :decorated-window-jni (any JVM), or
-    //  :decorated-window-tao (no-AWT native).
-    compileOnly(project(":decorated-window-jbr"))
+    // Window/dialog wrappers only add styling on top of nucleus-application's
+    // Tao-backed window; the app brings both at runtime.
     compileOnly(project(":decorated-window-tao"))
     compileOnly(project(":nucleus-application"))
     api(project(":core-runtime"))

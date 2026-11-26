@@ -7,22 +7,36 @@
  * Methods: Notify, CloseNotification, GetCapabilities, GetServerInformation
  * Signals: NotificationClosed, ActionInvoked, ActivationToken
  *
+ * Inside a Flatpak sandbox (/.flatpak-info) the same calls go through the notification portal
+ * (org.freedesktop.portal.Notification) instead, which needs no D-Bus permission in the manifest:
+ * AddNotification / RemoveNotification, and its ActionInvoked signal. The portal has no close
+ * signal, no expiry timeout, no sound and no raw image data; the rest maps over (see portal_notify).
+ *
  * Dependencies: GLib/GIO (libgio-2.0)
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <gio/gio.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <unistd.h>
 
 /* ---- D-Bus constants -------------------------------------------------- */
 
 #define SERVICE_NAME "org.freedesktop.Notifications"
 #define OBJECT_PATH  "/org/freedesktop/Notifications"
 #define INTERFACE    "org.freedesktop.Notifications"
+
+#define PORTAL_NAME      "org.freedesktop.portal.Desktop"
+#define PORTAL_PATH      "/org/freedesktop/portal/desktop"
+#define PORTAL_INTERFACE "org.freedesktop.portal.Notification"
+
+/* An image the portal is handed as bytes is read whole: keep it to icon sizes. */
+#define PORTAL_MAX_ICON_BYTES (4 * 1024 * 1024)
 
 /* Sentinel for "position hint not set" — matches Int.MIN_VALUE in Kotlin */
 #define POS_NOT_SET  INT32_MIN
@@ -46,6 +60,10 @@ static jclass    g_bridge_class      = NULL;
 static jmethodID g_on_closed_method  = NULL;
 static jmethodID g_on_action_method  = NULL;
 static jmethodID g_on_token_method   = NULL;
+
+/* Portal mode: -1 unknown, 0 direct D-Bus, 1 portal. Ids the portal knows us by, as decimal strings. */
+static volatile int g_use_portal = -1;
+static volatile gint g_portal_next_id = 0;
 
 /* ---- JNI lifecycle ---------------------------------------------------- */
 
@@ -96,6 +114,59 @@ static GDBusConnection *get_connection(void) {
     return g_conn;
 }
 
+/* ---- String conversion ------------------------------------------------ */
+
+/*
+ * GetStringUTFChars / NewStringUTF speak JNI *modified* UTF-8, which encodes
+ * supplementary characters (most emoji) as two 3-byte surrogates. GLib rejects
+ * that for the D-Bus "s" type and substitutes "[Invalid UTF-8]" (#844), so all
+ * strings cross the boundary as UTF-16 and are converted with GLib instead.
+ */
+
+/* Returns a standard UTF-8 copy of a Java string (g_free it), or NULL. */
+static gchar *jstring_to_utf8(JNIEnv *env, jstring str) {
+    if (str == NULL) return NULL;
+
+    jsize len = (*env)->GetStringLength(env, str);
+    const jchar *chars = (*env)->GetStringChars(env, str, NULL);
+    if (chars == NULL) return NULL;
+
+    /* Java strings may hold lone surrogates, which g_utf16_to_utf8 rejects:
+     * replace them with U+FFFD, like String.getBytes(UTF_8) does with '?'. */
+    gunichar2 *units = g_new(gunichar2, len > 0 ? len : 1);
+    for (jsize i = 0; i < len; i++) {
+        gunichar2 c = (gunichar2)chars[i];
+        if (c >= 0xD800 && c <= 0xDBFF && i + 1 < len
+                && chars[i + 1] >= 0xDC00 && chars[i + 1] <= 0xDFFF) {
+            units[i] = c;
+            units[i + 1] = (gunichar2)chars[i + 1];
+            i++;
+        } else if (c >= 0xD800 && c <= 0xDFFF) {
+            units[i] = 0xFFFD;
+        } else {
+            units[i] = c;
+        }
+    }
+    (*env)->ReleaseStringChars(env, str, chars);
+
+    gchar *utf8 = g_utf16_to_utf8(units, (glong)len, NULL, NULL, NULL);
+    g_free(units);
+    return utf8;
+}
+
+/* Returns a Java string built from standard UTF-8, or NULL. */
+static jstring utf8_to_jstring(JNIEnv *env, const gchar *utf8) {
+    if (utf8 == NULL) return NULL;
+
+    glong len = 0;
+    gunichar2 *units = g_utf8_to_utf16(utf8, -1, NULL, &len, NULL);
+    if (units == NULL) return NULL;
+
+    jstring str = (*env)->NewString(env, (const jchar *)units, (jsize)len);
+    g_free(units);
+    return str;
+}
+
 /* ---- JNI callback ID cache ------------------------------------------- */
 
 static int ensure_callback_ids(JNIEnv *env) {
@@ -104,7 +175,7 @@ static int ensure_callback_ids(JNIEnv *env) {
     jclass cls = (*env)->FindClass(env,
         "dev/nucleusframework/notification/linux/NativeLinuxNotificationBridge");
     if (cls == NULL) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         return 0;
     }
     g_bridge_class = (jclass)(*env)->NewGlobalRef(env, cls);
@@ -118,7 +189,7 @@ static int ensure_callback_ids(JNIEnv *env) {
         "onActivationToken", "(ILjava/lang/String;)V");
 
     if (!g_on_closed_method || !g_on_action_method || !g_on_token_method) {
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteGlobalRef(env, g_bridge_class);
         g_bridge_class = NULL;
         return 0;
@@ -126,7 +197,128 @@ static int ensure_callback_ids(JNIEnv *env) {
     return 1;
 }
 
+/* ==== Portal (Flatpak) ================================================== */
+
+/* Flatpak mounts /.flatpak-info in every sandbox; outside it the server is talked to directly. */
+static int use_portal(void) {
+    if (g_use_portal < 0) g_use_portal = access("/.flatpak-info", F_OK) == 0 ? 1 : 0;
+    return g_use_portal;
+}
+
+/* A serialized GIcon for the portal: a file (path or file:// URI) as bytes, else a themed name. */
+static GVariant *portal_icon(const gchar *icon) {
+    if (icon == NULL || icon[0] == '\0') return NULL;
+    gchar *path = g_str_has_prefix(icon, "file://") ? g_filename_from_uri(icon, NULL, NULL) : g_strdup(icon);
+    GVariant *result = NULL;
+    if (path != NULL && g_path_is_absolute(path)) {
+        gchar *contents = NULL;
+        gsize length = 0;
+        if (g_file_get_contents(path, &contents, &length, NULL) && length <= PORTAL_MAX_ICON_BYTES) {
+            GBytes *bytes = g_bytes_new_take(contents, length);
+            GIcon *gicon = g_bytes_icon_new(bytes);
+            result = g_icon_serialize(gicon);
+            g_object_unref(gicon);
+            g_bytes_unref(bytes);
+        } else {
+            g_free(contents);
+        }
+    } else if (path != NULL) {
+        GIcon *gicon = g_themed_icon_new(path);
+        result = g_icon_serialize(gicon);
+        g_object_unref(gicon);
+    }
+    g_free(path);
+    return result;
+}
+
+static const char *portal_priority(jint urgency) {
+    switch (urgency) {
+        case 0: return "low";
+        case 2: return "urgent";
+        default: return "normal";
+    }
+}
+
+/* AddNotification for Notify: returns the id (replaces_id when set), 0 on failure. */
+static jint portal_notify(JNIEnv *env, GDBusConnection *conn, jint replaces_id,
+                          const gchar *app_icon, const gchar *summary, const gchar *body,
+                          jobjectArray j_action_keys, jobjectArray j_action_labels,
+                          jint urgency, jstring j_image_path) {
+    jint id = replaces_id > 0 ? replaces_id : (jint)g_atomic_int_add(&g_portal_next_id, 1) + 1;
+    gchar id_str[16];
+    g_snprintf(id_str, sizeof id_str, "%d", (int)id);
+
+    GVariantBuilder notification;
+    g_variant_builder_init(&notification, G_VARIANT_TYPE("a{sv}"));
+    g_variant_builder_add(&notification, "{sv}", "title", g_variant_new_string(summary));
+    if (body[0] != '\0') g_variant_builder_add(&notification, "{sv}", "body", g_variant_new_string(body));
+    if (urgency >= 0) {
+        g_variant_builder_add(&notification, "{sv}", "priority", g_variant_new_string(portal_priority(urgency)));
+    }
+
+    /* The large image wins over the app icon: the portal shows one picture. */
+    gchar *image_path = jstring_to_utf8(env, j_image_path);
+    GVariant *icon = portal_icon(image_path != NULL ? image_path : app_icon);
+    if (icon == NULL && image_path != NULL) icon = portal_icon(app_icon);
+    g_free(image_path);
+    if (icon != NULL) g_variant_builder_add(&notification, "{sv}", "icon", icon);
+
+    /* "default" is the click on the notification itself; every other action is a button.
+     * Names without the "app." prefix come back through the ActionInvoked signal. */
+    GVariantBuilder buttons;
+    g_variant_builder_init(&buttons, G_VARIANT_TYPE("aa{sv}"));
+    gboolean has_buttons = FALSE;
+    jsize num_actions =
+        (j_action_keys != NULL && j_action_labels != NULL) ? (*env)->GetArrayLength(env, j_action_keys) : 0;
+    for (jsize i = 0; i < num_actions; i++) {
+        jstring jk = (jstring)(*env)->GetObjectArrayElement(env, j_action_keys, i);
+        jstring jl = (jstring)(*env)->GetObjectArrayElement(env, j_action_labels, i);
+        gchar *key = jstring_to_utf8(env, jk);
+        gchar *label = jstring_to_utf8(env, jl);
+        if (key != NULL && strcmp(key, "default") == 0) {
+            g_variant_builder_add(&notification, "{sv}", "default-action", g_variant_new_string(key));
+        } else if (key != NULL && label != NULL) {
+            GVariantBuilder button;
+            g_variant_builder_init(&button, G_VARIANT_TYPE("a{sv}"));
+            g_variant_builder_add(&button, "{sv}", "label", g_variant_new_string(label));
+            g_variant_builder_add(&button, "{sv}", "action", g_variant_new_string(key));
+            g_variant_builder_add(&buttons, "a{sv}", &button);
+            has_buttons = TRUE;
+        }
+        g_free(key);
+        g_free(label);
+        (*env)->DeleteLocalRef(env, jk);
+        (*env)->DeleteLocalRef(env, jl);
+    }
+    GVariant *buttons_value = g_variant_builder_end(&buttons);
+    if (has_buttons) {
+        g_variant_builder_add(&notification, "{sv}", "buttons", buttons_value);
+    } else {
+        g_variant_unref(g_variant_ref_sink(buttons_value));
+    }
+
+    GError *error = NULL;
+    GVariant *result = g_dbus_connection_call_sync(conn,
+        PORTAL_NAME, PORTAL_PATH, PORTAL_INTERFACE,
+        "AddNotification", g_variant_new("(s@a{sv})", id_str, g_variant_builder_end(&notification)),
+        NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+    if (error != NULL) {
+        g_error_free(error);
+        return 0;
+    }
+    if (result != NULL) g_variant_unref(result);
+    return id;
+}
+
 /* ==== Notify =========================================================== */
+
+static void add_string_hint(JNIEnv *env, GVariantBuilder *builder,
+                            const char *key, jstring value) {
+    gchar *val = jstring_to_utf8(env, value);
+    if (val == NULL) return;
+    g_variant_builder_add(builder, "{sv}", key, g_variant_new_string(val));
+    g_free(val);
+}
 
 JNIEXPORT jint JNICALL
 Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativeNotify(
@@ -166,11 +358,21 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
     if (conn == NULL) return 0;
 
     /* Get mandatory string parameters */
-    const char *app_name = (*env)->GetStringUTFChars(env, j_app_name, NULL);
-    const char *app_icon = (*env)->GetStringUTFChars(env, j_app_icon, NULL);
-    const char *summary  = (*env)->GetStringUTFChars(env, j_summary, NULL);
-    const char *body     = (*env)->GetStringUTFChars(env, j_body, NULL);
+    gchar *app_name = jstring_to_utf8(env, j_app_name);
+    gchar *app_icon = jstring_to_utf8(env, j_app_icon);
+    gchar *summary  = jstring_to_utf8(env, j_summary);
+    gchar *body     = jstring_to_utf8(env, j_body);
     if (!app_name || !app_icon || !summary || !body) goto release_strings;
+
+    if (use_portal()) {
+        jint id = portal_notify(env, conn, replaces_id, app_icon, summary, body,
+                                j_action_keys, j_action_labels, urgency, j_image_path);
+        g_free(app_name);
+        g_free(app_icon);
+        g_free(summary);
+        g_free(body);
+        return id;
+    }
 
     /* ---- Build actions array (as) ---- */
     GVariantBuilder actions_builder;
@@ -181,12 +383,12 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
         for (jsize i = 0; i < num_actions; i++) {
             jstring jk = (jstring)(*env)->GetObjectArrayElement(env, j_action_keys, i);
             jstring jl = (jstring)(*env)->GetObjectArrayElement(env, j_action_labels, i);
-            const char *key   = (*env)->GetStringUTFChars(env, jk, NULL);
-            const char *label = (*env)->GetStringUTFChars(env, jl, NULL);
+            gchar *key   = jstring_to_utf8(env, jk);
+            gchar *label = jstring_to_utf8(env, jl);
             if (key)   g_variant_builder_add(&actions_builder, "s", key);
-            if (label)  g_variant_builder_add(&actions_builder, "s", label);
-            if (key)   (*env)->ReleaseStringUTFChars(env, jk, key);
-            if (label) (*env)->ReleaseStringUTFChars(env, jl, label);
+            if (label) g_variant_builder_add(&actions_builder, "s", label);
+            g_free(key);
+            g_free(label);
             (*env)->DeleteLocalRef(env, jk);
             (*env)->DeleteLocalRef(env, jl);
         }
@@ -202,55 +404,12 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
             g_variant_new_byte((guchar)urgency));
     }
 
-    /* category (STRING) */
-    if (j_category != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_category, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "category",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_category, val);
-        }
-    }
-
-    /* desktop-entry (STRING) */
-    if (j_desktop_entry != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_desktop_entry, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "desktop-entry",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_desktop_entry, val);
-        }
-    }
-
-    /* image-path (STRING) */
-    if (j_image_path != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_image_path, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "image-path",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_image_path, val);
-        }
-    }
-
-    /* sound-file (STRING) */
-    if (j_sound_file != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_sound_file, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "sound-file",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_sound_file, val);
-        }
-    }
-
-    /* sound-name (STRING) */
-    if (j_sound_name != NULL) {
-        const char *val = (*env)->GetStringUTFChars(env, j_sound_name, NULL);
-        if (val) {
-            g_variant_builder_add(&hints_builder, "{sv}", "sound-name",
-                g_variant_new_string(val));
-            (*env)->ReleaseStringUTFChars(env, j_sound_name, val);
-        }
-    }
+    /* STRING hints */
+    add_string_hint(env, &hints_builder, "category", j_category);
+    add_string_hint(env, &hints_builder, "desktop-entry", j_desktop_entry);
+    add_string_hint(env, &hints_builder, "image-path", j_image_path);
+    add_string_hint(env, &hints_builder, "sound-file", j_sound_file);
+    add_string_hint(env, &hints_builder, "sound-name", j_sound_name);
 
     /* suppress-sound (BOOLEAN) */
     if (suppress_sound >= 0) {
@@ -318,12 +477,11 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
         g_variant_builder_end(&hints_builder),
         (gint32)expire_timeout);
 
-    /* Release mandatory strings before the (potentially slow) D-Bus call */
-    (*env)->ReleaseStringUTFChars(env, j_app_name, app_name);
-    (*env)->ReleaseStringUTFChars(env, j_app_icon, app_icon);
-    (*env)->ReleaseStringUTFChars(env, j_summary, summary);
-    (*env)->ReleaseStringUTFChars(env, j_body, body);
-    app_name = app_icon = summary = body = NULL;
+    /* g_variant_new copied the mandatory strings */
+    g_free(app_name);
+    g_free(app_icon);
+    g_free(summary);
+    g_free(body);
 
     /* Synchronous D-Bus method call */
     GError *error = NULL;
@@ -346,10 +504,10 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
     return (jint)notification_id;
 
 release_strings:
-    if (app_name) (*env)->ReleaseStringUTFChars(env, j_app_name, app_name);
-    if (app_icon) (*env)->ReleaseStringUTFChars(env, j_app_icon, app_icon);
-    if (summary)  (*env)->ReleaseStringUTFChars(env, j_summary, summary);
-    if (body)     (*env)->ReleaseStringUTFChars(env, j_body, body);
+    g_free(app_name);
+    g_free(app_icon);
+    g_free(summary);
+    g_free(body);
     return 0;
 }
 
@@ -363,6 +521,17 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
 
     GDBusConnection *conn = get_connection();
     if (conn == NULL) return;
+
+    if (use_portal()) {
+        gchar id_str[16];
+        g_snprintf(id_str, sizeof id_str, "%d", (int)id);
+        GVariant *removed = g_dbus_connection_call_sync(conn,
+            PORTAL_NAME, PORTAL_PATH, PORTAL_INTERFACE,
+            "RemoveNotification", g_variant_new("(s)", id_str),
+            NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
+        if (removed != NULL) g_variant_unref(removed);
+        return;
+    }
 
     GError *error = NULL;
     GVariant *result = g_dbus_connection_call_sync(conn,
@@ -382,11 +551,28 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
 
 /* ==== GetCapabilities ================================================== */
 
+/* The portal has no GetCapabilities / GetServerInformation: answer with what it supports. */
+static jobjectArray new_string_array(JNIEnv *env, const char *const *values, jsize count) {
+    jclass string_class = (*env)->FindClass(env, "java/lang/String");
+    jobjectArray arr = (*env)->NewObjectArray(env, count, string_class, NULL);
+    for (jsize i = 0; i < count; i++) {
+        jstring value = utf8_to_jstring(env, values[i]);
+        (*env)->SetObjectArrayElement(env, arr, i, value);
+        (*env)->DeleteLocalRef(env, value);
+    }
+    return arr;
+}
+
 JNIEXPORT jobjectArray JNICALL
 Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativeGetCapabilities(
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;
+
+    if (use_portal()) {
+        static const char *const portal_capabilities[] = { "actions", "body" };
+        return new_string_array(env, portal_capabilities, 2);
+    }
 
     GDBusConnection *conn = get_connection();
     if (conn == NULL) return NULL;
@@ -414,7 +600,7 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
     const gchar *cap = NULL;
     jsize i = 0;
     while (g_variant_iter_next(iter, "&s", &cap)) {
-        jstring j_cap = (*env)->NewStringUTF(env, cap);
+        jstring j_cap = utf8_to_jstring(env, cap);
         (*env)->SetObjectArrayElement(env, arr, i++, j_cap);
         (*env)->DeleteLocalRef(env, j_cap);
     }
@@ -431,6 +617,11 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;
+
+    if (use_portal()) {
+        static const char *const portal_information[] = { "xdg-desktop-portal", "freedesktop.org", "1", "1.2" };
+        return new_string_array(env, portal_information, 4);
+    }
 
     GDBusConnection *conn = get_connection();
     if (conn == NULL) return NULL;
@@ -454,10 +645,10 @@ Java_dev_nucleusframework_notification_linux_NativeLinuxNotificationBridge_nativ
     jclass string_class = (*env)->FindClass(env, "java/lang/String");
     jobjectArray arr = (*env)->NewObjectArray(env, 4, string_class, NULL);
 
-    jstring j0 = (*env)->NewStringUTF(env, name);
-    jstring j1 = (*env)->NewStringUTF(env, vendor);
-    jstring j2 = (*env)->NewStringUTF(env, version);
-    jstring j3 = (*env)->NewStringUTF(env, spec_version);
+    jstring j0 = utf8_to_jstring(env, name);
+    jstring j1 = utf8_to_jstring(env, vendor);
+    jstring j2 = utf8_to_jstring(env, version);
+    jstring j3 = utf8_to_jstring(env, spec_version);
 
     (*env)->SetObjectArrayElement(env, arr, 0, j0);
     (*env)->SetObjectArrayElement(env, arr, 1, j1);
@@ -493,7 +684,7 @@ static void on_notification_closed(
     if (ensure_callback_ids(env)) {
         (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_closed_method,
             (jint)id, (jint)reason);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
     }
 
     release_env(attached);
@@ -516,10 +707,10 @@ static void on_action_invoked(
     if (env == NULL) return;
 
     if (ensure_callback_ids(env)) {
-        jstring j_key = (*env)->NewStringUTF(env, action_key);
+        jstring j_key = utf8_to_jstring(env, action_key);
         (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_action_method,
             (jint)id, j_key);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, j_key);
     }
 
@@ -543,14 +734,63 @@ static void on_activation_token(
     if (env == NULL) return;
 
     if (ensure_callback_ids(env)) {
-        jstring j_token = (*env)->NewStringUTF(env, token);
+        jstring j_token = utf8_to_jstring(env, token);
         (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_token_method,
             (jint)id, j_token);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         (*env)->DeleteLocalRef(env, j_token);
     }
 
     release_env(attached);
+}
+
+/*
+ * The portal's ActionInvoked(s id, s action, av parameter). Version 2 portals append the platform
+ * data (a{sv}) to the parameter, with the activation token: hand it over first, like the server's
+ * ActivationToken signal, which comes before its ActionInvoked.
+ */
+static void on_portal_action_invoked(
+    GDBusConnection *conn, const gchar *sender,
+    const gchar *path, const gchar *iface, const gchar *signal_name,
+    GVariant *params, gpointer user_data)
+{
+    (void)conn; (void)sender; (void)path; (void)iface;
+    (void)signal_name; (void)user_data;
+
+    const gchar *id_str = NULL, *action_key = NULL;
+    GVariant *parameter = NULL;
+    g_variant_get(params, "(&s&s@av)", &id_str, &action_key, &parameter);
+    gint64 id = g_ascii_strtoll(id_str, NULL, 10);
+
+    const gchar *token = NULL;
+    GVariantIter iter;
+    GVariant *element = NULL;
+    g_variant_iter_init(&iter, parameter);
+    while (token == NULL && g_variant_iter_next(&iter, "v", &element)) {
+        if (g_variant_is_of_type(element, G_VARIANT_TYPE_VARDICT)) {
+            g_variant_lookup(element, "activation-token", "&s", &token);
+        }
+        if (token == NULL) g_variant_unref(element);
+    }
+
+    int attached = 0;
+    JNIEnv *env = get_env(&attached);
+    if (env != NULL && id > 0 && ensure_callback_ids(env)) {
+        if (token != NULL && token[0] != '\0') {
+            jstring j_token = utf8_to_jstring(env, token);
+            (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_token_method, (jint)id, j_token);
+            nucleus_jni_clear_exception(env);
+            (*env)->DeleteLocalRef(env, j_token);
+        }
+        jstring j_key = utf8_to_jstring(env, action_key);
+        (*env)->CallStaticVoidMethod(env, g_bridge_class, g_on_action_method, (jint)id, j_key);
+        nucleus_jni_clear_exception(env);
+        (*env)->DeleteLocalRef(env, j_key);
+    }
+    if (env != NULL) release_env(attached);
+
+    if (token != NULL) g_variant_unref(element);
+    g_variant_unref(parameter);
 }
 
 /* ==== Signal listener thread =========================================== */
@@ -572,21 +812,29 @@ static void *signal_thread_func(void *arg) {
         return NULL;
     }
 
-    /* Subscribe to all three notification signals */
-    guint sub_closed = g_dbus_connection_signal_subscribe(conn,
-        NULL, INTERFACE, "NotificationClosed", OBJECT_PATH,
-        NULL, G_DBUS_SIGNAL_FLAGS_NONE,
-        on_notification_closed, NULL, NULL);
+    /* Subscribe to all three notification signals, or to the portal's only one */
+    guint sub_portal = 0, sub_closed = 0, sub_action = 0, sub_token = 0;
+    if (use_portal()) {
+        sub_portal = g_dbus_connection_signal_subscribe(conn,
+            PORTAL_NAME, PORTAL_INTERFACE, "ActionInvoked", PORTAL_PATH,
+            NULL, G_DBUS_SIGNAL_FLAGS_NONE,
+            on_portal_action_invoked, NULL, NULL);
+    } else {
+        sub_closed = g_dbus_connection_signal_subscribe(conn,
+            NULL, INTERFACE, "NotificationClosed", OBJECT_PATH,
+            NULL, G_DBUS_SIGNAL_FLAGS_NONE,
+            on_notification_closed, NULL, NULL);
 
-    guint sub_action = g_dbus_connection_signal_subscribe(conn,
-        NULL, INTERFACE, "ActionInvoked", OBJECT_PATH,
-        NULL, G_DBUS_SIGNAL_FLAGS_NONE,
-        on_action_invoked, NULL, NULL);
+        sub_action = g_dbus_connection_signal_subscribe(conn,
+            NULL, INTERFACE, "ActionInvoked", OBJECT_PATH,
+            NULL, G_DBUS_SIGNAL_FLAGS_NONE,
+            on_action_invoked, NULL, NULL);
 
-    guint sub_token = g_dbus_connection_signal_subscribe(conn,
-        NULL, INTERFACE, "ActivationToken", OBJECT_PATH,
-        NULL, G_DBUS_SIGNAL_FLAGS_NONE,
-        on_activation_token, NULL, NULL);
+        sub_token = g_dbus_connection_signal_subscribe(conn,
+            NULL, INTERFACE, "ActivationToken", OBJECT_PATH,
+            NULL, G_DBUS_SIGNAL_FLAGS_NONE,
+            on_activation_token, NULL, NULL);
+    }
 
     GMainLoop *loop = g_main_loop_new(ctx, FALSE);
 
@@ -600,9 +848,10 @@ static void *signal_thread_func(void *arg) {
     g_main_loop_run(loop);
 
     /* Cleanup subscriptions */
-    g_dbus_connection_signal_unsubscribe(conn, sub_closed);
-    g_dbus_connection_signal_unsubscribe(conn, sub_action);
-    g_dbus_connection_signal_unsubscribe(conn, sub_token);
+    if (sub_portal) g_dbus_connection_signal_unsubscribe(conn, sub_portal);
+    if (sub_closed) g_dbus_connection_signal_unsubscribe(conn, sub_closed);
+    if (sub_action) g_dbus_connection_signal_unsubscribe(conn, sub_action);
+    if (sub_token) g_dbus_connection_signal_unsubscribe(conn, sub_token);
 
     pthread_mutex_lock(&g_listen_mutex);
     g_signal_loop = NULL;

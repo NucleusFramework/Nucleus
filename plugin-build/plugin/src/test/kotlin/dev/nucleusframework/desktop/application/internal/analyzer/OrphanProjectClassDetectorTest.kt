@@ -328,6 +328,7 @@ class OrphanProjectClassDetectorTest {
                     projectClassDirs = listOf(projectDir),
                     detectOrphanProjectClasses = true,
                     reflectionForProjectClasses = false,
+                    targetJavaVersion = 25,
                 )
 
             assertEquals(
@@ -386,6 +387,7 @@ class OrphanProjectClassDetectorTest {
                     projectClassDirs = listOf(projectDir),
                     detectOrphanProjectClasses = true,
                     reflectionForProjectClasses = false,
+                    targetJavaVersion = 25,
                 )
 
             assertTrue(

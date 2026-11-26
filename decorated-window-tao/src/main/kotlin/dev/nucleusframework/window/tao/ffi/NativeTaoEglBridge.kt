@@ -119,7 +119,7 @@ internal object NativeTaoEglBridge {
         handle: Long,
         xLogical: Int,
         yLogical: Int,
-    )
+    ): Boolean
 
     /**
      * Wayland only: declares which part of the content surface is fully opaque,
@@ -143,13 +143,62 @@ internal object NativeTaoEglBridge {
         cornerRadius: Int,
     )
 
-    /** Pumps the back-buffer to screen via `eglSwapBuffers`. */
+    /**
+     * Pumps the back-buffer to screen via `eglSwapBuffers`. On Wayland it first
+     * waits for the previous frame's `wl_surface.frame` callback (vsync), at
+     * most 200 ms: EGL runs at swap interval 0 there and the wait is ours, so a
+     * window the compositor hides without saying so never parks the calling
+     * thread for good (#958). [nativeWakePresent] cuts the wait short.
+     */
     @JvmStatic
     external fun nativePresent(handle: Long)
 
     /**
-     * Calls `eglSwapInterval` on the EGL display. Must be called while the
-     * EGL context is current (after [nativeMakeCurrent]).
+     * Ends a [nativePresent] / [nativePresentWithDamage] vsync wait at once, and
+     * every later one on [handle]: a present whose wait is cut short returns
+     * without swapping. For teardown, before joining the presenting thread.
+     * Any thread; a no-op off Wayland.
+     */
+    @JvmStatic
+    external fun nativeWakePresent(handle: Long)
+
+    /**
+     * Age of the back buffer this frame renders into (#755): `0` when its
+     * content is undefined, `N` when it still holds the frame presented `N`
+     * swaps ago, `-1` when the surface supports no partial redraw (no
+     * `EGL_EXT_buffer_age` or no swap-with-damage). The context must be
+     * current on the calling thread.
+     */
+    @JvmStatic
+    external fun nativeBufferAge(handle: Long): Int
+
+    /**
+     * Asks for `EGL_BUFFER_PRESERVED` on the surface (#755), for a driver
+     * whose buffer age stays 0: [nativeBufferAge] then reports 1. Returns
+     * whether the surface took it — only one with swap-with-damage is asked,
+     * since a preserved swap can cost a full-surface copy per frame.
+     */
+    @JvmStatic
+    external fun nativeTryPreserve(handle: Long): Boolean
+
+    /**
+     * Presents like [nativePresent], telling the compositor which part of
+     * the buffer changed: [rects] holds [count] `(x, y, w, h)` quadruples in
+     * buffer pixels with a **bottom-left** origin (the EGL convention). A
+     * [count] of 0 presents the whole buffer.
+     */
+    @JvmStatic
+    external fun nativePresentWithDamage(
+        handle: Long,
+        rects: IntArray,
+        count: Int,
+    )
+
+    /**
+     * Sets the swap interval. On X11, `eglSwapInterval` on the EGL display, so
+     * the EGL context must be current (after [nativeMakeCurrent]). On Wayland
+     * EGL stays at 0 and the interval turns [nativePresent]'s frame-callback
+     * wait on (1) or off (0); call it from the presenting thread.
      * Use `interval = 0` to disable vsync during resize (avoids blocking
      * for Wayland frame callbacks during buffer-size negotiation).
      * Restore `interval = 1` on the first stable-size frame.
@@ -159,6 +208,36 @@ internal object NativeTaoEglBridge {
         handle: Long,
         interval: Int,
     )
+
+    /**
+     * Forces the driver to acquire — and, with a pending
+     * `wl_egl_window_resize`, reallocate — the buffer behind the default
+     * framebuffer, so [nativeQueryDrawableSize] describes the buffer this
+     * frame will actually land in rather than whatever the driver has not
+     * got round to yet. Touches the GL binding behind Skia's back: reset the
+     * cached state after calling it.
+     */
+    @JvmStatic
+    external fun nativeTouchDrawable(handle: Long)
+
+    /**
+     * The real size of the buffer behind the default framebuffer, packed as
+     * `(width shl 32) or height`, or 0 when `eglQuerySurface` is unavailable.
+     * [nativeWidth] / [nativeHeight] report the last *requested* size instead,
+     * which on Wayland is not the same thing until the buffer catches up.
+     * Call [nativeTouchDrawable] first on a frame that pushed a resize.
+     */
+    @JvmStatic
+    external fun nativeQueryDrawableSize(handle: Long): Long
+
+    /**
+     * Size of the buffer currently attached to the content surface as
+     * libwayland-egl tracks it — what the compositor holds, as opposed to
+     * the size last requested through `wl_egl_window_resize`. Packed as
+     * `(width shl 32) or height`; 0 on X11 or when unavailable.
+     */
+    @JvmStatic
+    external fun nativeAttachedSize(handle: Long): Long
 
     @JvmStatic
     external fun nativeWidth(handle: Long): Int
@@ -209,4 +288,16 @@ internal object NativeTaoEglBridge {
      */
     @JvmStatic
     external fun nativeGetProcAddrFunctionPointer(): Long
+
+    /**
+     * Wayland only: puts the content sub-surface in `set_sync` (buffers apply
+     * with GTK's toplevel commit, atomically with the positions of embedded
+     * native views) or back in `set_desync` (buffers apply on their own).
+     * No-op on X11.
+     */
+    @JvmStatic
+    external fun nativeSetSubsurfaceSync(
+        handle: Long,
+        sync: Boolean,
+    )
 }

@@ -1,20 +1,12 @@
 {
   "schemaVersion": 1,
-  "windowTitle": "Tao Backend Demo",
+  "windowTitle": "Nucleus A11y Surface",
   "tab": "Complex",
-  "sourceOfTruth": "examples/shared/.../ComplexTab.kt",
+  "sourceOfTruth": "examples/lab/probes/input/.../a11y/surface/ComplexSurface.kt",
   "description": "Exact expected UIA nodes for the Complex stress tab (initial state after select).",
   "tabs": [
-    { "name": "Demo", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Scroll", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Zoom", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Window actions", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
     { "name": "A11y", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Complex", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true, "selected": true },
-    { "name": "Events", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "WebView", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "SwiftUI", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "Texture", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true }
+    { "name": "Complex", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true, "selected": true }
   ],
   "nodes": [
     {

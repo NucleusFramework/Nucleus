@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- BiometricPrompt. A normal permission: granted at install, never asked. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
+    <application>
+        <!-- Tracks the resumed activity, which is what the prompt is shown from. -->
+        <provider
+            android:name="dev.nucleusframework.authentication.NucleusAuthenticationProvider"
+            android:authorities="${applicationId}.nucleus.authentication"
+            android:exported="false" />
+    </application>
+</manifest>

@@ -1,26 +1,24 @@
-<!-- Thanks for taking the time to write this Pull Request ❤️ -->
+<!-- Read CONTRIBUTING.md first. Pull requests must target `nucleus-3.0`, not `main`. -->
 
-## 🚀 Description
-<!-- Describe your changes in detail -->
+## Description
+<!-- What changed and why. Link the issue, or for a feature, the discussion it was agreed in. -->
 
-## 📄 Motivation and Context
-<!-- Why is this change required? What problem does it solve? -->
-<!-- If it fixes an open issue, please link to the issue here. -->
+## Minimal reproduction
+<!-- Bug fixes only. The smallest self-contained code (ideally a test) that triggers the bug, the setup it fails on
+(Nucleus version or commit, OS, desktop environment), and the actual result: exception with stack trace, or measured value. -->
 
-## 🧪 How Has This Been Tested?
-<!-- Please describe in detail how you tested your changes. -->
-<!-- Include details of your testing environment, tests ran to see how -->
-<!-- your change affects other areas of the code, etc. -->
+## Root cause and fix
+<!-- Bug fixes only. Why it happens and how the change fixes it. -->
 
-## 📦 Types of changes
-<!-- What types of changes does your code introduce? Put an `x` in all the boxes that apply: -->
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+## Testing
+<!-- How you tested it: OS, desktop environment (X11/Wayland, compositor), JVM and/or GraalVM.
+For a fix, the reproduction's result before and after. List what you did not test. -->
 
-## ✅ Checklist
-<!-- Go over all the following points, and put an `x` in all the boxes that apply. -->
-<!-- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
-- [ ] My code follows the code style of this project.
-- [ ] My change requires a change to the documentation.
-- [ ] I have updated the documentation accordingly.
+## Checklist
+- [ ] Targets `nucleus-3.0`
+- [ ] Feature: discussed first in a GitHub discussion (linked above)
+- [ ] One change, no unrelated reformatting
+- [ ] `./gradlew preMerge` passes
+- [ ] Public API has KDoc, `apiDump` committed if the API changed
+- [ ] I understand every line of this change and can answer review questions about it, whether or not AI tools were used
+- [ ] Breaking change (explain above)

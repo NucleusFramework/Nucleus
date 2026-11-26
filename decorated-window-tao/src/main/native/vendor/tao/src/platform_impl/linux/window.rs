@@ -6,7 +6,10 @@ use std::{
   cell::RefCell,
   collections::VecDeque,
   rc::Rc,
-  sync::atomic::{AtomicBool, AtomicI32, Ordering},
+  sync::{
+    atomic::{AtomicBool, AtomicI32, Ordering},
+    RwLock,
+  },
 };
 
 use gtk::{
@@ -21,7 +24,6 @@ use crate::{
   error::{ExternalError, NotSupportedError, OsError as RootOsError},
   icon::Icon,
   monitor::MonitorHandle as RootMonitorHandle,
-  platform_impl::wayland::header::WlHeader,
   window::{
     CursorIcon, Fullscreen, ProgressBarState, ResizeDirection, Theme, UserAttentionType,
     WindowAttributes, WindowSizeConstraints, RGBA,
@@ -64,11 +66,17 @@ pub struct Window {
   // the GTK window-state-event so it can be read off-thread via JNI like
   // `maximized`. Used to drop the Compose-drawn rounded corners when snapped.
   tiled: Rc<AtomicBool>,
-  fullscreen: RefCell<Option<Fullscreen>>,
-  inner_size_constraints: RefCell<WindowSizeConstraints>,
+  // `Window` is `Send` and `Sync`, need a `RwLock` not a `RefCell`
+  // otherwise unsynchronized &RefCell from multiple threads
+  fullscreen: RwLock<Option<Fullscreen>>,
+  // `Window` is `Send` and `Sync`, need a `RwLock` not a `RefCell`
+  // otherwise unsynchronized &RefCell from multiple threads
+  inner_size_constraints: RwLock<WindowSizeConstraints>,
   /// Draw event Sender
   draw_tx: crossbeam_channel::Sender<WindowId>,
-  preferred_theme: RefCell<Option<Theme>>,
+  // `Window` is `Send` and `Sync`, need a `RwLock` not a `RefCell`
+  // otherwise unsynchronized &RefCell from multiple threads
+  preferred_theme: RwLock<Option<Theme>>,
   css_provider: CssProvider,
 }
 
@@ -84,6 +92,28 @@ pub(crate) fn is_csd_hidden_titlebar<W: IsA<gtk::Window>>(window: &W) -> bool {
       .map(|ptr| *ptr.as_ref())
       .unwrap_or(false)
   }
+}
+
+/// PATCH(nucleus): whether the window was built with
+/// `WindowBuilderExtUnix::with_system_decorations`.
+pub(crate) fn is_system_decorated<W: IsA<gtk::Window>>(window: &W) -> bool {
+  unsafe {
+    window
+      .as_ref()
+      .data::<bool>("nucleus_system_decorations")
+      .map(|ptr| *ptr.as_ref())
+      .unwrap_or(false)
+  }
+}
+
+/// PATCH(nucleus): whether sizes and pointer positions are reported in the
+/// content area's own space rather than the toplevel's. True for the
+/// hidden-titlebar CSD (shadow ring around the content) and for system
+/// decorations, where GTK may draw its own title bar and shadow on Wayland
+/// (GNOME). Under server-side or X11 window-manager decorations the content
+/// fills the toplevel, so the mapping is the identity there.
+pub(crate) fn reports_content_space<W: IsA<gtk::Window>>(window: &W) -> bool {
+  is_csd_hidden_titlebar(window) || is_system_decorated(window)
 }
 
 /// PATCH(nucleus): content-area geometry of a toplevel, in toplevel-widget
@@ -145,6 +175,25 @@ pub(crate) fn event_coords_to_toplevel<W: IsA<gtk::Window>>(
   (ex, ey)
 }
 
+/// PATCH(nucleus): whether a pointer event on a system-decorated window lands
+/// on GTK's own decorations (default title bar, shadow and resize strips on
+/// GNOME Wayland) rather than on the content. GtkWindow's class handlers drive
+/// the title-bar move, the double-click and the edge resize from those events,
+/// so the embedder handlers must let them through. Always false under
+/// server-side or X11 window-manager decorations, where the content fills the
+/// toplevel.
+pub(crate) fn is_on_system_decorations(window: &gtk::Window, event: &gtk::gdk::Event) -> bool {
+  if !is_system_decorated(window) {
+    return false;
+  }
+  let Some((x, y)) = event.coords() else {
+    return false;
+  };
+  let (x, y) = event_coords_to_toplevel(window, event.window(), x, y);
+  let (cx, cy, cw, ch) = content_geometry(window);
+  x < cx as f64 || y < cy as f64 || x >= (cx + cw) as f64 || y >= (cy + ch) as f64
+}
+
 /// PATCH(nucleus): client-area size for a configure event on a (possibly)
 /// hidden-titlebar CSD window. The configure reports the FULL surface size
 /// (theme shadow margins included); `gtk_window_get_size` would subtract the
@@ -157,7 +206,7 @@ pub(crate) fn configure_client_size<W: IsA<gtk::Window>>(
   event_w: u32,
   event_h: u32,
 ) -> (u32, u32) {
-  if !is_csd_hidden_titlebar(window) {
+  if !reports_content_space(window) {
     return (event_w, event_h);
   }
   let widget = window.as_ref();
@@ -249,8 +298,18 @@ impl Window {
           // translation) and by the content-geometry accessors below.
           window.set_data("nucleus_csd_hidden_titlebar", true);
         }
-      } else if is_wayland {
-        WlHeader::setup(&window, &attributes.title);
+      } else if pl_attribs.system_decorations {
+        // Nucleus patch: system decorations install no custom title bar.
+        // `set_titlebar` latches CSD for good, which would stop GTK from
+        // negotiating server-side decorations with KWin; without it GTK 3
+        // asks for them and draws its own default title bar where the
+        // compositor refuses (GNOME).
+        unsafe {
+          // Read back by `reports_content_space`: GTK's own title bar and
+          // shadow (GNOME on Wayland) sit around the content like the hidden
+          // header's ring does.
+          window.set_data("nucleus_system_decorations", true);
+        }
       }
 
       let window_id = WindowId(window.id());
@@ -269,14 +328,6 @@ impl Window {
       .unwrap_or((800, 600));
     window.set_default_size(1, 1);
     window.resize(width, height);
-    // Nucleus patch: `gtk_window_resize` has no effect on a non-resizable
-    // window — GTK sizes it to the content's natural size instead, so a
-    // 200×40 overlay came up 200×200. Pin the requested size through the
-    // widget size request (the only sizing channel GTK honours when
-    // `resizable == false`). Applies to both X11 and Wayland.
-    if !attributes.resizable && !attributes.maximized {
-      window.set_size_request(width, height);
-    }
 
     if attributes.maximized {
       // Nucleus patch: apply `maximize()` synchronously, before the GTK window
@@ -347,6 +398,16 @@ impl Window {
       None
     };
 
+    // Nucleus patch: `gtk_window_resize` has no effect on a non-resizable
+    // window — GTK sizes it to the content's natural size instead, so a
+    // 200×40 overlay came up 200×200. Pin the requested size through the
+    // content's size request (the only sizing channel GTK honours when
+    // `resizable == false`), once the content box exists so the client-side
+    // decorations stay outside it. Applies to both X11 and Wayland.
+    if !attributes.resizable && !attributes.maximized {
+      util::set_content_size_request(&window, width, height);
+    }
+
     // Rest attributes
     window.set_title(&attributes.title);
     if let Some(Fullscreen::Borderless(m)) = &attributes.fullscreen {
@@ -372,6 +433,12 @@ impl Window {
     // embedder's own chrome replaces the (hidden) titlebar, exactly like a
     // yaru.dart app drawing YaruWindowTitleBar in-view.
     window.set_decorated(attributes.decorations || is_csd_hidden_titlebar(&window));
+    // PATCH(nucleus): upstream tao (#1218) gives every undecorated Wayland window
+    // an empty `EventBox` title bar here, so that KWin does not draw a server-side
+    // frame around it (https://gitlab.gnome.org/GNOME/gtk/-/work_items/5479).
+    // Nucleus leaves it out: the embedder negotiates KWin's server decoration
+    // itself (`server_decoration.rs`), and the empty title bar would give
+    // borderless windows the `csd` style class that negotiation keys on.
 
     if attributes.always_on_bottom {
       window.set_keep_below(attributes.always_on_bottom);
@@ -385,13 +452,14 @@ impl Window {
       window.stick();
     }
 
-    // Set initial `preferred_theme` value to current portal color-scheme
+    // A window built without a theme follows the system's: `theme()` asks the portal for it
+    let preferred_theme = attributes.preferred_theme;
     #[cfg(feature = "dbus")]
-    let preferred_theme = super::portal::theme().ok();
+    let initial_theme = preferred_theme.or_else(|| super::portal::theme().ok());
     #[cfg(not(feature = "dbus"))]
-    let preferred_theme = None;
+    let initial_theme = preferred_theme;
 
-    if let Some(theme) = preferred_theme {
+    if let Some(theme) = initial_theme {
       if let Some(settings) = Settings::default() {
         settings.set_gtk_application_prefer_dark_theme(theme == Theme::Dark);
       }
@@ -466,9 +534,9 @@ impl Window {
       minimized,
       is_always_on_top,
       tiled,
-      fullscreen: RefCell::new(attributes.fullscreen),
-      inner_size_constraints: RefCell::new(attributes.inner_size_constraints),
-      preferred_theme: RefCell::new(preferred_theme),
+      fullscreen: RwLock::new(attributes.fullscreen),
+      inner_size_constraints: RwLock::new(attributes.inner_size_constraints),
+      preferred_theme: RwLock::new(preferred_theme),
       css_provider: CssProvider::new(),
     };
 
@@ -533,13 +601,41 @@ impl Window {
       inner_size_clone.0.store(w as i32, Ordering::Release);
       inner_size_clone.1.store(h as i32, Ordering::Release);
 
+      // PATCH(nucleus): `gdk_window_get_frame_extents` answers with its
+      // (0, 0, 1, 1) placeholder until the window is mapped and — under a
+      // reparenting WM — framed. Storing it pins a 1x1 window at the screen
+      // origin in `outer_position` / `outer_size` until the *next* configure,
+      // which on a software-rendered X server under a lightweight WM (Xvfb +
+      // openbox, the CI Linux leg) is seconds away or never comes at all.
+      // Every consumer of the outer frame reads that instead: a torn-off
+      // window 1 dp wide, a satellite anchored against a 1px-tall child, a
+      // pointer aimed at a negative screen coordinate.
+      //
+      // Take the size from the configure event itself — its own size is the
+      // whole surface, shadow included, which is what the frame is for a
+      // client-side-decorated window, and unlike `configure_client_size` below
+      // it subtracts no decoration insets. Keep the last known *position*:
+      // every substitute for it is wrong in a way that is worse than being
+      // stale. `event.position()` is frame-relative under a reparenting WM
+      // (so it reads (0, 0)), `root_origin` is implemented through
+      // `frame_extents` and answers the placeholder too, and
+      // `gdk_window_get_origin` names the client rather than the frame, so
+      // anchoring one window against another mixes two different rectangles.
       let (x, y, w, h) = window
         .window()
         .map(|w| {
           let rect = w.frame_extents();
           (rect.x(), rect.y(), rect.width(), rect.height())
         })
-        .unwrap_or((x, y, w as i32, h as i32));
+        .filter(|(_, _, w, h)| *w > 1 && *h > 1)
+        .unwrap_or_else(|| {
+          (
+            outer_position_clone.0.load(Ordering::Acquire),
+            outer_position_clone.1.load(Ordering::Acquire),
+            ew as i32,
+            eh as i32,
+          )
+        });
 
       outer_position_clone.0.store(x, Ordering::Release);
       outer_position_clone.1.store(y, Ordering::Release);
@@ -654,9 +750,9 @@ impl Window {
       minimized,
       is_always_on_top,
       tiled,
-      fullscreen: RefCell::new(None),
-      inner_size_constraints: RefCell::new(WindowSizeConstraints::default()),
-      preferred_theme: RefCell::new(None),
+      fullscreen: RwLock::new(None),
+      inner_size_constraints: RwLock::new(WindowSizeConstraints::default()),
+      preferred_theme: RwLock::new(None),
       css_provider: CssProvider::new(),
     };
 
@@ -699,6 +795,15 @@ impl Window {
       .to_logical::<i32>(self.scale_factor())
       .into();
 
+    // PATCH(nucleus): same as `set_inner_size`: no configure-event reports a
+    // move of a window that is not mapped, so record where it will map.
+    if !self.window.is_mapped() {
+      self.inner_position.0.store(x, Ordering::Release);
+      self.inner_position.1.store(y, Ordering::Release);
+      self.outer_position.0.store(x, Ordering::Release);
+      self.outer_position.1.store(y, Ordering::Release);
+    }
+
     if let Err(e) = self
       .window_requests_tx
       .send((self.window_id, WindowRequest::Position((x, y))))
@@ -729,6 +834,19 @@ impl Window {
   pub fn set_inner_size<S: Into<Size>>(&self, size: S) {
     let (width, height) = size.into().to_logical::<i32>(self.scale_factor()).into();
 
+    // PATCH(nucleus): GTK sends no configure-event to a window that is not
+    // mapped, so the size caches would keep their creation values (the outer
+    // one is not even a size) until the first map. A window sized while
+    // hidden then reads stale geometry, and maps at a size nothing reported.
+    // The frame is unknown before the map: the outer size is the inner one
+    // until the first configure replaces both.
+    if !self.window.is_mapped() {
+      self.inner_size.0.store(width, Ordering::Release);
+      self.inner_size.1.store(height, Ordering::Release);
+      self.outer_size.0.store(width, Ordering::Release);
+      self.outer_size.1.store(height, Ordering::Release);
+    }
+
     if let Err(e) = self
       .window_requests_tx
       .send((self.window_id, WindowRequest::Size((width, height))))
@@ -758,7 +876,7 @@ impl Window {
 
   pub fn set_min_inner_size(&self, size: Option<Size>) {
     let (width, height) = size.map(crate::extract_width_height).unzip();
-    let mut size_constraints = self.inner_size_constraints.borrow_mut();
+    let mut size_constraints = self.inner_size_constraints.write().unwrap();
     size_constraints.min_width = width;
     size_constraints.min_height = height;
     self.set_size_constraints(*size_constraints)
@@ -766,14 +884,14 @@ impl Window {
 
   pub fn set_max_inner_size(&self, size: Option<Size>) {
     let (width, height) = size.map(crate::extract_width_height).unzip();
-    let mut size_constraints = self.inner_size_constraints.borrow_mut();
+    let mut size_constraints = self.inner_size_constraints.write().unwrap();
     size_constraints.max_width = width;
     size_constraints.max_height = height;
     self.set_size_constraints(*size_constraints)
   }
 
   pub fn set_inner_size_constraints(&self, constraints: WindowSizeConstraints) {
-    *self.inner_size_constraints.borrow_mut() = constraints;
+    *self.inner_size_constraints.write().unwrap() = constraints;
     self.set_size_constraints(constraints)
   }
 
@@ -927,7 +1045,7 @@ impl Window {
   }
 
   pub fn set_fullscreen(&self, fullscreen: Option<Fullscreen>) {
-    self.fullscreen.replace(fullscreen.clone());
+    *self.fullscreen.write().unwrap() = fullscreen.clone();
     if let Err(e) = self
       .window_requests_tx
       .send((self.window_id, WindowRequest::Fullscreen(fullscreen)))
@@ -937,7 +1055,7 @@ impl Window {
   }
 
   pub fn fullscreen(&self) -> Option<Fullscreen> {
-    self.fullscreen.borrow().clone()
+    self.fullscreen.read().unwrap().clone()
   }
 
   pub fn set_decorations(&self, decorations: bool) {
@@ -993,6 +1111,36 @@ impl Window {
   /// off it, which is why the caret's *size* matters here and not on Windows.
   /// GDK works in logical pixels, so the caller's physical rect is scaled down
   /// on the way in.
+  /// Nucleus patch: anchor a `GTK_WINDOW_POPUP` overlay at a point of its
+  /// transient parent through `gdk_window_move_to_rect`, so GDK maps it as an
+  /// `xdg_popup` the compositor keeps on screen (flipped above the point when
+  /// there is no room below, slid along an edge) instead of a `wl_subsurface`
+  /// it lets hang off the display. `(x, y)` are logical parent-window
+  /// coordinates of the content's top-left; `shadow` = (left, right, top,
+  /// bottom) transparent margins the surface carries around that content,
+  /// declared as the popup's shadow width so the compositor constrains the
+  /// content, not the margin. `width`/`height` are the whole surface in
+  /// logical pixels, applied here rather than left to a separate size request:
+  /// GDK builds the `xdg_positioner` from the window's *current* geometry, so a
+  /// popup still sized 1×1 at this point asks the compositor to constrain a
+  /// 1×1 rectangle and never gets flipped. GDK positions a popup once, at map:
+  /// call before the window is shown.
+  pub fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32)) {
+    if let Err(e) = self.window_requests_tx.send((
+      self.window_id,
+      WindowRequest::PopupAnchor {
+        x,
+        y,
+        width,
+        height,
+        shadow,
+      },
+    ))
+    {
+      log::warn!("Fail to send popup anchor request: {}", e);
+    }
+  }
+
   pub fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
     let scale_factor = self.scale_factor();
     let (x, y): (i32, i32) = position.into().to_logical::<i32>(scale_factor).into();
@@ -1002,6 +1150,22 @@ impl Window {
       .send((self.window_id, WindowRequest::SetImeCursorArea((x, y, w, h))))
     {
       log::warn!("Fail to send ime cursor area request: {}", e);
+    }
+  }
+
+  /// Nucleus patch (nucleusframework#842): focus the window's input context
+  /// only while a text field owns the input.
+  ///
+  /// Focusing a GTK input context is not free on Wayland: it sends
+  /// text-input-v3 `enable`, which is the request a compositor answers by
+  /// showing its on-screen keyboard. Following the window's focus alone
+  /// raised the keyboard on every activation, text field or not.
+  pub fn set_ime_allowed(&self, allowed: bool) {
+    if let Err(e) = self
+      .window_requests_tx
+      .send((self.window_id, WindowRequest::SetImeAllowed(allowed)))
+    {
+      log::warn!("Fail to send ime allowed request: {}", e);
     }
   }
 
@@ -1187,8 +1351,10 @@ impl Window {
       unsafe {
         if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
           let display = (xlib.XOpenDisplay)(std::ptr::null());
-          display_handle.display = display as _;
-          display_handle.screen = (xlib.XDefaultScreen)(display) as _;
+          if !display.is_null() {
+            display_handle.display = display as _;
+            display_handle.screen = (xlib.XDefaultScreen)(display) as _;
+          }
         }
       }
 
@@ -1228,20 +1394,20 @@ impl Window {
       let display = unsafe {
         gdk_wayland_sys::gdk_wayland_display_get_wl_display(self.window.display().as_ptr() as *mut _)
       };
-      let display = unsafe { std::ptr::NonNull::new_unchecked(display) };
+      let display = std::ptr::NonNull::new(display).ok_or(rwh_06::HandleError::Unavailable)?;
       let display_handle = rwh_06::WaylandDisplayHandle::new(display);
       Ok(rwh_06::RawDisplayHandle::Wayland(display_handle))
     } else {
       #[cfg(feature = "x11")]
-      if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-        unsafe {
-          let display = (xlib.XOpenDisplay)(std::ptr::null());
-          let screen = (xlib.XDefaultScreen)(display) as _;
-          let display = std::ptr::NonNull::new_unchecked(display as _);
-          let display_handle = rwh_06::XlibDisplayHandle::new(Some(display), screen);
-          Ok(rwh_06::RawDisplayHandle::Xlib(display_handle))
+      unsafe {
+        if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
+          let display_ptr = (xlib.XOpenDisplay)(std::ptr::null());
+          if let Some(display) = std::ptr::NonNull::new(display_ptr as *mut std::ffi::c_void) {
+            let screen = (xlib.XDefaultScreen)(display.as_ptr() as *mut _) as _;
+            let display_handle = rwh_06::XlibDisplayHandle::new(Some(display), screen);
+            return Ok(rwh_06::RawDisplayHandle::Xlib(display_handle));
+          }
         }
-      } else {
         Err(rwh_06::HandleError::Unavailable)
       }
       #[cfg(not(feature = "x11"))]
@@ -1279,7 +1445,7 @@ impl Window {
   }
 
   pub fn theme(&self) -> Theme {
-    if let Some(theme) = *self.preferred_theme.borrow() {
+    if let Some(theme) = *self.preferred_theme.read().unwrap() {
       return theme;
     }
 
@@ -1292,7 +1458,7 @@ impl Window {
   }
 
   pub fn set_theme(&self, theme: Option<Theme>) {
-    *self.preferred_theme.borrow_mut() = theme;
+    *self.preferred_theme.write().unwrap() = theme;
     if let Err(e) = self
       .window_requests_tx
       .send((WindowId::dummy(), WindowRequest::SetTheme(theme)))
@@ -1334,6 +1500,18 @@ pub enum WindowRequest {
   /// Nucleus patch (nucleusframework#558): the rectangle the caret occupies,
   /// in window-local logical pixels, for the input method to steer clear of.
   SetImeCursorArea((i32, i32, i32, i32)),
+  /// Nucleus patch (nucleusframework#842): whether a text field owns the
+  /// input, i.e. whether the window's input context may be focused.
+  SetImeAllowed(bool),
+  /// Nucleus patch: anchor a popup overlay at a point of its transient parent
+  /// through `gdk_window_move_to_rect` — see `Window::popup_anchor`.
+  PopupAnchor {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    shadow: (i32, i32, i32, i32),
+  },
   WireUpEvents {
     transparent: bool,
     fullscreen: bool,

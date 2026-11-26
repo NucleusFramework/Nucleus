@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- No <uses-permission> here: which location permissions an app holds is its own decision
+         (ACCESS_COARSE_LOCATION alone is enough for LocationAccuracy.Approximate). -->
+    <application>
+        <!-- Captures the application context and tracks the resumed activity, which the
+             permission prompt needs, before any app code runs. -->
+        <provider
+            android:name="dev.nucleusframework.location.LocationContextProvider"
+            android:authorities="${applicationId}.nucleus-location"
+            android:exported="false" />
+        <!-- Shows the permission dialog and receives its answer. Translucent, and never recreated
+             by a configuration change (the dialog itself can cause one). -->
+        <activity
+            android:name="dev.nucleusframework.location.PermissionRequestActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|layoutDirection|locale|mcc|mnc|touchscreen|colorMode"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    </application>
+</manifest>

@@ -15,6 +15,10 @@ import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Optional
 import javax.inject.Inject
 
+/**
+ * macOS code-signing settings: whether to sign, the signing identity, the keychain holding it
+ * and the identifier prefix. Each value defaults to its Nucleus Gradle property.
+ */
 abstract class MacOSSigningSettings {
     @get:Inject
     protected abstract val objects: ObjectFactory

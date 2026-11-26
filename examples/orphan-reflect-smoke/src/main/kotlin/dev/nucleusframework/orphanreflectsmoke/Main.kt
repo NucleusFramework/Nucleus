@@ -24,6 +24,10 @@ fun main() {
         val instance = clazz.getDeclaredConstructor().newInstance() as AppDatabase
         val name = instance.name()
         check(name == "impl-ok") { "unexpected name: $name" }
+        // Built with `graalvm { headless = true }`: the image must run headless.
+        if (GraalVmInitializer.isNativeImage) {
+            check(System.getProperty("java.awt.headless") == "true") { "java.awt.headless not restored" }
+        }
         println(
             "OK orphan-reflect-smoke loaded $implName " +
                 "native=${GraalVmInitializer.isNativeImage}",

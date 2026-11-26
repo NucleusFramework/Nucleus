@@ -1,0 +1,41 @@
+# Vendored from https://github.com/project-robius/robius (crates/speech) at
+# 71966dc2194307e27d3f9eedc9138614624b4265, workspace fields inlined. Local change:
+# swift/NativeSpeech.swift also checks the input node's hardware format before installTap
+# (an AVAudioEngine without any input device raised an uncaught NSException). Drop this copy
+# once the fix lands upstream.
+[package]
+publish = false
+name = "robius-speech"
+version = "0.3.1"
+edition = "2021"
+authors = ["Kevin Boos <kevinaboos@gmail.com>", "Project Robius Maintainers"]
+description = "Native streaming speech-to-text input and microphone capture for Rust apps"
+documentation = "https://docs.rs/robius-speech"
+homepage = "https://robius.rs/"
+keywords = ["robius", "speech", "dictation", "microphone", "STT"]
+categories = ["os", "hardware-support", "api-bindings"]
+license = "MIT"
+repository = "https://github.com/project-robius/robius"
+readme = "README.md"
+
+[lints.rust]
+keyword_idents_2024 = "forbid"
+non_ascii_idents = "forbid"
+non_local_definitions = "forbid"
+unsafe_op_in_unsafe_fn = "forbid"
+unnameable_types = "warn"
+unused_import_braces = "warn"
+
+[lints.clippy]
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+uninlined_format_args = "allow"
+
+[dependencies]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61.3", default-features = false, features = ["Win32_Media_Speech", "Win32_System_Com", "Win32_Globalization"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.21.1", default-features = false }
+robius-android-env = "0.2.0"

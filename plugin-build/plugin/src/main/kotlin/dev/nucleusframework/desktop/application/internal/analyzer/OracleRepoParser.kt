@@ -44,7 +44,8 @@ internal object OracleRepoParser {
     /**
      * Parses a reflect-config.json (old format: JSON array of type entries).
      */
-    fun parseReflectConfig(file: File): Set<ReflectionEntry> = parseTypeArray(file).map { it.toReflectionEntry() }.toSet()
+    fun parseReflectConfig(file: File): Set<ReflectionEntry> =
+        parseTypeArray(file).map { it.toReflectionEntry() }.toSet()
 
     /**
      * Parses a jni-config.json (old format: JSON array of type entries).
@@ -68,7 +69,7 @@ internal object OracleRepoParser {
         when (resources) {
             is Map<*, *> -> {
                 @Suppress("UNCHECKED_CAST")
-                val includes = resources["includes"] as? List<Map<String, Any?>> ?: emptyList()
+                val includes = (resources["includes"] as? List<Map<String, Any?>>).orEmpty()
                 for (entry in includes) {
                     val pattern = entry["pattern"] as? String
                     if (pattern != null) {
@@ -110,11 +111,11 @@ internal object OracleRepoParser {
         val root = slurper().parseText(file.readText()) as? Map<String, Any?> ?: return AnalysisResult()
 
         @Suppress("UNCHECKED_CAST")
-        val reflectionArray = root["reflection"] as? List<Map<String, Any?>> ?: emptyList()
+        val reflectionArray = (root["reflection"] as? List<Map<String, Any?>>).orEmpty()
 
         // Legacy top-level "jni" array (older schema).
         @Suppress("UNCHECKED_CAST")
-        val jniArray = root["jni"] as? List<Map<String, Any?>> ?: emptyList()
+        val jniArray = (root["jni"] as? List<Map<String, Any?>>).orEmpty()
 
         val reflectionEntries = reflectionArray.map { parseTypeMap(it).toReflectionEntry() }.toSet()
 
@@ -191,14 +192,14 @@ internal object OracleRepoParser {
 
     @Suppress("UNCHECKED_CAST")
     private fun parseTypeMap(map: Map<String, Any?>): ParsedType {
-        val name = (map["name"] as? String) ?: (map["type"] as? String) ?: ""
+        val name = ((map["name"] as? String) ?: (map["type"] as? String)).orEmpty()
 
         val methods = mutableSetOf<MethodSignature>()
         val methodsList = map["methods"] as? List<Map<String, Any?>>
         if (methodsList != null) {
             for (m in methodsList) {
                 val mName = m["name"] as? String ?: continue
-                val params = (m["parameterTypes"] as? List<String>) ?: emptyList()
+                val params = (m["parameterTypes"] as? List<String>).orEmpty()
                 methods.add(MethodSignature(mName, params))
             }
         }

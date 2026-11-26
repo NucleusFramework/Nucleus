@@ -1,0 +1,64 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.widget.windows.WidgetProviderDispatcher",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "createWidget",
+                    "parameterTypes": ["java.lang.String", "java.lang.String", "int", "boolean"]
+                },
+                {
+                    "name": "deleteWidget",
+                    "parameterTypes": ["java.lang.String", "java.lang.String"]
+                },
+                {
+                    "name": "onActionInvoked",
+                    "parameterTypes": ["java.lang.String", "java.lang.String", "int", "boolean", "java.lang.String", "java.lang.String", "java.lang.String"]
+                },
+                {
+                    "name": "onWidgetContextChanged",
+                    "parameterTypes": ["java.lang.String", "java.lang.String", "int", "boolean"]
+                },
+                {
+                    "name": "activate",
+                    "parameterTypes": ["java.lang.String", "java.lang.String", "int", "boolean"]
+                },
+                {
+                    "name": "deactivate",
+                    "parameterTypes": ["java.lang.String"]
+                },
+                {
+                    "name": "onCustomizationRequested",
+                    "parameterTypes": ["java.lang.String", "java.lang.String", "int", "boolean", "java.lang.String"]
+                },
+                {
+                    "name": "onAnalyticsInfoReported",
+                    "parameterTypes": ["java.lang.String", "java.lang.String", "int", "boolean", "java.lang.String"]
+                },
+                {
+                    "name": "onErrorInfoReported",
+                    "parameterTypes": ["java.lang.String", "java.lang.String", "int", "boolean", "java.lang.String"]
+                },
+                {
+                    "name": "onMessageReceived",
+                    "parameterTypes": ["java.lang.String", "java.lang.String", "int", "boolean", "java.lang.String"]
+                },
+                {
+                    "name": "onResourceRequested",
+                    "parameterTypes": ["java.lang.String", "java.lang.String", "int", "boolean", "long"]
+                }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.widget.windows.WidgetException",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "<init>",
+                    "parameterTypes": ["java.lang.String", "int"]
+                }
+            ]
+        }
+    ]
+}

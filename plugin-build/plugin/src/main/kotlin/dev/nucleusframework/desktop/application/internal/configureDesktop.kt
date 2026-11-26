@@ -17,7 +17,8 @@ import org.gradle.api.tasks.JavaExec
 // Published Maven artifact id (`dev.nucleusframework:nucleus.decorated-window-tao`)
 // and monorepo project name (`:decorated-window-tao`). Dependency.getName() returns
 // the module/project name only — never the group id.
-private val DECORATED_WINDOW_TAO_DEPENDENCY_NAMES =
+// The published artifact, and the project module inside the Nucleus build.
+internal val DECORATED_WINDOW_TAO_DEPENDENCY_NAMES =
     setOf(
         "nucleus.decorated-window-tao",
         "decorated-window-tao",
@@ -42,6 +43,8 @@ internal fun configureDesktop(
 
         propagateMainClassToHotReloadRun(project, appInternal)
         injectStartOnFirstThreadForTaoHotReload(project)
+        letHotReloadRecompilerFindGradlew(project)
+        configureHotReloadDependencySnapshots(project = project)
     }
 
     if (nucleusExtension.isNativeApplicationInitialized) {
@@ -202,6 +205,6 @@ private fun projectUsesTaoBackend(project: Project): Boolean =
         config.dependencies.any { it.name in DECORATED_WINDOW_TAO_DEPENDENCY_NAMES }
     }
 
-private fun JavaExec.isHotReloadJavaExec(): Boolean =
+internal fun JavaExec.isHotReloadJavaExec(): Boolean =
     generateSequence<Class<*>>(javaClass) { it.superclass }
         .any { it.name.startsWith("org.jetbrains.compose.reload") }

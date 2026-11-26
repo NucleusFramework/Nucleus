@@ -1,17 +1,12 @@
 package dev.nucleusframework.updater.internal
 
-import dev.nucleusframework.core.runtime.NucleusApp
 import java.io.File
 
 /**
  * Persists a marker file before an update install so the next launch
  * can detect that the application was just updated.
  *
- * The marker is stored in the platform-specific application data directory
- * resolved from [NucleusApp.appId]:
- * - Linux:   `$XDG_DATA_HOME/<appId>/` or `~/.local/share/<appId>/`
- * - macOS:   `~/Library/Application Support/<appId>/`
- * - Windows: `%APPDATA%/<appId>/`
+ * The marker is stored in the application data directory ([resolveAppDataDir]).
  */
 internal object UpdateMarker {
     private const val MARKER_FILE_NAME = "nucleus-update-event"
@@ -52,25 +47,5 @@ internal object UpdateMarker {
         markerFile().delete()
     }
 
-    private fun markerFile(): File = File(resolveDataDir(), MARKER_FILE_NAME)
-
-    private fun resolveDataDir(): File {
-        val appId = NucleusApp.appId
-        val os = System.getProperty("os.name", "").lowercase()
-        val home = System.getProperty("user.home")
-
-        return when {
-            os.contains("win") -> {
-                val appData = System.getenv("APPDATA") ?: "$home\\AppData\\Roaming"
-                File(appData, appId)
-            }
-            os.contains("mac") -> {
-                File(home, "Library/Application Support/$appId")
-            }
-            else -> {
-                val xdgData = System.getenv("XDG_DATA_HOME") ?: "$home/.local/share"
-                File(xdgData, appId)
-            }
-        }
-    }
+    private fun markerFile(): File = File(resolveAppDataDir(), MARKER_FILE_NAME)
 }

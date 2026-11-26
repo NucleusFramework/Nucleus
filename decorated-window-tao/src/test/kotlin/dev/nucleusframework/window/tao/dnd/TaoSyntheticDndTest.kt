@@ -24,12 +24,13 @@ import java.io.File
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * Behavioural coverage of the inbound drag-and-drop conversion: native OS
- * payload → [TaoFilesTransferable] → [TaoSyntheticDragEvent] /
+ * payload → [TaoDropTransferable] → [TaoSyntheticDragEvent] /
  * [TaoSyntheticDropEvent] → Compose [DragAndDropEvent] → application
  * `dragAndDropTarget`. The event construction below mirrors the hosts'
  * `InboundDnDCallback.makeDragEvent` / `makeDropEvent` verbatim (see
@@ -62,7 +63,7 @@ class TaoSyntheticDndTest {
             TaoSyntheticDropEvent(
                 cursorLocn = Point(xPx, yPx),
                 dropAction = DnDConstants.ACTION_COPY,
-                backingTransferable = TaoFilesTransferable(files),
+                backingTransferable = TaoDropTransferable(payload),
                 payload = payload,
             )
         return DragAndDropEvent(
@@ -81,7 +82,7 @@ class TaoSyntheticDndTest {
             TaoSyntheticDragEvent(
                 cursorLocn = Point(xPx, yPx),
                 dropAction = DnDConstants.ACTION_COPY,
-                backingTransferable = TaoFilesTransferable(emptyList()),
+                backingTransferable = TaoDropTransferable(payload),
                 payload = payload,
             )
         return DragAndDropEvent(
@@ -93,7 +94,7 @@ class TaoSyntheticDndTest {
 
     @Test
     fun `native file payload reaches Compose through awtTransferable`() {
-        val files = listOf(File("/tmp/report.pdf"), File("/tmp/photo.png"))
+        val files = listOf(File("/tmp/report.pdf"), File("/tmp/photo.png")).map { it.absoluteFile }
         val event = makeDropEvent(10, 20, files)
 
         // This is the exact accessor application code uses on a drop — it
@@ -114,7 +115,7 @@ class TaoSyntheticDndTest {
 
     @Test
     fun `taoPayload exposes the dropped files to application code`() {
-        val files = listOf(File("/tmp/report.pdf"), File("/tmp/photo.png"))
+        val files = listOf(File("/tmp/report.pdf"), File("/tmp/photo.png")).map { it.absoluteFile }
         val event = makeDropEvent(10, 20, files)
 
         // #912: nativeEvent is the synthetic AWT event, never the payload itself,
@@ -176,5 +177,104 @@ class TaoSyntheticDndTest {
             // File objects, and the string form is platform-normalised.
             assertEquals(listOf(droppedFile.absolutePath), dropped)
             assertEquals(listOf(droppedFile.absolutePath), payloadFiles)
+        }
+
+    @Test
+    fun `hover paths reach acceptance and movement and clear after leave and drop`() =
+        runTaoSceneTest(width = 200, height = 200) {
+            val hoverFile = File("dossier é/un.txt").absoluteFile
+            val dropFile = File("actual-drop.txt").absoluteFile
+            val moved = mutableListOf<List<File>>()
+            var dropped: List<File>? = null
+
+            fun paths(event: DragAndDropEvent): List<File> {
+                @Suppress("UNCHECKED_CAST")
+                return event.awtTransferable.getTransferData(DataFlavor.javaFileListFlavor) as List<File>
+            }
+
+            val target =
+                object : DragAndDropTarget {
+                    override fun onMoved(event: DragAndDropEvent) {
+                        moved.add(paths(event = event))
+                    }
+
+                    override fun onDrop(event: DragAndDropEvent): Boolean {
+                        dropped = paths(event = event)
+                        return true
+                    }
+                }
+
+            setContent {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .dragAndDropTarget(
+                                shouldStartDragAndDrop = { event -> paths(event = event) == listOf(hoverFile) },
+                                target = target,
+                            ),
+                )
+            }
+            frameUntilIdle()
+
+            val root = scene.rootDragAndDropNode
+            val dnd = TaoSceneDnD.InboundState()
+            val otherWindow = TaoSceneDnD.InboundState()
+            dnd.onDragFiles(files = arrayOf(hoverFile.absolutePath))
+            assertFalse(otherWindow.onDragEnter(node = root, x = 100, y = 100))
+            assertTrue(dnd.onDragEnter(node = root, x = 100, y = 100))
+            assertTrue(dnd.onDragOver(node = root, x = 110, y = 100))
+            assertTrue(moved.isNotEmpty())
+            assertTrue(moved.all { it == listOf(hoverFile) })
+
+            dnd.onDragLeave(node = root)
+            assertFalse(dnd.onDragEnter(node = root, x = 100, y = 100))
+
+            dnd.onDragFiles(files = arrayOf(hoverFile.absolutePath))
+            assertTrue(dnd.onDragEnter(node = root, x = 100, y = 100))
+            assertTrue(dnd.onDrop(node = root, x = 100, y = 100, files = arrayOf(dropFile.absolutePath)))
+            assertEquals(listOf(dropFile), dropped)
+            assertFalse(dnd.onDragEnter(node = root, x = 100, y = 100))
+        }
+
+    @Test
+    fun `a dragged browser link reaches the target as text and URI (#930)`() =
+        runTaoSceneTest(width = 200, height = 200) {
+            val url = "https://example.com/images/cat.png"
+            var hoverUris: List<String>? = null
+            var droppedString: Any? = null
+            var droppedUris: List<String>? = null
+            val target =
+                object : DragAndDropTarget {
+                    override fun onDrop(event: DragAndDropEvent): Boolean {
+                        droppedString = event.awtTransferable.getTransferData(DataFlavor.stringFlavor)
+                        droppedUris = event.taoPayload?.uris
+                        return true
+                    }
+                }
+            setContent {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .dragAndDropTarget(
+                            shouldStartDragAndDrop = { event ->
+                                hoverUris = event.taoPayload?.uris
+                                event.awtTransferable.isDataFlavorSupported(DataFlavor.stringFlavor)
+                            },
+                            target = target,
+                        ),
+                )
+            }
+            frameUntilIdle()
+
+            val root = scene.rootDragAndDropNode
+            val dnd = TaoSceneDnD.InboundState()
+            val data = TaoSceneDnD.inboundPayload(text = url, uris = arrayOf(url))
+            dnd.onDragData(data)
+            assertTrue(dnd.onDragEnter(node = root, x = 100, y = 100))
+            assertEquals(listOf(url), hoverUris)
+            assertTrue(dnd.onDrop(node = root, x = 100, y = 100, data = data))
+            assertEquals(url, droppedString)
+            assertEquals(listOf(url), droppedUris)
         }
 }

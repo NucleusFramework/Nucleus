@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nucleus_widget_surface">#FF1F1F1F</color>
+    <color name="nucleus_widget_text">#FFFFFFFF</color>
+    <color name="nucleus_widget_text_subtle">#B3FFFFFF</color>
+    <color name="nucleus_widget_text_accent">#FFA8C7FA</color>
+    <color name="nucleus_widget_text_good">#FF6DD58C</color>
+    <color name="nucleus_widget_text_warning">#FFFFB95C</color>
+    <color name="nucleus_widget_text_attention">#FFF2B8B5</color>
+    <color name="nucleus_widget_bg_default">#FF1F1F1F</color>
+    <color name="nucleus_widget_bg_emphasis">#FF2D2F31</color>
+    <color name="nucleus_widget_bg_accent">#FF0842A0</color>
+    <color name="nucleus_widget_bg_good">#FF0F5223</color>
+    <color name="nucleus_widget_bg_warning">#FF653E00</color>
+    <color name="nucleus_widget_bg_attention">#FF8C1D18</color>
+    <color name="nucleus_widget_button">#FFA8C7FA</color>
+    <color name="nucleus_widget_button_disabled">#1FFFFFFF</color>
+    <color name="nucleus_widget_on_button">#FF062E6F</color>
+    <color name="nucleus_widget_ripple">#33000000</color>
+</resources>

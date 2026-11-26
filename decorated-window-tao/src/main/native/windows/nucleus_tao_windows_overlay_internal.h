@@ -74,7 +74,13 @@ void nucleus_tao_remember_native_input(HWND hwnd, UINT msg, WPARAM w, LPARAM l);
 
 /** Replay the stashed message onto [target]. Wheel LPARAMs stay
  *  screen-space; mouse LPARAMs are mapped from the source HWND. */
-BOOL nucleus_tao_replay_last_native_input(HWND target);
+/* Replays the remembered message onto [target] when it is of kind
+ * [expectedMsg] (the message the caller would otherwise synthesise); returns
+ * FALSE when nothing matching is remembered. [post] queues it with
+ * PostMessageW instead of SendMessageW — for a child HWND, whose handler may
+ * open a modal loop (an EDIT's context menu on WM_RBUTTONUP) that must not
+ * run inside the Compose pointer dispatch that is forwarding the event. */
+BOOL nucleus_tao_replay_last_native_input(HWND target, UINT expectedMsg, BOOL post);
 
 #ifdef __cplusplus
 }

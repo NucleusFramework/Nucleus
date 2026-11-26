@@ -134,6 +134,7 @@ class StandalonePanelLinuxNativeSmokeTest {
                         vkCode: Int,
                         codePoint: Int,
                         modifiers: Int,
+                        isRepeat: Boolean,
                     ) = Unit
                 },
             )
@@ -170,16 +171,73 @@ class StandalonePanelLinuxNativeSmokeTest {
      */
     @Test
     fun standalonePanelReceivesXdndFileDrop() {
-        if (!System.getProperty("os.name", "").lowercase().contains("linux")) return
+        val droppedFile = Files.createTempFile("nucleus xdnd", ".txt")
+        try {
+            Files.writeString(droppedFile, "nucleus-xdnd-e2e")
+            val expectedPath = droppedFile.toAbsolutePath().toString()
+            val uriList = droppedFile.toAbsolutePath().toUri().toASCIIString() + "\r\n"
+            val callback = xdndDrop("text/uri-list", uriList.toByteArray()) ?: return
+            assertEquals(listOf(expectedPath), callback.files.toList())
+            assertEquals(emptyList(), callback.uris.toList())
+            assertEquals(null, callback.text)
+        } finally {
+            Files.deleteIfExists(droppedFile)
+        }
+    }
+
+    /** A browser link (#930): non-file URIs arrive verbatim, file URIs as paths. */
+    @Test
+    fun standalonePanelReceivesXdndLinkDrop() {
+        val uriList = "https://example.com/a%20b?q=1\r\n# comment\r\nfile:///tmp/x%20y\r\nmailto:a@b.c\r\n"
+        val callback = xdndDrop("text/uri-list", uriList.toByteArray()) ?: return
+        assertEquals(listOf("/tmp/x y"), callback.files.toList())
+        assertEquals(listOf("https://example.com/a%20b?q=1", "mailto:a@b.c"), callback.uris.toList())
+        assertEquals(null, callback.text)
+    }
+
+    /** UTF-8 text (#930), including characters outside the BMP. */
+    @Test
+    fun standalonePanelReceivesXdndUtf8TextDrop() {
+        val text = "שלום עולם\nline two 🙂"
+        val callback = xdndDrop("UTF8_STRING", text.toByteArray(Charsets.UTF_8)) ?: return
+        assertEquals(text, callback.text)
+        assertEquals(emptyList(), callback.files.toList())
+        assertEquals(emptyList(), callback.uris.toList())
+    }
+
+    /** ICCCM `STRING` is Latin-1. */
+    @Test
+    fun standalonePanelReceivesXdndLatin1TextDrop() {
+        val callback = xdndDrop("STRING", "café".toByteArray(Charsets.ISO_8859_1)) ?: return
+        assertEquals("café", callback.text)
+    }
+
+    /** A target the panel cannot read is refused at enter and never dropped. */
+    @Test
+    fun standalonePanelRefusesUnreadableXdndDrop() {
+        val callback =
+            xdndDrop("image/png", byteArrayOf(1, 2, 3), expectedEffect = PopupNativeBridgeLinux.DROP_EFFECT_NONE)
+                ?: return
+        assertEquals(false, callback.enteredWithData)
+        assertEquals(1L, callback.dropLatch.count, "onDrop must not run for an unreadable target")
+    }
+
+    /**
+     * Drops [data] offered as [target] onto a fresh panel and returns the
+     * recording callback, or `null` when the test does not apply here (not
+     * Linux, no X server).
+     */
+    private fun xdndDrop(
+        target: String,
+        data: ByteArray,
+        expectedEffect: Int = PopupNativeBridgeLinux.DROP_EFFECT_COPY,
+    ): RecordingXdndCallback? {
+        if (!System.getProperty("os.name", "").lowercase().contains("linux")) return null
         assertTrue(PopupNativeBridgeLinux.isLoaded, "nucleus_tao_linux_popup failed to load")
         if (!PopupNativeBridgeLinux.nativeIsAvailable()) {
             println("SKIP: no X server reachable (DISPLAY unset?)")
-            return
+            return null
         }
-
-        val droppedFile = Files.createTempFile("nucleus xdnd", ".txt")
-        Files.writeString(droppedFile, "nucleus-xdnd-e2e")
-        val expectedPath = droppedFile.toAbsolutePath().toString()
 
         val panel =
             PopupNativeBridgeLinux.nativeCreatePanel(
@@ -196,28 +254,25 @@ class StandalonePanelLinuxNativeSmokeTest {
             PopupNativeBridgeLinux.nativeSetFrameOnScreen(panel, 80, 90, 200, 120)
             PopupNativeBridgeLinux.nativeSetPanelVisible(panel, true)
 
-            val rc =
-                PopupNativeBridgeLinux.nativeSmokeXdndDrop(
-                    panel,
-                    arrayOf(expectedPath),
-                )
+            val rc = PopupNativeBridgeLinux.nativeSmokeXdndDrop(panel, target, data)
             assertEquals(
-                PopupNativeBridgeLinux.DROP_EFFECT_COPY,
+                expectedEffect,
                 rc,
-                "XDND round-trip failed (no XdndStatus/Finished). rc=$rc " +
-                    "entered=${callback.entered.get()} dropped=${callback.dropped}",
-            )
-            assertTrue(
-                callback.dropLatch.await(3, TimeUnit.SECONDS),
-                "onDrop was not invoked. entered=${callback.entered.get()} dropped=${callback.dropped}",
+                "XDND round-trip of $target: rc=$rc entered=${callback.entered.get()} " +
+                    "files=${callback.files} uris=${callback.uris} text=${callback.text}",
             )
             assertTrue(callback.entered.get() >= 1, "onDragEnter was not invoked")
-            assertEquals(listOf(expectedPath), callback.dropped.toList())
+            if (expectedEffect != PopupNativeBridgeLinux.DROP_EFFECT_NONE) {
+                assertTrue(
+                    callback.dropLatch.await(3, TimeUnit.SECONDS),
+                    "onDrop was not invoked. entered=${callback.entered.get()}",
+                )
+            }
         } finally {
             PopupNativeBridgeLinux.nativeSetDnDCallback(panel, null)
             PopupNativeBridgeLinux.nativeRelease(panel)
-            Files.deleteIfExists(droppedFile)
         }
+        return callback
     }
 }
 
@@ -228,7 +283,14 @@ class StandalonePanelLinuxNativeSmokeTest {
  */
 private class RecordingXdndCallback : PopupNativeBridgeLinux.DnDCallback {
     val entered = AtomicInteger(0)
-    val dropped = CopyOnWriteArrayList<String>()
+
+    @Volatile
+    var enteredWithData: Boolean? = null
+    val files = CopyOnWriteArrayList<String>()
+    val uris = CopyOnWriteArrayList<String>()
+
+    @Volatile
+    var text: String? = null
     val dropLatch = CountDownLatch(1)
 
     override fun onDragEnter(
@@ -236,10 +298,11 @@ private class RecordingXdndCallback : PopupNativeBridgeLinux.DnDCallback {
         x: Int,
         y: Int,
         modState: Int,
-        hasFiles: Boolean,
+        hasData: Boolean,
     ): Int {
         entered.incrementAndGet()
-        return if (hasFiles) {
+        enteredWithData = hasData
+        return if (hasData) {
             PopupNativeBridgeLinux.DROP_EFFECT_COPY
         } else {
             PopupNativeBridgeLinux.DROP_EFFECT_NONE
@@ -251,7 +314,7 @@ private class RecordingXdndCallback : PopupNativeBridgeLinux.DnDCallback {
         x: Int,
         y: Int,
         modState: Int,
-        hasFiles: Boolean,
+        hasData: Boolean,
     ): Int = PopupNativeBridgeLinux.DROP_EFFECT_COPY
 
     override fun onDragLeave(handle: Long) = Unit
@@ -262,8 +325,12 @@ private class RecordingXdndCallback : PopupNativeBridgeLinux.DnDCallback {
         y: Int,
         modState: Int,
         files: Array<String>?,
+        text: String?,
+        uris: Array<String>?,
     ): Int {
-        files?.let { dropped.addAll(it) }
+        files?.let { this.files.addAll(it) }
+        uris?.let { this.uris.addAll(it) }
+        this.text = text
         dropLatch.countDown()
         return PopupNativeBridgeLinux.DROP_EFFECT_COPY
     }

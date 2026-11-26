@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # ── Required env vars ─────────────────────────────────────────────────────
-: "${ARM64_ZIP:?}" "${X64_ZIP:?}" "${OUTPUT_DIR:?}"
+: "${ARM64_ZIP:?}" "${X64_ZIP:?}" "${OUTPUT_DIR:?}" "${NODE_BIN:?}" "${ELECTRON_BUILDER_CLI:?}"
 
 # ── Optional env vars (default to empty) ──────────────────────────────────
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
@@ -499,8 +499,9 @@ run_electron_builder() {
     codesign --force --deep --sign - "$app_copy"
   fi
 
+  # Provisioned by provision-electron-builder.sh from the plugin's lock file.
   CSC_IDENTITY_AUTO_DISCOVERY=false \
-  npx --yes electron-builder \
+  "$NODE_BIN" "$ELECTRON_BUILDER_CLI" \
     --prepackaged "$app_copy" \
     --config "$eb_dir/electron-builder.yml" \
     --config.electronVersion=33.0.0 \

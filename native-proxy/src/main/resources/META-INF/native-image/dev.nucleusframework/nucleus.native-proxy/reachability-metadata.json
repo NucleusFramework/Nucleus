@@ -1,0 +1,16 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.nativeproxy.windows.WindowsProxyBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.nativeproxy.macos.MacOsProxyBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.nativeproxy.linux.LinuxProxyBridge",
+            "jniAccessible": true
+        }
+    ]
+}

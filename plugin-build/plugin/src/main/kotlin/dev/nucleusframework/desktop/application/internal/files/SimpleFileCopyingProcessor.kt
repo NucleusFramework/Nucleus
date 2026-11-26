@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.internal.files
 
 import java.io.File
 
+/** Copies a file as is, overwriting the target. */
 object SimpleFileCopyingProcessor : FileCopyingProcessor {
     override fun copy(
         source: File,

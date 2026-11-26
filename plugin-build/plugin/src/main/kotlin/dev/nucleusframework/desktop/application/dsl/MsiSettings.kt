@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
+/** Windows MSI installer options, passed to electron-builder's `msi` target. */
 abstract class MsiSettings {
     /**
      * Install per-machine (Program Files, all users). Default: true.

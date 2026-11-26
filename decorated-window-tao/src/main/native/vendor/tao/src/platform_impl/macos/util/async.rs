@@ -2,28 +2,23 @@
 // Copyright 2021-2023 Tauri Programme within The Commons Conservancy
 // SPDX-License-Identifier: Apache-2.0
 
+// TODO: Migrate this to https://github.com/rust-windowing/winit/pull/4589
+
 use std::{
   ops::Deref,
-  sync::{Mutex, Weak},
+  time::{Duration, Instant},
 };
 
-use core_graphics::base::CGFloat;
-use dispatch2::{DispatchQueue, DispatchQueueAttr};
-use objc2::{rc::autoreleasepool, Message};
-use objc2_app_kit::{NSScreen, NSView, NSWindow, NSWindowStyleMask};
-use objc2_foundation::{MainThreadMarker, NSPoint, NSSize, NSString};
-
-use crate::{
-  dpi::LogicalSize,
-  platform_impl::platform::{
-    ffi::{self, id, NO, YES},
-    window::SharedState,
-  },
+use dispatch2::{DispatchQueue, DispatchTime};
+use objc2::{
+  msg_send,
+  rc::{Retained, Weak},
+  DefinedClass, MainThreadMarker, Message,
 };
+use objc2_app_kit::{NSScreen, NSWindowStyleMask};
+use objc2_foundation::{NSPoint, NSRect, NSSize};
 
-pub fn is_main_thread() -> bool {
-  unsafe { msg_send!(class!(NSThread), isMainThread) }
-}
+use crate::platform_impl::platform::window_delegate::{WindowDelegate, DEFAULT_STANDARD_FRAME};
 
 // Unsafe wrapper type that allows us to dispatch things that aren't Send.
 // This should *only* be used to dispatch to the main queue.
@@ -40,268 +35,170 @@ impl<T> Deref for MainThreadSafe<T> {
   }
 }
 
-fn run_on_main<F: Send + FnOnce()>(f: F) {
-  if is_main_thread() {
-    f();
-  } else {
-    DispatchQueue::main().exec_sync(f);
-  }
-}
-
-unsafe fn set_style_mask(ns_window: &NSWindow, ns_view: &NSView, mask: NSWindowStyleMask) {
-  ns_window.setStyleMask(mask);
-  // If we don't do this, key handling will break
-  // (at least until the window is clicked again/etc.)
-  ns_window.makeFirstResponder(Some(ns_view));
-}
-
-// Always use this function instead of trying to modify `styleMask` directly!
-// `setStyleMask:` isn't thread-safe, so we have to use Grand Central Dispatch.
-// Otherwise, this would vomit out errors about not being on the main thread
-// and fail to do anything.
-pub unsafe fn set_style_mask_async(
-  ns_window: &NSWindow,
-  ns_view: &NSView,
-  mask: NSWindowStyleMask,
-) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  let ns_view = MainThreadSafe(ns_view.retain());
-  DispatchQueue::main().exec_async(move || {
-    set_style_mask(&ns_window, &ns_view, mask);
-  });
-}
-pub unsafe fn set_style_mask_sync(ns_window: &NSWindow, ns_view: &NSView, mask: NSWindowStyleMask) {
-  if is_main_thread() {
-    set_style_mask(ns_window, ns_view, mask);
-  } else {
-    let ns_window = MainThreadSafe(ns_window.retain());
-    let ns_view = MainThreadSafe(ns_view.retain());
-    DispatchQueue::main().exec_sync(move || {
-      set_style_mask(&ns_window, &ns_view, mask);
-    })
-  }
-}
-
-// `setContentSize:` isn't thread-safe either, though it doesn't log any errors
-// and just fails silently. Anyway, GCD to the rescue!
-pub unsafe fn set_content_size_async(ns_window: &NSWindow, size: LogicalSize<f64>) {
-  // PATCH(nucleus): apply immediately on the main thread so a programmatic
-  // WindowState.size animation (#576) doesn't leave the NSWindow a frame
-  // behind the Compose scene. GCD async is only needed off-thread
-  // (`setContentSize:` is not thread-safe). Mirrors `set_frame_top_left_point_async`.
-  if is_main_thread() {
-    ns_window.setContentSize(NSSize::new(size.width as CGFloat, size.height as CGFloat));
-    return;
-  }
-  let ns_window = MainThreadSafe(ns_window.retain());
-  DispatchQueue::main().exec_async(move || {
-    ns_window.setContentSize(NSSize::new(size.width as CGFloat, size.height as CGFloat));
-  });
-}
-
-// `setFrameTopLeftPoint:` isn't thread-safe, but fortunately has the courtesy
-// to log errors. When we're already on the main thread, apply immediately so
-// a pre-show position update lands before a following `setVisible(true)`.
-pub unsafe fn set_frame_top_left_point_async(ns_window: &NSWindow, point: NSPoint) {
-  if is_main_thread() {
-    ns_window.setFrameTopLeftPoint(point);
-    return;
-  }
-  let ns_window = MainThreadSafe(ns_window.retain());
-  DispatchQueue::main().exec_async(move || {
-    ns_window.setFrameTopLeftPoint(point);
-  });
-}
-
-// `setFrameTopLeftPoint:` isn't thread-safe, and fails silently.
-pub unsafe fn set_level_async(ns_window: &NSWindow, level: ffi::NSWindowLevel) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  DispatchQueue::main().exec_async(move || {
-    ns_window.setLevel(level as _);
-  });
-}
-
 // `toggleFullScreen` is thread-safe, but our additional logic to account for
 // window styles isn't.
 pub unsafe fn toggle_full_screen_async(
-  ns_window: &NSWindow,
-  ns_view: &NSView,
+  window_delegate: Retained<WindowDelegate>,
   not_fullscreen: bool,
-  shared_state: Weak<Mutex<SharedState>>,
 ) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  let ns_view = MainThreadSafe(ns_view.retain());
-  let shared_state = MainThreadSafe(shared_state);
+  let window_delegate = MainThreadSafe(window_delegate);
   DispatchQueue::main().exec_async(move || {
     // `toggleFullScreen` doesn't work if the `StyleMask` is none, so we
     // set a normal style temporarily. The previous state will be
     // restored in `WindowDelegate::window_did_exit_fullscreen`.
     if not_fullscreen {
-      let curr_mask = ns_window.styleMask();
+      let curr_mask = window_delegate.window().styleMask();
       let required = NSWindowStyleMask::Titled | NSWindowStyleMask::Resizable;
       if !curr_mask.contains(required) {
-        set_style_mask(&ns_window, &ns_view, required);
-        if let Some(shared_state) = shared_state.upgrade() {
-          trace!("Locked shared state in `toggle_full_screen_callback`");
-          let mut shared_state_lock = shared_state.lock().unwrap();
-          shared_state_lock.saved_style = Some(curr_mask);
-          trace!("Unlocked shared state in `toggle_full_screen_callback`");
-        }
+        window_delegate.set_style_mask(required);
+        window_delegate.ivars().saved_style.set(Some(curr_mask));
       }
     }
     // Window level must be restored from `CGShieldingWindowLevel()
     // + 1` back to normal in order for `toggleFullScreen` to do
     // anything
-    ns_window.setLevel(0);
-    ns_window.toggleFullScreen(None);
-  });
-}
-
-pub unsafe fn restore_display_mode_async(ns_screen: u32) {
-  DispatchQueue::main().exec_async(move || {
-    ffi::CGRestorePermanentDisplayConfiguration();
-    assert_eq!(ffi::CGDisplayRelease(ns_screen), ffi::kCGErrorSuccess);
+    window_delegate.window().setLevel(0);
+    window_delegate.window().toggleFullScreen(None);
   });
 }
 
 // `setMaximized` is not thread-safe
 pub unsafe fn set_maximized_async(
-  ns_window: &NSWindow,
+  window_delegate: Retained<WindowDelegate>,
   is_zoomed: bool,
   maximized: bool,
-  shared_state: Weak<Mutex<SharedState>>,
 ) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  let shared_state = MainThreadSafe(shared_state);
+  let window_delegate = MainThreadSafe(window_delegate);
   DispatchQueue::main().exec_async(move || {
-    if let Some(shared_state) = shared_state.upgrade() {
-      trace!("Locked shared state in `set_maximized`");
-      let mut shared_state_lock = shared_state.lock().unwrap();
-
-      // Save the standard frame sized if it is not zoomed.
-      // PATCH(nucleus): only when actually maximizing — an unmaximize issued
-      // while the zoom animation is still running arrives with
-      // `is_zoomed == false` (frame mid-flight), and saving here would
-      // overwrite the real pre-zoom frame with a half-grown one, making the
-      // restore target wrong.
-      if !is_zoomed && maximized {
-        shared_state_lock.standard_frame = Some(NSWindow::frame(&ns_window));
+    unsafe {
+      let ivars = window_delegate.ivars();
+      // Save the standard frame if it is not zoomed.
+      // PATCH(nucleus): only when actually maximizing and no zoom animation
+      // is in flight — a request issued mid-animation sees `is_zoomed ==
+      // false` (frame mid-flight), and saving here would overwrite the real
+      // pre-zoom frame with a half-grown one, making the restore target wrong.
+      if !is_zoomed && maximized && !ivars.zoom_animating.get() {
+        ivars
+          .standard_frame
+          .set(Some(window_delegate.window().frame()));
       }
-
-      shared_state_lock.maximized = maximized;
-
-      let curr_mask = ns_window.styleMask();
-      if shared_state_lock.fullscreen.is_some() {
-        // Handle it in window_did_exit_fullscreen
+      ivars.maximized.set(maximized);
+      if ivars.fullscreen.borrow().is_some() {
+        // Apply the requested state when native fullscreen ends.
         return;
-      } else if curr_mask.contains(NSWindowStyleMask::Resizable)
-        && curr_mask.contains(NSWindowStyleMask::Titled)
-      {
-        // PATCH(nucleus): upstream calls `ns_window.zoom(None)` here. AppKit's
-        // `zoom:` runs its resize animation SYNCHRONOUSLY on the main thread
-        // (~350 ms) in a private run-loop mode that services neither the main
-        // dispatch queue nor observers registered on `kCFRunLoopCommonModes`.
-        // Tao's run-loop observer therefore never drains the queued
-        // `WindowEvent::Resized` (windowDidResize: fires per animation step)
-        // until the animation completes — the embedder sees a single Resized
-        // at the end, so the content is stretched for the whole animation and
-        // snaps into place at the end.
-        //
-        // Instead, compute the zoom target frame ourselves (the same frames
-        // `zoom:` uses: screen visibleFrame ⇄ saved standard frame) and
-        // animate via the NSWindow animator proxy, which is non-blocking: the
-        // run loop keeps turning in common modes, windowDidResize: fires per
-        // step, and the embedder receives live Resized events throughout.
-        // `is_zoomed()` is frame-based (see window.rs) so bypassing `zoom:`
-        // keeps the maximized-state tracking consistent.
-        let mtm = MainThreadMarker::new_unchecked();
-        let screen = ns_window.screen().or_else(|| NSScreen::mainScreen(mtm));
-        let target = if maximized {
-          match screen {
-            Some(screen) => NSScreen::visibleFrame(&screen),
-            None => return,
-          }
-        } else {
-          shared_state_lock.saved_standard_frame()
-        };
-        let duration: f64 = msg_send![&*ns_window, animationResizeTime: target];
-        let _: () = msg_send![class!(NSAnimationContext), beginGrouping];
-        let ctx: id = msg_send![class!(NSAnimationContext), currentContext];
-        let _: () = msg_send![ctx, setDuration: duration];
-        let animator: id = msg_send![&*ns_window, animator];
-        let _: () = msg_send![animator, setFrame: target, display: YES];
-        let _: () = msg_send![class!(NSAnimationContext), endGrouping];
-      } else {
-        // if it's not resizable, we set the frame directly
-        let new_rect = if maximized {
-          let mtm = MainThreadMarker::new_unchecked();
-          let screen = NSScreen::mainScreen(mtm).unwrap();
-          NSScreen::visibleFrame(&screen)
-        } else {
-          shared_state_lock.saved_standard_frame()
-        };
-        let _: () = msg_send![&*ns_window, setFrame:new_rect, display:NO, animate: YES];
       }
-
-      trace!("Unlocked shared state in `set_maximized`");
+      // PATCH(nucleus): upstream calls `zoom(None)` on a resizable titled
+      // window and `setFrame:display:NO animate:YES` otherwise — both
+      // AppKit's blocking animator, which `TaoWindow` reroutes to
+      // `animate_frame` below (`set_frame_display_animate`, window.rs). Zoom
+      // between the frames `zoom:` uses: screen visibleFrame ⇄ saved standard
+      // frame. `is_zoomed()` is frame-based (see window_delegate.rs) so
+      // bypassing `zoom:` keeps the maximized-state tracking consistent.
+      let target = if maximized {
+        let mtm = MainThreadMarker::from(window_delegate.window());
+        match window_delegate
+          .window()
+          .screen()
+          .or_else(|| NSScreen::mainScreen(mtm))
+        {
+          Some(screen) => screen.visibleFrame(),
+          None => return,
+        }
+      } else {
+        ivars.standard_frame.get().unwrap_or(DEFAULT_STANDARD_FRAME)
+      };
+      window_delegate
+        .window()
+        .setFrame_display_animate(target, true, true);
     }
   });
 }
 
-// `orderOut:` isn't thread-safe. Calling it from another thread actually works,
-// but with an odd delay.
-pub unsafe fn order_out_sync(ns_window: &NSWindow) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  run_on_main(move || {
-    ns_window.orderOut(None);
-  });
+// PATCH(nucleus): tao's frame animation — what `setFrame:display:animate:YES`
+// resolves to on a `TaoWindow` (window.rs): `set_maximized_async` above, and
+// the zooms AppKit starts on its own — a double-click on a resize edge
+// (`_zoomToScreenEdge:`), the Window-menu tiling (`_zoomLeft:` and friends),
+// `zoom:`. AppKit's own animator runs SYNCHRONOUSLY on the main thread
+// (~250 ms) in a private run-loop mode that services neither the main
+// dispatch queue nor observers registered on `kCFRunLoopCommonModes`, so every
+// step's `windowDidResize:` only queued a `Resized` and the embedder got the
+// whole run once the window already sat at the target: the content snapped
+// into place (Nucleus #576). Animating through the NSWindow animator proxy
+// instead delivered a Resized per step, but the steps are Core Animation's:
+// overlapping requests run overlapping animations whose final frame is
+// whichever finishes last, and presenting the content synchronously on each
+// step left them stopping mid-flight.
+//
+// So step the frame ourselves, on the main queue, 60 times a second, easing
+// between the current frame and the target over `animationResizeTime:`. Every
+// step is a plain `setFrame:display:`, so the embedder gets one Resized per
+// step and can present the content for it in the same turn; a new request
+// bumps `zoom_generation`, which stops the chain in flight and starts over
+// from the frame it had reached.
+pub(crate) unsafe fn animate_frame(window_delegate: &WindowDelegate, target: NSRect) {
+  let ns_window = window_delegate.window();
+  let duration: f64 = msg_send![ns_window, animationResizeTime: target];
+  let ivars = window_delegate.ivars();
+  let generation = ivars.zoom_generation.get() + 1;
+  ivars.zoom_generation.set(generation);
+  ivars.zoom_animating.set(true);
+  zoom_step(
+    MainThreadSafe(Weak::from_retained(&window_delegate.retain())),
+    generation,
+    ns_window.frame(),
+    target,
+    Instant::now(),
+    duration.max(ZOOM_MIN_DURATION_SECS),
+    Duration::from_millis(ZOOM_STEP_MS),
+  );
 }
 
-// `makeKeyAndOrderFront:` isn't thread-safe. Calling it from another thread
-// actually works, but with an odd delay.
-pub unsafe fn make_key_and_order_front_sync(ns_window: &NSWindow) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  run_on_main(move || {
-    ns_window.makeKeyAndOrderFront(None);
-  });
-}
+// One step of `animate_frame`, run `delay` from now; re-schedules itself until
+// the target is reached or a newer request has bumped `zoom_generation`. The
+// next step is due ZOOM_STEP_MS after this one *started*: the embedder
+// presents the content of each step inside its `setFrame:` (Nucleus #953), and
+// counting that time on top of the interval would slow the cadence by it.
+const ZOOM_STEP_MS: u64 = 16;
+const ZOOM_MIN_DURATION_SECS: f64 = 0.05;
 
-// `setTitle:` isn't thread-safe. Calling it from another thread invalidates the
-// window drag regions, which throws an exception when not done in the main
-// thread
-pub unsafe fn set_title_async(ns_window: &NSWindow, title: String) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  DispatchQueue::main().exec_async(move || {
-    let title = NSString::from_str(&title);
-    ns_window.setTitle(&title);
-  });
-}
-
-// `setFocus:` isn't thread-safe.
-pub unsafe fn set_focus(ns_window: &NSWindow) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  run_on_main(move || {
-    ns_window.makeKeyAndOrderFront(None);
-    let app: id = msg_send![class!(NSApplication), sharedApplication];
-    let () = msg_send![app, activateIgnoringOtherApps: YES];
-  });
-}
-
-// `close:` is thread-safe, but we want the event to be triggered from the main
-// thread. Though, it's a good idea to look into that more...
-pub unsafe fn close_async(ns_window: &NSWindow) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  run_on_main(move || {
-    autoreleasepool(move |_| {
-      ns_window.close();
-    });
-  });
-}
-
-// `setIgnoresMouseEvents_:` isn't thread-safe, and fails silently.
-pub unsafe fn set_ignore_mouse_events(ns_window: &NSWindow, ignore: bool) {
-  let ns_window = MainThreadSafe(ns_window.retain());
-  DispatchQueue::main().exec_async(move || {
-    ns_window.setIgnoresMouseEvents(ignore);
+unsafe fn zoom_step(
+  window_delegate: MainThreadSafe<Weak<WindowDelegate>>,
+  generation: u64,
+  from: NSRect,
+  to: NSRect,
+  started: Instant,
+  duration: f64,
+  delay: Duration,
+) {
+  let when = DispatchTime::try_from(delay).unwrap_or(DispatchTime::NOW);
+  let _ = DispatchQueue::main().after(when, move || {
+    let Some(delegate) = window_delegate.load() else {
+      return;
+    };
+    let ivars = delegate.ivars();
+    if ivars.zoom_generation.get() != generation {
+      return;
+    }
+    let step_started = Instant::now();
+    let t = (started.elapsed().as_secs_f64() / duration).min(1.0);
+    // Ease in-out, like AppKit's own window frame animation.
+    let e = 0.5 - 0.5 * (std::f64::consts::PI * t).cos();
+    let frame = NSRect::new(
+      NSPoint::new(
+        from.origin.x + (to.origin.x - from.origin.x) * e,
+        from.origin.y + (to.origin.y - from.origin.y) * e,
+      ),
+      NSSize::new(
+        from.size.width + (to.size.width - from.size.width) * e,
+        from.size.height + (to.size.height - from.size.height) * e,
+      ),
+    );
+    delegate.window().setFrame_display(frame, true);
+    if t < 1.0 {
+      let delay = Duration::from_millis(ZOOM_STEP_MS).saturating_sub(step_started.elapsed());
+      zoom_step(window_delegate, generation, from, to, started, duration, delay);
+    } else {
+      ivars.zoom_animating.set(false);
+    }
   });
 }
